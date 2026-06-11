@@ -146,20 +146,49 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	return b.Build()
 }
 
-// localeFromName extracts the locale from a source file name following the
-// "[x].[locale].yml" / "[x].[locale].yaml" convention.
+// localeFromName extracts the locale from a source file name. It supports the
+// "[x].[locale].yml" convention (e.g. "countries.en_GB.yml") and the bare
+// "[locale].yml" form used in the specification's own example (e.g.
+// "en_GB.yaml"). The candidate is validated to look like a locale so that a
+// prefix segment such as "countries" is not mistaken for one.
 func localeFromName(name string) string {
 	base := name
 	for _, ext := range []string{".yml", ".yaml", ".YML", ".YAML"} {
-		if strings.HasSuffix(base, ext) {
+		if strings.HasSuffix(strings.ToLower(base), strings.ToLower(ext)) {
 			base = base[:len(base)-len(ext)]
 			break
 		}
 	}
+	// Try the segment after the last '.', then fall back to the whole base.
 	if i := strings.LastIndexByte(base, '.'); i >= 0 {
-		return normalizeLang(base[i+1:])
+		if loc := normalizeLang(base[i+1:]); looksLikeLocale(loc) {
+			return loc
+		}
+	}
+	if loc := normalizeLang(base); looksLikeLocale(loc) {
+		return loc
 	}
 	return ""
+}
+
+// looksLikeLocale reports whether s (already normalized to lower-case with '_'
+// separators) matches a language ("en") or language_region ("en_gb") code.
+func looksLikeLocale(s string) bool {
+	parts := strings.Split(s, "_")
+	if len(parts) == 0 || len(parts) > 2 {
+		return false
+	}
+	for _, p := range parts {
+		if len(p) != 2 {
+			return false
+		}
+		for i := 0; i < len(p); i++ {
+			if p[i] < 'a' || p[i] > 'z' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // parseFlatYAML parses the flat "key: value" subset of YAML used by translation

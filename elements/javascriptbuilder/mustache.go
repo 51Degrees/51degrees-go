@@ -1,6 +1,7 @@
 package javascriptbuilder
 
 import (
+	"fmt"
 	"html"
 	"strings"
 )
@@ -153,6 +154,8 @@ func isTruthy(v any) bool {
 
 func stringify(v any) string {
 	switch t := v.(type) {
+	case nil:
+		return ""
 	case string:
 		return t
 	case bool:
@@ -161,6 +164,8 @@ func stringify(v any) string {
 		}
 		return "false"
 	default:
-		return ""
+		// Covers numeric context values such as the sequence number, which must
+		// render as their literal value (e.g. "var sequence = 1;").
+		return fmt.Sprint(t)
 	}
 }

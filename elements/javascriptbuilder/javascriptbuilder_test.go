@@ -74,6 +74,28 @@ func TestJavaScriptBuilderRender(t *testing.T) {
 	if !strings.Contains(js, "var json = {") {
 		t.Fatalf("JSON object not embedded")
 	}
+	// The numeric sequence must render as its literal value, not blank (which
+	// would produce the syntax error "var sequence = ;").
+	if !strings.Contains(js, "var sequence = 1;") {
+		t.Fatalf("sequence not rendered as a number: %q", grepLine(js, "var sequence"))
+	}
+}
+
+func TestMustacheStringifyNumeric(t *testing.T) {
+	tmpl := parseMustache(`n={{&n}} f={{&f}}`)
+	out := tmpl.render(map[string]any{"n": 7, "f": 3.5})
+	if out != "n=7 f=3.5" {
+		t.Fatalf("numeric stringify wrong: %q", out)
+	}
+}
+
+func grepLine(s, needle string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	return ""
 }
 
 func TestLightMinify(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 
 	"github.com/51Degrees/pipeline-go/core"
 	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
+	"github.com/51Degrees/pipeline-go/engines"
 	"github.com/51Degrees/pipeline-go/examples/starsign"
 	"github.com/51Degrees/pipeline-go/web"
 )
@@ -53,10 +54,10 @@ func (e *ClientSideStarSignElement) Process(fd core.FlowData) error {
 	data := fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return core.NewBaseElementData() })
 	raw, ok := fd.Evidence().Get(evidenceDateOfBirth)
 	if !ok {
-		// Ask the client to gather the value; star sign has no value yet.
+		// Ask the client to gather the value; star sign has no value yet. Using
+		// an AspectPropertyValue lets the JSON Builder emit the nullreason for us.
 		data.Set("dobjavascript", core.JavaScript(dobJavaScript))
-		data.Set("starsign", nil)
-		data.Set("starsignnullreason", "Awaiting date of birth from client-side JavaScript.")
+		data.Set("starsign", engines.NoValue[string]("Awaiting date of birth from client-side JavaScript."))
 		return nil
 	}
 	dob, err := starsign.ParseDate(fmt.Sprintf("%v", raw))

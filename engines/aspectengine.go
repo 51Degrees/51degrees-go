@@ -123,10 +123,19 @@ type lazyAspectData struct {
 }
 
 func (l *lazyAspectData) wait() error {
+	// Fast path: already complete (the common case once computed), avoiding any
+	// timer allocation.
+	select {
+	case <-l.done:
+		return l.err
+	default:
+	}
 	if l.timeout > 0 {
+		timer := time.NewTimer(l.timeout)
+		defer timer.Stop()
 		select {
 		case <-l.done:
-		case <-time.After(l.timeout):
+		case <-timer.C:
 			return core.NewDataError("timed out waiting for lazy-loaded engine result")
 		}
 	} else {

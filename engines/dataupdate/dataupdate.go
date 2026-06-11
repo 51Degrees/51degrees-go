@@ -154,10 +154,16 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 // data source.
 func (s *Service) OnUpdate(identifier string, fn func()) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if reg, ok := s.registrations[identifier]; ok {
-		reg.onUpdate = append(reg.onUpdate, fn)
+	reg, ok := s.registrations[identifier]
+	s.mu.Unlock()
+	if !ok {
+		return
 	}
+	// onUpdate is read by fireCallbacks under refreshMu, so append under the same
+	// lock to avoid a data race with a concurrent refresh.
+	reg.refreshMu.Lock()
+	reg.onUpdate = append(reg.onUpdate, fn)
+	reg.refreshMu.Unlock()
 }
 
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP

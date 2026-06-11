@@ -140,10 +140,37 @@ func TestLocaleFromName(t *testing.T) {
 		"countries.en_GB.yml":     "en_gb",
 		"countryCodes.es_ES.yaml": "es_es",
 		"foo.fr-FR.yml":           "fr_fr",
+		"en_GB.yaml":              "en_gb", // bare-locale form from the spec example
+		"fr.yml":                  "fr",    // two-letter language only
+		"countries.yml":           "",      // no locale segment -> dropped
 	}
 	for name, want := range cases {
 		if got := localeFromName(name); got != want {
 			t.Fatalf("localeFromName(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestBareLocaleSourceFile(t *testing.T) {
+	// A source file named "<locale>.yaml" (no "[x]." prefix), as used in the
+	// specification's own example, must load correctly.
+	e, err := NewBuilder().
+		SetSourceElementDataKey("ip").
+		AddSourceContent("en_GB.yaml", "England: England (UK)").
+		AddTranslation("Country", "CountryTranslated").
+		SetFixedLanguage("en_GB").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p := buildPipeline(t, e)
+	defer p.Close()
+	fd := p.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, _ := fd.Get(DataKey)
+	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "England (UK)" {
+		t.Fatalf("bare-locale source not loaded, got %q", v)
 	}
 }

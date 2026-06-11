@@ -207,10 +207,17 @@ func (e *Engine) tableFor(lang string) map[string]string {
 	if t, ok := e.lookups[base]; ok {
 		return t
 	}
-	for code, t := range e.lookups {
+	// Deterministic prefix fallback: pick the lowest-sorted matching code so the
+	// result does not depend on map iteration order.
+	codes := make([]string, 0, len(e.lookups))
+	for code := range e.lookups {
 		if strings.HasPrefix(code, base) {
-			return t
+			codes = append(codes, code)
 		}
+	}
+	if len(codes) > 0 {
+		sort.Strings(codes)
+		return e.lookups[codes[0]]
 	}
 	return nil
 }
