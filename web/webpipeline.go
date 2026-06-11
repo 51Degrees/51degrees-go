@@ -1,0 +1,68 @@
+// Package web provides helpers for using the Pipeline API inside a net/http
+// application: assembling a web-ready Pipeline, populating Evidence from a
+// request, managing the Flow Data lifecycle, setting response headers, and
+// serving the client-side JavaScript and JSON endpoints.
+//
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md
+package web
+
+import (
+	"log/slog"
+
+	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/pipeline-go/elements/javascriptbuilder"
+	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
+	"github.com/51Degrees/pipeline-go/elements/sequence"
+	"github.com/51Degrees/pipeline-go/elements/setheaders"
+)
+
+// PipelineConfig controls assembly of a web-ready Pipeline.
+type PipelineConfig struct {
+	// Disable* options prevent the corresponding client-side element from being
+	// added automatically, as required by the web-integration specification.
+	DisableSequence          bool
+	DisableSetHeaders        bool
+	DisableJSONBuilder       bool
+	DisableJavaScriptBuilder bool
+
+	// Logger is used by any elements added automatically and by the Pipeline.
+	Logger *slog.Logger
+
+	// SuppressProcessExceptions configures the resulting Pipeline.
+	SuppressProcessExceptions bool
+}
+
+// AssemblePipeline builds a Pipeline containing the supplied elements plus the
+// client-side elements required by the web integration, in the required order:
+// the Sequence Element first, then the supplied elements, then the Set Headers
+// Element, with the JSON Builder penultimate and the JavaScript Builder last.
+// Any client-side element already present among the supplied elements (matched
+// by data key) is not added again.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#pipeline-configuration
+func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pipeline, error) {
+	present := map[string]bool{}
+	for _, e := range elements {
+		present[e.DataKey()] = true
+	}
+
+	builder := core.NewPipelineBuilder().
+		SetLogger(cfg.Logger).
+		SetSuppressProcessExceptions(cfg.SuppressProcessExceptions)
+
+	if !cfg.DisableSequence && !present[sequence.DataKey] {
+		builder.AddFlowElement(sequence.New(cfg.Logger))
+	}
+	for _, e := range elements {
+		builder.AddFlowElement(e)
+	}
+	if !cfg.DisableSetHeaders && !present[setheaders.DataKey] {
+		builder.AddFlowElement(setheaders.New(cfg.Logger))
+	}
+	if !cfg.DisableJSONBuilder && !present[jsonbuilder.DataKey] {
+		builder.AddFlowElement(jsonbuilder.New(cfg.Logger, nil))
+	}
+	if !cfg.DisableJavaScriptBuilder && !present[javascriptbuilder.DataKey] {
+		builder.AddFlowElement(javascriptbuilder.New(cfg.Logger))
+	}
+	return builder.Build()
+}

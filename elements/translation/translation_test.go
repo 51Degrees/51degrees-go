@@ -137,9 +137,9 @@ func TestParseAcceptLanguage(t *testing.T) {
 
 func TestLocaleFromName(t *testing.T) {
 	cases := map[string]string{
-		"countries.en_GB.yml":  "en_gb",
+		"countries.en_GB.yml":     "en_gb",
 		"countryCodes.es_ES.yaml": "es_es",
-		"foo.fr-FR.yml":        "fr_fr",
+		"foo.fr-FR.yml":           "fr_fr",
 	}
 	for name, want := range cases {
 		if got := localeFromName(name); got != want {

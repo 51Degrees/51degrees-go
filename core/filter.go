@@ -77,3 +77,29 @@ func (f *AggregateFilter) Include(key string) bool {
 	}
 	return false
 }
+
+// KeyLister is implemented by filters that can enumerate the exact keys they
+// accept. Function-based filters do not implement it.
+type KeyLister interface {
+	Keys() []string
+}
+
+// Keys returns the union of the keys of any constituent filters that can
+// enumerate them. Keys from function-based filters cannot be listed and are
+// omitted. The result is sorted and de-duplicated.
+func (f *AggregateFilter) Keys() []string {
+	seen := map[string]struct{}{}
+	for _, sub := range f.filters {
+		if kl, ok := sub.(KeyLister); ok {
+			for _, k := range kl.Keys() {
+				seen[k] = struct{}{}
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
