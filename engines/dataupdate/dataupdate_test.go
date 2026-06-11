@@ -1,6 +1,7 @@
 package dataupdate
 
 import (
+	"compress/gzip"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -178,6 +179,39 @@ func TestProgrammaticFileUpdate(t *testing.T) {
 	}
 	if eng.lastFile() != "V1" {
 		t.Fatalf("expected refresh from file, got %q", eng.lastFile())
+	}
+}
+
+func TestGzipResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		gz.Write([]byte("DECOMPRESSED"))
+		gz.Close()
+	}))
+	defer srv.Close()
+
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	if err := svc.Register(eng, "gz", Config{Identifier: "gz", DataUpdateURL: srv.URL, UpdateOnStartup: true}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if eng.bytesCount() != 1 || string(eng.fromBytes[0]) != "DECOMPRESSED" {
+		t.Fatalf("gzip not decompressed: %v", eng.fromBytes)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	if d := parseRetryAfter("30"); d != 30*time.Second {
+		t.Fatalf("delta-seconds: got %v", d)
+	}
+	future := time.Now().Add(2 * time.Minute).UTC().Format(http.TimeFormat)
+	if d := parseRetryAfter(future); d <= 0 {
+		t.Fatalf("http-date: got %v", d)
+	}
+	if d := parseRetryAfter(""); d != 0 {
+		t.Fatalf("empty: got %v", d)
 	}
 }
 

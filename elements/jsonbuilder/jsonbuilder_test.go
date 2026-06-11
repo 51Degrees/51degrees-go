@@ -109,6 +109,55 @@ func TestJSONBuilderBasic(t *testing.T) {
 	}
 }
 
+func TestJavaScriptPropertiesOmittedAtMaxSequence(t *testing.T) {
+	// With query.sequence=9, the Sequence Element increments to 10, which is the
+	// maximum, so javascriptProperties must be omitted to prevent infinite loops.
+	b := core.NewPipelineBuilder().
+		AddFlowElement(sequence.New(nil)).
+		AddFlowElement(newDeviceEngine()).
+		AddFlowElement(New(nil, nil))
+	p, _ := b.Build()
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence("query.sequence", "9")
+	_ = fd.Process()
+	data, _ := fd.Get(DataKey)
+	var result map[string]any
+	if err := json.Unmarshal([]byte(data.(*Data).JSON()), &result); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := result["javascriptProperties"]; present {
+		t.Fatal("javascriptProperties must be omitted at sequence >= 10")
+	}
+}
+
+func TestJSONBuilderIncludesErrors(t *testing.T) {
+	// A failing element's error should appear in the errors array (suppressed so
+	// the JSON Builder still runs).
+	b := core.NewPipelineBuilder().
+		SetSuppressProcessExceptions(true).
+		AddFlowElement(sequence.New(nil)).
+		AddFlowElement(&erroringElement{core.NewBaseElement("boom", core.NewWhitelistFilter(), nil)}).
+		AddFlowElement(New(nil, nil))
+	p, _ := b.Build()
+	defer p.Close()
+	fd := p.CreateFlowData()
+	_ = fd.Process()
+	data, _ := fd.Get(DataKey)
+	var result map[string]any
+	_ = json.Unmarshal([]byte(data.(*Data).JSON()), &result)
+	errs, ok := result["errors"].([]any)
+	if !ok || len(errs) == 0 {
+		t.Fatalf("expected errors array, got %v", result["errors"])
+	}
+}
+
+type erroringElement struct{ *core.BaseElement }
+
+func (e *erroringElement) Process(fd core.FlowData) error {
+	return core.NewDataError("deliberate failure")
+}
+
 func TestJSONBuilderExclusion(t *testing.T) {
 	result := buildJSON(t, newDeviceEngine(), newExcludedEngine())
 	if _, present := result["cloud-response"]; present {

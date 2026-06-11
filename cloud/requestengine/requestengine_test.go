@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/51Degrees/pipeline-go/core"
 )
@@ -174,6 +175,68 @@ func TestRecoveryMode(t *testing.T) {
 	}
 	if cs.jsonRequests.Load() != jsonReqs {
 		t.Fatal("request should have been bypassed during recovery")
+	}
+}
+
+func TestRecoveryResetsAfterPeriod(t *testing.T) {
+	cs := &cloudServer{jsonStatus: http.StatusInternalServerError, jsonBody: `{}`}
+	srv := httptest.NewServer(cs.handler())
+	defer srv.Close()
+
+	now := time.Unix(1000, 0)
+	clock := func() time.Time { return now }
+	e, err := NewBuilder().
+		SetResourceKey("k").
+		SetEndpoint(srv.URL + "/").
+		SetHTTPClient(srv.Client()).
+		SetFailuresToEnterRecovery(1).
+		SetRecoveryDuration(60 * time.Second).
+		setClock(clock).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p, _ := core.NewPipelineBuilder().AddFlowElement(e).Build()
+	defer p.Close()
+
+	// One failure trips recovery (threshold 1).
+	_ = p.CreateFlowData().Process()
+	// Still within recovery: bypassed.
+	if err := p.CreateFlowData().Process(); err == nil {
+		t.Fatal("expected error during recovery")
+	} else {
+		var tue *TemporarilyUnavailableError
+		if !errors.As(err, &tue) {
+			t.Fatalf("expected TemporarilyUnavailableError, got %v", err)
+		}
+	}
+	// Advance past the recovery period and let the server succeed.
+	now = now.Add(61 * time.Second)
+	cs.jsonStatus = http.StatusOK
+	cs.jsonBody = `{"device":{"ismobile":true}}`
+	if err := p.CreateFlowData().Process(); err != nil {
+		t.Fatalf("request should be allowed after recovery, got %v", err)
+	}
+}
+
+func TestRecoveryDisabled(t *testing.T) {
+	cs := &cloudServer{jsonStatus: http.StatusInternalServerError, jsonBody: `{}`}
+	srv := httptest.NewServer(cs.handler())
+	defer srv.Close()
+	e, _ := NewBuilder().
+		SetResourceKey("k").
+		SetEndpoint(srv.URL + "/").
+		SetHTTPClient(srv.Client()).
+		SetRecoveryDuration(0). // disabled
+		Build()
+	p, _ := core.NewPipelineBuilder().AddFlowElement(e).Build()
+	defer p.Close()
+	// Many failures, but recovery never engages, so each still attempts a request.
+	for i := 0; i < 5; i++ {
+		_ = p.CreateFlowData().Process()
+	}
+	if cs.jsonRequests.Load() != 5 {
+		t.Fatalf("expected 5 attempts with recovery disabled, got %d", cs.jsonRequests.Load())
 	}
 }
 
