@@ -1,0 +1,91 @@
+// Package missingproperty constructs the errors returned when a Property that is
+// defined for an Engine is not present in the result set.
+//
+// The messages match those defined in the specification exactly so they are
+// consistent across language implementations.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/properties.md#missing-properties
+package missingproperty
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/51Degrees/pipeline-go/core"
+)
+
+// Reason identifies why a Property is missing.
+type Reason int
+
+const (
+	// ReasonUnknown is used when no specific reason can be determined.
+	ReasonUnknown Reason = iota
+	// ReasonDataFileTier: the Property is not available in the current data file
+	// (on-premise only).
+	ReasonDataFileTier
+	// ReasonExcludedInConfig: the Property was excluded when configuring the
+	// Engine (on-premise only).
+	ReasonExcludedInConfig
+	// ReasonProductNotInResourceKey: the Resource Key does not include access to
+	// any Properties under the product (cloud only).
+	ReasonProductNotInResourceKey
+	// ReasonPropertyNotInResourceKey: the Resource Key does not include access to
+	// this specific Property (cloud only).
+	ReasonPropertyNotInResourceKey
+)
+
+// ForDataFileTier builds the error for a Property absent from the current data
+// file. dataTiers lists the license/data file types in which it is available.
+func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
+	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
+		"This is because your license and/or data file does not include this Property. "+
+		"The Property is available with the %s license/data.",
+		property, element, strings.Join(dataTiers, ", "))
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+}
+
+// ForExcludedInConfig builds the error for a Property excluded by configuration.
+func ForExcludedInConfig(property, element string) *core.PropertyMissingError {
+	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
+		"This is because the Property has been excluded when configuring the Engine.",
+		property, element)
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+}
+
+// ForProductNotInResourceKey builds the error for a product not included with
+// the Resource Key.
+func ForProductNotInResourceKey(property, element, product string) *core.PropertyMissingError {
+	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
+		"This is because your Resource Key does not include access to any Properties under '%s'. "+
+		"For more details on Resource Keys, see our explainer: "+
+		"https://51degrees.com/documentation/_info__resource_keys.html",
+		property, element, product)
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+}
+
+// ForPropertyNotInResourceKey builds the error for a Property not included with
+// the Resource Key. includedProperties lists the Properties that are available
+// under the product for this key.
+func ForPropertyNotInResourceKey(property, element, product string, includedProperties []string) *core.PropertyMissingError {
+	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
+		"This is because your Resource Key does not include access to this Property. "+
+		"Properties that are included for this key under '%s' are %s. "+
+		"For more details on Resource Keys, see our explainer: "+
+		"https://51degrees.com/documentation/_info__resource_keys.html",
+		property, element, product, strings.Join(includedProperties, ", "))
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+}
+
+// Generic builds a non-specific missing-property error.
+func Generic(property, element string) *core.PropertyMissingError {
+	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'.", property, element)
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+}
+
+// Service determines why a Property is missing for a given Engine. On-premise
+// and cloud engines provide their own implementations; this interface lets an
+// Engine delegate the decision.
+type Service interface {
+	// Analyze returns a PropertyMissingError explaining why property is not
+	// available from the named element, or nil if it should be available.
+	Analyze(property, element string) *core.PropertyMissingError
+}

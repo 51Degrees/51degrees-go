@@ -1,0 +1,234 @@
+package dataupdate
+
+import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+)
+
+type fakeEngine struct {
+	mu        sync.Mutex
+	fromBytes [][]byte
+	fromFiles []string
+}
+
+func (f *fakeEngine) RefreshFromBytes(data []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	f.fromBytes = append(f.fromBytes, cp)
+	return nil
+}
+
+func (f *fakeEngine) RefreshFromFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fromFiles = append(f.fromFiles, string(data))
+	return nil
+}
+
+func (f *fakeEngine) bytesCount() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.fromBytes) }
+func (f *fakeEngine) lastFile() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.fromFiles) == 0 {
+		return ""
+	}
+	return f.fromFiles[len(f.fromFiles)-1]
+}
+
+func TestUpdateOnStartupMemory(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("DATA1"))
+	}))
+	defer srv.Close()
+
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	err := svc.Register(eng, "memEngine", Config{
+		Identifier:      "mem",
+		DataUpdateURL:   srv.URL,
+		UpdateOnStartup: true,
+	})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if eng.bytesCount() != 1 || string(eng.fromBytes[0]) != "DATA1" {
+		t.Fatalf("expected in-memory refresh with DATA1, got %v", eng.fromBytes)
+	}
+}
+
+func TestUpdateOnStartupFile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("DATA2"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.bin")
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	if err := svc.Register(eng, "fileEngine", Config{
+		Identifier:      "file",
+		DataFilePath:    path,
+		DataUpdateURL:   srv.URL,
+		UpdateOnStartup: true,
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	// File written atomically and engine refreshed from it.
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != "DATA2" {
+		t.Fatalf("data file not written: %q %v", content, err)
+	}
+	if eng.lastFile() != "DATA2" {
+		t.Fatalf("engine not refreshed from file: %q", eng.lastFile())
+	}
+}
+
+func TestIfModifiedSince304(t *testing.T) {
+	var sawIfModifiedSince bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-Modified-Since") != "" {
+			sawIfModifiedSince = true
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Write([]byte("NEW"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(path, []byte("OLD"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	if err := svc.Register(eng, "ims", Config{
+		Identifier:         "ims",
+		DataFilePath:       path,
+		DataUpdateURL:      srv.URL,
+		UseIfModifiedSince: true,
+		UpdateOnStartup:    true,
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if !sawIfModifiedSince {
+		t.Fatal("expected If-Modified-Since header to be sent")
+	}
+	// 304 => file unchanged, no refresh.
+	if content, _ := os.ReadFile(path); string(content) != "OLD" {
+		t.Fatalf("file should be unchanged on 304, got %q", content)
+	}
+	if len(eng.fromFiles) != 0 {
+		t.Fatal("engine should not refresh on 304")
+	}
+}
+
+func TestRateLimit429(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	_ = svc.Register(eng, "rl", Config{Identifier: "rl", DataUpdateURL: srv.URL})
+	err := svc.CheckForUpdate("rl")
+	var rle *RateLimitError
+	if !errors.As(err, &rle) {
+		t.Fatalf("expected RateLimitError, got %v", err)
+	}
+	if rle.RetryAfter != 120*time.Second {
+		t.Fatalf("expected 120s retry-after, got %v", rle.RetryAfter)
+	}
+}
+
+func TestProgrammaticFileUpdate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(path, []byte("V1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := &fakeEngine{}
+	svc := New(nil, nil)
+	defer svc.Close()
+	if err := svc.Register(eng, "prog", Config{Identifier: "prog", DataFilePath: path}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := svc.CheckForUpdate("prog"); err != nil {
+		t.Fatalf("check for update: %v", err)
+	}
+	if eng.lastFile() != "V1" {
+		t.Fatalf("expected refresh from file, got %q", eng.lastFile())
+	}
+}
+
+func TestFileWatcher(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(path, []byte("INITIAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := &fakeEngine{}
+	svc := New(nil, nil)
+	defer svc.Close()
+
+	updated := make(chan struct{}, 1)
+	if err := svc.Register(eng, "watch", Config{
+		Identifier:               "watch",
+		DataFilePath:             path,
+		FileSystemWatcherEnabled: true,
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	svc.OnUpdate("watch", func() {
+		select {
+		case updated <- struct{}{}:
+		default:
+		}
+	})
+
+	// Replace the file atomically (write a temp file then rename over the
+	// target), which is how data files are replaced in practice. The watcher
+	// should trigger a refresh that sees the complete new content.
+	tmp := filepath.Join(dir, "incoming.bin")
+	if err := os.WriteFile(tmp, []byte("UPDATED"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-updated:
+	case <-time.After(3 * time.Second):
+		t.Fatal("file watcher did not trigger refresh within timeout")
+	}
+	// Poll briefly: a single os.Rename can surface as more than one event, so
+	// allow the final refresh to settle on the complete content.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if eng.lastFile() == "UPDATED" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected refresh with UPDATED, got %q", eng.lastFile())
+}
