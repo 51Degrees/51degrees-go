@@ -1,0 +1,15 @@
+{
+  "elements": [
+    {
+      "builderName": "StarSign"
+    },
+    {
+      "builderName": "ShareUsage",
+      "buildParameters": {
+        "ShareUsageUrl": "https://devices-v4.51degrees.com/new.ashx",
+        "ShareAllEvidence": true,
+        "MinimumEntriesPerMessage": 1
+      }
+    }
+  ]
+}
