@@ -1,0 +1,99 @@
+package core
+
+import (
+	"encoding/binary"
+	"fmt"
+	"strings"
+)
+
+// This file implements the space-optimized value types described in
+// https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/value-types.md
+//
+// These are primarily used by the IP Intelligence Engine, but the decoding
+// logic is part of the core Pipeline so that it can be shared.
+
+const int16Max = 32767.0
+
+// AzimuthToDegrees converts a stored int16 Azimuth (compressed longitude) back
+// to a floating point longitude value in the range [-180, 180].
+func AzimuthToDegrees(stored int16) float64 {
+	return 180.0 * (float64(stored) / int16Max)
+}
+
+// DeclinationToDegrees converts a stored int16 Declination (compressed latitude)
+// back to a floating point latitude value in the range [-90, 90].
+func DeclinationToDegrees(stored int16) float64 {
+	return 90.0 * (float64(stored) / int16Max)
+}
+
+// WktString holds a Well-Known Text representation of a geometry. It is the
+// analogue of the WktString interface in the reference implementations, which
+// extends string.
+type WktString string
+
+// String returns the WKT string.
+func (w WktString) String() string { return string(w) }
+
+// WKBR geometry type identifiers (reduced Well-Known Binary).
+const (
+	wkbrTypePolygon = 3
+)
+
+// DecodeWKBRPolygon decodes a reduced Well-Known Binary (WKBR) polygon into a
+// WKT string. The reduced format halves the size of the count fields and stores
+// coordinates as int16 values using the Azimuth (x = longitude) and Declination
+// (y = latitude) compression.
+//
+// The structure decoded is:
+//
+//	struct WKBRPolygon { byte byteOrder; byte wkbType; uint16 numRings; WKBRLinearRing rings[numRings] }
+//	struct WKBRLinearRing { uint16 numPoints; WKBRPoint points[numPoints] }
+//	struct WKBRPoint { int16 x; int16 y }
+func DecodeWKBRPolygon(data []byte) (WktString, error) {
+	if len(data) < 4 {
+		return "", fmt.Errorf("wkbr polygon: need at least 4 bytes, got %d", len(data))
+	}
+	order, err := byteOrder(data[0])
+	if err != nil {
+		return "", err
+	}
+	if t := data[1]; t != wkbrTypePolygon {
+		return "", fmt.Errorf("wkbr polygon: unexpected geometry type %d", t)
+	}
+	pos := 2
+	numRings := int(order.Uint16(data[pos:]))
+	pos += 2
+
+	rings := make([]string, 0, numRings)
+	for r := 0; r < numRings; r++ {
+		if pos+2 > len(data) {
+			return "", fmt.Errorf("wkbr polygon: truncated reading ring %d count", r)
+		}
+		numPoints := int(order.Uint16(data[pos:]))
+		pos += 2
+		coords := make([]string, 0, numPoints)
+		for p := 0; p < numPoints; p++ {
+			if pos+4 > len(data) {
+				return "", fmt.Errorf("wkbr polygon: truncated reading ring %d point %d", r, p)
+			}
+			x := int16(order.Uint16(data[pos:]))
+			y := int16(order.Uint16(data[pos+2:]))
+			pos += 4
+			// x = longitude (Azimuth), y = latitude (Declination), per the spec.
+			coords = append(coords, fmt.Sprintf("%g %g", AzimuthToDegrees(x), DeclinationToDegrees(y)))
+		}
+		rings = append(rings, "("+strings.Join(coords, ", ")+")")
+	}
+	return WktString("POLYGON (" + strings.Join(rings, ", ") + ")"), nil
+}
+
+func byteOrder(b byte) (binary.ByteOrder, error) {
+	switch b {
+	case 0:
+		return binary.BigEndian, nil
+	case 1:
+		return binary.LittleEndian, nil
+	default:
+		return nil, fmt.Errorf("wkbr: invalid byte order marker %d", b)
+	}
+}
