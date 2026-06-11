@@ -1,6 +1,9 @@
 package core
 
-import "math"
+import (
+	"encoding/json"
+	"math"
+)
 
 // MaxRawWeighting is the value that the raw weightings of all values for a
 // single property sum to, representing a 1.0 likelihood.
@@ -33,4 +36,14 @@ func (w WeightedValue[T]) RawWeighting() uint16 { return w.rawWeighting }
 // by dividing the raw weighting by MaxRawWeighting.
 func (w WeightedValue[T]) Weighting() float64 {
 	return float64(w.rawWeighting) / float64(MaxRawWeighting)
+}
+
+// MarshalJSON serializes the weighted value in the form expected throughout the
+// API: {"RawWeighting": <uint16>, "Value": <value>}.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/weighted-values.md#serializing
+func (w WeightedValue[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		RawWeighting uint16 `json:"RawWeighting"`
+		Value        T      `json:"Value"`
+	}{RawWeighting: w.rawWeighting, Value: w.value})
 }

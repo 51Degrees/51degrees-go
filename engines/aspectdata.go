@@ -84,3 +84,22 @@ func (a AspectPropertyValue[T]) ValueOrDefault(def T) T {
 
 // NoValueMessage returns the message explaining why no value is set.
 func (a AspectPropertyValue[T]) NoValueMessage() string { return a.noValueMessage }
+
+// AsInterface returns the wrapped value as an untyped any (nil if no value is
+// set). It allows non-generic code, such as the JSON Builder, to inspect the
+// value without knowing T.
+func (a AspectPropertyValue[T]) AsInterface() any {
+	if a.hasValue {
+		return a.value
+	}
+	return nil
+}
+
+// PropertyValueAccessor is the non-generic view of an AspectPropertyValue,
+// allowing code that does not know the value type to test for "no value", read
+// the explanatory message, and obtain the boxed value.
+type PropertyValueAccessor interface {
+	HasValue() bool
+	NoValueMessage() string
+	AsInterface() any
+}

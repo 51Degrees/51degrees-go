@@ -57,6 +57,8 @@ type flowData struct {
 	mu      sync.Mutex
 	errs    []FlowError
 	started bool
+
+	goaMu sync.Mutex // serializes GetOrAdd so it is atomic under parallel processing
 }
 
 func newFlowData(p *pipeline) *flowData {
@@ -111,6 +113,10 @@ func (fd *flowData) Get(elementDataKey string) (ElementData, error) {
 }
 
 func (fd *flowData) GetOrAdd(key string, ctor func(FlowData) ElementData) ElementData {
+	// Serialize so the check-then-add is atomic; this matters when elements run
+	// in parallel (e.g. two Translation Engines sharing one Element Data).
+	fd.goaMu.Lock()
+	defer fd.goaMu.Unlock()
 	if raw, ok := fd.data.GetString(key); ok {
 		return raw.(ElementData)
 	}
