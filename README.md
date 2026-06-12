@@ -1,90 +1,108 @@
-# pipeline-go
+# 51Degrees Pipeline API
 
-A Go implementation of the [51Degrees Pipeline API](https://github.com/51Degrees/specifications/blob/main/pipeline-specification/README.md).
+![51Degrees](https://raw.githubusercontent.com/51Degrees/common-ci/main/images/logo/360x67.png "Data rewards the curious") **Pipeline API** for Go
 
-The Pipeline API is a framework within which input data (**Evidence**) is
-transformed and enriched by a sequence of **Flow Elements** to produce output
-data (**Element Data**) that an application can consume. This repository
-implements the language-agnostic Pipeline specification in idiomatic Go.
+[Developer Documentation](https://51degrees.com/pipeline-go/index.html?utm_source=github&utm_medium=repository&utm_content=documentation&utm_campaign=go-open-source "developer documentation")
+| [![Go Reference](https://pkg.go.dev/badge/github.com/51Degrees/pipeline-go.svg)](https://pkg.go.dev/github.com/51Degrees/pipeline-go)
 
-> This module contains the generic Pipeline framework and the 51Degrees-generic
-> elements only. Concrete services such as Device Detection and IP Intelligence
-> are intended to live in their own repositories that depend on this one, as in
-> the [Java](https://github.com/51Degrees/pipeline-java) and
-> [.NET](https://github.com/51Degrees/pipeline-dotnet) reference implementations.
+## Introduction
 
-## Status
+This repository contains the Go implementation of the 51Degrees Pipeline API.
+Individual engines (for example, device detection) are in separate repositories.
 
-Implements the full Pipeline specification: core, the Aspect Engine features
-layer, cloud engines, the generic Flow Elements, and `net/http` web integration.
-Standard library only, plus [`fsnotify`](https://github.com/fsnotify/fsnotify)
-for data-file watching.
+The [specification](https://github.com/51Degrees/specifications/blob/main/pipeline-specification/README.md)
+is also available on GitHub and is recommended reading if you wish to understand
+the concepts and design of this API.
+
+## Dependencies
+
+Go 1.22 or later is required.
+
+The implementation favors the standard library: `log/slog` for logging,
+`encoding/json` for configuration, and `net/http` for HTTP and the web
+integration. The only third-party dependency is
+[`fsnotify`](https://github.com/fsnotify/fsnotify), used to watch data files for
+changes.
+
+The [tested versions](https://51degrees.com/documentation/_info__tested_versions.html)
+page shows the versions that are currently tested against. The software may run
+fine against other versions, but additional caution should be applied.
+
+## Packages
+
+- **core** - The core Pipeline classes such as Pipeline, FlowData, FlowElement
+  and Evidence, along with the Pipeline builder and configuration support.
+  - *core/typedmap* - The type-safe container used for typed access to results.
+- **engines** - Functionality for Aspect Engines, a specialized Flow Element
+  with additional features such as caching and data updates.
+  - *engines/cache* - The sharded LRU result cache.
+  - *engines/dataupdate* - The Data Update Service.
+  - *engines/missingproperty* - Missing Property reporting.
+- **cloud** - Functionality for making requests to the 51Degrees cloud.
+  - *cloud/requestengine* - The Cloud Request Engine, which makes requests to the
+    51Degrees cloud service.
+  - *cloud/aspectengine* - The base for Cloud Aspect Engines, which deserialize
+    the cloud response into typed data.
+- **elements** - Common Flow Elements used by multiple other packages.
+  - *elements/sequence* - Tracks the session id and callback sequence.
+  - *elements/jsonbuilder* - Serializes Flow Data into JSON.
+  - *elements/javascriptbuilder* - Packages the JSON into client-side JavaScript.
+  - *elements/setheaders* - Gathers HTTP response headers to request more Evidence.
+  - *elements/usagesharing* - Shares anonymized usage data with 51Degrees.
+  - *elements/translation* - Translates values using YAML translation sources.
+- **web** - The `net/http` web integration (middleware and intercepted endpoints).
 
 ## Installation
 
-```sh
+You can either clone this repository and reference the packages locally or
+reference the module directly:
+
+```
 go get github.com/51Degrees/pipeline-go
 ```
 
-Requires Go 1.22 or later.
-
-## Quick start
+Then import the packages you need, for example:
 
 ```go
-package main
-
 import (
-    "fmt"
-
     "github.com/51Degrees/pipeline-go/core"
+    "github.com/51Degrees/pipeline-go/web"
 )
-
-func main() {
-    pipeline, _ := core.NewPipelineBuilder().
-        AddFlowElement(NewMyElement()).
-        Build()
-    defer pipeline.Close()
-
-    fd := pipeline.CreateFlowData()
-    fd.AddEvidence("header.user-agent", "...")
-    if err := fd.Process(); err != nil {
-        // handle error (unless SuppressProcessExceptions is enabled)
-    }
-
-    data, _ := fd.Get("my-element")
-    value, _ := data.Get("my-property")
-    fmt.Println(value)
-}
 ```
 
-See [`examples/`](examples) for runnable programs covering every required
-example: a simple element, an on-premise engine with an external data file, an
-element fed by client-side JavaScript, a cloud engine, usage sharing configured
-from a file, and a cached engine. Run any of them with, for example:
+## Examples
 
-```sh
+There are several examples available that demonstrate how to make use of the
+Pipeline API in isolation. These are described in the table below.
+If you want examples that demonstrate how to use 51Degrees products such as
+device detection, then these are available in the corresponding repository and
+on our [website](https://51degrees.com/documentation/_examples__device_detection__index.html).
+
+| Example                                                  | Description |
+|----------------------------------------------------------|-------------|
+| [1. Simple Flow Element](examples/1_simple_element)       | Shows how to create a custom Flow Element that returns a star sign based on a supplied date of birth. |
+| [2. On-Premise Engine](examples/2_onpremise_engine)       | Shows how to modify the simple element to make use of the 'engine' functionality and use a custom data file to map dates to star signs rather than relying on hard-coded data. |
+| [3. Client-side evidence](examples/3_clientside_evidence) | Shows how to modify the simple element to request the date of birth from the user using client-side JavaScript. |
+| [4. Cloud Engine](examples/4_cloud_engine)                | Shows how to modify the simple element to perform the star sign lookup via a cloud service rather than locally. |
+| [5. Usage Sharing](examples/5_usage_sharing)              | Shows how to share usage with 51Degrees, configured from an options file. This helps us to keep our products up to date and accurate. |
+| [6. Result Caching](examples/6_caching)                   | Shows how the result caching feature works. |
+
+Each example is a runnable program. For example:
+
+```
 go run ./examples/1_simple_element
 ```
 
-## Package layout
+## Tests
 
-| Package | Responsibility |
-|---------|----------------|
-| `core` | Pipeline, FlowData, FlowElement, Evidence, builders, configuration, errors, value types |
-| `core/typedmap` | Generic type-safe key/value container underpinning typed access |
-| `engines` | Aspect Engine base, AspectPropertyValue (null support), caching and lazy-loading integration |
-| `engines/cache` | Sharded LRU cache and deterministic cache-key generation |
-| `engines/dataupdate` | Data Update Service (HTTP polling, file watching, atomic file replace) |
-| `engines/missingproperty` | Missing-property error messages |
-| `cloud/requestengine` | Cloud Request Engine (single HTTP call per Flow Data) |
-| `cloud/aspectengine` | Cloud Aspect Engine base (JSON → typed data) |
-| `elements/sequence` | Sequence Element (session id and sequence counter) |
-| `elements/jsonbuilder` | JSON Builder Element |
-| `elements/javascriptbuilder` | JavaScript Builder Element (Mustache template) |
-| `elements/setheaders` | Set Headers Element |
-| `elements/usagesharing` | Usage Sharing Element |
-| `elements/translation` | Translation Engine |
-| `web` | `net/http` web integration (middleware, intercepted endpoints) |
+The tests for each package live alongside the code and can be run with:
+
+```
+go test ./...
+```
+
+The race detector (`go test -race`) requires a working cgo toolchain, which may
+not be available on all platforms.
 
 ## Design notes
 
@@ -94,57 +112,19 @@ while the internals are idiomatic Go. In particular:
 
 - **Typed access via package-level generics.** Go interfaces cannot declare
   type-parameterized methods, so the strongly-typed accessors are functions
-  (`core.Get[T](fd)`, `core.GetFromElement[T](fd, e)`, `typedmap.Get[T]`) layered
-  over a non-generic interface, rather than generic methods.
-- **Composition over inheritance.** The deep `FlowElement → AspectEngine →
-  CloudAspectEngine` hierarchy of the reference implementations is flattened into
-  small interfaces plus embeddable `Base*` structs. Caching and lazy loading are
-  applied by an engine-supplied compute function passed to
+  (`core.Get[T]`, `core.GetFromElement[T]`, `typedmap.Get[T]`) layered over a
+  non-generic interface, rather than generic methods.
+- **Composition over inheritance.** The deep `FlowElement` → `AspectEngine` →
+  `CloudAspectEngine` hierarchy of the reference implementations is flattened
+  into small interfaces plus embeddable `Base*` structs. Caching and lazy
+  loading are applied by an engine-supplied compute function passed to
   `BaseAspectEngine.Execute`, following the strategy pattern recommended in the
   specification's
   [reference-implementation notes](https://github.com/51Degrees/specifications/blob/main/pipeline-specification/reference-implementation-notes.md).
-- **Standard library first.** Logging uses `log/slog`, configuration uses
-  `encoding/json`, HTTP uses `net/http`. The only third-party dependency is
-  `fsnotify` for file-system watching, which the standard library cannot provide.
 
-## Configuration from a file
+## Project documentation
 
-Pipelines can be built from a JSON configuration file via a builder registry,
-keeping configuration consistent with the other language implementations:
+For complete documentation on the Pipeline API and associated engines, see the
+[51Degrees documentation site][Documentation].
 
-```go
-opts, _ := core.LoadPipelineOptions("pipeline.json")
-registry := core.NewBuilderRegistry()
-registry.Register("ShareUsage", usagesharing.Factory)
-// ... register other element factories ...
-pipeline, _ := registry.BuildFromConfiguration(opts, nil)
-```
-
-## Web integration
-
-```go
-pipeline, _ := web.AssemblePipeline(web.PipelineConfig{}, myElements...)
-mw := web.NewMiddleware(pipeline)
-http.ListenAndServe(":8080", mw.Handler(myAppHandler))
-```
-
-`AssemblePipeline` adds the Sequence, Set Headers, JSON Builder and JavaScript
-Builder elements in the order required by the specification (each can be
-disabled). The middleware populates Evidence from the request, processes it,
-applies response headers requested by the Set Headers Element, exposes the
-result via `web.FromContext`, and serves the `/51Degrees.core.js` and
-`/51dpipeline/json` endpoints with appropriate caching headers.
-
-## Testing
-
-```sh
-go test ./...
-```
-
-The race detector (`go test -race`) requires a working cgo toolchain, which may
-not be available on all platforms.
-
-## License
-
-See the reference implementations for licensing; this code is provided under the
-same terms as the 51Degrees Pipeline API.
+[Documentation]: https://51degrees.com/documentation/index.html
