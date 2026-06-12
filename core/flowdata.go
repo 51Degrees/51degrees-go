@@ -115,6 +115,11 @@ func (fd *flowData) AddEvidenceMap(values map[string]any) FlowData {
 func (fd *flowData) Evidence() Evidence { return fd.evidence }
 
 func (fd *flowData) Process() error {
+	// Reject a closed Pipeline before marking the Flow Data started, so a
+	// transient closed-pipeline error does not permanently poison it.
+	if fd.pipeline.isClosed() {
+		return ErrPipelineClosed
+	}
 	if !fd.markStarted() {
 		return ErrAlreadyProcessed
 	}

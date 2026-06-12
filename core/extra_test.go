@@ -143,6 +143,22 @@ func TestParallelCollectsChildErrors(t *testing.T) {
 	}
 }
 
+func TestAddParallelImpliesConcurrent(t *testing.T) {
+	// AddParallel must make the Pipeline concurrent automatically (deriving it
+	// from the element), even without an explicit SetConcurrent(true), so that
+	// parallel writes use thread-safe Flow Data.
+	a := &propElement{BaseElement: NewBaseElement("a", NewWhitelistFilter(), nil)}
+	b := &secondElement{NewBaseElement("second", NewWhitelistFilter(), nil)}
+	p, err := NewPipelineBuilder().AddParallel(a, b).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	if !p.IsConcurrent() {
+		t.Fatal("a Pipeline with AddParallel must be concurrent")
+	}
+}
+
 func TestMultiPipelineMembership(t *testing.T) {
 	el := &propElement{BaseElement: NewBaseElement("device", NewWhitelistFilter(), nil)}
 	p1, _ := NewPipelineBuilder().AddFlowElement(el).Build()

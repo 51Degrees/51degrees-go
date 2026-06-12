@@ -73,6 +73,13 @@ type pipeline struct {
 
 func (p *pipeline) CreateFlowData() FlowData { return newFlowData(p) }
 
+// isClosed reports whether the Pipeline has been closed.
+func (p *pipeline) isClosed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.closed
+}
+
 func (p *pipeline) FlowElements() []FlowElement {
 	out := make([]FlowElement, len(p.elements))
 	copy(out, p.elements)

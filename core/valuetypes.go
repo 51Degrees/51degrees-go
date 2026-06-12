@@ -86,14 +86,17 @@ func DecodeWKBRPolygon(data []byte) (WktString, error) {
 	numRings := int(order.Uint16(data[pos:]))
 	pos += 2
 
-	rings := make([]string, 0, numRings)
+	// Grow lazily rather than pre-allocating from the untrusted count fields, so
+	// a malformed buffer cannot trigger a huge allocation before the bounds
+	// checks below reject it.
+	var rings []string
 	for r := 0; r < numRings; r++ {
 		if pos+2 > len(data) {
 			return "", fmt.Errorf("wkbr polygon: truncated reading ring %d count", r)
 		}
 		numPoints := int(order.Uint16(data[pos:]))
 		pos += 2
-		coords := make([]string, 0, numPoints)
+		var coords []string
 		for p := 0; p < numPoints; p++ {
 			if pos+4 > len(data) {
 				return "", fmt.Errorf("wkbr polygon: truncated reading ring %d point %d", r, p)

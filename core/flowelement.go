@@ -48,6 +48,11 @@ type FlowElement interface {
 	// allows the element to track the Pipelines it belongs to (multi-pipeline
 	// support) and to fail if it does not support being added more than once.
 	OnPipelineAdded(p Pipeline) error
+	// IsConcurrent reports whether the element processes Flow Data on multiple
+	// goroutines (for example ParallelElements). A Pipeline containing any such
+	// element uses thread-safe Flow Data storage. This mirrors the .NET
+	// reference, where IsConcurrent propagates up from the elements.
+	IsConcurrent() bool
 	// Close releases any resources held by the element.
 	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/resource-cleanup.md
 	Close() error
@@ -88,6 +93,10 @@ func (b *BaseElement) SetEvidenceKeyFilter(f EvidenceKeyFilter) { b.filter = f }
 
 // DataKey returns the element's data key.
 func (b *BaseElement) DataKey() string { return b.dataKey }
+
+// IsConcurrent reports whether the element processes on multiple goroutines.
+// The default is false; ParallelElements overrides it.
+func (b *BaseElement) IsConcurrent() bool { return false }
 
 // EvidenceKeyFilter returns the element's evidence filter.
 func (b *BaseElement) EvidenceKeyFilter() EvidenceKeyFilter { return b.filter }

@@ -57,6 +57,10 @@ func NewParallelElements(logger *slog.Logger, children ...FlowElement) *Parallel
 	return &ParallelElements{BaseElement: base, children: children}
 }
 
+// IsConcurrent reports that this element processes its children on multiple
+// goroutines, so a Pipeline containing it must use thread-safe Flow Data.
+func (pe *ParallelElements) IsConcurrent() bool { return true }
+
 // Children returns the contained elements.
 func (pe *ParallelElements) Children() []FlowElement {
 	out := make([]FlowElement, len(pe.children))
