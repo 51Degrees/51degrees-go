@@ -152,7 +152,7 @@ func (e *Element) Process(fd core.FlowData) error {
 	sessionID, seq := e.sessionInfo(fd)
 
 	protocol := firstNonEmpty(e.protocol, evidenceString(fd, EvidenceProtocol), "https")
-	host := firstNonEmpty(e.host, evidenceString(fd, EvidenceHost))
+	host := strings.TrimRight(firstNonEmpty(e.host, evidenceString(fd, EvidenceHost)), "/")
 	objectName := firstNonEmpty(evidenceString(fd, EvidenceObjectName), e.objectName, DefaultObjectName)
 
 	url := ""
@@ -171,7 +171,7 @@ func (e *Element) Process(fd core.FlowData) error {
 		"_enableCookies":        e.cookiesEnabled(fd),
 		"_hasDelayedProperties": strings.Contains(jsonStr, "delayexecution"),
 		"_supportsPromises":     e.supportsPromises(fd),
-		"_supportsFetch":        true,
+		"_supportsFetch":        e.supportsFetch(fd),
 	}
 
 	rendered := e.tmpl.render(ctx)
@@ -280,6 +280,23 @@ func (e *Element) supportsPromises(fd core.FlowData) bool {
 		}
 	}
 	return false
+}
+
+// supportsFetch reports whether the client supports the Fetch API. If a "fetch"
+// Property is present (e.g. from Device Detection) it is honored; otherwise it
+// defaults to true. When false, the template emits the XMLHttpRequest fallback.
+func (e *Element) supportsFetch(fd core.FlowData) bool {
+	for _, data := range fd.ElementDataAsMap() {
+		if v, err := data.Get("fetch"); err == nil {
+			switch t := v.(type) {
+			case bool:
+				return t
+			case string:
+				return !strings.EqualFold(t, "false") && !strings.EqualFold(t, "none")
+			}
+		}
+	}
+	return true
 }
 
 func evidenceString(fd core.FlowData, key string) string {

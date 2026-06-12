@@ -32,13 +32,12 @@ import (
 )
 
 func TestMustacheVariables(t *testing.T) {
+	// All variable forms render raw (no HTML escaping), matching the .NET
+	// SkipHtmlEncoding behavior, because the template produces JavaScript.
 	tmpl := parseMustache(`Hello {{name}}, raw {{&raw}}, triple {{{trip}}}`)
 	out := tmpl.render(map[string]any{"name": "<b>", "raw": "<b>", "trip": "<i>"})
-	if !strings.Contains(out, "Hello &lt;b&gt;") {
-		t.Fatalf("escaped variable not applied: %q", out)
-	}
-	if !strings.Contains(out, "raw <b>") || !strings.Contains(out, "triple <i>") {
-		t.Fatalf("unescaped variables wrong: %q", out)
+	if out != "Hello <b>, raw <b>, triple <i>" {
+		t.Fatalf("variables should render raw: %q", out)
 	}
 }
 
@@ -118,6 +117,30 @@ func grepLine(s, needle string) string {
 		}
 	}
 	return ""
+}
+
+func TestCallbackURLNoDoubleSlash(t *testing.T) {
+	p, err := core.NewPipelineBuilder().
+		AddFlowElement(sequence.New(nil)).
+		AddFlowElement(jsonbuilder.New(nil, nil)).
+		AddFlowElement(NewBuilder().SetEndpoint("/51dpipeline/json").Build()).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence("header.host", "example.com/") // trailing slash
+	fd.AddEvidence("header.protocol", "https")
+	_ = fd.Process()
+	data, _ := fd.Get(DataKey)
+	js := data.(*Data).JavaScript()
+	if !strings.Contains(js, "https://example.com/51dpipeline/json") {
+		t.Fatalf("expected single-slash callback URL")
+	}
+	if strings.Contains(js, "example.com//51dpipeline") {
+		t.Fatalf("double slash in callback URL")
+	}
 }
 
 func TestLightMinify(t *testing.T) {

@@ -115,6 +115,42 @@ func TestTranslateTwoLetterFallback(t *testing.T) {
 	}
 }
 
+func TestAcceptLanguageSecondCandidateWins(t *testing.T) {
+	// The first Accept-Language candidate has no table; the engine must fall
+	// through to the next candidate in q-order rather than giving up.
+	p := buildPipeline(t, frEngine(t, Original, ""))
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence(EvidenceAcceptLanguage, "de-DE;q=0.9, fr-FR;q=0.8")
+	_ = fd.Process()
+	data, _ := fd.Get(DataKey)
+	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "Angleterre" {
+		t.Fatalf("expected fallback to fr_FR translation, got %q", v)
+	}
+}
+
+func TestMissingSourcePropertyStillWritesDestination(t *testing.T) {
+	// A translation whose source property is absent must still produce the
+	// destination Property (present, empty), not omit it.
+	e, err := NewBuilder().
+		SetSourceElementDataKey("ip").
+		AddSourceContent("countries.en_GB.yml", "England: England").
+		AddTranslation("DoesNotExist", "Translated").
+		SetFixedLanguage("en_GB").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p := buildPipeline(t, e)
+	defer p.Close()
+	fd := p.CreateFlowData()
+	_ = fd.Process()
+	data, _ := fd.Get(DataKey)
+	if _, err := data.Get("Translated"); err != nil {
+		t.Fatalf("destination property should be present even when source is missing: %v", err)
+	}
+}
+
 func TestMissingBehaviorOriginal(t *testing.T) {
 	// No matching language => no table => original preserved.
 	p := buildPipeline(t, frEngine(t, Original, "de_DE"))

@@ -100,6 +100,7 @@ func TestExtractHeaderName(t *testing.T) {
 		"SetHeaderBrowserAccept-CH":  "Accept-CH",
 		"SetHeaderHardwareAccept-CH": "Accept-CH",
 		"SetHeaderBrowserUA":         "UA",
+		"SetHeaderTest1Header":       "Header", // digit in identifier: scan to next upper-case
 	}
 	for in, want := range cases {
 		if got := extractHeaderName(in); got != want {

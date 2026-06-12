@@ -144,15 +144,17 @@ func extractHeaderName(propName string) string {
 	if rest == "" {
 		return ""
 	}
-	// Skip the identifier: its first character then any lower-case characters.
+	// Skip the identifier (its first character plus anything up to the next
+	// upper-case letter, which begins the header name), matching the .NET
+	// reference's scan for the next upper-case character.
 	i := 1
-	for i < len(rest) && isLower(rest[i]) {
+	for i < len(rest) && !isUpper(rest[i]) {
 		i++
 	}
 	return rest[i:]
 }
 
-func isLower(b byte) bool { return b >= 'a' && b <= 'z' }
+func isUpper(b byte) bool { return b >= 'A' && b <= 'Z' }
 
 // stringValue extracts a string from a Property value that may be a plain string
 // or an AspectPropertyValue[string].

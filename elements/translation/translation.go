@@ -127,24 +127,36 @@ func GetAs[T any](d *Data, name string) (T, error) {
 
 // Process translates the configured Properties for the request's target language.
 func (e *Engine) Process(fd core.FlowData) error {
-	source, err := fd.Get(e.sourceKey)
-	if err != nil {
-		// No source data: nothing to translate.
-		return nil
-	}
-	lang := e.resolveLanguage(fd)
-	table := e.tableFor(lang)
+	source, sourceErr := fd.Get(e.sourceKey)
+	table := e.tableFor(e.resolveLanguageCandidates(fd))
 
 	out := fd.GetOrAdd(DataKey, func(core.FlowData) core.ElementData { return newData() }).(*Data)
 
 	for _, m := range e.translations {
+		// Always write the destination Property (matching the .NET reference) so a
+		// missing source value is surfaced as a present-but-empty value rather
+		// than an absent Property.
+		if sourceErr != nil {
+			out.Set(m.destination, e.missingSource(fd, m.source))
+			continue
+		}
 		raw, err := source.Get(m.source)
 		if err != nil {
+			out.Set(m.destination, e.missingSource(fd, m.source))
 			continue
 		}
 		out.Set(m.destination, e.translateValue(fd, table, raw))
 	}
 	return nil
+}
+
+// missingSource produces the destination value when a source value is absent,
+// according to the configured MissingBehavior.
+func (e *Engine) missingSource(fd core.FlowData, propName string) string {
+	if e.missingBehavior == FlowError {
+		fd.AddError(fmt.Errorf("no source value for translation property '%s'", propName), e)
+	}
+	return ""
 }
 
 // translateValue translates a source value of any supported shape.
@@ -193,29 +205,42 @@ func (e *Engine) translateString(fd core.FlowData, table map[string]string, valu
 	}
 }
 
-// resolveLanguage determines the target language: a fixed language if set,
-// otherwise the highest-preference language from the evidence keys in order.
-func (e *Engine) resolveLanguage(fd core.FlowData) string {
+// resolveLanguageCandidates returns the target-language candidates in order of
+// preference: a fixed language if set, otherwise query.translation followed by
+// every Accept-Language entry in descending q-order. The first candidate with a
+// matching translation table is used.
+func (e *Engine) resolveLanguageCandidates(fd core.FlowData) []string {
 	if e.fixedLanguage != "" {
-		return normalizeLang(e.fixedLanguage)
+		return []string{normalizeLang(e.fixedLanguage)}
 	}
+	var out []string
 	if v, ok := fd.Evidence().Get(EvidenceTranslation); ok {
 		if s := fmt.Sprintf("%v", v); s != "" {
-			return normalizeLang(s)
+			out = append(out, normalizeLang(s))
 		}
 	}
 	if v, ok := fd.Evidence().Get(EvidenceAcceptLanguage); ok {
-		langs := parseAcceptLanguage(fmt.Sprintf("%v", v))
-		if len(langs) > 0 {
-			return normalizeLang(langs[0])
+		for _, l := range parseAcceptLanguage(fmt.Sprintf("%v", v)) {
+			out = append(out, normalizeLang(l))
 		}
 	}
-	return ""
+	return out
 }
 
-// tableFor returns the translation table for a language, falling back to a
-// two-letter language match if there is no exact locale match.
-func (e *Engine) tableFor(lang string) map[string]string {
+// tableFor returns the translation table for the first of the given language
+// candidates that resolves to one.
+func (e *Engine) tableFor(candidates []string) map[string]string {
+	for _, lang := range candidates {
+		if t := e.tableForOne(lang); t != nil {
+			return t
+		}
+	}
+	return nil
+}
+
+// tableForOne returns the translation table for a single language, falling back
+// to a two-letter language match if there is no exact locale match.
+func (e *Engine) tableForOne(lang string) map[string]string {
 	if lang == "" {
 		return nil
 	}

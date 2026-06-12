@@ -24,7 +24,6 @@ package javascriptbuilder
 
 import (
 	"fmt"
-	"html"
 	"strings"
 )
 
@@ -53,12 +52,10 @@ func (v varNode) render(ctx map[string]any, b *strings.Builder) {
 	if !ok || val == nil {
 		return
 	}
-	s := stringify(val)
-	if v.unescape {
-		b.WriteString(s)
-	} else {
-		b.WriteString(html.EscapeString(s))
-	}
+	// Values are never HTML-escaped: the template produces JavaScript, not HTML,
+	// and the .NET reference renders it with SkipHtmlEncoding. All variable forms
+	// ({{x}}, {{&x}}, {{{x}}}) therefore emit raw text.
+	b.WriteString(stringify(val))
 }
 
 type sectionNode struct {
