@@ -114,7 +114,6 @@ type CloudRequestEngine struct {
 	metaLoaded       bool
 	publicProperties map[string]ProductMeta
 	evidenceKeys     []string
-	evidenceKeySet   map[string]struct{}
 
 	// Recovery mode state.
 	failuresToEnterRecovery int
@@ -140,14 +139,19 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 
 // Process makes the cloud request and stores the raw JSON response.
 func (e *CloudRequestEngine) Process(fd core.FlowData) error {
-	// Lazily initialize metadata within Process scope so that failures honor
-	// SuppressProcessExceptions rather than crashing at construction time.
-	if err := e.ensureMetadata(); err != nil {
-		return err
-	}
-
+	// While recovering, bypass all outbound calls (including the lazy metadata
+	// fetch) and signal temporary unavailability, so a struggling server is not
+	// hammered and consumer requests do not stall.
 	if until, inRecovery := e.inRecovery(); inRecovery {
 		return &TemporarilyUnavailableError{RecoveryUntil: until}
+	}
+
+	// Lazily initialize metadata within Process scope so that failures honor
+	// SuppressProcessExceptions rather than crashing at construction time. A
+	// metadata-fetch failure counts toward recovery, just like a data request.
+	if err := e.ensureMetadata(); err != nil {
+		e.recordFailure()
+		return err
 	}
 
 	body, err := e.makeDataRequest(fd)
@@ -200,9 +204,11 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	return form
 }
 
-// resolveEvidence removes prefixes and resolves prefix conflicts by precedence.
-// If the evidence-keys metadata is available it is used to limit which keys are
-// sent; otherwise all evidence is forwarded.
+// resolveEvidence removes prefixes from all Evidence and resolves conflicts
+// between prefixes using the defined precedence. Like the .NET reference, every
+// Evidence value is forwarded (prefix-stripped) and the server ignores any it
+// does not need; the evidence-keys metadata is used to advertise accepted keys,
+// not to filter the request body.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
 	type choice struct {
 		prefix string
@@ -210,9 +216,6 @@ func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string
 	}
 	best := map[string]choice{}
 	for key, raw := range fd.Evidence().AsMap() {
-		if !e.evidenceAccepted(key) {
-			continue
-		}
 		prefix, field := core.SplitEvidenceKey(key)
 		val := valueToString(raw)
 		if cur, ok := best[field]; ok {
@@ -228,16 +231,6 @@ func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string
 		out[field] = c.value
 	}
 	return out
-}
-
-func (e *CloudRequestEngine) evidenceAccepted(key string) bool {
-	e.metaMu.Lock()
-	defer e.metaMu.Unlock()
-	if e.evidenceKeySet == nil {
-		return true // metadata not loaded: forward everything
-	}
-	_, ok := e.evidenceKeySet[strings.ToLower(key)]
-	return ok
 }
 
 func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
@@ -272,12 +265,19 @@ func (e *CloudRequestEngine) logWarnings(raw []byte) {
 // ensureMetadata fetches the accessible-properties and evidence-keys data once,
 // caching it on success. On failure it leaves the engine uninitialized so a
 // later call can retry, as required by the spec.
+//
+// The lock is NOT held across the HTTP calls: concurrent first-use callers may
+// each attempt a fetch (publication-only, as in the .NET Lazy<T> design) rather
+// than serializing behind one mutex while the network is slow — which is the
+// stall the recovery-mode design exists to avoid.
 func (e *CloudRequestEngine) ensureMetadata() error {
 	e.metaMu.Lock()
-	defer e.metaMu.Unlock()
-	if e.metaLoaded {
+	loaded := e.metaLoaded
+	e.metaMu.Unlock()
+	if loaded {
 		return nil
 	}
+
 	props, err := e.fetchAccessibleProperties()
 	if err != nil {
 		return err
@@ -286,13 +286,14 @@ func (e *CloudRequestEngine) ensureMetadata() error {
 	if err != nil {
 		return err
 	}
-	e.publicProperties = props
-	e.evidenceKeys = keys
-	e.evidenceKeySet = make(map[string]struct{}, len(keys))
-	for _, k := range keys {
-		e.evidenceKeySet[strings.ToLower(k)] = struct{}{}
+
+	e.metaMu.Lock()
+	if !e.metaLoaded {
+		e.publicProperties = props
+		e.evidenceKeys = keys
+		e.metaLoaded = true
 	}
-	e.metaLoaded = true
+	e.metaMu.Unlock()
 	return nil
 }
 

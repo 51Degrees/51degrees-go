@@ -94,6 +94,7 @@ func TestCloudRequestSuccess(t *testing.T) {
 	fd := p.CreateFlowData()
 	fd.AddEvidence("query.user-agent", "ua-query")
 	fd.AddEvidence("header.user-agent", "ua-header")
+	fd.AddEvidence("query.extra", "extra-value") // not in evidencekeys
 	if err := fd.Process(); err != nil {
 		t.Fatalf("process: %v", err)
 	}
@@ -117,6 +118,11 @@ func TestCloudRequestSuccess(t *testing.T) {
 	}
 	if cs.lastForm.Get("resource") != "test-key" {
 		t.Fatalf("resource key not sent, got %q", cs.lastForm.Get("resource"))
+	}
+	// All evidence is forwarded (prefix-stripped); the server ignores any it does
+	// not need, matching the .NET reference — even keys not in evidencekeys.
+	if cs.lastForm.Get("extra") != "extra-value" {
+		t.Fatalf("evidence not in evidencekeys should still be sent, got %q", cs.lastForm.Get("extra"))
 	}
 }
 
