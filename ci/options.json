@@ -1,0 +1,23 @@
+[
+    {
+        "Image": "windows-latest",
+        "Name": "Windows",
+        "Language": "go",
+        "LanguageVersion": "1.22",
+        "RunPerformance": false
+    },
+    {
+        "Image": "ubuntu-latest",
+        "Name": "Linux",
+        "Language": "go",
+        "LanguageVersion": "1.22",
+        "RunPerformance": false
+    },
+    {
+        "Image": "macos-latest",
+        "Name": "MacOS",
+        "Language": "go",
+        "LanguageVersion": "1.22",
+        "RunPerformance": false
+    }
+]

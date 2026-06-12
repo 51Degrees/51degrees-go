@@ -5,6 +5,7 @@
 # Test/coverage output
 *.out
 coverage.*
+test-results/
 
 # Go workspace
 go.work
