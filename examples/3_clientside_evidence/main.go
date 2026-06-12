@@ -25,10 +25,13 @@
 // When no date of birth is available, the element returns a JavaScript Property
 // containing a snippet that the client executes to collect it (here, it reads a
 // browser cookie). The generated client-side script (from the JavaScript
-// Builder) posts the value back, and a subsequent request can populate the star
-// sign. This example demonstrates the flow headlessly: it processes once without
-// the date, prints the generated JavaScript and JSON, then processes again with
-// the value supplied as if returned by the client.
+// Builder) posts the value back to the JSON endpoint, and that request can then
+// populate the star sign.
+//
+// This example stands up the real web.Middleware over an httptest server and
+// exercises the actual round-trip: it fetches /51Degrees.core.js (printing the
+// generated script and its callback URL), then POSTs to /51dpipeline/json as the
+// browser would once it has gathered the date of birth.
 //
 // Run with: go run ./examples/3_clientside_evidence
 //
@@ -37,10 +40,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 
 	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
 	"github.com/51Degrees/pipeline-go/engines"
 	"github.com/51Degrees/pipeline-go/examples/starsign"
 	"github.com/51Degrees/pipeline-go/web"
@@ -97,23 +104,53 @@ func main() {
 	}
 	defer pipeline.Close()
 
-	fmt.Println("=== First request: no date of birth yet ===")
-	fd := pipeline.CreateFlowData()
-	fd.AddEvidence("header.host", "example.com")
-	if err := fd.Process(); err != nil {
-		log.Fatal(err)
-	}
-	jsonData, _ := fd.Get(jsonbuilder.DataKey)
-	fmt.Println("JSON delivered to the client:")
-	fmt.Println(jsonData.(*jsonbuilder.Data).JSON())
+	// Mount the web integration middleware on a real HTTP server. The host
+	// application handler can read results from the Flow Data via web.FromContext.
+	mw := web.NewMiddleware(pipeline)
+	app := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mw.Handler(app))
+	defer srv.Close()
 
-	fmt.Println("\n=== Second request: client supplied the date of birth ===")
-	fd2 := pipeline.CreateFlowData()
-	fd2.AddEvidence(evidenceDateOfBirth, "1992-04-15")
-	if err := fd2.Process(); err != nil {
+	// 1) The browser includes /51Degrees.core.js. The served script contains the
+	//    JavaScript snippet to gather the date of birth and the callback URL.
+	fmt.Println("=== GET /51Degrees.core.js (served to the browser) ===")
+	js := httpGet(srv.URL + web.DefaultJavaScriptURL)
+	fmt.Println(firstLines(js, 6))
+	fmt.Printf("... callback endpoint present: %v\n", strings.Contains(js, web.DefaultJSONURL))
+
+	// 2) Once the client has the date of birth it posts back to the JSON endpoint.
+	//    That request now carries the evidence, so the star sign is resolved.
+	fmt.Println("\n=== POST /51dpipeline/json (client callback with the gathered date) ===")
+	json := httpPostForm(srv.URL+web.DefaultJSONURL, url.Values{"date-of-birth": {"1992-04-15"}})
+	fmt.Println(json)
+}
+
+func httpGet(u string) string {
+	resp, err := http.Get(u)
+	if err != nil {
 		log.Fatal(err)
 	}
-	data, _ := fd2.Get("starsign")
-	sign, _ := data.Get("starsign")
-	fmt.Printf("Star sign: %v\n", sign)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
+}
+
+func httpPostForm(u string, form url.Values) string {
+	resp, err := http.PostForm(u, form)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
+}
+
+func firstLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = append(lines[:n], "...")
+	}
+	return strings.Join(lines, "\n")
 }

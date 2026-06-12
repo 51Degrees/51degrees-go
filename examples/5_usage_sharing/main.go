@@ -131,5 +131,4 @@ func main() {
 	mu.Lock()
 	fmt.Printf("Total usage payloads received: %d\n", received)
 	mu.Unlock()
-	_ = usagesharing.DataKey
 }

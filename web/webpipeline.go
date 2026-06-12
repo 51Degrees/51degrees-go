@@ -52,6 +52,13 @@ type PipelineConfig struct {
 
 	// SuppressProcessExceptions configures the resulting Pipeline.
 	SuppressProcessExceptions bool
+
+	// JSONEndpoint is the client-side callback path baked into the generated
+	// JavaScript (the JavaScript Builder's endpoint). It MUST match the path the
+	// Middleware intercepts for JSON (see WithJSONURL). Defaults to
+	// DefaultJSONURL. Without an endpoint the generated script cannot call back,
+	// so the client-side evidence/refresh feature would be disabled.
+	JSONEndpoint string
 }
 
 // AssemblePipeline builds a Pipeline containing the supplied elements plus the
@@ -84,7 +91,17 @@ func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pi
 		builder.AddFlowElement(jsonbuilder.New(cfg.Logger, nil))
 	}
 	if !cfg.DisableJavaScriptBuilder && !present[javascriptbuilder.DataKey] {
-		builder.AddFlowElement(javascriptbuilder.New(cfg.Logger))
+		jsonEndpoint := cfg.JSONEndpoint
+		if jsonEndpoint == "" {
+			jsonEndpoint = DefaultJSONURL
+		}
+		// Bake in the callback endpoint so the generated script can post results
+		// back to the intercepted JSON URL (matching the .NET default). Without it,
+		// the client-side evidence/refresh round-trip would be disabled.
+		builder.AddFlowElement(javascriptbuilder.NewBuilder().
+			SetLogger(cfg.Logger).
+			SetEndpoint(jsonEndpoint).
+			Build())
 	}
 	return builder.Build()
 }

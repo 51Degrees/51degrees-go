@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"net"
 	"net/http"
 	"sort"
@@ -121,17 +122,21 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 func (m *Middleware) process(r *http.Request) core.FlowData {
 	fd := m.pipeline.CreateFlowData()
 	populateEvidence(fd, r)
-	func() {
-		defer func() { _ = recover() }()
-		if err := fd.Process(); err != nil && !m.pipeline.IsSuppressProcessExceptions() {
-			// The error is already recorded on the Flow Data; processing must not
-			// disrupt the host site, so it is swallowed here after being available
-			// via fd.Errors().
-			_ = err
+	// The web integration MUST NOT take down the host site, so any processing
+	// error or panic is contained here. Errors remain available via fd.Errors();
+	// a recovered panic is logged so production failures are still visible.
+	defer func() {
+		if rec := recover(); rec != nil {
+			m.logger().Warn("panic recovered during pipeline processing", "error", rec)
 		}
 	}()
+	_ = fd.Process()
 	return fd
 }
+
+// logger returns a logger for the middleware: slog.Default, since the Pipeline
+// does not expose its own.
+func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
 // cookies, query and form parameters, client IP, host and protocol.

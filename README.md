@@ -104,6 +104,33 @@ go test ./...
 The race detector (`go test -race`) requires a working cgo toolchain, which may
 not be available on all platforms.
 
+## Web integration
+
+The `web` package integrates the Pipeline into a `net/http` application.
+`AssemblePipeline` builds a web-ready Pipeline, adding the Sequence, Set Headers,
+JSON Builder and JavaScript Builder elements in the order required by the
+specification (each can be disabled). The `Middleware` then populates Evidence
+from each request, processes it, applies any response headers requested by the
+Set Headers Element, exposes the result via `web.FromContext`, and serves the
+intercepted client-side endpoints `/51Degrees.core.js` and `/51dpipeline/json`.
+
+```go
+pipeline, err := web.AssemblePipeline(web.PipelineConfig{}, myElements...)
+if err != nil {
+    log.Fatal(err)
+}
+defer pipeline.Close()
+
+mw := web.NewMiddleware(pipeline)
+http.ListenAndServe(":8080", mw.Handler(myAppHandler))
+
+// Inside myAppHandler:
+//   flowData, _ := web.FromContext(r.Context())
+```
+
+The example at [examples/3_clientside_evidence](examples/3_clientside_evidence)
+stands up the middleware and exercises the full client-side round-trip.
+
 ## Design notes
 
 This implementation follows a "hybrid" approach: public concepts and package

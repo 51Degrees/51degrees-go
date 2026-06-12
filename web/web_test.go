@@ -33,7 +33,6 @@ import (
 	"github.com/51Degrees/pipeline-go/elements/javascriptbuilder"
 	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
 	"github.com/51Degrees/pipeline-go/elements/sequence"
-	"github.com/51Degrees/pipeline-go/elements/setheaders"
 )
 
 // headerEngine produces a SetHeader Property so the middleware has something to
@@ -135,6 +134,11 @@ func TestJavaScriptEndpoint(t *testing.T) {
 	if !strings.Contains(string(body), "fiftyoneDegreesManager") {
 		t.Fatalf("unexpected JS body")
 	}
+	// The callback endpoint must be baked into the script so the client-side
+	// round-trip works (the JSON interception path).
+	if !strings.Contains(string(body), DefaultJSONURL) {
+		t.Fatalf("served JavaScript is missing the callback URL %q", DefaultJSONURL)
+	}
 }
 
 func TestJSONEndpointAndETag(t *testing.T) {
@@ -206,5 +210,4 @@ func TestNoDuplicateWhenPresent(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected exactly one sequence element, got %d", count)
 	}
-	_ = setheaders.DataKey
 }
