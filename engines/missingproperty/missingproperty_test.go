@@ -40,6 +40,13 @@ func TestDataFileTierMessage(t *testing.T) {
 	}
 }
 
+func TestDataFileTierEmptyTiers(t *testing.T) {
+	err := ForDataFileTier("IsMobile", "device", nil)
+	if !strings.Contains(err.Message, "the Unknown license/data") {
+		t.Fatalf("empty tiers should yield 'Unknown', got: %s", err.Message)
+	}
+}
+
 func TestExcludedMessage(t *testing.T) {
 	err := ForExcludedInConfig("IsMobile", "device")
 	if !strings.Contains(err.Message, "excluded when configuring the Engine") {

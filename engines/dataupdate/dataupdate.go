@@ -71,8 +71,11 @@ type Config struct {
 	DataFilePath string
 
 	// HTTP config.
-	DataUpdateURL      string
-	URLFormatter       URLFormatter
+	DataUpdateURL string
+	URLFormatter  URLFormatter
+	// UseIfModifiedSince is retained for configuration compatibility. The service
+	// now sends the If-Modified-Since header whenever a current data file exists,
+	// regardless of this flag.
 	UseIfModifiedSince bool
 
 	// Update behavior.
@@ -121,6 +124,7 @@ type registration struct {
 	engineName string
 	cfg        Config
 
+	updateMu  sync.Mutex // serializes a whole HTTP update (download + replace + refresh)
 	refreshMu sync.Mutex // serializes refresh; keeps refresh thread-safe
 	watcher   *fsnotify.Watcher
 	stop      chan struct{}
@@ -229,8 +233,15 @@ func (r *registration) startPolling() {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
+		// override, when non-zero, forces the next poll delay (used to honor a
+		// server's Retry-After after a 429 response).
+		var override time.Duration
 		for {
 			delay := r.nextInterval()
+			if override > 0 {
+				delay = override
+				override = 0
+			}
 			timer := time.NewTimer(delay)
 			select {
 			case <-r.stop:
@@ -242,6 +253,11 @@ func (r *registration) startPolling() {
 				// Background errors are logged, never fatal.
 				r.svc.logger.Warn("automatic update failed; will retry later",
 					"engine", r.engineName, "error", err)
+				var rle *RateLimitError
+				if errors.As(err, &rle) && rle.RetryAfter > 0 {
+					// Reset polling to respect the server's rate limit.
+					override = rle.RetryAfter
+				}
 			}
 		}
 	}()
@@ -324,7 +340,14 @@ func (r *registration) refreshFromFile() error {
 // downloads it, replaces the operational file, and refreshes the Engine. A 304
 // response means no newer data; a 429 response is reported with its Retry-After
 // value.
+//
+// The whole operation (download, replace, refresh) is serialized per
+// registration so a programmatic CheckForUpdate cannot race the background
+// poller and load an older of two concurrent downloads.
 func (r *registration) httpUpdate(startup bool) error {
+	r.updateMu.Lock()
+	defer r.updateMu.Unlock()
+
 	url := r.cfg.DataUpdateURL
 	if r.cfg.URLFormatter != nil {
 		url = r.cfg.URLFormatter(r.cfg)
@@ -335,10 +358,13 @@ func (r *registration) httpUpdate(startup bool) error {
 	if err != nil {
 		return err
 	}
-	if r.cfg.UseIfModifiedSince {
-		if t, ok := r.currentDataTime(); ok {
-			req.Header.Set("If-Modified-Since", t.UTC().Format(http.TimeFormat))
-		}
+	// Send If-Modified-Since whenever a current data file exists, so a server
+	// that honors it returns 304 instead of re-sending an unchanged file. This
+	// is the spec-recommended optimization and avoids reloading the Engine on
+	// every poll against a static URL. Setting UseIfModifiedSince has no further
+	// effect; it is retained for configuration compatibility.
+	if t, ok := r.currentDataTime(); ok {
+		req.Header.Set("If-Modified-Since", t.UTC().Format(http.TimeFormat))
 	}
 
 	resp, err := r.svc.httpClient.Do(req)

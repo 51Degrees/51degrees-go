@@ -58,10 +58,14 @@ const (
 // ForDataFileTier builds the error for a Property absent from the current data
 // file. dataTiers lists the license/data file types in which it is available.
 func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
+	tiers := strings.Join(dataTiers, ", ")
+	if tiers == "" {
+		tiers = "Unknown" // matches the .NET reference when the tier list is absent
+	}
 	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
 		"This is because your license and/or data file does not include this Property. "+
 		"The Property is available with the %s license/data.",
-		property, element, strings.Join(dataTiers, ", "))
+		property, element, tiers)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
 }
 
