@@ -31,7 +31,10 @@
 package dataupdate
 
 import (
+	"bytes"
 	"compress/gzip"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +44,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -387,9 +391,21 @@ func (r *registration) httpUpdate(startup bool) error {
 		return fmt.Errorf("data update: unexpected status %d from %s", resp.StatusCode, url)
 	}
 
-	body, err := readMaybeGzip(resp)
+	raw, err := readBody(resp)
 	if err != nil {
 		r.svc.logger.Warn("error downloading data file", "engine", r.engineName, "url", url, "error", err)
+		return err
+	}
+	// Validate integrity against the server's Content-MD5 (the 51Degrees
+	// Distributor sends it) before the bytes are written or loaded, so a corrupt
+	// or truncated download is rejected rather than handed to the Engine.
+	if err := verifyContentMD5(resp, raw); err != nil {
+		r.svc.logger.Warn("data file integrity check failed", "engine", r.engineName, "url", url, "error", err)
+		return err
+	}
+	body, err := maybeDecompress(raw, resp.Header.Get("Content-Encoding") == "gzip")
+	if err != nil {
+		r.svc.logger.Warn("error decompressing data file", "engine", r.engineName, "url", url, "error", err)
 		return err
 	}
 
@@ -484,22 +500,59 @@ func parseRetryAfter(v string) time.Duration {
 	return 0
 }
 
-func readMaybeGzip(resp *http.Response) ([]byte, error) {
-	var reader io.Reader = resp.Body
-	if resp.Header.Get("Content-Encoding") == "gzip" {
-		gz, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		defer gz.Close()
-		reader = gz
-	}
-	data, err := io.ReadAll(reader)
+// gzipMagic is the two-byte signature at the start of every gzip stream.
+var gzipMagic = []byte{0x1f, 0x8b}
+
+// readBody reads the entire response body, rejecting an empty payload.
+func readBody(resp *http.Response) ([]byte, error) {
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 	if len(data) == 0 {
 		return nil, errors.New("data update: empty response body")
+	}
+	return data, nil
+}
+
+// verifyContentMD5 checks the downloaded bytes against the server's Content-MD5
+// header when one is present. The 51Degrees Distributor sends this header, so
+// validating it guards against a corrupt or truncated download being loaded into
+// the Engine. A missing header is not an error: not every server supplies one.
+func verifyContentMD5(resp *http.Response, raw []byte) error {
+	want := resp.Header.Get("Content-MD5")
+	if want == "" {
+		return nil
+	}
+	sum := md5.Sum(raw)
+	got := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(got, want) {
+		return fmt.Errorf("data update: Content-MD5 mismatch (got %s, want %s)", got, want)
+	}
+	return nil
+}
+
+// maybeDecompress gunzips raw when it is a gzip stream, returning it unchanged
+// otherwise. The data file is served gzip-compressed, but the Distributor
+// identifies it with a Content-Type of application/gzip and/or the raw gzip
+// magic bytes rather than a Content-Encoding header (which the HTTP transport
+// would have transparently decompressed). We therefore detect gzip from the
+// Content-Encoding header, the magic bytes, or an explicit gzip Content-Type.
+func maybeDecompress(raw []byte, encodingGzip bool) ([]byte, error) {
+	if !encodingGzip && !bytes.HasPrefix(raw, gzipMagic) {
+		return raw, nil
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	defer gz.Close()
+	data, err := io.ReadAll(gz)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("data update: empty response body after decompression")
 	}
 	return data, nil
 }

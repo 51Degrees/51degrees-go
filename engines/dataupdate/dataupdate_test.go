@@ -23,7 +23,10 @@
 package dataupdate
 
 import (
+	"bytes"
 	"compress/gzip"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -221,6 +224,85 @@ func TestGzipResponse(t *testing.T) {
 	}
 	if eng.bytesCount() != 1 || string(eng.fromBytes[0]) != "DECOMPRESSED" {
 		t.Fatalf("gzip not decompressed: %v", eng.fromBytes)
+	}
+}
+
+// gzipBytes returns the gzip-compressed form of b.
+func gzipBytes(t *testing.T, b []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestGzipBodyWithoutContentEncoding covers the real Distributor case: a gzip
+// body served as application/gzip with no Content-Encoding header (so the HTTP
+// transport does not transparently decompress it). The service must detect the
+// gzip from the body itself and decompress it.
+func TestGzipBodyWithoutContentEncoding(t *testing.T) {
+	payload := []byte("DECOMPRESSED-BODY")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Write(gzipBytes(t, payload))
+	}))
+	defer srv.Close()
+
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	if err := svc.Register(eng, "gzbody", Config{Identifier: "gzbody", DataUpdateURL: srv.URL, UpdateOnStartup: true}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if eng.bytesCount() != 1 || string(eng.fromBytes[0]) != string(payload) {
+		t.Fatalf("gzip body not decompressed: %v", eng.fromBytes)
+	}
+}
+
+// TestContentMD5Valid confirms a matching Content-MD5 header allows the update.
+func TestContentMD5Valid(t *testing.T) {
+	payload := []byte("VALID-DATA")
+	sum := md5.Sum(payload)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-MD5", hex.EncodeToString(sum[:]))
+		w.Write(payload)
+	}))
+	defer srv.Close()
+
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	if err := svc.Register(eng, "md5ok", Config{Identifier: "md5ok", DataUpdateURL: srv.URL, UpdateOnStartup: true}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if eng.bytesCount() != 1 || string(eng.fromBytes[0]) != string(payload) {
+		t.Fatalf("expected refresh with valid MD5, got %v", eng.fromBytes)
+	}
+}
+
+// TestContentMD5Mismatch confirms a bad Content-MD5 header rejects the update so
+// a corrupt download is never loaded into the Engine.
+func TestContentMD5Mismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-MD5", hex.EncodeToString(md5.New().Sum(nil))) // md5 of empty, won't match
+		w.Write([]byte("CORRUPT-DATA"))
+	}))
+	defer srv.Close()
+
+	eng := &fakeEngine{}
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	_ = svc.Register(eng, "md5bad", Config{Identifier: "md5bad", DataUpdateURL: srv.URL})
+	if err := svc.CheckForUpdate("md5bad"); err == nil {
+		t.Fatal("expected Content-MD5 mismatch to fail the update")
+	}
+	if eng.bytesCount() != 0 {
+		t.Fatalf("engine must not be refreshed when MD5 mismatches, got %v", eng.fromBytes)
 	}
 }
 
