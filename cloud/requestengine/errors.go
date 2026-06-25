@@ -32,10 +32,13 @@ import (
 // can inspect or log it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md#cloud-request-exception
 type CloudRequestError struct {
+	// Message describes the failure.
 	Message string
-	Cause   error
+	// Cause is the underlying error (for example a JSON parse or HTTP error), if any.
+	Cause error
 }
 
+// Error returns the human-readable error message, including the cause if present.
 func (e *CloudRequestError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("cloud request error: %s: %v", e.Message, e.Cause)
@@ -43,6 +46,7 @@ func (e *CloudRequestError) Error() string {
 	return "cloud request error: " + e.Message
 }
 
+// Unwrap returns the underlying cause, enabling errors.Is/As traversal.
 func (e *CloudRequestError) Unwrap() error { return e.Cause }
 
 // NewCloudRequestError creates a CloudRequestError.
@@ -55,9 +59,11 @@ func NewCloudRequestError(message string, cause error) *CloudRequestError {
 // unavailable so that requests are bypassed rather than piling up.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
 type TemporarilyUnavailableError struct {
+	// RecoveryUntil is the time at which the engine will resume making requests.
 	RecoveryUntil time.Time
 }
 
+// Error returns a message stating the engine is unavailable until recovery completes.
 func (e *TemporarilyUnavailableError) Error() string {
 	return fmt.Sprintf("cloud request engine is temporarily unavailable (recovering until %s)",
 		e.RecoveryUntil.Format(time.RFC3339))

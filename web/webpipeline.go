@@ -40,11 +40,16 @@ import (
 
 // PipelineConfig controls assembly of a web-ready Pipeline.
 type PipelineConfig struct {
-	// Disable* options prevent the corresponding client-side element from being
-	// added automatically, as required by the web-integration specification.
-	DisableSequence          bool
-	DisableSetHeaders        bool
-	DisableJSONBuilder       bool
+	// The Disable* options prevent the corresponding client-side element from
+	// being added automatically, as required by the web-integration specification.
+
+	// DisableSequence prevents the Sequence element being added automatically.
+	DisableSequence bool
+	// DisableSetHeaders prevents the Set Headers element being added automatically.
+	DisableSetHeaders bool
+	// DisableJSONBuilder prevents the JSON Builder element being added automatically.
+	DisableJSONBuilder bool
+	// DisableJavaScriptBuilder prevents the JavaScript Builder element being added automatically.
 	DisableJavaScriptBuilder bool
 
 	// Logger is used by any elements added automatically and by the Pipeline.

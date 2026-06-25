@@ -165,18 +165,26 @@ func (m *concurrentMap) AsMap() map[string]any {
 // ErrWrongType is returned (wrapped) when a stored value cannot be converted to
 // the requested type.
 type ErrWrongType struct {
-	Name     string
+	// Name is the key whose value could not be converted.
+	Name string
+	// Expected is the name of the requested type.
 	Expected string
-	Actual   any
+	// Actual is the value that was stored under the key.
+	Actual any
 }
 
+// Error returns a message describing the type mismatch.
 func (e *ErrWrongType) Error() string {
 	return fmt.Sprintf("value for key %q is of type %T, not %s", e.Name, e.Actual, e.Expected)
 }
 
 // ErrNotFound is returned (wrapped) when no value exists for a key.
-type ErrNotFound struct{ Name string }
+type ErrNotFound struct {
+	// Name is the key that was not found.
+	Name string
+}
 
+// Error returns a message naming the key that was not found.
 func (e *ErrNotFound) Error() string { return fmt.Sprintf("no value found for key %q", e.Name) }
 
 // Add stores value under the typed key.

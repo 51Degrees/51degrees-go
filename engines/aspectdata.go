@@ -121,7 +121,12 @@ func (a AspectPropertyValue[T]) AsInterface() any {
 // allowing code that does not know the value type to test for "no value", read
 // the explanatory message, and obtain the boxed value.
 type PropertyValueAccessor interface {
+	// HasValue reports whether a value is present.
 	HasValue() bool
+	// NoValueMessage returns the explanation for why no value is present. It is
+	// empty when HasValue is true.
 	NoValueMessage() string
+	// AsInterface returns the wrapped value as an untyped any, or nil if no value
+	// is present.
 	AsInterface() any
 }

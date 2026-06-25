@@ -79,15 +79,23 @@ func (d *CloudRequestData) JSONResponse() string {
 // PropertyMeta describes a single Property as reported by the accessible
 // properties endpoint.
 type PropertyMeta struct {
-	Name           string         `json:"Name"`
-	Type           string         `json:"Type"`
-	Category       string         `json:"Category"`
+	// Name is the name of the Property.
+	Name string `json:"Name"`
+	// Type is the data type of the Property value (for example "String" or "Int32").
+	Type string `json:"Type"`
+	// Category is the category the Property belongs to.
+	Category string `json:"Category"`
+	// ItemProperties describes the sub-Properties of a list/collection Property,
+	// where each item is itself a set of Properties.
 	ItemProperties []PropertyMeta `json:"ItemProperties,omitempty"`
 }
 
 // ProductMeta describes the Properties available for a single product (Aspect).
 type ProductMeta struct {
-	DataTier   string         `json:"DataTier"`
+	// DataTier is the data tier (for example "Lite" or "Premium") that the
+	// supplied Resource Key grants access to for this product.
+	DataTier string `json:"DataTier"`
+	// Properties are the Properties available for this product.
 	Properties []PropertyMeta `json:"Properties"`
 }
 

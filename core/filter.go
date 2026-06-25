@@ -103,6 +103,7 @@ func (f *AggregateFilter) Include(key string) bool {
 // KeyLister is implemented by filters that can enumerate the exact keys they
 // accept. Function-based filters do not implement it.
 type KeyLister interface {
+	// Keys returns the exact set of Evidence keys the filter accepts.
 	Keys() []string
 }
 

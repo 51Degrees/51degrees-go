@@ -75,20 +75,37 @@ type Config struct {
 	DataFilePath string
 
 	// HTTP config.
+
+	// DataUpdateURL is the URL to check for and download data file updates from.
 	DataUpdateURL string
-	URLFormatter  URLFormatter
+	// URLFormatter, if set, builds the final update URL (for example by adding
+	// the query-string parameters required by the 51Degrees Distributor).
+	URLFormatter URLFormatter
 	// UseIfModifiedSince is retained for configuration compatibility. The service
 	// now sends the If-Modified-Since header whenever a current data file exists,
 	// regardless of this flag.
 	UseIfModifiedSince bool
 
 	// Update behavior.
-	UpdateOnStartup          bool
-	AutomaticUpdatesEnabled  bool
+
+	// UpdateOnStartup indicates whether an update check should be performed as
+	// soon as the data source is registered, before normal polling begins.
+	UpdateOnStartup bool
+	// AutomaticUpdatesEnabled indicates whether updates to the data file are
+	// checked for and applied to the Engine automatically.
+	AutomaticUpdatesEnabled bool
+	// FileSystemWatcherEnabled indicates whether a watcher is created for the
+	// file at DataFilePath. When the file is modified the Engine is notified so
+	// it can refresh its internal data structures.
 	FileSystemWatcherEnabled bool
 
 	// Polling config.
-	PollingInterval  time.Duration
+
+	// PollingInterval is the time between checks for updates for this data source.
+	PollingInterval time.Duration
+	// MaxRandomization is the maximum extra random time added to the polling
+	// interval. It lets multiple instances stagger their update requests to
+	// reduce the chance of conflicts or slow downloads.
 	MaxRandomization time.Duration
 
 	// Operational file config.
@@ -477,10 +494,14 @@ func (r *registration) fireCallbacks() {
 
 // RateLimitError is returned when the update server responds with HTTP 429.
 type RateLimitError struct {
-	URL        string
+	// URL is the update URL that returned the rate-limit response.
+	URL string
+	// RetryAfter is how long to wait before retrying, taken from the
+	// Retry-After response header.
 	RetryAfter time.Duration
 }
 
+// Error returns a message naming the rate-limited URL and the retry delay.
 func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("data update: rate limited by %s, retry after %s", e.URL, e.RetryAfter)
 }

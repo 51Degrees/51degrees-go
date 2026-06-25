@@ -35,10 +35,13 @@ import (
 // preventing the creation or execution of a Pipeline or Element. It is the
 // analogue of PipelineConfigurationException in the reference implementations.
 type ConfigurationError struct {
+	// Message describes what is wrong with the configuration.
 	Message string
-	Cause   error
+	// Cause is the underlying error that triggered this one, if any.
+	Cause error
 }
 
+// Error returns the human-readable error message, including the cause if present.
 func (e *ConfigurationError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("pipeline configuration error: %s: %v", e.Message, e.Cause)
@@ -46,6 +49,7 @@ func (e *ConfigurationError) Error() string {
 	return "pipeline configuration error: " + e.Message
 }
 
+// Unwrap returns the underlying cause, enabling errors.Is/As traversal.
 func (e *ConfigurationError) Unwrap() error { return e.Cause }
 
 // NewConfigurationError creates a ConfigurationError, optionally wrapping a cause.
@@ -58,9 +62,11 @@ func NewConfigurationError(message string, cause error) *ConfigurationError {
 // an element's data that is not part of the Pipeline. It is the analogue of
 // PipelineDataException.
 type DataError struct {
+	// Message describes how the Flow Data API was misused.
 	Message string
 }
 
+// Error returns the human-readable error message.
 func (e *DataError) Error() string { return "pipeline data error: " + e.Message }
 
 // NewDataError creates a DataError.
@@ -70,11 +76,16 @@ func NewDataError(message string) *DataError { return &DataError{Message: messag
 // chosen not to set ('no value'). The message explains why the value is absent.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/properties.md#null-values
 type NoValueError struct {
+	// Message explains why the value is absent.
 	Message string
-	Cause   error
+	// Cause is the underlying error that prevented the value being set, if any.
+	Cause error
 }
 
+// Error returns the explanation of why the value is absent.
 func (e *NoValueError) Error() string { return e.Message }
+
+// Unwrap returns the underlying cause, enabling errors.Is/As traversal.
 func (e *NoValueError) Unwrap() error { return e.Cause }
 
 // NewNoValueError creates a NoValueError.
@@ -86,20 +97,26 @@ func NewNoValueError(message string, cause error) *NoValueError {
 // is not present in the result set. The message explains why.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/properties.md#missing-properties
 type PropertyMissingError struct {
+	// PropertyName is the name of the Property that could not be found.
 	PropertyName string
-	ElementName  string
-	Message      string
+	// ElementName is the data key of the Element the Property belongs to.
+	ElementName string
+	// Message explains why the Property is missing.
+	Message string
 }
 
+// Error returns the explanation of why the Property is missing.
 func (e *PropertyMissingError) Error() string { return e.Message }
 
 // ProcessError aggregates the errors that occurred while a Pipeline processed a
 // Flow Data instance. It is returned from Process when exceptions are not
 // suppressed. Use errors.Is/As against the wrapped element errors.
 type ProcessError struct {
+	// Errors holds one entry per Flow Element error encountered during processing.
 	Errors []FlowError
 }
 
+// Error returns a combined message describing all the errors that occurred.
 func (e *ProcessError) Error() string {
 	if len(e.Errors) == 1 {
 		return fmt.Sprintf("error processing flow data: %v", e.Errors[0].Err)
@@ -123,8 +140,11 @@ func (e *ProcessError) Unwrap() []error {
 // FlowError associates an error with the Flow Element that produced it (which
 // may be nil for errors not attributable to a specific element).
 type FlowError struct {
+	// Element is the Flow Element that produced the error. It may be nil for
+	// errors not attributable to a specific element.
 	Element FlowElement
-	Err     error
+	// Err is the error that occurred.
+	Err error
 }
 
 // Common sentinel errors.
