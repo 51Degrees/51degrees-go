@@ -198,8 +198,13 @@ func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 
-	if err := e.checkResponse(e.dataEndpoint, resp.StatusCode, raw); err != nil {
+	if err := e.checkResponse(e.dataEndpoint, resp.StatusCode, resp.Header, raw); err != nil {
 		return "", err
+	}
+	if !json.Valid(raw) {
+		return "", NewCloudResponseError(
+			fmt.Sprintf("failed to parse the response from cloud service at '%s' as JSON",
+				e.dataEndpoint), resp.StatusCode, resp.Header)
 	}
 	e.logWarnings(raw)
 	return string(raw), nil
@@ -257,17 +262,17 @@ func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
 
 // checkResponse implements the error scenarios required of cloud HTTP requests.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
-func (e *CloudRequestEngine) checkResponse(url string, status int, raw []byte) error {
+func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
-		return NewCloudRequestError(strings.Join(msgs, "; "), nil)
+		return NewCloudResponseError(strings.Join(msgs, "; "), status, headers)
 	}
 	if len(raw) == 0 {
-		return NewCloudRequestError(fmt.Sprintf("No data in response from cloud service at '%s'", url), nil)
+		return NewCloudResponseError(fmt.Sprintf("No data in response from cloud service at '%s'", url), status, headers)
 	}
 	if status != http.StatusOK {
-		return NewCloudRequestError(
+		return NewCloudResponseError(
 			fmt.Sprintf("Cloud service at '%s' returned status code '%d' with content %s",
-				url, status, truncate(string(raw), 512)), nil)
+				url, status, truncate(string(raw), 512)), status, headers)
 	}
 	return nil
 }
@@ -314,7 +319,7 @@ func (e *CloudRequestEngine) ensureMetadata() error {
 }
 
 func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta, error) {
-	raw, err := e.getEndpoint(e.propertiesEndpoint)
+	raw, err := e.getEndpoint(e.propertiesEndpoint, true)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +331,9 @@ func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta
 }
 
 func (e *CloudRequestEngine) fetchEvidenceKeys() ([]string, error) {
-	raw, err := e.getEndpoint(e.evidenceKeysEndpoint)
+	// The evidence-keys endpoint does not take the resource key, matching the
+	// .NET reference (and avoiding sending the key to an endpoint that ignores it).
+	raw, err := e.getEndpoint(e.evidenceKeysEndpoint, false)
 	if err != nil {
 		return nil, err
 	}
@@ -337,9 +344,9 @@ func (e *CloudRequestEngine) fetchEvidenceKeys() ([]string, error) {
 	return keys, nil
 }
 
-func (e *CloudRequestEngine) getEndpoint(endpoint string) ([]byte, error) {
+func (e *CloudRequestEngine) getEndpoint(endpoint string, appendResource bool) ([]byte, error) {
 	u := endpoint
-	if e.resourceKey != "" {
+	if appendResource && e.resourceKey != "" {
 		if strings.Contains(u, "?") {
 			u += "&resource=" + url.QueryEscape(e.resourceKey)
 		} else {
@@ -359,7 +366,7 @@ func (e *CloudRequestEngine) getEndpoint(endpoint string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if err := e.checkResponse(endpoint, resp.StatusCode, raw); err != nil {
+	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw); err != nil {
 		return nil, err
 	}
 	return raw, nil

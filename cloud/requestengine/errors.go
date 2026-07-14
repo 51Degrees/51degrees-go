@@ -24,18 +24,26 @@ package requestengine
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 )
 
 // CloudRequestError is returned following failed requests to the cloud service.
 // It carries the underlying cause (for example a JSON parse error) so callers
-// can inspect or log it.
+// can inspect or log it, and, for a response-level failure, the HTTP status
+// code and response headers so a caller can inspect them (for example a 429
+// Retry-After).
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md#cloud-request-exception
 type CloudRequestError struct {
 	// Message describes the failure.
 	Message string
 	// Cause is the underlying error (for example a JSON parse or HTTP error), if any.
 	Cause error
+	// StatusCode is the HTTP status code of the response, or 0 when the failure
+	// was not a response (for example a transport error).
+	StatusCode int
+	// Headers are the response headers, or nil when not applicable.
+	Headers http.Header
 }
 
 // Error returns the human-readable error message, including the cause if present.
@@ -52,6 +60,13 @@ func (e *CloudRequestError) Unwrap() error { return e.Cause }
 // NewCloudRequestError creates a CloudRequestError.
 func NewCloudRequestError(message string, cause error) *CloudRequestError {
 	return &CloudRequestError{Message: message, Cause: cause}
+}
+
+// NewCloudResponseError creates a CloudRequestError for a response-level failure,
+// capturing the HTTP status code and response headers so a caller can inspect
+// them (for example a 429 with a Retry-After header).
+func NewCloudResponseError(message string, status int, headers http.Header) *CloudRequestError {
+	return &CloudRequestError{Message: message, StatusCode: status, Headers: headers}
 }
 
 // TemporarilyUnavailableError is returned while the engine is in its recovery

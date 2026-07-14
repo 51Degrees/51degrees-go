@@ -25,6 +25,7 @@ package requestengine
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -50,11 +51,21 @@ type Builder struct {
 	now                     func() time.Time
 }
 
+// EnvCloudAPIURL is the environment variable that overrides the default cloud
+// base endpoint when SetEndpoint is not used, matching the .NET reference.
+const EnvCloudAPIURL = "FOD_CLOUD_API_URL"
+
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
-// recovery settings.
+// recovery settings. The base endpoint defaults to the FOD_CLOUD_API_URL
+// environment variable when set, otherwise DefaultEndpoint; SetEndpoint still
+// overrides either.
 func NewBuilder() *Builder {
+	endpoint := DefaultEndpoint
+	if env := strings.TrimSpace(os.Getenv(EnvCloudAPIURL)); env != "" {
+		endpoint = env
+	}
 	return &Builder{
-		endpoint:                DefaultEndpoint,
+		endpoint:                endpoint,
 		timeout:                 DefaultTimeout,
 		failuresToEnterRecovery: DefaultFailures,
 		failureWindow:           DefaultFailureWindow,
