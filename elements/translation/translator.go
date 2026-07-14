@@ -49,9 +49,18 @@ type Translator struct {
 
 // NewTranslator creates a Translator for the given lookup table (source value ->
 // translated value). The table may be nil, in which case every value is treated
-// as having no translation.
+// as having no translation. Lookups are case-insensitive (matching the .NET
+// reference, which uses an invariant-ignore-case comparer), so the table is
+// stored with case-folded keys.
 func NewTranslator(table map[string]string, behavior MissingBehavior) *Translator {
-	return &Translator{table: table, behavior: behavior}
+	var folded map[string]string
+	if table != nil {
+		folded = make(map[string]string, len(table))
+		for k, v := range table {
+			folded[strings.ToLower(k)] = v
+		}
+	}
+	return &Translator{table: folded, behavior: behavior}
 }
 
 // TranslateValue translates a value of any supported shape (string, []string,
@@ -87,9 +96,31 @@ func (t *Translator) TranslateValue(raw any) (any, []error) {
 		if !v.HasValue() {
 			return raw, nil
 		}
-		return t.TranslateValue(v.AsInterface())
+		translated, errs := t.TranslateValue(v.AsInterface())
+		return wrapAspectPropertyValue(translated), errs
 	default:
-		return raw, nil
+		// An unrecognized value shape is a programming/configuration error; report
+		// it rather than silently copying it through, matching the .NET reference
+		// which throws NotSupportedException.
+		return raw, []error{fmt.Errorf("unsupported value type %T for translation", raw)}
+	}
+}
+
+// wrapAspectPropertyValue re-wraps a translated value in an AspectPropertyValue
+// so a wrapped input yields a wrapped output, matching the .NET reference. An
+// unrecognized shape is returned unchanged.
+func wrapAspectPropertyValue(v any) any {
+	switch t := v.(type) {
+	case string:
+		return engines.NewAspectPropertyValue(t)
+	case []string:
+		return engines.NewAspectPropertyValue(t)
+	case core.WeightedValue[string]:
+		return engines.NewAspectPropertyValue(t)
+	case []core.WeightedValue[string]:
+		return engines.NewAspectPropertyValue(t)
+	default:
+		return v
 	}
 }
 
@@ -111,12 +142,13 @@ func (t *Translator) TranslateWeighted(
 	return out
 }
 
-// translateString looks the value up in the table and applies the configured
-// MissingBehavior when it is absent. Under FlowError it returns the original
-// value together with a non-nil error so the caller can record it.
+// translateString looks the value up in the table (case-insensitively) and
+// applies the configured MissingBehavior when it is absent. Under FlowError it
+// returns an empty string together with a non-nil error so the caller can
+// record it, matching the .NET reference which returns null and adds the error.
 func (t *Translator) translateString(value string) (string, error) {
 	if t != nil && t.table != nil {
-		if r, ok := t.table[value]; ok && strings.TrimSpace(r) != "" {
+		if r, ok := t.table[strings.ToLower(value)]; ok && strings.TrimSpace(r) != "" {
 			return r, nil
 		}
 	}
@@ -128,7 +160,7 @@ func (t *Translator) translateString(value string) (string, error) {
 	case EmptyString:
 		return "", nil
 	case FlowError:
-		return value, fmt.Errorf("no translation available for '%s'", value)
+		return "", fmt.Errorf("no translation found for '%s'", value)
 	default: // Original
 		return value, nil
 	}
@@ -204,7 +236,12 @@ func (l *Languages) Resolve(candidates []string) (locale string, table map[strin
 // Accept-Language list, with entries normalized (lower-case, '-' -> '_').
 func CandidatesFromEvidence(fd core.FlowData, fixedLanguage string) []string {
 	if fixedLanguage != "" {
-		return []string{normalizeLang(fixedLanguage)}
+		// Only honour a fixed language that looks like a valid locale; an invalid
+		// value is ignored and selection falls back to evidence, matching the .NET
+		// reference (which validates the fixed language and falls back otherwise).
+		if n := normalizeLang(fixedLanguage); looksLikeLocale(n) {
+			return []string{n}
+		}
 	}
 	var out []string
 	for _, key := range []string{

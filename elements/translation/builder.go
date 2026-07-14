@@ -112,6 +112,20 @@ func (b *Builder) Build() (*Engine, error) {
 		sources[name] = content
 	}
 
+	// Validate the configuration up front (matching the .NET reference, which
+	// throws during construction) rather than silently building a no-op engine.
+	if len(b.translations) == 0 {
+		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation (AddTranslation)", nil)
+	}
+	if len(sources) == 0 {
+		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation source", nil)
+	}
+	for name := range sources {
+		if localeFromName(name) == "" {
+			return nil, core.NewConfigurationError("translation source '"+name+"' does not encode a valid locale", nil)
+		}
+	}
+
 	elementDataKey := b.elementDataKey
 	if elementDataKey == "" {
 		elementDataKey = DataKey
