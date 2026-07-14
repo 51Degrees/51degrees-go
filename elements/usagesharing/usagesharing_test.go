@@ -128,7 +128,7 @@ func TestUsageSharingSendsXML(t *testing.T) {
 	var devices struct {
 		XMLName xml.Name `xml:"Devices"`
 		Device  []struct {
-			Product string `xml:"Product"`
+			Product  string `xml:"Product"`
 			Sequence string `xml:"Sequence"`
 			ServerIP string `xml:"ServerIP"`
 			Headers  []struct {
