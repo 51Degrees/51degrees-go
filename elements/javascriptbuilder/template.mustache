@@ -345,7 +345,7 @@ fiftyoneDegreesManager = function() {
 
     // Check if the JSON object still has any JavaScript snippets to run.
     var hasJSFunctions = function() {
-        for (var i = i; i < json.javascriptProperties; i++) {
+        for (var i = 0; i < json.javascriptProperties.length; i++) {
             var body = getFromJson(json.javascriptProperties[i]);
             if (body !== undefined && body.length > 0) {
                 return true;

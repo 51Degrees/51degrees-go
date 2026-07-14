@@ -31,12 +31,29 @@ import (
 	_ "embed"
 	"encoding/json"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/51Degrees/pipeline-go/core"
 	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
 	"github.com/51Degrees/pipeline-go/elements/sequence"
 )
+
+// The generated artifact is JavaScript, and the Mustache renderer deliberately
+// never escapes, so client-influenced values that reach a code position must be
+// validated here before rendering rather than relying on downstream escaping.
+var (
+	// jsObjectNameRe matches a JavaScript identifier or dotted path (e.g. "fod"
+	// or "window.fod"); it excludes quotes, spaces and any breakout character.
+	jsObjectNameRe = regexp.MustCompile(
+		`^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$`)
+	// hostRe matches a bare host or host:port (including bracketed IPv6); it
+	// excludes any character that could break out of a JS string literal.
+	hostRe = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]+$`)
+)
+
+func validObjectName(s string) bool { return jsObjectNameRe.MatchString(s) }
+func validHost(s string) bool       { return s != "" && hostRe.MatchString(s) }
 
 //go:embed template.mustache
 var templateSource string
@@ -153,10 +170,20 @@ func (e *Element) Process(fd core.FlowData) error {
 
 	protocol := firstNonEmpty(e.protocol, evidenceString(fd, EvidenceProtocol), "https")
 	host := strings.TrimRight(firstNonEmpty(e.host, evidenceString(fd, EvidenceHost)), "/")
-	objectName := firstNonEmpty(evidenceString(fd, EvidenceObjectName), e.objectName, DefaultObjectName)
 
+	// The object name reaches a bare code position in the template. Honor the
+	// client-supplied evidence value only if it is a valid JS identifier;
+	// otherwise fall back to the configured/default name.
+	objectName := firstNonEmpty(e.objectName, DefaultObjectName)
+	if ev := evidenceString(fd, EvidenceObjectName); ev != "" && validObjectName(ev) {
+		objectName = ev
+	}
+
+	// The host reaches a JS string literal in the callback URL. Only build the
+	// URL from a syntactically valid host so a crafted Host header cannot break
+	// out of the literal.
 	url := ""
-	if protocol != "" && host != "" && e.endpoint != "" {
+	if protocol != "" && host != "" && e.endpoint != "" && validHost(host) {
 		url = protocol + "://" + host + ensureLeadingSlash(e.endpoint)
 	}
 

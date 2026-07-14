@@ -62,15 +62,29 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestExistingSession(t *testing.T) {
+	// A GUID-shaped session id is preserved; the sequence is incremented.
+	const guid = "12345678-1234-4234-8234-1234567890ab"
 	data := run(t, map[string]any{
-		EvidenceSessionID: "abc-123",
+		EvidenceSessionID: guid,
 		EvidenceSequence:  "4",
 	})
-	if sid, _ := data.Get(SessionIDProperty); sid != "abc-123" {
+	if sid, _ := data.Get(SessionIDProperty); sid != guid {
 		t.Fatalf("session id should be preserved, got %v", sid)
 	}
 	if seq, _ := data.Get(SequenceProperty); seq != 5 {
 		t.Fatalf("expected sequence incremented to 5, got %v", seq)
+	}
+}
+
+// TestHostileSessionIDReplaced verifies a non-GUID (e.g. an injection payload)
+// session id is discarded and replaced with a freshly generated GUID, so it
+// cannot break out of the JS string literal it is later rendered into.
+func TestHostileSessionIDReplaced(t *testing.T) {
+	hostile := `"; alert('xss'); var z="`
+	data := run(t, map[string]any{EvidenceSessionID: hostile})
+	sid, _ := data.Get(SessionIDProperty)
+	if s, _ := sid.(string); s == hostile || !guidRe.MatchString(s) {
+		t.Fatalf("hostile session id not replaced with a GUID: %v", sid)
 	}
 }
 
