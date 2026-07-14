@@ -29,6 +29,7 @@ package requestengine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -139,7 +140,14 @@ type CloudRequestEngine struct {
 // failures are subject to SuppressProcessExceptions.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#updated-design
 func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) {
+	// Honour recovery like Process so this path does not keep hitting the
+	// metadata endpoints while the service is down, and so its failures count
+	// toward the recovery threshold.
+	if until, inRecovery := e.inRecovery(); inRecovery {
+		return nil, &TemporarilyUnavailableError{RecoveryUntil: until}
+	}
 	if err := e.ensureMetadata(); err != nil {
+		e.recordFailure()
 		return nil, err
 	}
 	return e.publicProperties, nil
@@ -185,7 +193,7 @@ func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return "", NewCloudRequestError(fmt.Sprintf("error contacting cloud service at '%s'", e.dataEndpoint), err)
+		return "", NewCloudRequestError(fmt.Sprintf("error contacting cloud service at '%s'", e.dataEndpoint), redactResourceKey(err))
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
@@ -345,7 +353,9 @@ func (e *CloudRequestEngine) getEndpoint(endpoint string) ([]byte, error) {
 	e.setCommonHeaders(req)
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return nil, NewCloudRequestError(fmt.Sprintf("error contacting cloud service at '%s'", endpoint), err)
+		// The transport error embeds the request URL, which carries the
+		// resource key on this endpoint; redact it before wrapping.
+		return nil, NewCloudRequestError(fmt.Sprintf("error contacting cloud service at '%s'", endpoint), redactResourceKey(err))
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
@@ -353,6 +363,23 @@ func (e *CloudRequestEngine) getEndpoint(endpoint string) ([]byte, error) {
 		return nil, err
 	}
 	return raw, nil
+}
+
+// redactResourceKey removes the resource key from the URL embedded in a
+// transport (*url.Error) so it cannot leak into logs or fd.Errors().
+func redactResourceKey(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		if u, perr := url.Parse(ue.URL); perr == nil {
+			q := u.Query()
+			if q.Has("resource") {
+				q.Set("resource", "***")
+				u.RawQuery = q.Encode()
+				ue.URL = u.String()
+			}
+		}
+	}
+	return err
 }
 
 // --- Recovery mode -------------------------------------------------------

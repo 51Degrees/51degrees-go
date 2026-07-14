@@ -69,3 +69,19 @@ func (w WeightedValue[T]) MarshalJSON() ([]byte, error) {
 		Value        T      `json:"Value"`
 	}{RawWeighting: w.rawWeighting, Value: w.value})
 }
+
+// UnmarshalJSON reconstructs a weighted value from the form produced by
+// MarshalJSON, so a value serialized on one side of the API can be rebuilt on
+// the other. Without it the unexported fields could not be repopulated.
+func (w *WeightedValue[T]) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		RawWeighting uint16 `json:"RawWeighting"`
+		Value        T      `json:"Value"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	w.rawWeighting = aux.RawWeighting
+	w.value = aux.Value
+	return nil
+}

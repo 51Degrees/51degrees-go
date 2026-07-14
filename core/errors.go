@@ -118,18 +118,26 @@ type ProcessError struct {
 
 // Error returns a combined message describing all the errors that occurred.
 func (e *ProcessError) Error() string {
-	if len(e.Errors) == 1 {
+	switch len(e.Errors) {
+	case 0:
+		return "error processing flow data"
+	case 1:
 		return fmt.Sprintf("error processing flow data: %v", e.Errors[0].Err)
+	default:
+		parts := make([]string, len(e.Errors))
+		for i, fe := range e.Errors {
+			parts[i] = fe.Err.Error()
+		}
+		return fmt.Sprintf("%d errors processing flow data: %s", len(e.Errors), strings.Join(parts, "; "))
 	}
-	parts := make([]string, len(e.Errors))
-	for i, fe := range e.Errors {
-		parts[i] = fe.Err.Error()
-	}
-	return fmt.Sprintf("%d errors processing flow data: %s", len(e.Errors), strings.Join(parts, "; "))
 }
 
 // Unwrap exposes the underlying errors so errors.Is/As can match against them.
+// It returns nil when there are no wrapped errors.
 func (e *ProcessError) Unwrap() []error {
+	if len(e.Errors) == 0 {
+		return nil
+	}
 	out := make([]error, len(e.Errors))
 	for i, fe := range e.Errors {
 		out[i] = fe.Err
@@ -146,6 +154,17 @@ type FlowError struct {
 	// Err is the error that occurred.
 	Err error
 }
+
+// Error implements the error interface so a FlowError can be used directly.
+func (e FlowError) Error() string {
+	if e.Element != nil {
+		return fmt.Sprintf("error in element '%s': %v", e.Element.DataKey(), e.Err)
+	}
+	return fmt.Sprintf("%v", e.Err)
+}
+
+// Unwrap exposes the wrapped error so errors.Is/As can match against it.
+func (e FlowError) Unwrap() error { return e.Err }
 
 // Common sentinel errors.
 var (

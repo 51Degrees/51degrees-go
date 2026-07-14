@@ -299,16 +299,28 @@ func (e *Element) Close() error {
 // --- XML construction ----------------------------------------------------
 
 func (e *Element) buildXML(batch []*record) ([]byte, error) {
+	// Snapshot the flow names once under the lock: they are written during
+	// pipeline setup and this runs on the background flush goroutine.
+	flowNames := e.flowNamesSnapshot()
 	var b strings.Builder
 	b.WriteString("<Devices>")
 	for _, rec := range batch {
-		e.writeDevice(&b, rec)
+		e.writeDevice(&b, rec, flowNames)
 	}
 	b.WriteString("</Devices>")
 	return []byte(b.String()), nil
 }
 
-func (e *Element) writeDevice(b *strings.Builder, rec *record) {
+// flowNamesSnapshot returns a copy of the flow names read under staticMu.
+func (e *Element) flowNamesSnapshot() []string {
+	e.staticMu.Lock()
+	defer e.staticMu.Unlock()
+	out := make([]string, len(e.flowNames))
+	copy(out, e.flowNames)
+	return out
+}
+
+func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string) {
 	b.WriteString("<Device>")
 	writeElement(b, "SessionId", rec.sessionID)
 	if rec.sequence > 0 {
@@ -317,7 +329,7 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record) {
 	writeElement(b, "DateSent", rec.dateSent.Format("2006-01-02T15:04:05"))
 	writeElement(b, "Version", apiVersion)
 	writeElement(b, "Product", productName)
-	for _, name := range e.flowNames {
+	for _, name := range flowNames {
 		writeElement(b, "FlowElement", name)
 	}
 	writeElement(b, "Language", "Go")
@@ -477,7 +489,14 @@ func (t *tracker) seenRecently(h uint64) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	last, ok := t.seen[h]
-	t.seen[h] = now
+	recently := ok && now.Sub(last) < t.interval
+	// Only (re)start the window when the entry is new or already expired.
+	// Refreshing the timestamp on every hit would turn the fixed window into a
+	// sliding one, suppressing continuous identical traffic forever instead of
+	// re-sharing it once per interval.
+	if !recently {
+		t.seen[h] = now
+	}
 	if len(t.seen) > 10000 {
 		for k, ts := range t.seen {
 			if now.Sub(ts) > t.interval {
@@ -485,5 +504,5 @@ func (t *tracker) seenRecently(h uint64) bool {
 			}
 		}
 	}
-	return ok && now.Sub(last) < t.interval
+	return recently
 }

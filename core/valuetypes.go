@@ -37,15 +37,29 @@ import (
 const int16Max = 32767.0
 
 // AzimuthToDegrees converts a stored int16 Azimuth (compressed longitude) back
-// to a floating point longitude value in the range [-180, 180].
+// to a floating point longitude value in the range [-180, 180]. The result is
+// clamped because the int16 minimum (-32768) divided by int16Max (32767) would
+// otherwise fall just outside the range.
 func AzimuthToDegrees(stored int16) float64 {
-	return 180.0 * (float64(stored) / int16Max)
+	return clampDegrees(180.0*(float64(stored)/int16Max), 180.0)
 }
 
 // DeclinationToDegrees converts a stored int16 Declination (compressed latitude)
-// back to a floating point latitude value in the range [-90, 90].
+// back to a floating point latitude value in the range [-90, 90]. The result is
+// clamped for the same boundary reason as AzimuthToDegrees.
 func DeclinationToDegrees(stored int16) float64 {
-	return 90.0 * (float64(stored) / int16Max)
+	return clampDegrees(90.0*(float64(stored)/int16Max), 90.0)
+}
+
+// clampDegrees constrains v to [-limit, limit].
+func clampDegrees(v, limit float64) float64 {
+	if v > limit {
+		return limit
+	}
+	if v < -limit {
+		return -limit
+	}
+	return v
 }
 
 // WktString holds a Well-Known Text representation of a geometry. It is the
