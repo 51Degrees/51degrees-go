@@ -61,11 +61,18 @@ const (
 // CloudRequestData is the Aspect Data produced by the Cloud Request Engine.
 type CloudRequestData struct {
 	*engines.BaseAspectData
+	failed bool
 }
 
 func newCloudRequestData() *CloudRequestData {
 	return &CloudRequestData{BaseAspectData: engines.NewBaseAspectData()}
 }
+
+// Failed reports whether the cloud request ran but failed. It lets a downstream
+// Cloud Aspect Engine distinguish a failed request from one that never ran (so
+// a missing Property can be reported as a cloud-request failure rather than the
+// engine not being present).
+func (d *CloudRequestData) Failed() bool { return d.failed }
 
 // JSONResponse returns the raw JSON response body.
 func (d *CloudRequestData) JSONResponse() string {
@@ -167,12 +174,14 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 	// metadata-fetch failure counts toward recovery, just like a data request.
 	if err := e.ensureMetadata(); err != nil {
 		e.recordFailure()
+		e.storeFailed(fd)
 		return err
 	}
 
 	body, err := e.makeDataRequest(fd)
 	if err != nil {
 		e.recordFailure()
+		e.storeFailed(fd)
 		return err
 	}
 
@@ -180,6 +189,15 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 	data.Set(JSONResponseProperty, body)
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 	return nil
+}
+
+// storeFailed records that the request ran but failed, so a downstream Cloud
+// Aspect Engine can tell this apart from the request engine never running (for
+// example under suppressed exceptions, where Process's error is only logged).
+func (e *CloudRequestEngine) storeFailed(fd core.FlowData) {
+	data := newCloudRequestData()
+	data.failed = true
+	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 }
 
 func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {

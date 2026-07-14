@@ -64,6 +64,11 @@ func ResponseJSON(fd core.FlowData) (string, error) {
 	if err != nil {
 		return "", core.NewDataError("cloud response not found; a CloudRequestEngine must run before a CloudAspectEngine")
 	}
+	// Distinguish a request that ran but failed (data present, marked failed)
+	// from one that never ran (no data), so downstream diagnostics are accurate.
+	if crd, ok := data.(*requestengine.CloudRequestData); ok && crd.Failed() {
+		return "", core.NewDataError("cloud response not available; the cloud request failed")
+	}
 	v, err := data.Get(requestengine.JSONResponseProperty)
 	if err != nil {
 		return "", err

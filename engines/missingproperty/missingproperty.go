@@ -35,6 +35,17 @@ import (
 	"github.com/51Degrees/pipeline-go/core"
 )
 
+// Reason codes set on core.PropertyMissingError.Reason so a caller can branch
+// on why a Property is missing without parsing the message.
+const (
+	ReasonUnknown            = "unknown"
+	ReasonDataFileTier       = "datafiletier"
+	ReasonExcludedInConfig   = "excludedinconfig"
+	ReasonProductNotInKey    = "productnotinresourcekey"
+	ReasonPropertyNotInKey   = "propertynotinresourcekey"
+	ReasonCloudRequestFailed = "cloudrequestfailed"
+)
+
 // ForDataFileTier builds the error for a Property absent from the current data
 // file. dataTiers lists the license/data file types in which it is available.
 func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
@@ -46,7 +57,7 @@ func ForDataFileTier(property, element string, dataTiers []string) *core.Propert
 		"This is because your license and/or data file does not include this Property. "+
 		"The Property is available with the %s license/data.",
 		property, element, tiers)
-	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonDataFileTier}
 }
 
 // ForExcludedInConfig builds the error for a Property excluded by configuration.
@@ -54,7 +65,7 @@ func ForExcludedInConfig(property, element string) *core.PropertyMissingError {
 	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
 		"This is because the Property has been excluded when configuring the Engine.",
 		property, element)
-	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonExcludedInConfig}
 }
 
 // ForProductNotInResourceKey builds the error for a product not included with
@@ -65,7 +76,7 @@ func ForProductNotInResourceKey(property, element, product string) *core.Propert
 		"For more details on Resource Keys, see our explainer: "+
 		"https://51degrees.com/documentation/_info__resource_keys.html",
 		property, element, product)
-	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonProductNotInKey}
 }
 
 // ForPropertyNotInResourceKey builds the error for a Property not included with
@@ -78,11 +89,24 @@ func ForPropertyNotInResourceKey(property, element, product string, includedProp
 		"For more details on Resource Keys, see our explainer: "+
 		"https://51degrees.com/documentation/_info__resource_keys.html",
 		property, element, product, strings.Join(includedProperties, ", "))
-	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonPropertyNotInKey}
 }
 
 // Generic builds a non-specific missing-property error.
 func Generic(property, element string) *core.PropertyMissingError {
 	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'.", property, element)
-	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
+	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonUnknown}
+}
+
+// ForCloudRequestFailed builds the error for a Property that is missing because
+// the cloud request failed, as opposed to the Property not being accessible
+// with the Resource Key.
+func ForCloudRequestFailed(property, element string) *core.PropertyMissingError {
+	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
+		"This is because the request to the cloud service failed.",
+		property, element)
+	return &core.PropertyMissingError{
+		PropertyName: property, ElementName: element, Message: msg,
+		Reason: ReasonCloudRequestFailed,
+	}
 }

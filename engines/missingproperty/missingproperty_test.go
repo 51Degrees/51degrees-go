@@ -25,6 +25,8 @@ package missingproperty
 import (
 	"strings"
 	"testing"
+
+	"github.com/51Degrees/pipeline-go/core"
 )
 
 func TestDataFileTierMessage(t *testing.T) {
@@ -71,5 +73,26 @@ func TestPropertyNotInResourceKeyMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Message, "HardwareVendor, PlatformName") {
 		t.Fatalf("included properties not listed: %s", err.Message)
+	}
+}
+
+// TestReasonTagging verifies each builder tags its error with the matching
+// machine-readable reason code.
+func TestReasonTagging(t *testing.T) {
+	cases := []struct {
+		reason string
+		err    *core.PropertyMissingError
+	}{
+		{ReasonDataFileTier, ForDataFileTier("p", "e", nil)},
+		{ReasonExcludedInConfig, ForExcludedInConfig("p", "e")},
+		{ReasonProductNotInKey, ForProductNotInResourceKey("p", "e", "d")},
+		{ReasonPropertyNotInKey, ForPropertyNotInResourceKey("p", "e", "d", nil)},
+		{ReasonUnknown, Generic("p", "e")},
+		{ReasonCloudRequestFailed, ForCloudRequestFailed("p", "e")},
+	}
+	for _, tc := range cases {
+		if got := tc.err.Reason; got != tc.reason {
+			t.Fatalf("reason = %q, want %q", got, tc.reason)
+		}
 	}
 }

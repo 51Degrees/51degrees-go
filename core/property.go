@@ -49,6 +49,12 @@ type PropertyMetadata struct {
 	// ItemProperties holds metadata for the Properties of complex object values
 	// (for example, the Hardware profile lookup Engine).
 	ItemProperties []PropertyMetadata
+	// DataTiersWherePresent lists the data-file tiers (for example "Lite",
+	// "Enterprise") in which this Property is available. Used to explain why an
+	// on-premise Property is missing and which data upgrade provides it.
+	DataTiersWherePresent []string
+	// Description is a human-readable description of the Property.
+	Description string
 }
 
 // ItemPropertyDictionary returns ItemProperties keyed on (lower-case) Property
