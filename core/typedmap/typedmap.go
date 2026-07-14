@@ -62,6 +62,11 @@ type Map interface {
 	AddString(name string, value any)
 	// GetString returns the value stored under name and whether it existed.
 	GetString(name string) (any, bool)
+	// GetOrAddString returns the existing value for name, or atomically stores
+	// and returns ctor()'s result if absent, so concurrent callers all observe
+	// the same stored value (ctor may run more than once but only the first
+	// stored result is kept and returned to every caller).
+	GetOrAddString(name string, ctor func() any) any
 	// Remove deletes the entry stored under name, if present.
 	Remove(name string)
 	// Contains reports whether an entry exists for name.
@@ -91,6 +96,15 @@ func (m *simpleMap) AddString(name string, value any) { m.data[normalize(name)] 
 func (m *simpleMap) GetString(name string) (any, bool) {
 	v, ok := m.data[normalize(name)]
 	return v, ok
+}
+func (m *simpleMap) GetOrAddString(name string, ctor func() any) any {
+	n := normalize(name)
+	if v, ok := m.data[n]; ok {
+		return v
+	}
+	v := ctor()
+	m.data[n] = v
+	return v
 }
 func (m *simpleMap) Remove(name string)        { delete(m.data, normalize(name)) }
 func (m *simpleMap) Contains(name string) bool { _, ok := m.data[normalize(name)]; return ok }
@@ -131,6 +145,25 @@ func (m *concurrentMap) GetString(name string) (any, bool) {
 	v, ok := m.data[normalize(name)]
 	m.mu.RUnlock()
 	return v, ok
+}
+func (m *concurrentMap) GetOrAddString(name string, ctor func() any) any {
+	n := normalize(name)
+	m.mu.RLock()
+	v, ok := m.data[n]
+	m.mu.RUnlock()
+	if ok {
+		return v
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Re-check under the write lock: another goroutine may have stored a value
+	// between the read lock above and acquiring the write lock.
+	if v, ok := m.data[n]; ok {
+		return v
+	}
+	v = ctor()
+	m.data[n] = v
+	return v
 }
 func (m *concurrentMap) Remove(name string) {
 	m.mu.Lock()
@@ -211,15 +244,11 @@ func GetByName[T any](m Map, name string) (T, error) {
 // ctor, stores it, and returns it. If an existing value is of the wrong type an
 // error is returned.
 func GetOrAdd[T any](m Map, key TypedKey[T], ctor func() T) (T, error) {
-	if raw, ok := m.GetString(key.Name()); ok {
-		v, ok := raw.(T)
-		if !ok {
-			var zero T
-			return zero, &ErrWrongType{Name: key.Name(), Expected: fmt.Sprintf("%T", zero), Actual: raw}
-		}
-		return v, nil
+	raw := m.GetOrAddString(key.Name(), func() any { return ctor() })
+	v, ok := raw.(T)
+	if !ok {
+		var zero T
+		return zero, &ErrWrongType{Name: key.Name(), Expected: fmt.Sprintf("%T", zero), Actual: raw}
 	}
-	v := ctor()
-	m.AddString(key.Name(), v)
 	return v, nil
 }

@@ -25,6 +25,7 @@ package engines
 import (
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/51Degrees/pipeline-go/core"
@@ -51,6 +52,7 @@ type BaseAspectEngine struct {
 	lazyLoading bool
 	lazyTimeout time.Duration
 	tier        string
+	warnOnce    sync.Once
 }
 
 // NewBaseAspectEngine creates a BaseAspectEngine with the given data key and
@@ -88,20 +90,35 @@ func (b *BaseAspectEngine) DataSourceTier() string { return b.tier }
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/caching.md#process-flow
 func (b *BaseAspectEngine) Execute(fd core.FlowData, compute func() (AspectData, error)) error {
 	if b.lazyLoading {
+		if b.cache != nil {
+			// Lazy loading and caching are mutually exclusive here: the lazy
+			// path does not consult the cache. Warn once so the misconfiguration
+			// is visible rather than silent.
+			b.warnOnce.Do(func() {
+				b.Logger().Warn("engine has both lazy loading and a cache configured; "+
+					"the cache is ignored while lazy loading is enabled", "engine", b.DataKey())
+			})
+		}
 		return b.executeLazy(fd, compute)
 	}
 
 	if b.cache != nil {
 		key := cache.GenerateKey(fd, b.EvidenceKeyFilter())
 		if v, ok := b.cache.Get(key); ok {
-			data := v.(AspectData)
-			data.setCacheHit(true)
-			b.store(fd, data)
-			return nil
+			if data, ok := v.(AspectData); ok && data != nil {
+				// Do not mutate the shared cached instance; report the cache hit
+				// through a per-Flow-Data view so the original producer's result
+				// is unaffected.
+				b.store(fd, cacheHitView{AspectData: data})
+				return nil
+			}
 		}
 		data, err := compute()
 		if err != nil {
 			return err
+		}
+		if data == nil {
+			return core.NewDataError("engine compute returned no data and no error")
 		}
 		b.cache.Set(key, data)
 		b.store(fd, data)
@@ -112,9 +129,23 @@ func (b *BaseAspectEngine) Execute(fd core.FlowData, compute func() (AspectData,
 	if err != nil {
 		return err
 	}
+	if data == nil {
+		return core.NewDataError("engine compute returned no data and no error")
+	}
 	b.store(fd, data)
 	return nil
 }
+
+// cacheHitView is a per-Flow-Data view over a cached AspectData that reports a
+// cache hit without mutating the shared cached instance.
+type cacheHitView struct{ AspectData }
+
+// CacheHit always reports true for a value served from the cache.
+func (c cacheHitView) CacheHit() bool { return true }
+
+// UnwrapElementData lets type-based access (core.Get) reach the underlying
+// concrete Aspect Data behind the view.
+func (c cacheHitView) UnwrapElementData() core.ElementData { return c.AspectData }
 
 func (b *BaseAspectEngine) store(fd core.FlowData, data AspectData) {
 	fd.GetOrAdd(b.DataKey(), func(core.FlowData) core.ElementData { return data })
@@ -178,6 +209,10 @@ func (l *lazyAspectData) Set(propertyName string, value any) {
 	// external Set calls on the lazy wrapper are not expected and are ignored.
 }
 
+// AsMap returns the computed values, or an empty map if the lazy load timed out
+// or failed. These accessors cannot return an error, so a failed lazy load is
+// indistinguishable here from one that legitimately produced nothing; use Get,
+// which does surface the wait error, to tell them apart.
 func (l *lazyAspectData) AsMap() map[string]any {
 	if err := l.wait(); err != nil {
 		return map[string]any{}
@@ -185,6 +220,8 @@ func (l *lazyAspectData) AsMap() map[string]any {
 	return l.data.AsMap()
 }
 
+// CacheHit reports the cached state, or false if the lazy load timed out or
+// failed. See the note on AsMap about the discarded error.
 func (l *lazyAspectData) CacheHit() bool {
 	if err := l.wait(); err != nil {
 		return false
