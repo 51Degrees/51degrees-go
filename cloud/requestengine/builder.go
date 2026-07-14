@@ -48,6 +48,8 @@ type Builder struct {
 	failuresToEnterRecovery int
 	failureWindow           time.Duration
 	recoveryDuration        time.Duration
+	recoveryMultiplier      float64
+	maxRecoveryDuration     time.Duration
 	now                     func() time.Time
 }
 
@@ -70,6 +72,8 @@ func NewBuilder() *Builder {
 		failuresToEnterRecovery: DefaultFailures,
 		failureWindow:           DefaultFailureWindow,
 		recoveryDuration:        DefaultRecovery,
+		recoveryMultiplier:      DefaultRecoveryMultiplier,
+		maxRecoveryDuration:     DefaultMaxRecovery,
 	}
 }
 
@@ -116,6 +120,19 @@ func (b *Builder) SetFailureWindow(d time.Duration) *Builder { b.failureWindow =
 // disables recovery mode.
 func (b *Builder) SetRecoveryDuration(d time.Duration) *Builder { b.recoveryDuration = d; return b }
 
+// SetRecoveryMultiplier sets the factor by which the recovery duration grows
+// after each consecutive trip, resetting on the next success. A multiplier of 1
+// (the default) keeps the recovery duration fixed; a larger value gives
+// exponential backoff as in the .NET ExponentialBackoffRecoveryStrategy.
+func (b *Builder) SetRecoveryMultiplier(m float64) *Builder { b.recoveryMultiplier = m; return b }
+
+// SetMaxRecoveryDuration caps the recovery duration once it has grown through
+// the multiplier. Zero or negative leaves it uncapped.
+func (b *Builder) SetMaxRecoveryDuration(d time.Duration) *Builder {
+	b.maxRecoveryDuration = d
+	return b
+}
+
 // setClock overrides the clock used for recovery timing (testing only).
 func (b *Builder) setClock(now func() time.Time) *Builder { b.now = now; return b }
 
@@ -154,6 +171,8 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 		failuresToEnterRecovery: b.failuresToEnterRecovery,
 		failureWindow:           b.failureWindow,
 		recoveryDuration:        b.recoveryDuration,
+		recoveryMultiplier:      b.recoveryMultiplier,
+		maxRecoveryDuration:     b.maxRecoveryDuration,
 		now:                     now,
 	}
 	e.SetDataSourceTier("cloud")

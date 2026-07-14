@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -56,6 +57,13 @@ const (
 	DefaultFailures      = 10
 	DefaultFailureWindow = 100 * time.Second
 	DefaultRecovery      = 60 * time.Second
+	// DefaultRecoveryMultiplier of 1.0 keeps the recovery duration fixed. Set a
+	// value greater than 1 to grow it exponentially after consecutive trips,
+	// matching the .NET ExponentialBackoffRecoveryStrategy.
+	DefaultRecoveryMultiplier = 1.0
+	// DefaultMaxRecovery of 0 leaves the exponentially grown recovery duration
+	// uncapped.
+	DefaultMaxRecovery = 0 * time.Second
 )
 
 // CloudRequestData is the Aspect Data produced by the Cloud Request Engine.
@@ -135,9 +143,15 @@ type CloudRequestEngine struct {
 	failuresToEnterRecovery int
 	failureWindow           time.Duration
 	recoveryDuration        time.Duration
+	recoveryMultiplier      float64
+	maxRecoveryDuration     time.Duration
 	recMu                   sync.Mutex
 	failureTimes            []time.Time
 	recoveryUntil           time.Time
+	// consecutiveRecoveries counts how many times recovery has been tripped in a
+	// row without an intervening success, driving the exponential backoff. It is
+	// reset by recordSuccess.
+	consecutiveRecoveries int
 
 	now func() time.Time // injectable clock for testing
 }
@@ -157,6 +171,7 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 		e.recordFailure()
 		return nil, err
 	}
+	e.recordSuccess()
 	return e.publicProperties, nil
 }
 
@@ -185,6 +200,7 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 		return err
 	}
 
+	e.recordSuccess()
 	data := newCloudRequestData()
 	data.Set(JSONResponseProperty, body)
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
@@ -438,9 +454,37 @@ func (e *CloudRequestEngine) recordFailure() {
 	kept = append(kept, now)
 	e.failureTimes = kept
 	if len(e.failureTimes) >= e.failuresToEnterRecovery {
-		e.recoveryUntil = now.Add(e.recoveryDuration)
+		e.consecutiveRecoveries++
+		e.recoveryUntil = now.Add(e.recoveryDurationFor(e.consecutiveRecoveries))
 		e.failureTimes = e.failureTimes[:0]
 	}
+}
+
+// recoveryDurationFor returns the recovery duration for the nth consecutive
+// trip. With the default multiplier of 1 this is always recoveryDuration; with
+// a larger multiplier it grows as recoveryDuration * multiplier^(n-1), capped
+// at maxRecoveryDuration when that is positive. This mirrors the .NET
+// ExponentialBackoffRecoveryStrategy.
+func (e *CloudRequestEngine) recoveryDurationFor(n int) time.Duration {
+	if n < 1 || e.recoveryMultiplier <= 1 {
+		return e.recoveryDuration
+	}
+	dur := time.Duration(float64(e.recoveryDuration) * math.Pow(e.recoveryMultiplier, float64(n-1)))
+	if e.maxRecoveryDuration > 0 && dur > e.maxRecoveryDuration {
+		return e.maxRecoveryDuration
+	}
+	return dur
+}
+
+// recordSuccess is called after a request succeeds so the exponential backoff
+// resets to the base recovery duration for any future failures.
+func (e *CloudRequestEngine) recordSuccess() {
+	if e.recoveryDuration <= 0 {
+		return
+	}
+	e.recMu.Lock()
+	e.consecutiveRecoveries = 0
+	e.recMu.Unlock()
 }
 
 // --- helpers -------------------------------------------------------------
