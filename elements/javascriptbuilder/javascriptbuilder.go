@@ -31,6 +31,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -99,9 +100,19 @@ type Builder struct {
 	enableCookies bool
 }
 
+// DefaultEndpoint is the callback endpoint used when one is not configured,
+// matching the .NET reference so the client-side update round-trip is enabled by
+// default.
+const DefaultEndpoint = "/51dpipeline/json"
+
 // NewBuilder creates a Builder with default options.
 func NewBuilder() *Builder {
-	return &Builder{objectName: DefaultObjectName, minify: true, enableCookies: true}
+	return &Builder{
+		objectName:    DefaultObjectName,
+		endpoint:      DefaultEndpoint,
+		minify:        true,
+		enableCookies: true,
+	}
 }
 
 // SetLogger sets the logger.
@@ -273,14 +284,21 @@ func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 }
 
 // queryParameters returns a JSON object of the query.* Evidence values (with the
-// "query." prefix removed) for relaying in client-side callbacks.
+// "query." prefix removed) for relaying in client-side callbacks. Matching the
+// .NET reference, the session id and sequence are excluded (the template adds
+// them explicitly) and both keys and values are URL-encoded so the client can
+// append them to the callback URL directly.
 func (e *Element) queryParameters(fd core.FlowData) string {
 	params := map[string]string{}
 	for key, val := range fd.Evidence().AsMap() {
 		prefix, field := core.SplitEvidenceKey(key)
-		if prefix == core.PrefixQuery {
-			params[field] = anyToString(val)
+		if prefix != core.PrefixQuery {
+			continue
 		}
+		if field == sequence.SessionIDProperty || field == sequence.SequenceProperty {
+			continue
+		}
+		params[url.QueryEscape(field)] = url.QueryEscape(anyToString(val))
 	}
 	encoded, err := json.Marshal(params)
 	if err != nil {
@@ -323,7 +341,10 @@ func (e *Element) supportsFetch(fd core.FlowData) bool {
 			}
 		}
 	}
-	return true
+	// Match the .NET reference: default to false when no Fetch property is
+	// present, so the generated script uses the XMLHttpRequest fallback rather
+	// than assuming fetch() is available.
+	return false
 }
 
 func evidenceString(fd core.FlowData, key string) string {
