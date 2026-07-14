@@ -211,3 +211,42 @@ func TestJSONBuilderSetProperties(t *testing.T) {
 		t.Fatal("javascript must always be included")
 	}
 }
+
+// nestedEngine produces a nested list of Element Data plus a raw nil property.
+type nestedEngine struct{ *core.BaseElement }
+
+func newNestedEngine() *nestedEngine {
+	return &nestedEngine{BaseElement: core.NewBaseElement("hardware", core.NewWhitelistFilter(), nil)}
+}
+
+func (e *nestedEngine) Process(fd core.FlowData) error {
+	d := fd.GetOrAdd("hardware", func(core.FlowData) core.ElementData { return core.NewBaseElementData() })
+	profile := core.NewBaseElementData()
+	profile.Set("model", "X1")
+	d.Set("profiles", []core.ElementData{profile})
+	d.Set("missing", nil) // raw nil, must be omitted
+	return nil
+}
+
+// TestJSONBuilderNestedAndRawNull verifies nested Element Data lists are recursed
+// and a raw nil property is omitted (no key, no nullreason), matching .NET.
+func TestJSONBuilderNestedAndRawNull(t *testing.T) {
+	result := buildJSON(t, newNestedEngine())
+	hw, ok := result["hardware"].(map[string]any)
+	if !ok {
+		t.Fatalf("hardware object missing: %v", result)
+	}
+	if _, present := hw["missing"]; present {
+		t.Fatalf("raw nil property should be omitted: %v", hw)
+	}
+	if _, present := hw["missingnullreason"]; present {
+		t.Fatalf("raw nil property should not emit a nullreason: %v", hw)
+	}
+	profiles, ok := hw["profiles"].([]any)
+	if !ok || len(profiles) != 1 {
+		t.Fatalf("expected 1 nested profile, got %v", hw["profiles"])
+	}
+	if first, ok := profiles[0].(map[string]any); !ok || first["model"] != "X1" {
+		t.Fatalf("nested profile not recursed: %v", profiles[0])
+	}
+}

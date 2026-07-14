@@ -117,6 +117,13 @@ func (e *Element) Process(fd core.FlowData) error {
 				}
 			}
 
+			// A raw (non-AspectPropertyValue) nil is omitted entirely, matching
+			// the .NET reference. A no-value AspectPropertyValue still emits the
+			// name plus its nullreason below.
+			if raw == nil {
+				continue
+			}
+
 			value, isNull, nullReason := normalizeValue(raw)
 			if isNull {
 				obj[propName] = nil
@@ -196,9 +203,38 @@ func normalizeValue(raw any) (value any, isNull bool, nullReason string) {
 		if !apv.HasValue() {
 			return nil, true, apv.NoValueMessage()
 		}
-		return apv.AsInterface(), false, ""
+		raw = apv.AsInterface()
+	}
+	// A list of sub-element data (e.g. multiple device profiles) is recursed so
+	// each nested object carries its own properties and no-value reasons,
+	// matching the .NET reference.
+	if list, ok := raw.([]core.ElementData); ok {
+		out := make([]map[string]any, len(list))
+		for i, d := range list {
+			out[i] = normalizeElementData(d)
+		}
+		return out, false, ""
 	}
 	return raw, false, ""
+}
+
+// normalizeElementData builds the JSON object for a nested Element Data,
+// emitting a nullreason for any no-value property and recursing further.
+func normalizeElementData(d core.ElementData) map[string]any {
+	obj := map[string]any{}
+	for name, raw := range d.AsMap() {
+		if raw == nil {
+			continue
+		}
+		value, isNull, nullReason := normalizeValue(raw)
+		if isNull {
+			obj[name] = nil
+			obj[name+"nullreason"] = nullReason
+		} else {
+			obj[name] = value
+		}
+	}
+	return obj
 }
 
 func isJavaScript(raw any) bool {
