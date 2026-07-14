@@ -255,6 +255,12 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 	}
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Content-Type", contentType)
+	// Reflect the request Origin so a cross-origin client-side callback to these
+	// endpoints is permitted, matching the .NET reference. The literal "null"
+	// origin is not reflected.
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
 
 	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
 		w.WriteHeader(http.StatusNotModified)
@@ -353,14 +359,16 @@ func (m *Middleware) isTrustedProxy(ip string) bool {
 }
 
 func requestProtocol(r *http.Request) string {
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		return proto
+	// Trust the actual connection first (it cannot be spoofed), matching the
+	// .NET reference, then fall back to forwarding headers.
+	if r.TLS != nil {
+		return "https"
 	}
 	if proto := r.Header.Get("X-Origin-Proto"); proto != "" {
 		return proto
 	}
-	if r.TLS != nil {
-		return "https"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
 	}
 	return "http"
 }
