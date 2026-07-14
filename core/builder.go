@@ -91,6 +91,20 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		if e.IsConcurrent() {
 			concurrent = true
 		}
+		// Parallel children share one Flow Data and each writes its own Element
+		// Data, so duplicate keys within a group would race a non-synchronized
+		// map. Reject that at build time rather than crash at run time.
+		if group, ok := e.(childLister); ok {
+			seen := make(map[string]struct{})
+			for _, c := range group.Children() {
+				if _, dup := seen[c.DataKey()]; dup {
+					return nil, NewConfigurationError("parallel element '"+e.DataKey()+
+						"' has children with duplicate data key '"+c.DataKey()+
+						"'; parallel children must write distinct keys", nil)
+				}
+				seen[c.DataKey()] = struct{}{}
+			}
+		}
 	}
 
 	p := &pipeline{
@@ -102,8 +116,15 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		filter:                    NewAggregateFilter(filters...),
 	}
 
-	for _, e := range elements {
+	for i, e := range elements {
 		if err := e.OnPipelineAdded(p); err != nil {
+			// Roll back membership recorded on the earlier elements so a shared
+			// element does not track this discarded pipeline.
+			for _, prev := range elements[:i] {
+				if r, ok := prev.(interface{ removePipeline(Pipeline) }); ok {
+					r.removePipeline(p)
+				}
+			}
 			return nil, NewConfigurationError("element '"+e.DataKey()+"' could not be added to the pipeline", err)
 		}
 	}

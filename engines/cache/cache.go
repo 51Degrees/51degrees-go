@@ -73,15 +73,29 @@ func NewLRUCache(size, concurrency int) *LRUCache {
 		concurrency = runtime.NumCPU()
 	}
 	shardCount := nextPow2(concurrency)
-	perShard := size / shardCount
-	if perShard < 1 {
-		perShard = 1
+	// Never create more shards than the total size: otherwise the per-shard
+	// minimum of 1 would push the effective capacity above the requested size
+	// (e.g. size 2 across 8 shards would hold 8). Keep it a power of two so the
+	// bit-mask still selects a shard.
+	for shardCount > size {
+		shardCount /= 2
 	}
+	if shardCount < 1 {
+		shardCount = 1
+	}
+	base := size / shardCount
+	remainder := size % shardCount
 	c := &LRUCache{
 		shards: make([]*shard, shardCount),
 		mask:   uint32(shardCount - 1),
 	}
 	for i := range c.shards {
+		// Distribute the remainder across the first shards so the shard
+		// capacities sum to exactly size rather than under- or overshooting.
+		perShard := base
+		if i < remainder {
+			perShard++
+		}
 		c.shards[i] = newShard(perShard)
 	}
 	return c

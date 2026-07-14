@@ -35,26 +35,6 @@ import (
 	"github.com/51Degrees/pipeline-go/core"
 )
 
-// Reason identifies why a Property is missing.
-type Reason int
-
-const (
-	// ReasonUnknown is used when no specific reason can be determined.
-	ReasonUnknown Reason = iota
-	// ReasonDataFileTier: the Property is not available in the current data file
-	// (on-premise only).
-	ReasonDataFileTier
-	// ReasonExcludedInConfig: the Property was excluded when configuring the
-	// Engine (on-premise only).
-	ReasonExcludedInConfig
-	// ReasonProductNotInResourceKey: the Resource Key does not include access to
-	// any Properties under the product (cloud only).
-	ReasonProductNotInResourceKey
-	// ReasonPropertyNotInResourceKey: the Resource Key does not include access to
-	// this specific Property (cloud only).
-	ReasonPropertyNotInResourceKey
-)
-
 // ForDataFileTier builds the error for a Property absent from the current data
 // file. dataTiers lists the license/data file types in which it is available.
 func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
@@ -105,13 +85,4 @@ func ForPropertyNotInResourceKey(property, element, product string, includedProp
 func Generic(property, element string) *core.PropertyMissingError {
 	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'.", property, element)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg}
-}
-
-// Service determines why a Property is missing for a given Engine. On-premise
-// and cloud engines provide their own implementations; this interface lets an
-// Engine delegate the decision.
-type Service interface {
-	// Analyze returns a PropertyMissingError explaining why property is not
-	// available from the named element, or nil if it should be available.
-	Analyze(property, element string) *core.PropertyMissingError
 }

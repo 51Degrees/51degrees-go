@@ -69,6 +69,7 @@ type pipeline struct {
 	closeErr  error
 	closed    bool
 	mu        sync.Mutex
+	inFlight  sync.WaitGroup
 }
 
 func (p *pipeline) CreateFlowData() FlowData { return newFlowData(p) }
@@ -87,9 +88,26 @@ func (p *pipeline) FlowElements() []FlowElement {
 }
 
 func (p *pipeline) GetElement(dataKey string) FlowElement {
-	for _, e := range p.elements {
+	return findElement(p.elements, dataKey)
+}
+
+// childLister is implemented by container elements (e.g. ParallelElements) so
+// their children can be located by key.
+type childLister interface {
+	Children() []FlowElement
+}
+
+// findElement locates an element by data key, recursing into parallel groups so
+// a child element can be found by key even though it is wrapped.
+func findElement(elements []FlowElement, dataKey string) FlowElement {
+	for _, e := range elements {
 		if lower(e.DataKey()) == lower(dataKey) {
 			return e
+		}
+		if group, ok := e.(childLister); ok {
+			if child := findElement(group.Children(), dataKey); child != nil {
+				return child
+			}
 		}
 	}
 	return nil
@@ -111,12 +129,17 @@ func (p *pipeline) IsSuppressProcessExceptions() bool    { return p.suppressProc
 // complete picture of what went wrong.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md#process-function
 func (p *pipeline) process(fd *flowData) error {
+	// Register as in-flight under the lock and before the closed check so that
+	// Close, which sets closed under the same lock and then waits, cannot tear
+	// down an element while this call is still using it.
 	p.mu.Lock()
-	closed := p.closed
-	p.mu.Unlock()
-	if closed {
+	if p.closed {
+		p.mu.Unlock()
 		return ErrPipelineClosed
 	}
+	p.inFlight.Add(1)
+	p.mu.Unlock()
+	defer p.inFlight.Done()
 
 	for _, e := range p.elements {
 		p.processElement(e, fd)
@@ -156,6 +179,9 @@ func (p *pipeline) Close() error {
 		p.mu.Lock()
 		p.closed = true
 		p.mu.Unlock()
+		// Wait for in-flight processing to finish so a stateful element is not
+		// closed underneath a running Process.
+		p.inFlight.Wait()
 		for _, e := range p.elements {
 			if err := e.Close(); err != nil && p.closeErr == nil {
 				p.closeErr = err

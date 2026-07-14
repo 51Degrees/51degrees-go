@@ -81,9 +81,11 @@ type Config struct {
 	// URLFormatter, if set, builds the final update URL (for example by adding
 	// the query-string parameters required by the 51Degrees Distributor).
 	URLFormatter URLFormatter
-	// UseIfModifiedSince is retained for configuration compatibility. The service
-	// now sends the If-Modified-Since header whenever a current data file exists,
-	// regardless of this flag.
+	// UseIfModifiedSince controls whether the update request sends an
+	// If-Modified-Since header (based on the server's last reported
+	// Last-Modified, falling back to the operational file's modification time)
+	// so an unchanged file returns 304 rather than being re-downloaded. Disable
+	// it for a server that mishandles conditional requests.
 	UseIfModifiedSince bool
 
 	// Update behavior.
@@ -151,12 +153,28 @@ type registration struct {
 	stop      chan struct{}
 	wg        sync.WaitGroup
 
+	// lastModified is the server's Last-Modified for the current data; used for
+	// the next conditional request. Accessed only under updateMu (httpUpdate).
+	lastModified time.Time
+
 	onUpdate []func()
+}
+
+// recoverGoroutine logs and swallows a panic in a background goroutine so a
+// corrupt data file or a buggy update callback cannot crash the host process.
+func (r *registration) recoverGoroutine(what string) {
+	if rec := recover(); rec != nil {
+		r.svc.logger.Error("recovered panic in "+what, "engine", r.engineName, "panic", rec)
+	}
 }
 
 // Register adds an Engine to the service and runs the configured start-up
 // process (update-on-start-up, file watcher, polling). engineName is used in
 // log messages.
+//
+// When UpdateOnStartup is set, Register performs the start-up update check
+// synchronously and so blocks for up to the HTTP client's timeout; the default
+// client sets a bounded timeout, and a custom client should do the same.
 func (s *Service) Register(engine Refreshable, engineName string, cfg Config) error {
 	if cfg.Identifier == "" {
 		cfg.Identifier = engineName
@@ -169,23 +187,18 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 		stop:       make(chan struct{}),
 	}
 
-	s.mu.Lock()
-	if _, exists := s.registrations[cfg.Identifier]; exists {
-		s.mu.Unlock()
-		return fmt.Errorf("data update: identifier %q is already registered", cfg.Identifier)
-	}
-	s.registrations[cfg.Identifier] = reg
-	s.mu.Unlock()
-
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
 		s.logger.Info("Updating on start-up", "engine", engineName)
-		if err := reg.httpUpdate(true); err != nil {
+		if err := reg.httpUpdate(); err != nil {
 			// Start-up update failures fall back to existing local data.
 			s.logger.Warn("start-up update failed; using existing data if available",
 				"engine", engineName, "error", err)
 		}
 	}
 
+	// Start the background goroutines (which call wg.Add and assign the watcher)
+	// before publishing the registration, so a concurrent Close cannot observe a
+	// half-initialized registration and race wg.Add/Wait or the watcher field.
 	if cfg.FileSystemWatcherEnabled {
 		if err := reg.startWatcher(); err != nil {
 			s.logger.Warn("could not create file system watcher", "engine", engineName, "error", err)
@@ -194,7 +207,27 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 	if cfg.AutomaticUpdatesEnabled && cfg.DataUpdateURL != "" {
 		reg.startPolling()
 	}
+
+	s.mu.Lock()
+	if _, exists := s.registrations[cfg.Identifier]; exists {
+		s.mu.Unlock()
+		// Roll back the goroutines started above for this duplicate.
+		reg.stopAndWait()
+		return fmt.Errorf("data update: identifier %q is already registered", cfg.Identifier)
+	}
+	s.registrations[cfg.Identifier] = reg
+	s.mu.Unlock()
 	return nil
+}
+
+// stopAndWait signals the registration's goroutines to stop and waits for them,
+// closing the watcher if present.
+func (r *registration) stopAndWait() {
+	close(r.stop)
+	if r.watcher != nil {
+		_ = r.watcher.Close()
+	}
+	r.wg.Wait()
 }
 
 // OnUpdate registers a callback invoked after a successful refresh of the named
@@ -225,7 +258,7 @@ func (s *Service) CheckForUpdate(identifier string) error {
 		return fmt.Errorf("data update: no registration for identifier %q", identifier)
 	}
 	if reg.cfg.DataUpdateURL != "" {
-		return reg.httpUpdate(false)
+		return reg.httpUpdate()
 	}
 	return reg.refreshFromFile()
 }
@@ -241,11 +274,7 @@ func (s *Service) Close() error {
 	s.mu.Unlock()
 
 	for _, r := range regs {
-		close(r.stop)
-		if r.watcher != nil {
-			_ = r.watcher.Close()
-		}
-		r.wg.Wait()
+		r.stopAndWait()
 	}
 	return nil
 }
@@ -254,6 +283,7 @@ func (r *registration) startPolling() {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
+		defer r.recoverGoroutine("update poller")
 		// override, when non-zero, forces the next poll delay (used to honor a
 		// server's Retry-After after a 429 response).
 		var override time.Duration
@@ -270,7 +300,7 @@ func (r *registration) startPolling() {
 				return
 			case <-timer.C:
 			}
-			if err := r.httpUpdate(false); err != nil {
+			if err := r.httpUpdate(); err != nil {
 				// Background errors are logged, never fatal.
 				r.svc.logger.Warn("automatic update failed; will retry later",
 					"engine", r.engineName, "error", err)
@@ -313,7 +343,19 @@ func (r *registration) startWatcher() error {
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
+		defer r.recoverGoroutine("file watcher")
 		target := filepath.Clean(r.cfg.DataFilePath)
+		// A single logical change (an atomic rename, or an editor writing
+		// incrementally) surfaces as several events; debounce so the Engine
+		// reloads once per burst rather than on every event.
+		const debounce = 500 * time.Millisecond
+		var timer *time.Timer
+		var timerC <-chan time.Time
+		defer func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}()
 		for {
 			select {
 			case <-r.stop:
@@ -326,10 +368,18 @@ func (r *registration) startWatcher() error {
 					continue
 				}
 				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
-					if err := r.refreshFromFile(); err != nil {
-						r.svc.logger.Warn("refresh from watched file failed",
-							"engine", r.engineName, "error", err)
+					if timer == nil {
+						timer = time.NewTimer(debounce)
+					} else {
+						timer.Reset(debounce)
 					}
+					timerC = timer.C
+				}
+			case <-timerC:
+				timerC = nil
+				if err := r.refreshFromFile(); err != nil {
+					r.svc.logger.Warn("refresh from watched file failed",
+						"engine", r.engineName, "error", err)
 				}
 			case err, ok := <-w.Errors:
 				if !ok {
@@ -365,7 +415,7 @@ func (r *registration) refreshFromFile() error {
 // The whole operation (download, replace, refresh) is serialized per
 // registration so a programmatic CheckForUpdate cannot race the background
 // poller and load an older of two concurrent downloads.
-func (r *registration) httpUpdate(startup bool) error {
+func (r *registration) httpUpdate() error {
 	r.updateMu.Lock()
 	defer r.updateMu.Unlock()
 
@@ -379,13 +429,15 @@ func (r *registration) httpUpdate(startup bool) error {
 	if err != nil {
 		return err
 	}
-	// Send If-Modified-Since whenever a current data file exists, so a server
-	// that honors it returns 304 instead of re-sending an unchanged file. This
-	// is the spec-recommended optimization and avoids reloading the Engine on
-	// every poll against a static URL. Setting UseIfModifiedSince has no further
-	// effect; it is retained for configuration compatibility.
-	if t, ok := r.currentDataTime(); ok {
-		req.Header.Set("If-Modified-Since", t.UTC().Format(http.TimeFormat))
+	// When enabled, send If-Modified-Since so a server that honors it returns
+	// 304 instead of re-sending an unchanged file. Prefer the Last-Modified the
+	// server previously reported (persisted below) over the operational file's
+	// modification time, which after an atomic rename is the download time and
+	// so could be at or after data that is actually newer.
+	if r.cfg.UseIfModifiedSince {
+		if since, ok := r.conditionalSince(); ok {
+			req.Header.Set("If-Modified-Since", since.UTC().Format(http.TimeFormat))
+		}
 	}
 
 	resp, err := r.svc.httpClient.Do(req)
@@ -420,7 +472,7 @@ func (r *registration) httpUpdate(startup bool) error {
 		r.svc.logger.Warn("data file integrity check failed", "engine", r.engineName, "url", url, "error", err)
 		return err
 	}
-	body, err := maybeDecompress(raw, resp.Header.Get("Content-Encoding") == "gzip")
+	body, err := maybeDecompress(raw)
 	if err != nil {
 		r.svc.logger.Warn("error decompressing data file", "engine", r.engineName, "url", url, "error", err)
 		return err
@@ -434,19 +486,41 @@ func (r *registration) httpUpdate(startup bool) error {
 		if err := r.refreshFromFile(); err != nil {
 			return err
 		}
-	} else {
-		r.refreshMu.Lock()
-		err := r.engine.RefreshFromBytes(body)
-		if err == nil {
-			r.fireCallbacks()
-		}
-		r.refreshMu.Unlock()
-		if err != nil {
-			r.svc.logger.Error("error applying in-memory data update", "engine", r.engineName, "error", err)
-			return err
+	} else if err := r.refreshFromBytes(body); err != nil {
+		return err
+	}
+
+	// Persist the server's Last-Modified so the next conditional request is
+	// based on the data's real timestamp rather than the local file's mtime.
+	if lm := resp.Header.Get("Last-Modified"); lm != "" {
+		if t, perr := http.ParseTime(lm); perr == nil {
+			r.lastModified = t
 		}
 	}
 	r.svc.logger.Info("Downloaded new data", "engine", r.engineName, "url", url)
+	return nil
+}
+
+// conditionalSince returns the timestamp to use for If-Modified-Since: the
+// server's last reported Last-Modified if known, otherwise the operational
+// file's modification time.
+func (r *registration) conditionalSince() (time.Time, bool) {
+	if !r.lastModified.IsZero() {
+		return r.lastModified, true
+	}
+	return r.currentDataTime()
+}
+
+// refreshFromBytes reloads the Engine from an in-memory buffer, serialized by
+// refreshMu, and fires the update callbacks on success.
+func (r *registration) refreshFromBytes(body []byte) error {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	if err := r.engine.RefreshFromBytes(body); err != nil {
+		r.svc.logger.Error("error applying in-memory data update", "engine", r.engineName, "error", err)
+		return err
+	}
+	r.fireCallbacks()
 	return nil
 }
 
@@ -488,7 +562,17 @@ func (r *registration) currentDataTime() (time.Time, bool) {
 
 func (r *registration) fireCallbacks() {
 	for _, fn := range r.onUpdate {
-		fn()
+		// Isolate each callback: a panic in user code is logged and the
+		// remaining callbacks still run, rather than unwinding the caller.
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					r.svc.logger.Error("recovered panic in update callback",
+						"engine", r.engineName, "panic", rec)
+				}
+			}()
+			fn()
+		}()
 	}
 }
 
@@ -554,13 +638,12 @@ func verifyContentMD5(resp *http.Response, raw []byte) error {
 }
 
 // maybeDecompress gunzips raw when it is a gzip stream, returning it unchanged
-// otherwise. The data file is served gzip-compressed, but the Distributor
-// identifies it with a Content-Type of application/gzip and/or the raw gzip
-// magic bytes rather than a Content-Encoding header (which the HTTP transport
-// would have transparently decompressed). We therefore detect gzip from the
-// Content-Encoding header, the magic bytes, or an explicit gzip Content-Type.
-func maybeDecompress(raw []byte, encodingGzip bool) ([]byte, error) {
-	if !encodingGzip && !bytes.HasPrefix(raw, gzipMagic) {
+// otherwise. Gzip is detected from the leading magic bytes rather than the
+// Content-Encoding header: the Go HTTP transport transparently decompresses and
+// strips a gzip Content-Encoding, so by the time the body is read that header is
+// never present, whereas the Distributor's payload still carries the gzip magic.
+func maybeDecompress(raw []byte) ([]byte, error) {
+	if !bytes.HasPrefix(raw, gzipMagic) {
 		return raw, nil
 	}
 	gz, err := gzip.NewReader(bytes.NewReader(raw))

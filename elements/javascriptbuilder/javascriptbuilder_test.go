@@ -164,3 +164,100 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// renderWith builds the standard sequence+json+javascript pipeline, applies the
+// given evidence, and returns the produced script.
+func renderWith(t *testing.T, evidence map[string]string) string {
+	t.Helper()
+	p, err := core.NewPipelineBuilder().
+		AddFlowElement(sequence.New(nil)).
+		AddFlowElement(jsonbuilder.New(nil, nil)).
+		AddFlowElement(NewBuilder().SetEndpoint("/51dpipeline/json").Build()).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence("header.protocol", "https")
+	for k, v := range evidence {
+		fd.AddEvidence(k, v)
+	}
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, _ := fd.Get(DataKey)
+	return data.(*Data).JavaScript()
+}
+
+// TestObjectNameInjectionRejected verifies a hostile fod-js-object-name cannot
+// reach the bare code position; the builder falls back to the default name.
+func TestObjectNameInjectionRejected(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":              "example.com",
+		"query.fod-js-object-name": "x = 1; alert('xss'); var y",
+	})
+	// The object name reaches a bare code position; that line must use the safe
+	// default. (The payload is also echoed, JSON-escaped, in the _parameters
+	// object, which is a safe string literal, so we assert on the code line.)
+	line := grepLine(js, "new fiftyoneDegreesManager()")
+	if !strings.Contains(line, "var "+DefaultObjectName+" = new fiftyoneDegreesManager()") {
+		t.Fatalf("object declaration not safe: %q", line)
+	}
+}
+
+// TestObjectNameValidAccepted verifies a valid identifier (including a dotted
+// path) is still honored.
+func TestObjectNameValidAccepted(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":              "example.com",
+		"query.fod-js-object-name": "window.fod",
+	})
+	if !strings.Contains(js, "var window.fod = new fiftyoneDegreesManager()") {
+		t.Fatalf("valid dotted object name not applied")
+	}
+}
+
+// TestSessionIDInjectionRejected verifies a hostile session-id cannot break out
+// of its JS string literal; the sequence element replaces it with a GUID.
+func TestSessionIDInjectionRejected(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":      "example.com",
+		"query.session-id": `"; alert('xss'); var z="`,
+	})
+	// The session id reaches a JS string literal; that line must not carry the
+	// payload (the sequence element replaces it with a GUID).
+	line := grepLine(js, "var sessionId =")
+	if strings.Contains(line, "alert") {
+		t.Fatalf("session-id payload reached the sessionId literal: %q", line)
+	}
+}
+
+// TestHostInjectionRejected verifies a hostile Host header cannot break out of
+// the callback URL string literal; an invalid host suppresses the URL.
+func TestHostInjectionRejected(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host": "example.com'; alert('xss'); '",
+	})
+	if strings.Contains(js, "alert('xss')") {
+		t.Fatalf("host payload reached the script:\n%s", grepLine(js, "alert"))
+	}
+}
+
+// TestMustacheMissingKeyInSection verifies a variable with no context value
+// renders as empty inside a section rather than erroring.
+func TestMustacheMissingKeyInSection(t *testing.T) {
+	tmpl := parseMustache(`{{#on}}[{{missing}}]{{/on}}`)
+	if got := tmpl.render(map[string]any{"on": true}); got != "[]" {
+		t.Fatalf("missing key in section: %q", got)
+	}
+}
+
+// TestMustacheUnbalancedSection verifies an unterminated section is handled
+// best-effort (its unclosed content is dropped) rather than panicking.
+func TestMustacheUnbalancedSection(t *testing.T) {
+	tmpl := parseMustache(`a{{#on}}b`)
+	if got := tmpl.render(map[string]any{"on": true}); got != "a" {
+		t.Fatalf("unbalanced section: %q", got)
+	}
+}

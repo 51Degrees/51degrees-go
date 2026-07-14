@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/51Degrees/pipeline-go/core"
 	"github.com/51Degrees/pipeline-go/elements/javascriptbuilder"
@@ -191,6 +192,101 @@ func TestDisableClientSideElements(t *testing.T) {
 	defer p.Close()
 	if len(p.FlowElements()) != 1 {
 		t.Fatalf("expected only the supplied element, got %d", len(p.FlowElements()))
+	}
+}
+
+func TestCacheControlFormat(t *testing.T) {
+	p := buildWebPipeline(t)
+	defer p.Close()
+	mw := NewMiddleware(p, WithMaxAge(30*time.Minute))
+	srv := httptest.NewServer(mw.Handler(http.NotFoundHandler()))
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL + DefaultJavaScriptURL)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	// Directives must be comma-separated to be a valid list.
+	if got := resp.Header.Get("Cache-Control"); got != "private, max-age=1800" {
+		t.Fatalf("Cache-Control = %q, want %q", got, "private, max-age=1800")
+	}
+}
+
+func TestClientIPDefaultsToPeer(t *testing.T) {
+	// With no trusted proxies configured, a client-supplied X-Forwarded-For is
+	// ignored and the connection peer address is used.
+	mw := NewMiddleware(nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "203.0.113.5:5555"
+	r.Header.Set("X-Forwarded-For", "1.2.3.4")
+	if got := mw.clientIP(r); got != "203.0.113.5" {
+		t.Fatalf("clientIP = %q, want the peer 203.0.113.5", got)
+	}
+}
+
+func TestClientIPTrustedProxyWalk(t *testing.T) {
+	// With the peer in a trusted range, X-Forwarded-For is walked from the
+	// right, skipping trusted hops, to the client as seen by the trusted edge.
+	mw := NewMiddleware(nil, WithTrustedProxies("10.0.0.0/8"))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.1:1234"
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.9")
+	if got := mw.clientIP(r); got != "1.2.3.4" {
+		t.Fatalf("clientIP = %q, want 1.2.3.4", got)
+	}
+
+	// An untrusted peer means the header is ignored even if present.
+	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	r2.RemoteAddr = "198.51.100.7:2222"
+	r2.Header.Set("X-Forwarded-For", "1.2.3.4")
+	if got := mw.clientIP(r2); got != "198.51.100.7" {
+		t.Fatalf("clientIP = %q, want the peer 198.51.100.7", got)
+	}
+}
+
+func TestClientIPIPv6Peer(t *testing.T) {
+	mw := NewMiddleware(nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "[2001:db8::1]:443"
+	if got := mw.clientIP(r); got != "2001:db8::1" {
+		t.Fatalf("clientIP = %q, want 2001:db8::1", got)
+	}
+}
+
+func TestBodyReadableAfterMiddleware(t *testing.T) {
+	p := buildWebPipeline(t)
+	defer p.Close()
+	mw := NewMiddleware(p)
+
+	var gotBody string
+	var gotEvidence any
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		if fd, ok := FromContext(r.Context()); ok {
+			gotEvidence, _ = fd.Evidence().Get("query.foo")
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mw.Handler(next))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("foo=bar"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	// The downstream handler must still see the full body...
+	if gotBody != "foo=bar" {
+		t.Fatalf("downstream body = %q, want %q (middleware consumed it)", gotBody, "foo=bar")
+	}
+	// ...and the form parameter must have been exposed as query evidence.
+	if gotEvidence != "bar" {
+		t.Fatalf("query.foo evidence = %v, want bar", gotEvidence)
 	}
 }
 

@@ -94,10 +94,12 @@ func newFlowData(p *pipeline) *flowData {
 }
 
 func (fd *flowData) AddEvidence(key string, value any) FlowData {
+	// Hold the lock across the started-check and the write so the
+	// "evidence is immutable once processing starts" guarantee actually holds
+	// and concurrent adds do not race the underlying map.
 	fd.mu.Lock()
-	started := fd.started
-	fd.mu.Unlock()
-	if started {
+	defer fd.mu.Unlock()
+	if fd.started {
 		fd.pipeline.logger.Warn("evidence added after processing started; ignoring", "key", key)
 		return fd
 	}
@@ -199,20 +201,54 @@ func (fd *flowData) isStarted() bool {
 	return fd.started
 }
 
+// ElementDataUnwrapper is implemented by per-Flow-Data Element Data views that
+// wrap another instance (for example a cache-hit view). Type-based access
+// unwraps it so the underlying concrete Element Data can still be matched.
+type ElementDataUnwrapper interface {
+	// UnwrapElementData returns the wrapped Element Data.
+	UnwrapElementData() ElementData
+}
+
+// asType converts d to T, unwrapping an ElementDataUnwrapper if necessary.
+func asType[T ElementData](d ElementData) (T, bool) {
+	if v, ok := d.(T); ok {
+		return v, true
+	}
+	if u, ok := d.(ElementDataUnwrapper); ok {
+		if v, ok := u.UnwrapElementData().(T); ok {
+			return v, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
 // Get retrieves the Element Data of type T from the Flow Data by matching its
-// type. This is the type-based accessor described in access-to-results.
+// type. It returns an error when no Element Data matches, and also when more
+// than one matches (the ambiguity is a configuration error rather than a
+// silently non-deterministic choice, matching the reference implementation).
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/access-to-results.md
 func Get[T ElementData](fd FlowData) (T, error) {
 	var zero T
 	if !fd.isStarted() {
 		return zero, ErrNotProcessed
 	}
+	var found T
+	matches := 0
 	for _, d := range fd.ElementDataAsMap() {
-		if v, ok := d.(T); ok {
-			return v, nil
+		if v, ok := asType[T](d); ok {
+			found = v
+			matches++
 		}
 	}
-	return zero, NewDataError("no element data of the requested type was found")
+	switch matches {
+	case 0:
+		return zero, NewDataError("no element data of the requested type was found")
+	case 1:
+		return found, nil
+	default:
+		return zero, NewDataError("more than one element data of the requested type was found; retrieve it by key instead")
+	}
 }
 
 // GetFromElement retrieves the Element Data produced by the given element and
@@ -223,7 +259,7 @@ func GetFromElement[T ElementData](fd FlowData, element FlowElement) (T, error) 
 	if err != nil {
 		return zero, err
 	}
-	v, ok := d.(T)
+	v, ok := asType[T](d)
 	if !ok {
 		return zero, NewDataError("element data for '" + element.DataKey() + "' is not of the requested type")
 	}

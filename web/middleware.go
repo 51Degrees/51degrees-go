@@ -23,9 +23,11 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -57,10 +59,11 @@ var flowDataKey = contextKey{}
 // FromContext. It also serves the intercepted client-side JavaScript and JSON
 // endpoints.
 type Middleware struct {
-	pipeline      core.Pipeline
-	javaScriptURL string
-	jsonURL       string
-	maxAge        time.Duration
+	pipeline       core.Pipeline
+	javaScriptURL  string
+	jsonURL        string
+	maxAge         time.Duration
+	trustedProxies []*net.IPNet
 }
 
 // Option configures a Middleware.
@@ -74,6 +77,20 @@ func WithJSONURL(path string) Option { return func(m *Middleware) { m.jsonURL = 
 
 // WithMaxAge sets the client cache lifetime for the intercepted endpoints.
 func WithMaxAge(d time.Duration) Option { return func(m *Middleware) { m.maxAge = d } }
+
+// WithTrustedProxies enables use of X-Forwarded-For / X-Real-IP for the client
+// IP, but only when the immediate peer is one of the given trusted-proxy CIDR
+// ranges. Without this option the peer address is always used, so a client
+// cannot spoof its IP by setting a forwarding header. Invalid CIDRs are ignored.
+func WithTrustedProxies(cidrs ...string) Option {
+	return func(m *Middleware) {
+		for _, c := range cidrs {
+			if _, n, err := net.ParseCIDR(c); err == nil {
+				m.trustedProxies = append(m.trustedProxies, n)
+			}
+		}
+	}
+}
 
 // NewMiddleware creates a Middleware for the given Pipeline.
 func NewMiddleware(pipeline core.Pipeline, opts ...Option) *Middleware {
@@ -121,7 +138,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 // host application.
 func (m *Middleware) process(r *http.Request) core.FlowData {
 	fd := m.pipeline.CreateFlowData()
-	populateEvidence(fd, r)
+	m.populateEvidence(fd, r)
 	// The web integration MUST NOT take down the host site, so any processing
 	// error or panic is contained here. Errors remain available via fd.Errors();
 	// a recovered panic is logged so production failures are still visible.
@@ -141,7 +158,7 @@ func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
 // cookies, query and form parameters, client IP, host and protocol.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
-func populateEvidence(fd core.FlowData, r *http.Request) {
+func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
 		if strings.EqualFold(name, "Cookie") {
 			continue
@@ -156,14 +173,27 @@ func populateEvidence(fd core.FlowData, r *http.Request) {
 		fd.AddEvidence("cookie."+c.Name, c.Value)
 	}
 
-	_ = r.ParseForm()
+	// ParseForm consumes the request body for form content types. Buffer the
+	// body once, let ParseForm read a copy, then reset the body from the same
+	// buffer so a downstream handler can still read it in full. Form parameters
+	// are exposed as query evidence.
+	var body []byte
+	if r.Body != nil {
+		body, _ = io.ReadAll(r.Body)
+		_ = r.Body.Close()
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if err := r.ParseForm(); err != nil {
+		m.logger().Warn("could not parse request form", "error", err)
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
 	for name, values := range r.Form {
 		if len(values) > 0 {
 			fd.AddEvidence("query."+name, values[0])
 		}
 	}
 
-	fd.AddEvidence("server.client-ip", clientIP(r))
+	fd.AddEvidence("server.client-ip", m.clientIP(r))
 	fd.AddEvidence("header.protocol", requestProtocol(r))
 }
 
@@ -219,7 +249,7 @@ func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#cache-header-detail
 func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, contentType string, body []byte) {
 	etag := m.etag(fd)
-	w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d private", int(m.maxAge.Seconds())))
+	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(m.maxAge.Seconds())))
 	if vary := m.varyHeader(); vary != "" {
 		w.Header().Set("Vary", vary)
 	}
@@ -279,20 +309,47 @@ func (m *Middleware) varyHeader() string {
 	return strings.Join(headers, ", ")
 }
 
-func clientIP(r *http.Request) string {
+// clientIP returns the client IP address. By default this is the connection's
+// peer address, which a client cannot forge. Forwarding headers
+// (X-Forwarded-For, X-Real-IP) are consulted only when trusted proxies are
+// configured and the immediate peer is one of them; X-Forwarded-For is then
+// walked from the right, skipping trusted hops, so the returned address is the
+// client as seen by the trusted edge rather than a value the client supplied.
+func (m *Middleware) clientIP(r *http.Request) string {
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(peer); err == nil {
+		peer = host
+	}
+	if len(m.trustedProxies) == 0 || !m.isTrustedProxy(peer) {
+		return peer
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			return strings.TrimSpace(xff[:i])
+		parts := strings.Split(xff, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(parts[i])
+			if ip != "" && !m.isTrustedProxy(ip) {
+				return ip
+			}
 		}
-		return strings.TrimSpace(xff)
 	}
-	if xr := r.Header.Get("X-Real-IP"); xr != "" {
-		return strings.TrimSpace(xr)
+	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
+		return xr
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+	return peer
+}
+
+// isTrustedProxy reports whether ip falls within a configured trusted-proxy range.
+func (m *Middleware) isTrustedProxy(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
 	}
-	return r.RemoteAddr
+	for _, n := range m.trustedProxies {
+		if n.Contains(parsed) {
+			return true
+		}
+	}
+	return false
 }
 
 func requestProtocol(r *http.Request) string {

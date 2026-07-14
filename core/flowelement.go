@@ -117,6 +117,21 @@ func (b *BaseElement) OnPipelineAdded(p Pipeline) error {
 	return nil
 }
 
+// removePipeline undoes an OnPipelineAdded. Build uses it to roll back
+// membership recorded on earlier elements when a later element rejects the
+// pipeline, so a shared element does not retain a reference to a pipeline that
+// is discarded and never closed.
+func (b *BaseElement) removePipeline(p Pipeline) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, pp := range b.pipelines {
+		if pp == p {
+			b.pipelines = append(b.pipelines[:i], b.pipelines[i+1:]...)
+			return
+		}
+	}
+}
+
 // Pipelines returns the Pipelines this element has been added to.
 func (b *BaseElement) Pipelines() []Pipeline {
 	b.mu.Lock()
