@@ -329,7 +329,10 @@ func TestCORSOriginReflected(t *testing.T) {
 	// The literal "null" origin must not be reflected.
 	req2, _ := http.NewRequest(http.MethodGet, srv.URL+DefaultJavaScriptURL, nil)
 	req2.Header.Set("Origin", "null")
-	resp2, _ := srv.Client().Do(req2)
+	resp2, err := srv.Client().Do(req2)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
 	defer resp2.Body.Close()
 	if got := resp2.Header.Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf(`Access-Control-Allow-Origin = %q for a "null" origin, want none`, got)
