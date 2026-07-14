@@ -103,6 +103,10 @@ type PropertyMissingError struct {
 	ElementName string
 	// Message explains why the Property is missing.
 	Message string
+	// Reason is a short machine-readable code for why the Property is missing
+	// (for example "datafiletier" or "cloudrequestfailed"), so a caller can
+	// branch on it without parsing Message. Empty when unspecified.
+	Reason string
 }
 
 // Error returns the explanation of why the Property is missing.

@@ -244,6 +244,32 @@ func TestHostInjectionRejected(t *testing.T) {
 	}
 }
 
+// TestFetchDefaultsToXHR verifies that, matching .NET, the script uses the
+// XMLHttpRequest fallback when no Fetch property is present.
+func TestFetchDefaultsToXHR(t *testing.T) {
+	js := renderWith(t, map[string]string{"header.host": "example.com"})
+	if !strings.Contains(js, "createCORSRequest") {
+		t.Fatalf("expected the XHR/CORS fallback path when fetch support is unknown")
+	}
+}
+
+// TestParametersExcludeSessionAndSequence verifies the _parameters object omits
+// session-id and sequence (added explicitly by the template) and keeps others.
+func TestParametersExcludeSessionAndSequence(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":      "example.com",
+		"query.session-id": "12345678-1234-4234-8234-1234567890ab",
+		"query.myparam":    "myvalue",
+	})
+	line := grepLine(js, "var parameters =")
+	if !strings.Contains(line, "myparam") {
+		t.Fatalf("parameters should include myparam: %q", line)
+	}
+	if strings.Contains(line, "session-id") || strings.Contains(line, "1234567890ab") {
+		t.Fatalf("parameters should exclude the session id: %q", line)
+	}
+}
+
 // TestMustacheMissingKeyInSection verifies a variable with no context value
 // renders as empty inside a section rather than erroring.
 func TestMustacheMissingKeyInSection(t *testing.T) {

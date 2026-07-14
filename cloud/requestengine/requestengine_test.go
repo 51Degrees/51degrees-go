@@ -268,6 +268,62 @@ func TestRecoveryDisabled(t *testing.T) {
 	}
 }
 
+func TestRecoveryExponentialBackoff(t *testing.T) {
+	cs := &cloudServer{jsonStatus: http.StatusInternalServerError, jsonBody: `{}`}
+	srv := httptest.NewServer(cs.handler())
+	defer srv.Close()
+
+	now := time.Unix(1000, 0)
+	clock := func() time.Time { return now }
+	e, err := NewBuilder().
+		SetResourceKey("k").
+		SetEndpoint(srv.URL + "/").
+		SetHTTPClient(srv.Client()).
+		SetFailuresToEnterRecovery(1).
+		SetRecoveryDuration(10 * time.Second).
+		SetRecoveryMultiplier(2).
+		setClock(clock).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p, _ := core.NewPipelineBuilder().AddFlowElement(e).Build()
+	defer p.Close()
+
+	// First failure trips a 10s recovery window.
+	_ = p.CreateFlowData().Process()
+	if _, in := e.inRecovery(); !in {
+		t.Fatal("expected to be recovering after the first failure")
+	}
+	now = now.Add(11 * time.Second) // window elapsed
+	if _, in := e.inRecovery(); in {
+		t.Fatal("recovery should have elapsed after 11s")
+	}
+
+	// Second failure should back off to 20s (10s * 2^1), so still recovering at 15s.
+	_ = p.CreateFlowData().Process()
+	now = now.Add(15 * time.Second)
+	if _, in := e.inRecovery(); !in {
+		t.Fatal("expected the second recovery window to be 20s (still recovering at 15s)")
+	}
+
+	// Advance past 20s and let the server succeed, which resets the backoff.
+	now = now.Add(6 * time.Second) // 21s since the second trip
+	cs.jsonStatus = http.StatusOK
+	cs.jsonBody = `{"device":{"ismobile":true}}`
+	if err := p.CreateFlowData().Process(); err != nil {
+		t.Fatalf("request should be allowed after recovery, got %v", err)
+	}
+
+	// A fresh failure after a success starts again at the base 10s, not 40s.
+	cs.jsonStatus = http.StatusInternalServerError
+	_ = p.CreateFlowData().Process()
+	now = now.Add(11 * time.Second)
+	if _, in := e.inRecovery(); in {
+		t.Fatal("backoff should have reset to 10s after the intervening success")
+	}
+}
+
 func TestSuppressedMetadataFailure(t *testing.T) {
 	// Server that fails the metadata endpoints; with suppression enabled the
 	// pipeline should not return an error but should collect one.

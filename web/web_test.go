@@ -307,3 +307,34 @@ func TestNoDuplicateWhenPresent(t *testing.T) {
 		t.Fatalf("expected exactly one sequence element, got %d", count)
 	}
 }
+
+func TestCORSOriginReflected(t *testing.T) {
+	p := buildWebPipeline(t)
+	defer p.Close()
+	mw := NewMiddleware(p)
+	srv := httptest.NewServer(mw.Handler(http.NotFoundHandler()))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+DefaultJavaScriptURL, nil)
+	req.Header.Set("Origin", "https://example.com")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "https://example.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want the reflected origin", got)
+	}
+
+	// The literal "null" origin must not be reflected.
+	req2, _ := http.NewRequest(http.MethodGet, srv.URL+DefaultJavaScriptURL, nil)
+	req2.Header.Set("Origin", "null")
+	resp2, err := srv.Client().Do(req2)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp2.Body.Close()
+	if got := resp2.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf(`Access-Control-Allow-Origin = %q for a "null" origin, want none`, got)
+	}
+}

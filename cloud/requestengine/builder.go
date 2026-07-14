@@ -25,6 +25,7 @@ package requestengine
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -47,18 +48,32 @@ type Builder struct {
 	failuresToEnterRecovery int
 	failureWindow           time.Duration
 	recoveryDuration        time.Duration
+	recoveryMultiplier      float64
+	maxRecoveryDuration     time.Duration
 	now                     func() time.Time
 }
 
+// EnvCloudAPIURL is the environment variable that overrides the default cloud
+// base endpoint when SetEndpoint is not used, matching the .NET reference.
+const EnvCloudAPIURL = "FOD_CLOUD_API_URL"
+
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
-// recovery settings.
+// recovery settings. The base endpoint defaults to the FOD_CLOUD_API_URL
+// environment variable when set, otherwise DefaultEndpoint; SetEndpoint still
+// overrides either.
 func NewBuilder() *Builder {
+	endpoint := DefaultEndpoint
+	if env := strings.TrimSpace(os.Getenv(EnvCloudAPIURL)); env != "" {
+		endpoint = env
+	}
 	return &Builder{
-		endpoint:                DefaultEndpoint,
+		endpoint:                endpoint,
 		timeout:                 DefaultTimeout,
 		failuresToEnterRecovery: DefaultFailures,
 		failureWindow:           DefaultFailureWindow,
 		recoveryDuration:        DefaultRecovery,
+		recoveryMultiplier:      DefaultRecoveryMultiplier,
+		maxRecoveryDuration:     DefaultMaxRecovery,
 	}
 }
 
@@ -105,6 +120,19 @@ func (b *Builder) SetFailureWindow(d time.Duration) *Builder { b.failureWindow =
 // disables recovery mode.
 func (b *Builder) SetRecoveryDuration(d time.Duration) *Builder { b.recoveryDuration = d; return b }
 
+// SetRecoveryMultiplier sets the factor by which the recovery duration grows
+// after each consecutive trip, resetting on the next success. A multiplier of 1
+// (the default) keeps the recovery duration fixed; a larger value gives
+// exponential backoff as in the .NET ExponentialBackoffRecoveryStrategy.
+func (b *Builder) SetRecoveryMultiplier(m float64) *Builder { b.recoveryMultiplier = m; return b }
+
+// SetMaxRecoveryDuration caps the recovery duration once it has grown through
+// the multiplier. Zero or negative leaves it uncapped.
+func (b *Builder) SetMaxRecoveryDuration(d time.Duration) *Builder {
+	b.maxRecoveryDuration = d
+	return b
+}
+
 // setClock overrides the clock used for recovery timing (testing only).
 func (b *Builder) setClock(now func() time.Time) *Builder { b.now = now; return b }
 
@@ -143,6 +171,8 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 		failuresToEnterRecovery: b.failuresToEnterRecovery,
 		failureWindow:           b.failureWindow,
 		recoveryDuration:        b.recoveryDuration,
+		recoveryMultiplier:      b.recoveryMultiplier,
+		maxRecoveryDuration:     b.maxRecoveryDuration,
 		now:                     now,
 	}
 	e.SetDataSourceTier("cloud")

@@ -25,11 +25,47 @@ package aspectengine
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/51Degrees/pipeline-go/cloud/requestengine"
 	"github.com/51Degrees/pipeline-go/core"
 )
+
+// TestResponseJSONDistinguishesFailure verifies that when the cloud request ran
+// but failed (under suppressed exceptions), ResponseJSON reports a failure
+// rather than the "engine must run first" message used when it never ran.
+func TestResponseJSONDistinguishesFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Products":{}}`))
+	})
+	mux.HandleFunc("/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("/json", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["boom"]}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	re, err := requestengine.NewBuilder().
+		SetResourceKey("k").SetEndpoint(srv.URL + "/").SetHTTPClient(srv.Client()).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p, _ := core.NewPipelineBuilder().SetSuppressProcessExceptions(true).AddFlowElement(re).Build()
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence("header.user-agent", "ua")
+	_ = fd.Process() // failure is suppressed but a failed marker is stored
+
+	_, err = ResponseJSON(fd)
+	if err == nil || !strings.Contains(err.Error(), "failed") {
+		t.Fatalf("expected a cloud-request-failed error, got %v", err)
+	}
+}
 
 func fakeCloud() http.Handler {
 	mux := http.NewServeMux()

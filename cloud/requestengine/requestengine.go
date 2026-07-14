@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -56,16 +57,30 @@ const (
 	DefaultFailures      = 10
 	DefaultFailureWindow = 100 * time.Second
 	DefaultRecovery      = 60 * time.Second
+	// DefaultRecoveryMultiplier of 1.0 keeps the recovery duration fixed. Set a
+	// value greater than 1 to grow it exponentially after consecutive trips,
+	// matching the .NET ExponentialBackoffRecoveryStrategy.
+	DefaultRecoveryMultiplier = 1.0
+	// DefaultMaxRecovery of 0 leaves the exponentially grown recovery duration
+	// uncapped.
+	DefaultMaxRecovery = 0 * time.Second
 )
 
 // CloudRequestData is the Aspect Data produced by the Cloud Request Engine.
 type CloudRequestData struct {
 	*engines.BaseAspectData
+	failed bool
 }
 
 func newCloudRequestData() *CloudRequestData {
 	return &CloudRequestData{BaseAspectData: engines.NewBaseAspectData()}
 }
+
+// Failed reports whether the cloud request ran but failed. It lets a downstream
+// Cloud Aspect Engine distinguish a failed request from one that never ran (so
+// a missing Property can be reported as a cloud-request failure rather than the
+// engine not being present).
+func (d *CloudRequestData) Failed() bool { return d.failed }
 
 // JSONResponse returns the raw JSON response body.
 func (d *CloudRequestData) JSONResponse() string {
@@ -128,9 +143,15 @@ type CloudRequestEngine struct {
 	failuresToEnterRecovery int
 	failureWindow           time.Duration
 	recoveryDuration        time.Duration
+	recoveryMultiplier      float64
+	maxRecoveryDuration     time.Duration
 	recMu                   sync.Mutex
 	failureTimes            []time.Time
 	recoveryUntil           time.Time
+	// consecutiveRecoveries counts how many times recovery has been tripped in a
+	// row without an intervening success, driving the exponential backoff. It is
+	// reset by recordSuccess.
+	consecutiveRecoveries int
 
 	now func() time.Time // injectable clock for testing
 }
@@ -150,6 +171,7 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 		e.recordFailure()
 		return nil, err
 	}
+	e.recordSuccess()
 	return e.publicProperties, nil
 }
 
@@ -167,19 +189,31 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 	// metadata-fetch failure counts toward recovery, just like a data request.
 	if err := e.ensureMetadata(); err != nil {
 		e.recordFailure()
+		e.storeFailed(fd)
 		return err
 	}
 
 	body, err := e.makeDataRequest(fd)
 	if err != nil {
 		e.recordFailure()
+		e.storeFailed(fd)
 		return err
 	}
 
+	e.recordSuccess()
 	data := newCloudRequestData()
 	data.Set(JSONResponseProperty, body)
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 	return nil
+}
+
+// storeFailed records that the request ran but failed, so a downstream Cloud
+// Aspect Engine can tell this apart from the request engine never running (for
+// example under suppressed exceptions, where Process's error is only logged).
+func (e *CloudRequestEngine) storeFailed(fd core.FlowData) {
+	data := newCloudRequestData()
+	data.failed = true
+	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 }
 
 func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
@@ -198,8 +232,13 @@ func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 
-	if err := e.checkResponse(e.dataEndpoint, resp.StatusCode, raw); err != nil {
+	if err := e.checkResponse(e.dataEndpoint, resp.StatusCode, resp.Header, raw); err != nil {
 		return "", err
+	}
+	if !json.Valid(raw) {
+		return "", NewCloudResponseError(
+			fmt.Sprintf("failed to parse the response from cloud service at '%s' as JSON",
+				e.dataEndpoint), resp.StatusCode, resp.Header)
 	}
 	e.logWarnings(raw)
 	return string(raw), nil
@@ -257,17 +296,17 @@ func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
 
 // checkResponse implements the error scenarios required of cloud HTTP requests.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
-func (e *CloudRequestEngine) checkResponse(url string, status int, raw []byte) error {
+func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
-		return NewCloudRequestError(strings.Join(msgs, "; "), nil)
+		return NewCloudResponseError(strings.Join(msgs, "; "), status, headers)
 	}
 	if len(raw) == 0 {
-		return NewCloudRequestError(fmt.Sprintf("No data in response from cloud service at '%s'", url), nil)
+		return NewCloudResponseError(fmt.Sprintf("No data in response from cloud service at '%s'", url), status, headers)
 	}
 	if status != http.StatusOK {
-		return NewCloudRequestError(
+		return NewCloudResponseError(
 			fmt.Sprintf("Cloud service at '%s' returned status code '%d' with content %s",
-				url, status, truncate(string(raw), 512)), nil)
+				url, status, truncate(string(raw), 512)), status, headers)
 	}
 	return nil
 }
@@ -314,7 +353,7 @@ func (e *CloudRequestEngine) ensureMetadata() error {
 }
 
 func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta, error) {
-	raw, err := e.getEndpoint(e.propertiesEndpoint)
+	raw, err := e.getEndpoint(e.propertiesEndpoint, true)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +365,9 @@ func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta
 }
 
 func (e *CloudRequestEngine) fetchEvidenceKeys() ([]string, error) {
-	raw, err := e.getEndpoint(e.evidenceKeysEndpoint)
+	// The evidence-keys endpoint does not take the resource key, matching the
+	// .NET reference (and avoiding sending the key to an endpoint that ignores it).
+	raw, err := e.getEndpoint(e.evidenceKeysEndpoint, false)
 	if err != nil {
 		return nil, err
 	}
@@ -337,9 +378,9 @@ func (e *CloudRequestEngine) fetchEvidenceKeys() ([]string, error) {
 	return keys, nil
 }
 
-func (e *CloudRequestEngine) getEndpoint(endpoint string) ([]byte, error) {
+func (e *CloudRequestEngine) getEndpoint(endpoint string, appendResource bool) ([]byte, error) {
 	u := endpoint
-	if e.resourceKey != "" {
+	if appendResource && e.resourceKey != "" {
 		if strings.Contains(u, "?") {
 			u += "&resource=" + url.QueryEscape(e.resourceKey)
 		} else {
@@ -359,7 +400,7 @@ func (e *CloudRequestEngine) getEndpoint(endpoint string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if err := e.checkResponse(endpoint, resp.StatusCode, raw); err != nil {
+	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw); err != nil {
 		return nil, err
 	}
 	return raw, nil
@@ -413,9 +454,37 @@ func (e *CloudRequestEngine) recordFailure() {
 	kept = append(kept, now)
 	e.failureTimes = kept
 	if len(e.failureTimes) >= e.failuresToEnterRecovery {
-		e.recoveryUntil = now.Add(e.recoveryDuration)
+		e.consecutiveRecoveries++
+		e.recoveryUntil = now.Add(e.recoveryDurationFor(e.consecutiveRecoveries))
 		e.failureTimes = e.failureTimes[:0]
 	}
+}
+
+// recoveryDurationFor returns the recovery duration for the nth consecutive
+// trip. With the default multiplier of 1 this is always recoveryDuration; with
+// a larger multiplier it grows as recoveryDuration * multiplier^(n-1), capped
+// at maxRecoveryDuration when that is positive. This mirrors the .NET
+// ExponentialBackoffRecoveryStrategy.
+func (e *CloudRequestEngine) recoveryDurationFor(n int) time.Duration {
+	if n < 1 || e.recoveryMultiplier <= 1 {
+		return e.recoveryDuration
+	}
+	dur := time.Duration(float64(e.recoveryDuration) * math.Pow(e.recoveryMultiplier, float64(n-1)))
+	if e.maxRecoveryDuration > 0 && dur > e.maxRecoveryDuration {
+		return e.maxRecoveryDuration
+	}
+	return dur
+}
+
+// recordSuccess is called after a request succeeds so the exponential backoff
+// resets to the base recovery duration for any future failures.
+func (e *CloudRequestEngine) recordSuccess() {
+	if e.recoveryDuration <= 0 {
+		return
+	}
+	e.recMu.Lock()
+	e.consecutiveRecoveries = 0
+	e.recMu.Unlock()
 }
 
 // --- helpers -------------------------------------------------------------
