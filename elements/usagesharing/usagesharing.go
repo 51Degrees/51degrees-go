@@ -38,10 +38,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
+	"net"
 	"net/http"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,9 +66,10 @@ const (
 	DefaultTakeTimeout     = 100 * time.Millisecond
 	DefaultSharePercentage = 1.0
 	DefaultRepeatInterval  = 20 * time.Minute
-	apiVersion             = "4.0"
+	apiVersion             = "4.0" // fallback when the build version is unavailable
 	productName            = "Pipeline"
-	maxValueLength         = 8192
+	maxValueLength         = 10000
+	truncatedMarker        = "[TRUNCATED BY USAGE SHARING] "
 )
 
 type config struct {
@@ -322,32 +326,37 @@ func (e *Element) flowNamesSnapshot() []string {
 
 func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string) {
 	b.WriteString("<Device>")
+	// Field order and always-present fields match the .NET reference so the
+	// payload validates against the same server-side schema.
 	writeElement(b, "SessionId", rec.sessionID)
-	if rec.sequence > 0 {
-		writeElement(b, "Sequence", fmt.Sprintf("%d", rec.sequence))
-	}
+	writeElement(b, "Sequence", strconv.Itoa(rec.sequence))
 	writeElement(b, "DateSent", rec.dateSent.Format("2006-01-02T15:04:05"))
-	writeElement(b, "Version", apiVersion)
+	writeElement(b, "ClientIP", rec.clientIP)
+	writeElement(b, "Version", coreVersion())
 	writeElement(b, "Product", productName)
 	for _, name := range flowNames {
 		writeElement(b, "FlowElement", name)
 	}
 	writeElement(b, "Language", "Go")
 	writeElement(b, "LanguageVersion", runtime.Version())
-	if rec.clientIP != "" {
-		writeElement(b, "ClientIP", rec.clientIP)
-	}
 	writeElement(b, "ServerIP", serverIP())
 	writeElement(b, "Platform", runtime.GOOS)
 
-	// Evidence entries, deterministically ordered.
+	// Evidence entries, deterministically ordered. A single BadSchema element is
+	// added at the end if any value contained characters that had to be encoded.
 	keys := make([]string, 0, len(rec.evidence))
 	for k := range rec.evidence {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	badSchema := false
 	for _, key := range keys {
-		writeEvidence(b, key, rec.evidence[key])
+		if writeEvidence(b, key, rec.evidence[key]) {
+			badSchema = true
+		}
+	}
+	if badSchema {
+		writeElement(b, "BadSchema", "true")
 	}
 	b.WriteString("</Device>")
 }
@@ -362,57 +371,74 @@ func writeElement(b *strings.Builder, name, value string) {
 	b.WriteByte('>')
 }
 
-// writeEvidence writes a single Evidence value, sanitizing it and flagging the
-// element with escaped/truncated attributes if the value was modified.
-func writeEvidence(b *strings.Builder, key, value string) {
+// writeEvidence writes a single Evidence value using the .NET reference schema:
+// a prefixed key becomes <prefix Name="field"><![CDATA[value]]></prefix> with
+// the prefix (category) lower-case as-is, and a bare key becomes
+// <field>value</field>. Over-long values are truncated with a marker and
+// invalid XML characters are hex-encoded. It returns true when any character
+// was encoded, so the caller can emit a single BadSchema element.
+func writeEvidence(b *strings.Builder, key, value string) bool {
 	prefix, field := core.SplitEvidenceKey(key)
-	elementName := xmlElementName(prefix)
 
-	sanitized, escaped := sanitizeXMLValue(value)
-	truncated := false
-	if len(sanitized) > maxValueLength {
-		sanitized = sanitized[:maxValueLength]
-		truncated = true
+	if r := []rune(value); len(r) > maxValueLength {
+		value = truncatedMarker + string(r[:maxValueLength])
+	}
+	encodedValue, badValue := encodeInvalidXMLChars(value)
+	encodedField, badField := encodeInvalidXMLChars(field)
+
+	if prefix == "" {
+		b.WriteByte('<')
+		b.WriteString(encodedField)
+		b.WriteByte('>')
+		xml.EscapeText(b, []byte(encodedValue))
+		b.WriteString("</")
+		b.WriteString(encodedField)
+		b.WriteByte('>')
+		return badValue || badField
 	}
 
 	b.WriteByte('<')
-	b.WriteString(elementName)
-	if escaped {
-		b.WriteString(` escaped="true"`)
-	}
-	if truncated {
-		b.WriteString(` truncated="true"`)
-	}
+	b.WriteString(prefix)
 	b.WriteString(` Name="`)
-	xml.EscapeText(b, []byte(field))
+	xml.EscapeText(b, []byte(encodedField))
 	b.WriteString(`">`)
-	xml.EscapeText(b, []byte(sanitized))
+	writeCDATA(b, encodedValue)
 	b.WriteString("</")
-	b.WriteString(elementName)
+	b.WriteString(prefix)
 	b.WriteByte('>')
+	return badValue || badField
 }
 
-func xmlElementName(prefix string) string {
-	if prefix == "" {
-		return "Evidence"
+// writeCDATA writes value inside a CDATA section, splitting any "]]>" so it
+// cannot close the section early.
+func writeCDATA(b *strings.Builder, value string) {
+	b.WriteString("<![CDATA[")
+	b.WriteString(strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>"))
+	b.WriteString("]]>")
+}
+
+// encodeInvalidXMLChars replaces characters not valid in XML with a \xNNNN
+// escape (matching the .NET reference) and reports whether any were replaced.
+func encodeInvalidXMLChars(text string) (string, bool) {
+	valid := true
+	for _, r := range text {
+		if !isValidXMLChar(r) {
+			valid = false
+			break
+		}
 	}
-	return strings.ToUpper(prefix[:1]) + prefix[1:]
-}
-
-// sanitizeXMLValue replaces characters that are not valid in XML, reporting
-// whether any replacement was made.
-func sanitizeXMLValue(value string) (string, bool) {
+	if valid {
+		return text, false
+	}
 	var b strings.Builder
-	changed := false
-	for _, r := range value {
+	for _, r := range text {
 		if isValidXMLChar(r) {
 			b.WriteRune(r)
 		} else {
-			b.WriteRune('�')
-			changed = true
+			fmt.Fprintf(&b, `\x%04x`, r)
 		}
 	}
-	return b.String(), changed
+	return b.String(), true
 }
 
 // isValidXMLChar reports whether r is permitted in XML 1.0 character data.
@@ -437,7 +463,56 @@ func typeName(v any) string {
 	return t.Name()
 }
 
-func serverIP() string { return "" } // best-effort; left blank when undetermined
+var (
+	serverIPOnce  sync.Once
+	serverIPValue string
+)
+
+// serverIP returns this machine's non-loopback IP address, preferring IPv4, or
+// "" if none can be determined. It is resolved once and cached, matching the
+// .NET reference's host-address lookup.
+func serverIP() string {
+	serverIPOnce.Do(func() {
+		addrs, err := net.InterfaceAddrs()
+		if err != nil {
+			return
+		}
+		var fallback string
+		for _, a := range addrs {
+			ipNet, ok := a.(*net.IPNet)
+			if !ok || ipNet.IP.IsLoopback() {
+				continue
+			}
+			if ip4 := ipNet.IP.To4(); ip4 != nil {
+				serverIPValue = ip4.String()
+				return
+			}
+			if fallback == "" {
+				fallback = ipNet.IP.String()
+			}
+		}
+		serverIPValue = fallback
+	})
+	return serverIPValue
+}
+
+// coreVersion returns the pipeline-go module version from the build info, or the
+// fallback apiVersion when it is unavailable (for example in tests or a dev
+// build). This mirrors the .NET reference sending the Pipeline assembly version.
+func coreVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, d := range info.Deps {
+			if d.Path == "github.com/51Degrees/pipeline-go" && d.Version != "" {
+				return d.Version
+			}
+		}
+		if info.Main.Path == "github.com/51Degrees/pipeline-go" &&
+			info.Main.Version != "" && info.Main.Version != "(devel)" {
+			return info.Main.Version
+		}
+	}
+	return apiVersion
+}
 
 // hashEvidence builds a deterministic hash of Evidence for duplicate detection,
 // excluding values that are designed to make a request unique.

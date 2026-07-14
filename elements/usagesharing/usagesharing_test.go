@@ -28,6 +28,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -128,10 +129,12 @@ func TestUsageSharingSendsXML(t *testing.T) {
 		XMLName xml.Name `xml:"Devices"`
 		Device  []struct {
 			Product string `xml:"Product"`
-			Headers []struct {
+			Sequence string `xml:"Sequence"`
+			ServerIP string `xml:"ServerIP"`
+			Headers  []struct {
 				Name  string `xml:"Name,attr"`
 				Value string `xml:",chardata"`
-			} `xml:"Header"`
+			} `xml:"header"`
 		} `xml:"Device"`
 	}
 	if err := xml.Unmarshal([]byte(body), &devices); err != nil {
@@ -151,6 +154,15 @@ func TestUsageSharingSendsXML(t *testing.T) {
 	}
 	if !foundUA {
 		t.Fatalf("user-agent header not shared: %s", body)
+	}
+	// Schema parity with .NET: lower-case category element, Name attribute, and
+	// a CDATA-wrapped value.
+	if !strings.Contains(body, `<header Name="user-agent"><![CDATA[test-agent]]></header>`) {
+		t.Fatalf("header not in the expected lower-case CDATA form: %s", body)
+	}
+	// Sequence is always present (even 0) and ServerIP is populated.
+	if devices.Device[0].Sequence == "" {
+		t.Fatalf("Sequence element missing: %s", body)
 	}
 }
 
