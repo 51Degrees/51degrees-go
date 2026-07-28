@@ -118,9 +118,12 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 
 	for i, e := range elements {
 		if err := e.OnPipelineAdded(p); err != nil {
-			// Roll back membership recorded on the earlier elements so a shared
-			// element does not track this discarded pipeline.
-			for _, prev := range elements[:i] {
+			// Roll back membership recorded so far, so a shared element does not
+			// track this discarded pipeline. The failing element is included:
+			// a parallel group may have registered itself and some children
+			// before a later child rejected. removePipeline is a no-op for an
+			// element that never registered.
+			for _, prev := range elements[:i+1] {
 				if r, ok := prev.(interface{ removePipeline(Pipeline) }); ok {
 					r.removePipeline(p)
 				}

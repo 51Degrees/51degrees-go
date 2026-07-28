@@ -206,15 +206,42 @@ func TestObjectNameInjectionRejected(t *testing.T) {
 	}
 }
 
-// TestObjectNameValidAccepted verifies a valid identifier (including a dotted
-// path) is still honored.
+// TestObjectNameValidAccepted verifies a valid single identifier is honored.
 func TestObjectNameValidAccepted(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":              "example.com",
+		"query.fod-js-object-name": "myFod",
+	})
+	if !strings.Contains(js, "var myFod = new fiftyoneDegreesManager()") {
+		t.Fatalf("valid object name not applied")
+	}
+}
+
+// TestObjectNameDottedRejected verifies a dotted path is rejected: the name
+// renders at a declaration position where a dot is a JavaScript SyntaxError,
+// and the .NET reference only accepts a single identifier.
+func TestObjectNameDottedRejected(t *testing.T) {
 	js := renderWith(t, map[string]string{
 		"header.host":              "example.com",
 		"query.fod-js-object-name": "window.fod",
 	})
-	if !strings.Contains(js, "var window.fod = new fiftyoneDegreesManager()") {
-		t.Fatalf("valid dotted object name not applied")
+	line := grepLine(js, "new fiftyoneDegreesManager()")
+	if !strings.Contains(line, "var "+DefaultObjectName+" = new fiftyoneDegreesManager()") {
+		t.Fatalf("dotted object name should fall back to the default: %q", line)
+	}
+}
+
+// TestProtocolInjectionRejected verifies a hostile protocol evidence value
+// cannot reach the callback URL literal: the assembled URL is parsed and only
+// http/https survive, matching the .NET reference which drops a URL that new
+// Uri rejects.
+func TestProtocolInjectionRejected(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":     "example.com",
+		"header.protocol": "javascript'-alert(1)-'",
+	})
+	if strings.Contains(js, "alert(1)") {
+		t.Fatalf("crafted protocol reached the generated script")
 	}
 }
 
