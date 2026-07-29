@@ -32,8 +32,8 @@ import (
 )
 
 func TestMustacheVariables(t *testing.T) {
-	// All variable forms render raw (no HTML escaping), matching the .NET
-	// SkipHtmlEncoding behavior, because the template produces JavaScript.
+	// All variable forms render raw (no HTML escaping), because the template
+	// produces JavaScript, not HTML.
 	tmpl := parseMustache(`Hello {{name}}, raw {{&raw}}, triple {{{trip}}}`)
 	out := tmpl.render(map[string]any{"name": "<b>", "raw": "<b>", "trip": "<i>"})
 	if out != "Hello <b>, raw <b>, triple <i>" {
@@ -219,7 +219,7 @@ func TestObjectNameValidAccepted(t *testing.T) {
 
 // TestObjectNameDottedRejected verifies a dotted path is rejected: the name
 // renders at a declaration position where a dot is a JavaScript SyntaxError,
-// and the .NET reference only accepts a single identifier.
+// so only a single identifier is accepted.
 func TestObjectNameDottedRejected(t *testing.T) {
 	js := renderWith(t, map[string]string{
 		"header.host":              "example.com",
@@ -233,8 +233,8 @@ func TestObjectNameDottedRejected(t *testing.T) {
 
 // TestProtocolInjectionRejected verifies a hostile protocol evidence value
 // cannot reach the callback URL literal: the assembled URL is parsed and only
-// http/https survive, matching the .NET reference which drops a URL that new
-// Uri rejects.
+// http/https survive, so any other scheme disables the callback instead of
+// being emitted.
 func TestProtocolInjectionRejected(t *testing.T) {
 	js := renderWith(t, map[string]string{
 		"header.host":     "example.com",
@@ -271,7 +271,7 @@ func TestHostInjectionRejected(t *testing.T) {
 	}
 }
 
-// TestFetchDefaultsToXHR verifies that, matching .NET, the script uses the
+// TestFetchDefaultsToXHR verifies the script uses the
 // XMLHttpRequest fallback when no Fetch property is present.
 func TestFetchDefaultsToXHR(t *testing.T) {
 	js := renderWith(t, map[string]string{"header.host": "example.com"})

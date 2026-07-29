@@ -58,8 +58,7 @@ const (
 	DefaultFailureWindow = 100 * time.Second
 	DefaultRecovery      = 60 * time.Second
 	// DefaultRecoveryMultiplier of 1.0 keeps the recovery duration fixed. Set a
-	// value greater than 1 to grow it exponentially after consecutive trips,
-	// matching the .NET ExponentialBackoffRecoveryStrategy.
+	// value greater than 1 to grow it exponentially after consecutive trips.
 	DefaultRecoveryMultiplier = 1.0
 	// DefaultMaxRecovery of 0 leaves the exponentially grown recovery duration
 	// uncapped.
@@ -260,8 +259,8 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 }
 
 // resolveEvidence removes prefixes from all Evidence and resolves conflicts
-// between prefixes using the defined precedence. Like the .NET reference, every
-// Evidence value is forwarded (prefix-stripped) and the server ignores any it
+// between prefixes using the defined precedence. Every Evidence value is
+// forwarded (prefix-stripped) and the server ignores any it
 // does not need; the evidence-keys metadata is used to advertise accepted keys,
 // not to filter the request body.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
@@ -322,7 +321,7 @@ func (e *CloudRequestEngine) logWarnings(raw []byte) {
 // later call can retry, as required by the spec.
 //
 // The lock is NOT held across the HTTP calls: concurrent first-use callers may
-// each attempt a fetch (publication-only, as in the .NET Lazy<T> design) rather
+// each attempt a fetch (only a successful result is published) rather
 // than serializing behind one mutex while the network is slow — which is the
 // stall the recovery-mode design exists to avoid.
 func (e *CloudRequestEngine) ensureMetadata() error {
@@ -365,8 +364,8 @@ func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta
 }
 
 func (e *CloudRequestEngine) fetchEvidenceKeys() ([]string, error) {
-	// The evidence-keys endpoint does not take the resource key, matching the
-	// .NET reference (and avoiding sending the key to an endpoint that ignores it).
+	// The evidence-keys endpoint does not take the resource key, avoiding
+	// sending the key to an endpoint that ignores it.
 	raw, err := e.getEndpoint(e.evidenceKeysEndpoint, false)
 	if err != nil {
 		return nil, err
@@ -463,8 +462,7 @@ func (e *CloudRequestEngine) recordFailure() {
 // recoveryDurationFor returns the recovery duration for the nth consecutive
 // trip. With the default multiplier of 1 this is always recoveryDuration; with
 // a larger multiplier it grows as recoveryDuration * multiplier^(n-1), capped
-// at maxRecoveryDuration when that is positive. This mirrors the .NET
-// ExponentialBackoffRecoveryStrategy.
+// at maxRecoveryDuration when that is positive.
 func (e *CloudRequestEngine) recoveryDurationFor(n int) time.Duration {
 	if n < 1 || e.recoveryMultiplier <= 1 {
 		return e.recoveryDuration

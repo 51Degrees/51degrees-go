@@ -44,9 +44,9 @@ import (
 // never escapes, so client-influenced values that reach a code position must be
 // validated here before rendering rather than relying on downstream escaping.
 var (
-	// jsObjectNameRe matches a single JavaScript identifier, matching the .NET
-	// reference. A dotted path is rejected because the name renders at a
-	// declaration position ("var <name> = ..."), where a dot is a SyntaxError.
+	// jsObjectNameRe matches a single JavaScript identifier. A dotted path is
+	// rejected because the name renders at a declaration position
+	// ("var <name> = ..."), where a dot is a SyntaxError.
 	jsObjectNameRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 	// hostRe matches a bare host or host:port (including bracketed IPv6); it
 	// excludes any character that could break out of a JS string literal.
@@ -100,9 +100,8 @@ type Builder struct {
 	enableCookies bool
 }
 
-// DefaultEndpoint is the callback endpoint used when one is not configured,
-// matching the .NET reference so the client-side update round-trip is enabled by
-// default.
+// DefaultEndpoint is the callback endpoint used when one is not configured, so
+// the client-side update round-trip is enabled by default.
 const DefaultEndpoint = "/51dpipeline/json"
 
 // NewBuilder creates a Builder with default options.
@@ -191,9 +190,8 @@ func (e *Element) Process(fd core.FlowData) error {
 	}
 
 	// The callback URL reaches a JS string literal. Assemble it, then validate
-	// the whole URL (matching the .NET reference, which parses the assembled
-	// string with new Uri and drops it on failure) so that no client-influenced
-	// component - protocol or host - can break out of the literal.
+	// the whole URL so that no client-influenced component - protocol or host -
+	// can break out of the literal.
 	callbackURL := ""
 	if protocol != "" && host != "" && e.endpoint != "" {
 		callbackURL = validCallbackURL(
@@ -286,10 +284,10 @@ func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 }
 
 // queryParameters returns a JSON object of the query.* Evidence values (with the
-// "query." prefix removed) for relaying in client-side callbacks. Matching the
-// .NET reference, the session id and sequence are excluded (the template adds
-// them explicitly) and both keys and values are URL-encoded so the client can
-// append them to the callback URL directly.
+// "query." prefix removed) for relaying in client-side callbacks. The session id
+// and sequence are excluded (the template adds them explicitly) and both keys
+// and values are URL-encoded so the client can append them to the callback URL
+// directly.
 func (e *Element) queryParameters(fd core.FlowData) string {
 	params := map[string]string{}
 	for key, val := range fd.Evidence().AsMap() {
@@ -343,17 +341,16 @@ func (e *Element) supportsFetch(fd core.FlowData) bool {
 			}
 		}
 	}
-	// Match the .NET reference: default to false when no Fetch property is
-	// present, so the generated script uses the XMLHttpRequest fallback rather
-	// than assuming fetch() is available.
+	// Default to false when no Fetch property is present, so the generated
+	// script uses the XMLHttpRequest fallback rather than assuming fetch() is
+	// available.
 	return false
 }
 
 // validCallbackURL parses the assembled callback URL and returns it only when
 // it survives a round trip: http/https scheme, the expected (already
 // hostRe-validated) host, and no characters that could break out of a JS
-// string literal. Anything else returns "" and the callback is disabled,
-// matching the .NET reference which drops the URL when new Uri throws.
+// string literal. Anything else returns "" and the callback is disabled.
 func validCallbackURL(raw, host string) string {
 	if !validHost(host) {
 		return ""

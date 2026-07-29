@@ -83,7 +83,7 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 	// Flow Data must use thread-safe storage if it was explicitly requested or if
 	// any element processes concurrently (e.g. ParallelElements). Deriving this
 	// from the elements removes the foot-gun of adding parallel work without
-	// remembering to enable concurrency, matching the .NET reference.
+	// remembering to enable concurrency.
 	concurrent := b.concurrent
 	for _, e := range elements {
 		properties = append(properties, e.Properties()...)

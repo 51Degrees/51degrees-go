@@ -179,8 +179,7 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	// case is the body buffered - capped at the same ~10 MB that net/http
 	// itself applies to urlencoded forms - and reset afterwards so a
 	// downstream handler can still read it in full. Any other body is never
-	// read, matching the .NET reference which only consults Request.Form for
-	// form content types.
+	// read.
 	if hasFormBody(r) {
 		body, overflow := readCapped(r.Body, maxFormBodyBytes)
 		if overflow {
@@ -270,8 +269,7 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Content-Type", contentType)
 	// Reflect the request Origin so a cross-origin client-side callback to these
-	// endpoints is permitted, matching the .NET reference. The literal "null"
-	// origin is not reflected.
+	// endpoints is permitted. The literal "null" origin is not reflected.
 	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}

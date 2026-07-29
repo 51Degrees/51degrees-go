@@ -326,8 +326,8 @@ func (e *Element) flowNamesSnapshot() []string {
 
 func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string) {
 	b.WriteString("<Device>")
-	// Field order and always-present fields match the .NET reference so the
-	// payload validates against the same server-side schema.
+	// Field order and always-present fields are fixed so the payload validates
+	// against the server-side schema.
 	writeElement(b, "SessionId", rec.sessionID)
 	writeElement(b, "Sequence", strconv.Itoa(rec.sequence))
 	writeElement(b, "DateSent", rec.dateSent.Format("2006-01-02T15:04:05"))
@@ -371,7 +371,7 @@ func writeElement(b *strings.Builder, name, value string) {
 	b.WriteByte('>')
 }
 
-// writeEvidence writes a single Evidence value using the .NET reference schema:
+// writeEvidence writes a single Evidence value using the usage-sharing schema:
 // a prefixed key becomes <prefix Name="field"><![CDATA[value]]></prefix> with
 // the prefix (category) lower-case as-is, and a bare key becomes
 // <field>value</field>. Over-long values are truncated with a marker and
@@ -418,7 +418,7 @@ func writeCDATA(b *strings.Builder, value string) {
 }
 
 // encodeInvalidXMLChars replaces characters not valid in XML with a \xNNNN
-// escape (matching the .NET reference) and reports whether any were replaced.
+// escape and reports whether any were replaced.
 func encodeInvalidXMLChars(text string) (string, bool) {
 	valid := true
 	for _, r := range text {
@@ -469,8 +469,7 @@ var (
 )
 
 // serverIP returns this machine's non-loopback IP address, preferring IPv4, or
-// "" if none can be determined. It is resolved once and cached, matching the
-// .NET reference's host-address lookup.
+// "" if none can be determined. It is resolved once and cached.
 func serverIP() string {
 	serverIPOnce.Do(func() {
 		addrs, err := net.InterfaceAddrs()
@@ -498,7 +497,7 @@ func serverIP() string {
 
 // coreVersion returns the pipeline-go module version from the build info, or the
 // fallback apiVersion when it is unavailable (for example in tests or a dev
-// build). This mirrors the .NET reference sending the Pipeline assembly version.
+// build), so shared usage reports which Pipeline version produced it.
 func coreVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, d := range info.Deps {

@@ -53,8 +53,7 @@ func (v varNode) render(ctx map[string]any, b *strings.Builder) {
 		return
 	}
 	// Values are never HTML-escaped: the template produces JavaScript, not HTML,
-	// and the .NET reference renders it with SkipHtmlEncoding. All variable forms
-	// ({{x}}, {{&x}}, {{{x}}}) therefore emit raw text.
+	// so all variable forms ({{x}}, {{&x}}, {{{x}}}) emit raw text.
 	b.WriteString(stringify(val))
 }
 

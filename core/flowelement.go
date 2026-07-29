@@ -50,8 +50,8 @@ type FlowElement interface {
 	OnPipelineAdded(p Pipeline) error
 	// IsConcurrent reports whether the element processes Flow Data on multiple
 	// goroutines (for example ParallelElements). A Pipeline containing any such
-	// element uses thread-safe Flow Data storage. This mirrors the .NET
-	// reference, where IsConcurrent propagates up from the elements.
+	// element uses thread-safe Flow Data storage; the flag propagates up from
+	// the elements so callers never have to set it by hand.
 	IsConcurrent() bool
 	// Close releases any resources held by the element.
 	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/resource-cleanup.md

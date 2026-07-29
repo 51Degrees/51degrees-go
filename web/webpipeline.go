@@ -101,8 +101,8 @@ func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pi
 			jsonEndpoint = DefaultJSONURL
 		}
 		// Bake in the callback endpoint so the generated script can post results
-		// back to the intercepted JSON URL (matching the .NET default). Without it,
-		// the client-side evidence/refresh round-trip would be disabled.
+		// back to the intercepted JSON URL. Without it, the client-side
+		// evidence/refresh round-trip would be disabled.
 		builder.AddFlowElement(javascriptbuilder.NewBuilder().
 			SetLogger(cfg.Logger).
 			SetEndpoint(jsonEndpoint).
