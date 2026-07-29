@@ -112,8 +112,8 @@ func (b *Builder) Build() (*Engine, error) {
 		sources[name] = content
 	}
 
-	// Validate the configuration up front (matching the .NET reference, which
-	// throws during construction) rather than silently building a no-op engine.
+	// Validate the configuration up front rather than silently building a
+	// no-op engine.
 	if len(b.translations) == 0 {
 		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation (AddTranslation)", nil)
 	}

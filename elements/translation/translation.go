@@ -130,7 +130,7 @@ func (e *Engine) Process(fd core.FlowData) error {
 	source, sourceErr := fd.Get(e.sourceKey)
 	if sourceErr != nil {
 		// The whole source element is absent: record a single error and write no
-		// destination Properties, matching the .NET reference.
+		// destination Properties.
 		fd.AddError(fmt.Errorf(
 			"no source element '%s' was available to translate", e.sourceKey), e)
 		return nil
@@ -164,7 +164,7 @@ func (e *Engine) Process(fd core.FlowData) error {
 		raw, err := source.Get(m.source)
 		if err != nil {
 			// The source element is present but this Property is not: write a
-			// no-value result and record no error, matching the .NET reference.
+			// no-value result and record no error.
 			out.Set(m.destination, engines.NoValue[string](fmt.Sprintf(
 				"The source property '%s' was not present in the source data.",
 				m.source)))

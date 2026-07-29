@@ -210,8 +210,8 @@ func TestLocaleFromName(t *testing.T) {
 }
 
 func TestTranslateCaseInsensitive(t *testing.T) {
-	// The lookup is case-insensitive (matching the .NET invariant-ignore-case
-	// comparer): a mixed-case source value matches a lower-case table key.
+	// The lookup is case-insensitive: a mixed-case source value matches a
+	// lower-case table key.
 	e, err := NewBuilder().
 		SetSourceElementDataKey("ip").
 		AddSourceContent("countries.fr_FR.yml", "england: Angleterre").
@@ -269,7 +269,7 @@ func TestBuildValidation(t *testing.T) {
 
 func TestMissingSourceElementRaisesError(t *testing.T) {
 	// When the whole source element is absent, a single error is raised and no
-	// destination Properties are written (matching the .NET reference).
+	// destination Properties are written.
 	e, err := NewBuilder().
 		SetSourceElementDataKey("absent").
 		AddSourceContent("countries.fr_FR.yml", "England: Angleterre").
@@ -304,7 +304,7 @@ func TestFlowErrorNoLanguage(t *testing.T) {
 
 func TestInvalidFixedLanguageFallsBackToEvidence(t *testing.T) {
 	// A fixed language that is not a valid locale is ignored and selection falls
-	// back to the evidence (matching the .NET reference).
+	// back to the evidence.
 	p := buildPipeline(t, frEngine(t, Original, "french"))
 	defer p.Close()
 	fd := p.CreateFlowData()

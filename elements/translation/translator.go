@@ -49,8 +49,7 @@ type Translator struct {
 
 // NewTranslator creates a Translator for the given lookup table (source value ->
 // translated value). The table may be nil, in which case every value is treated
-// as having no translation. Lookups are case-insensitive (matching the .NET
-// reference, which uses an invariant-ignore-case comparer), so the table is
+// as having no translation. Lookups are case-insensitive, so the table is
 // stored with case-folded keys.
 func NewTranslator(table map[string]string, behavior MissingBehavior) *Translator {
 	var folded map[string]string
@@ -99,16 +98,15 @@ func (t *Translator) TranslateValue(raw any) (any, []error) {
 		translated, errs := t.TranslateValue(v.AsInterface())
 		return wrapAspectPropertyValue(translated), errs
 	default:
-		// An unrecognized value shape is a programming/configuration error; report
-		// it rather than silently copying it through, matching the .NET reference
-		// which throws NotSupportedException.
+		// An unrecognized value shape is a programming/configuration error;
+		// report it rather than silently copying it through.
 		return raw, []error{fmt.Errorf("unsupported value type %T for translation", raw)}
 	}
 }
 
 // wrapAspectPropertyValue re-wraps a translated value in an AspectPropertyValue
-// so a wrapped input yields a wrapped output, matching the .NET reference. An
-// unrecognized shape is returned unchanged.
+// so a wrapped input yields a wrapped output. An unrecognized shape is returned
+// unchanged.
 func wrapAspectPropertyValue(v any) any {
 	switch t := v.(type) {
 	case string:
@@ -145,7 +143,7 @@ func (t *Translator) TranslateWeighted(
 // translateString looks the value up in the table (case-insensitively) and
 // applies the configured MissingBehavior when it is absent. Under FlowError it
 // returns an empty string together with a non-nil error so the caller can
-// record it, matching the .NET reference which returns null and adds the error.
+// record it.
 func (t *Translator) translateString(value string) (string, error) {
 	if t != nil && t.table != nil {
 		if r, ok := t.table[strings.ToLower(value)]; ok && strings.TrimSpace(r) != "" {
@@ -236,9 +234,8 @@ func (l *Languages) Resolve(candidates []string) (locale string, table map[strin
 // Accept-Language list, with entries normalized (lower-case, '-' -> '_').
 func CandidatesFromEvidence(fd core.FlowData, fixedLanguage string) []string {
 	if fixedLanguage != "" {
-		// Only honour a fixed language that looks like a valid locale; an invalid
-		// value is ignored and selection falls back to evidence, matching the .NET
-		// reference (which validates the fixed language and falls back otherwise).
+		// Only honour a fixed language that looks like a valid locale; an
+		// invalid value is ignored and selection falls back to evidence.
 		if n := normalizeLang(fixedLanguage); looksLikeLocale(n) {
 			return []string{n}
 		}
