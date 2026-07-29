@@ -229,7 +229,7 @@ func (e *nestedEngine) Process(fd core.FlowData) error {
 }
 
 // TestJSONBuilderNestedAndRawNull verifies nested Element Data lists are recursed
-// and a raw nil property is omitted (no key, no nullreason), matching .NET.
+// and a raw nil property is omitted (no key, no nullreason).
 func TestJSONBuilderNestedAndRawNull(t *testing.T) {
 	result := buildJSON(t, newNestedEngine())
 	hw, ok := result["hardware"].(map[string]any)

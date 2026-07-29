@@ -29,6 +29,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"sort"
@@ -173,20 +174,32 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 		fd.AddEvidence("cookie."+c.Name, c.Value)
 	}
 
-	// ParseForm consumes the request body for form content types. Buffer the
-	// body once, let ParseForm read a copy, then reset the body from the same
-	// buffer so a downstream handler can still read it in full. Form parameters
-	// are exposed as query evidence.
-	var body []byte
-	if r.Body != nil {
-		body, _ = io.ReadAll(r.Body)
-		_ = r.Body.Close()
+	// Form parameters are exposed as query evidence. ParseForm consumes the
+	// request body only for a urlencoded form (POST/PUT/PATCH); only in that
+	// case is the body buffered - capped at the same ~10 MB that net/http
+	// itself applies to urlencoded forms - and reset afterwards so a
+	// downstream handler can still read it in full. Any other body is never
+	// read.
+	if hasFormBody(r) {
+		body, overflow := readCapped(r.Body, maxFormBodyBytes)
+		if overflow {
+			// Too large to buffer: skip the form evidence and splice the read
+			// bytes back so the downstream handler still sees the full body.
+			m.logger().Warn("request form body exceeds the evidence buffer cap, skipping form evidence",
+				"cap", maxFormBodyBytes)
+			r.Body = spliceBody(body, r.Body)
+		} else {
+			_ = r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if err := r.ParseForm(); err != nil {
+				m.logger().Warn("could not parse request form", "error", err)
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+	} else if err := r.ParseForm(); err != nil {
+		// No form body: ParseForm only parses the URL query and reads nothing.
+		m.logger().Warn("could not parse request query", "error", err)
 	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	if err := r.ParseForm(); err != nil {
-		m.logger().Warn("could not parse request form", "error", err)
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
 	for name, values := range r.Form {
 		if len(values) > 0 {
 			fd.AddEvidence("query."+name, values[0])
@@ -194,7 +207,7 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	}
 
 	fd.AddEvidence("server.client-ip", m.clientIP(r))
-	fd.AddEvidence("header.protocol", requestProtocol(r))
+	fd.AddEvidence("header.protocol", m.requestProtocol(r))
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
@@ -256,8 +269,7 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Content-Type", contentType)
 	// Reflect the request Origin so a cross-origin client-side callback to these
-	// endpoints is permitted, matching the .NET reference. The literal "null"
-	// origin is not reflected.
+	// endpoints is permitted. The literal "null" origin is not reflected.
 	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}
@@ -358,17 +370,65 @@ func (m *Middleware) isTrustedProxy(ip string) bool {
 	return false
 }
 
-func requestProtocol(r *http.Request) string {
-	// Trust the actual connection first (it cannot be spoofed), matching the
-	// .NET reference, then fall back to forwarding headers.
+// maxFormBodyBytes caps how much of a urlencoded form body is buffered for
+// evidence, mirroring net/http's own ~10 MB limit for urlencoded forms.
+const maxFormBodyBytes = 10 << 20
+
+// hasFormBody reports whether ParseForm would read this request's body: a
+// POST/PUT/PATCH carrying a urlencoded form.
+func hasFormBody(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+	default:
+		return false
+	}
+	if r.Body == nil {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mt == "application/x-www-form-urlencoded"
+}
+
+// readCapped reads at most cap bytes from rc, reporting whether more data
+// remained (overflow). The reader is not closed.
+func readCapped(rc io.Reader, capBytes int64) ([]byte, bool) {
+	data, _ := io.ReadAll(io.LimitReader(rc, capBytes+1))
+	if int64(len(data)) > capBytes {
+		return data, true
+	}
+	return data, false
+}
+
+// spliceBody rejoins already-read bytes with the unread remainder of the
+// original body so the downstream handler sees the full stream.
+func spliceBody(read []byte, rest io.ReadCloser) io.ReadCloser {
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(read), rest), rest}
+}
+
+// requestProtocol returns the request protocol. The actual connection is
+// trusted first (it cannot be spoofed). The forwarding headers are consulted
+// only when the immediate peer is a configured trusted proxy - the same gate as
+// clientIP - and only the literal values "http"/"https" are accepted, because
+// the value becomes header.protocol evidence and reaches the client-side
+// callback URL.
+func (m *Middleware) requestProtocol(r *http.Request) string {
 	if r.TLS != nil {
 		return "https"
 	}
-	if proto := r.Header.Get("X-Origin-Proto"); proto != "" {
-		return proto
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(peer); err == nil {
+		peer = host
 	}
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		return proto
+	if len(m.trustedProxies) > 0 && m.isTrustedProxy(peer) {
+		for _, name := range []string{"X-Origin-Proto", "X-Forwarded-Proto"} {
+			proto := strings.ToLower(strings.TrimSpace(r.Header.Get(name)))
+			if proto == "http" || proto == "https" {
+				return proto
+			}
+		}
 	}
 	return "http"
 }

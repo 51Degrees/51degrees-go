@@ -290,6 +290,110 @@ func TestBodyReadableAfterMiddleware(t *testing.T) {
 	}
 }
 
+func TestRequestProtocolGating(t *testing.T) {
+	mw := NewMiddleware(nil, WithTrustedProxies("10.0.0.0/8"))
+
+	// Untrusted peer: forwarding headers are ignored.
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "198.51.100.7:1234"
+	r.Header.Set("X-Forwarded-Proto", "https")
+	if got := mw.requestProtocol(r); got != "http" {
+		t.Fatalf("untrusted peer: protocol = %q, want http", got)
+	}
+
+	// Trusted peer: a valid forwarded protocol is accepted.
+	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	r2.RemoteAddr = "10.0.0.1:1234"
+	r2.Header.Set("X-Forwarded-Proto", "HTTPS")
+	if got := mw.requestProtocol(r2); got != "https" {
+		t.Fatalf("trusted peer: protocol = %q, want https", got)
+	}
+
+	// Trusted peer: anything other than http/https is rejected.
+	r3 := httptest.NewRequest(http.MethodGet, "/", nil)
+	r3.RemoteAddr = "10.0.0.1:1234"
+	r3.Header.Set("X-Origin-Proto", "javascript'-alert(1)-'")
+	if got := mw.requestProtocol(r3); got != "http" {
+		t.Fatalf("crafted protocol: protocol = %q, want http", got)
+	}
+
+	// No trusted proxies configured: headers are never consulted.
+	mw2 := NewMiddleware(nil)
+	r4 := httptest.NewRequest(http.MethodGet, "/", nil)
+	r4.RemoteAddr = "10.0.0.1:1234"
+	r4.Header.Set("X-Forwarded-Proto", "https")
+	if got := mw2.requestProtocol(r4); got != "http" {
+		t.Fatalf("no proxies configured: protocol = %q, want http", got)
+	}
+}
+
+func TestNonFormBodyNotBuffered(t *testing.T) {
+	// A non-form body must reach the downstream handler untouched and produce
+	// no body-derived evidence; the middleware must not read it at all.
+	p := buildWebPipeline(t)
+	defer p.Close()
+	mw := NewMiddleware(p)
+
+	var gotBody string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mw.Handler(next))
+	defer srv.Close()
+
+	payload := `{"foo":"bar"}`
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+	if gotBody != payload {
+		t.Fatalf("downstream body = %q, want %q", gotBody, payload)
+	}
+}
+
+func TestOversizedFormBodySkipsEvidenceKeepsBody(t *testing.T) {
+	// A urlencoded body over the buffer cap is not parsed for evidence, but the
+	// downstream handler must still receive the complete stream.
+	p := buildWebPipeline(t)
+	defer p.Close()
+	mw := NewMiddleware(p)
+
+	var gotLen int
+	var gotEvidence any
+	var evidencePresent bool
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotLen = len(b)
+		if fd, ok := FromContext(r.Context()); ok {
+			gotEvidence, evidencePresent = fd.Evidence().Get("query.foo")
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mw.Handler(next))
+	defer srv.Close()
+
+	body := "foo=bar&pad=" + strings.Repeat("a", maxFormBodyBytes)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	if gotLen != len(body) {
+		t.Fatalf("downstream body length = %d, want %d", gotLen, len(body))
+	}
+	if evidencePresent {
+		t.Fatalf("oversized form should not produce body evidence, got %v", gotEvidence)
+	}
+}
+
 func TestNoDuplicateWhenPresent(t *testing.T) {
 	// Supplying a Sequence Element should prevent a second being added.
 	p, err := AssemblePipeline(PipelineConfig{}, sequence.New(nil), newHeaderEngine())

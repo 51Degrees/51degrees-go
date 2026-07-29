@@ -54,7 +54,7 @@ type Builder struct {
 }
 
 // EnvCloudAPIURL is the environment variable that overrides the default cloud
-// base endpoint when SetEndpoint is not used, matching the .NET reference.
+// base endpoint when SetEndpoint is not used.
 const EnvCloudAPIURL = "FOD_CLOUD_API_URL"
 
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
@@ -123,7 +123,7 @@ func (b *Builder) SetRecoveryDuration(d time.Duration) *Builder { b.recoveryDura
 // SetRecoveryMultiplier sets the factor by which the recovery duration grows
 // after each consecutive trip, resetting on the next success. A multiplier of 1
 // (the default) keeps the recovery duration fixed; a larger value gives
-// exponential backoff as in the .NET ExponentialBackoffRecoveryStrategy.
+// exponential backoff.
 func (b *Builder) SetRecoveryMultiplier(m float64) *Builder { b.recoveryMultiplier = m; return b }
 
 // SetMaxRecoveryDuration caps the recovery duration once it has grown through

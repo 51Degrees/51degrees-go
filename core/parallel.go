@@ -104,6 +104,18 @@ func (pe *ParallelElements) OnPipelineAdded(p Pipeline) error {
 	return nil
 }
 
+// removePipeline undoes OnPipelineAdded for the group and every child,
+// symmetric with the recursive registration above, so a build rollback also
+// clears membership recorded on the children.
+func (pe *ParallelElements) removePipeline(p Pipeline) {
+	pe.BaseElement.removePipeline(p)
+	for _, c := range pe.children {
+		if r, ok := c.(interface{ removePipeline(Pipeline) }); ok {
+			r.removePipeline(p)
+		}
+	}
+}
+
 // Close closes all child elements.
 func (pe *ParallelElements) Close() error {
 	var firstErr error

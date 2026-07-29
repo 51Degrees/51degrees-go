@@ -32,8 +32,8 @@ import (
 )
 
 func TestMustacheVariables(t *testing.T) {
-	// All variable forms render raw (no HTML escaping), matching the .NET
-	// SkipHtmlEncoding behavior, because the template produces JavaScript.
+	// All variable forms render raw (no HTML escaping), because the template
+	// produces JavaScript, not HTML.
 	tmpl := parseMustache(`Hello {{name}}, raw {{&raw}}, triple {{{trip}}}`)
 	out := tmpl.render(map[string]any{"name": "<b>", "raw": "<b>", "trip": "<i>"})
 	if out != "Hello <b>, raw <b>, triple <i>" {
@@ -206,15 +206,42 @@ func TestObjectNameInjectionRejected(t *testing.T) {
 	}
 }
 
-// TestObjectNameValidAccepted verifies a valid identifier (including a dotted
-// path) is still honored.
+// TestObjectNameValidAccepted verifies a valid single identifier is honored.
 func TestObjectNameValidAccepted(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":              "example.com",
+		"query.fod-js-object-name": "myFod",
+	})
+	if !strings.Contains(js, "var myFod = new fiftyoneDegreesManager()") {
+		t.Fatalf("valid object name not applied")
+	}
+}
+
+// TestObjectNameDottedRejected verifies a dotted path is rejected: the name
+// renders at a declaration position where a dot is a JavaScript SyntaxError,
+// so only a single identifier is accepted.
+func TestObjectNameDottedRejected(t *testing.T) {
 	js := renderWith(t, map[string]string{
 		"header.host":              "example.com",
 		"query.fod-js-object-name": "window.fod",
 	})
-	if !strings.Contains(js, "var window.fod = new fiftyoneDegreesManager()") {
-		t.Fatalf("valid dotted object name not applied")
+	line := grepLine(js, "new fiftyoneDegreesManager()")
+	if !strings.Contains(line, "var "+DefaultObjectName+" = new fiftyoneDegreesManager()") {
+		t.Fatalf("dotted object name should fall back to the default: %q", line)
+	}
+}
+
+// TestProtocolInjectionRejected verifies a hostile protocol evidence value
+// cannot reach the callback URL literal: the assembled URL is parsed and only
+// http/https survive, so any other scheme disables the callback instead of
+// being emitted.
+func TestProtocolInjectionRejected(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":     "example.com",
+		"header.protocol": "javascript'-alert(1)-'",
+	})
+	if strings.Contains(js, "alert(1)") {
+		t.Fatalf("crafted protocol reached the generated script")
 	}
 }
 
@@ -244,7 +271,7 @@ func TestHostInjectionRejected(t *testing.T) {
 	}
 }
 
-// TestFetchDefaultsToXHR verifies that, matching .NET, the script uses the
+// TestFetchDefaultsToXHR verifies the script uses the
 // XMLHttpRequest fallback when no Fetch property is present.
 func TestFetchDefaultsToXHR(t *testing.T) {
 	js := renderWith(t, map[string]string{"header.host": "example.com"})

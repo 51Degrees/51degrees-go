@@ -117,9 +117,9 @@ func (e *Element) Process(fd core.FlowData) error {
 				}
 			}
 
-			// A raw (non-AspectPropertyValue) nil is omitted entirely, matching
-			// the .NET reference. A no-value AspectPropertyValue still emits the
-			// name plus its nullreason below.
+			// A raw (non-AspectPropertyValue) nil is omitted entirely. A
+			// no-value AspectPropertyValue still emits the name plus its
+			// nullreason below.
 			if raw == nil {
 				continue
 			}
@@ -206,8 +206,7 @@ func normalizeValue(raw any) (value any, isNull bool, nullReason string) {
 		raw = apv.AsInterface()
 	}
 	// A list of sub-element data (e.g. multiple device profiles) is recursed so
-	// each nested object carries its own properties and no-value reasons,
-	// matching the .NET reference.
+	// each nested object carries its own properties and no-value reasons.
 	if list, ok := raw.([]core.ElementData); ok {
 		out := make([]map[string]any, len(list))
 		for i, d := range list {

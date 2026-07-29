@@ -203,3 +203,43 @@ func TestDiscardLoggerBuild(t *testing.T) {
 	}
 	defer p.Close()
 }
+
+// addRejectingElement fails OnPipelineAdded, forcing a build rollback.
+type addRejectingElement struct{ *BaseElement }
+
+func (e *addRejectingElement) OnPipelineAdded(Pipeline) error {
+	return errors.New("element rejects the pipeline")
+}
+
+func (e *addRejectingElement) Process(FlowData) error { return nil }
+
+func TestBuildRollbackRecursesParallelChildren(t *testing.T) {
+	// A parallel group registers itself AND its children on the pipeline. When a
+	// later element rejects the build, the rollback must clear membership from
+	// the children too, not just the group.
+	c1 := NewBaseElement("child-one", nil, nil)
+	c2 := NewBaseElement("child-two", nil, nil)
+	group := NewParallelElements(nil, &passthroughElement{c1}, &passthroughElement{c2})
+	reject := &addRejectingElement{NewBaseElement("reject", nil, nil)}
+
+	if _, err := NewPipelineBuilder().
+		AddFlowElement(group).
+		AddFlowElement(reject).
+		Build(); err == nil {
+		t.Fatal("expected the build to fail")
+	}
+
+	for name, el := range map[string]*BaseElement{
+		"group": group.BaseElement, "child-one": c1, "child-two": c2,
+		"rejecting": reject.BaseElement,
+	} {
+		if n := len(el.Pipelines()); n != 0 {
+			t.Fatalf("%s retains %d pipeline(s) after rollback", name, n)
+		}
+	}
+}
+
+// passthroughElement is a minimal FlowElement wrapper for rollback tests.
+type passthroughElement struct{ *BaseElement }
+
+func (e *passthroughElement) Process(FlowData) error { return nil }

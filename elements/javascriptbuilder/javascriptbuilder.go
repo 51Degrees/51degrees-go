@@ -44,10 +44,10 @@ import (
 // never escapes, so client-influenced values that reach a code position must be
 // validated here before rendering rather than relying on downstream escaping.
 var (
-	// jsObjectNameRe matches a JavaScript identifier or dotted path (e.g. "fod"
-	// or "window.fod"); it excludes quotes, spaces and any breakout character.
-	jsObjectNameRe = regexp.MustCompile(
-		`^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$`)
+	// jsObjectNameRe matches a single JavaScript identifier. A dotted path is
+	// rejected because the name renders at a declaration position
+	// ("var <name> = ..."), where a dot is a SyntaxError.
+	jsObjectNameRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 	// hostRe matches a bare host or host:port (including bracketed IPv6); it
 	// excludes any character that could break out of a JS string literal.
 	hostRe = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]+$`)
@@ -100,9 +100,8 @@ type Builder struct {
 	enableCookies bool
 }
 
-// DefaultEndpoint is the callback endpoint used when one is not configured,
-// matching the .NET reference so the client-side update round-trip is enabled by
-// default.
+// DefaultEndpoint is the callback endpoint used when one is not configured, so
+// the client-side update round-trip is enabled by default.
 const DefaultEndpoint = "/51dpipeline/json"
 
 // NewBuilder creates a Builder with default options.
@@ -190,12 +189,13 @@ func (e *Element) Process(fd core.FlowData) error {
 		objectName = ev
 	}
 
-	// The host reaches a JS string literal in the callback URL. Only build the
-	// URL from a syntactically valid host so a crafted Host header cannot break
-	// out of the literal.
-	url := ""
-	if protocol != "" && host != "" && e.endpoint != "" && validHost(host) {
-		url = protocol + "://" + host + ensureLeadingSlash(e.endpoint)
+	// The callback URL reaches a JS string literal. Assemble it, then validate
+	// the whole URL so that no client-influenced component - protocol or host -
+	// can break out of the literal.
+	callbackURL := ""
+	if protocol != "" && host != "" && e.endpoint != "" {
+		callbackURL = validCallbackURL(
+			protocol+"://"+host+ensureLeadingSlash(e.endpoint), host)
 	}
 
 	ctx := map[string]any{
@@ -204,8 +204,8 @@ func (e *Element) Process(fd core.FlowData) error {
 		"_sessionId":            sessionID,
 		"_sequence":             seq,
 		"_parameters":           e.queryParameters(fd),
-		"_url":                  url,
-		"_updateEnabled":        url != "",
+		"_url":                  callbackURL,
+		"_updateEnabled":        callbackURL != "",
 		"_enableCookies":        e.cookiesEnabled(fd),
 		"_hasDelayedProperties": strings.Contains(jsonStr, "delayexecution"),
 		"_supportsPromises":     e.supportsPromises(fd),
@@ -284,10 +284,10 @@ func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 }
 
 // queryParameters returns a JSON object of the query.* Evidence values (with the
-// "query." prefix removed) for relaying in client-side callbacks. Matching the
-// .NET reference, the session id and sequence are excluded (the template adds
-// them explicitly) and both keys and values are URL-encoded so the client can
-// append them to the callback URL directly.
+// "query." prefix removed) for relaying in client-side callbacks. The session id
+// and sequence are excluded (the template adds them explicitly) and both keys
+// and values are URL-encoded so the client can append them to the callback URL
+// directly.
 func (e *Element) queryParameters(fd core.FlowData) string {
 	params := map[string]string{}
 	for key, val := range fd.Evidence().AsMap() {
@@ -341,10 +341,34 @@ func (e *Element) supportsFetch(fd core.FlowData) bool {
 			}
 		}
 	}
-	// Match the .NET reference: default to false when no Fetch property is
-	// present, so the generated script uses the XMLHttpRequest fallback rather
-	// than assuming fetch() is available.
+	// Default to false when no Fetch property is present, so the generated
+	// script uses the XMLHttpRequest fallback rather than assuming fetch() is
+	// available.
 	return false
+}
+
+// validCallbackURL parses the assembled callback URL and returns it only when
+// it survives a round trip: http/https scheme, the expected (already
+// hostRe-validated) host, and no characters that could break out of a JS
+// string literal. Anything else returns "" and the callback is disabled.
+func validCallbackURL(raw, host string) string {
+	if !validHost(host) {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	if u.Host != host {
+		return ""
+	}
+	if strings.ContainsAny(raw, `'"\<>`) {
+		return ""
+	}
+	return raw
 }
 
 func evidenceString(fd core.FlowData, key string) string {

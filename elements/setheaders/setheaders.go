@@ -144,9 +144,8 @@ func extractHeaderName(propName string) string {
 	if rest == "" {
 		return ""
 	}
-	// Skip the identifier (its first character plus anything up to the next
-	// upper-case letter, which begins the header name), matching the .NET
-	// reference's scan for the next upper-case character.
+	// Skip the identifier: its first character plus anything up to the next
+	// upper-case letter, which begins the header name.
 	i := 1
 	for i < len(rest) && !isUpper(rest[i]) {
 		i++

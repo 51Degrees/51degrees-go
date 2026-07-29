@@ -155,7 +155,7 @@ func TestUsageSharingSendsXML(t *testing.T) {
 	if !foundUA {
 		t.Fatalf("user-agent header not shared: %s", body)
 	}
-	// Schema parity with .NET: lower-case category element, Name attribute, and
+	// Schema shape: lower-case category element, Name attribute, and
 	// a CDATA-wrapped value.
 	if !strings.Contains(body, `<header Name="user-agent"><![CDATA[test-agent]]></header>`) {
 		t.Fatalf("header not in the expected lower-case CDATA form: %s", body)

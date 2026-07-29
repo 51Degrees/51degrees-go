@@ -120,7 +120,7 @@ func TestCloudRequestSuccess(t *testing.T) {
 		t.Fatalf("resource key not sent, got %q", cs.lastForm.Get("resource"))
 	}
 	// All evidence is forwarded (prefix-stripped); the server ignores any it does
-	// not need, matching the .NET reference — even keys not in evidencekeys.
+	// not need — even keys not in evidencekeys.
 	if cs.lastForm.Get("extra") != "extra-value" {
 		t.Fatalf("evidence not in evidencekeys should still be sent, got %q", cs.lastForm.Get("extra"))
 	}
