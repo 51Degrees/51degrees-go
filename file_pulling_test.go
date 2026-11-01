@@ -543,3 +543,63 @@ func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
 		t.Error("no reload event sent")
 	}
 }
+
+// The engines copy the data file for each reload in their own goroutine while
+// the puller runs. Run with -race, which reports any field the two use without
+// synchronisation.
+func TestScheduleFilePulling_CopiesWhilePulling(t *testing.T) {
+	dir := t.TempDir()
+	dataFile := filepath.Join(dir, "data.hash")
+	if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	pulls := 0
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			pulls++
+			body := "version " + strconv.Itoa(pulls)
+			mu.Unlock()
+			w.Write([]byte(body))
+		}))
+	defer server.Close()
+
+	updater := NewFileUpdater(server.URL)
+	updater.SetDataFile(dataFile)
+	updater.SetTempDataDir(t.TempDir())
+	updater.SetIsFileWatcherEnabled(false)
+	updater.SetDataFilePullEveryMs(10)
+	updater.SetRandomization(0)
+	updater.SetLoggerEnabled(false)
+
+	stopCh := make(chan *sync.WaitGroup)
+	reload := make(chan struct{})
+	go updater.ScheduleFilePulling(stopCh, reload)
+
+	for i := 0; i < 5; i++ {
+		<-reload
+		path, err := updater.GetReloadFilePath()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Remove(path)
+	}
+
+	// The puller may be announcing another pull when it is asked to stop.
+	stopped := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-reload:
+			case <-stopped:
+				return
+			}
+		}
+	}()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	stopCh <- &wg
+	wg.Wait()
+	close(stopped)
+}
