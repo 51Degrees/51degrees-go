@@ -21,9 +21,11 @@ if ($release -and $release -ne $current) {
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
 
-# Update the dependencies of the published modules. The examples require the
-# modules at their published version, which a release moves.
-foreach ($module in 'common', 'device-detection', 'ip-intelligence') {
+# Update the dependencies of each module, without the workspace. The examples
+# move to the latest release of the published modules. A change to them alone
+# doesn't make a release.
+foreach ($module in 'common', 'device-detection', 'ip-intelligence',
+    'examples/device-detection', 'examples/ip-intelligence', 'examples/mixed') {
     Push-Location (Join-Path $RepoName $module)
     try {
         $env:GOWORK = 'off'

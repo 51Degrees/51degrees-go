@@ -28,12 +28,18 @@ script also adds a `replace` for each requirement between these modules.
 `go.work` is never committed, and nothing else may add a `replace` to a
 `go.mod`, as it would be published with the module.
 
-CI tests pull requests and publishes in the workspace, so the examples run
-against the code being changed or released, as the .NET repository's CI does
-with its projects. It also builds each published module without the workspace
-(`GOWORK=off`), to check the module as it is published. The examples aren't
-built without the workspace in CI: a change to an engine and its examples in
-one pull request would fail against the last release.
+CI makes the workspace only when a folder of a published module (`common`,
+`device-detection`, `ip-intelligence`) has changed since the latest release,
+that is when it tests the next release (`ci/setup-environment.ps1`). The
+examples then run against that code, as the .NET repository's CI does with its
+projects. Otherwise they run against the published modules their go.mod files
+name. The same check decides whether there is a release at all
+(`ci/get-next-package-version.ps1`), so a change to the examples, the
+documentation or CI alone releases nothing. The nightly package update moves
+the examples to the latest release.
+
+CI also builds each published module without the workspace (`GOWORK=off`), to
+check the module as it is published.
 
 ## The C sources
 

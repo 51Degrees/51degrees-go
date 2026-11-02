@@ -16,9 +16,15 @@ $tags = @(git -C $RepoName tag --list |
 $headTags = @(git -C $RepoName tag --points-at HEAD |
     Where-Object { $_ -match '^\d+\.\d+\.\d+$' })
 
+. $PSScriptRoot/products.ps1
+
 if ($headTags) {
     # Already released, so the publish sees the tag and does nothing.
     $next = $headTags | Sort-Object { [version]$_ } | Select-Object -Last 1
+} elseif ($tags -and !(Test-UnreleasedLibraryChange $RepoName)) {
+    # Only the examples, the documentation or CI changed, which a release
+    # wouldn't publish. The existing version makes the publish do nothing.
+    $next = $tags[-1]
 } elseif ($tags) {
     $highest = [version]$tags[-1]
     $next = "$($highest.Major).$($highest.Minor).$($highest.Build + 1)"
