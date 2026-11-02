@@ -23,7 +23,9 @@ if ($Products -contains 'device-detection') {
     Push-Location (Get-ProductPath $RepoName 'device-detection')
     try {
         Write-Host "Running the Device Detection performance example..."
-        go run ./examples/dd/performance -json-output $output
+        go run ./examples/dd/performance -json-output $output `
+            -data-file "$rootDir/assets/51Degrees-LiteV4.1.hash" `
+            -evidence-file "$rootDir/assets/20000 Evidence Records.yml"
     } finally {
         Pop-Location
     }
