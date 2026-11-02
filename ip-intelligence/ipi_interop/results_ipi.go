@@ -82,7 +82,7 @@ func (r *ResultsIpi) ResultsIpiFromIpAddress(ipAddress string) error {
 	)
 
 	if !exception.IsOkay() {
-		return fmt.Errorf(C.GoString(C.ExceptionGetMessage(exception.CPtr)))
+		return messageError(C.ExceptionGetMessage(exception.CPtr))
 	}
 
 	return nil
@@ -204,7 +204,7 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 	)
 
 	if !exception.IsOkay() {
-		return nil, fmt.Errorf(C.GoString(C.ExceptionGetMessage(exception.CPtr)))
+		return nil, messageError(C.ExceptionGetMessage(exception.CPtr))
 	}
 
 	// Release the collection
