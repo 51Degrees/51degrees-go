@@ -178,3 +178,37 @@ func TestRequiredPropertyIndexFromName(t *testing.T) {
 	// Free resource manager
 	freeResourceManager(manager, t)
 }
+
+// This tests a name the data set has no property for keeps its place among
+// the names given, so the property named after it is still listed, and read
+// by its place in the list.
+func TestAvailablePropertiesAfterMissingName(t *testing.T) {
+	manager := initResourceManager("NoSuchProperty,IsMobile", t)
+	defer freeResourceManager(manager, t)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		t.Fatalf("Failed to perform detection on User-Agent \"%s\": %v\n",
+			uaMobile, err)
+	}
+
+	index := -1
+	available := results.AvailableProperties()
+	for i, name := range available {
+		if strings.EqualFold(name, "IsMobile") {
+			index = i
+		}
+	}
+	if index < 0 {
+		t.Fatalf("Expected \"IsMobile\" among %v.\n", available)
+	}
+
+	hasValues, err := results.HasValuesByIndex(index)
+	if err != nil {
+		t.Fatalf("Failed to perform 'HasValuesByIndex' on results: %v\n", err)
+	}
+	if !hasValues {
+		t.Errorf("Expected \"IsMobile\" at index %d to have values.\n", index)
+	}
+}
