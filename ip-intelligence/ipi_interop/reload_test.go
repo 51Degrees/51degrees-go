@@ -23,7 +23,10 @@
 package ipi_interop
 
 import (
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,5 +67,77 @@ func TestReloadFromFileFreesDataSet(t *testing.T) {
 	}
 	if left != 0 {
 		t.Errorf("%d bytes still allocated after three reloads and Free", left)
+	}
+}
+
+// load returns a manager loaded from path with the given profile.
+func load(t *testing.T, path string, profile PerformanceProfile) *ResourceManager {
+	manager := NewResourceManager()
+	t.Cleanup(manager.Free)
+	if err := InitManagerFromFile(
+		manager, *NewConfigIpi(profile), "", path); err != nil {
+		t.Fatalf("InitManagerFromFile() failed: %v", err)
+	}
+	return manager
+}
+
+// copyFile copies the file at from to a new file at to.
+func copyFile(t *testing.T, from string, to string) {
+	src, err := os.Open(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst, err := os.Create(to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		t.Fatal(err)
+	}
+	if err := dst.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestReloadFromFileReportsStatus checks that a reload that fails with a
+// status code returns an error naming the file. A file of zeros fails the
+// version check in the data file's header, which is a status code.
+func TestReloadFromFileReportsStatus(t *testing.T) {
+	manager := load(t, dataFilePath(t), LowMemory)
+
+	zeros := filepath.Join(t.TempDir(), "zeros.ipi")
+	if err := os.WriteFile(zeros, make([]byte, 65536), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := manager.ReloadFromFile(*NewConfigIpi(LowMemory), "", zeros)
+	if err == nil {
+		t.Fatal("ReloadFromFile() reported success for a file of zeros")
+	}
+	if !strings.Contains(err.Error(), zeros) {
+		t.Errorf("error does not name %q: %v", zeros, err)
+	}
+}
+
+// TestReloadFromOriginalFileReportsStatus checks that reloading once the
+// original data file has gone returns an error naming that file. The in
+// memory profile reports the missing file as a status code. The test copies
+// the data file and loads the copy in memory, so a Lite data file keeps it
+// quick.
+func TestReloadFromOriginalFileReportsStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "original.ipi")
+	copyFile(t, dataFilePath(t), path)
+	manager := load(t, path, InMemory)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	err := manager.ReloadFromOriginalFile()
+	if err == nil {
+		t.Fatal("ReloadFromOriginalFile() reported success without its file")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error does not name %q: %v", path, err)
 	}
 }

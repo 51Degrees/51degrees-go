@@ -103,12 +103,20 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 	exp := NewException()
 	defer exp.Free()
 
-	C.IpiReloadManagerFromOriginalFile(
+	s := C.IpiReloadManagerFromOriginalFile(
 		manager.CPtr,
 		exp.CPtr,
 	)
 	if !exp.IsOkay() {
 		return messageError(C.ExceptionGetMessage(exp.CPtr))
+	}
+
+	// Check status code. The reload read the file the loaded data set came
+	// from, so the message names that file.
+	if s != C.SUCCESS {
+		dataSet := C.DataSetGet(manager.CPtr)
+		defer C.DataSetRelease(dataSet)
+		return messageError(C.StatusGetMessage(s, &dataSet.masterFileName[0]))
 	}
 	return nil
 }
