@@ -9,3 +9,6 @@
 .DS_Store
 
 4.**/
+
+# Linked in by ci/fetch-assets.ps1 for the reload tests
+51Degrees-IPIV4AsnIpiV41.ipi

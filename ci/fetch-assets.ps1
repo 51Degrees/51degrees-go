@@ -30,6 +30,15 @@ if (!$Assets) {
     -DeviceDetection:$DeviceDetection -DeviceDetectionUrl:$DeviceDetectionUrl `
     -IpIntelligence:$IpIntelligence -IpIntelligenceUrl:$IpIntelligenceUrl
 
+# The IP Intelligence reload tests use the small ASN data file from the
+# ip-intelligence-data submodule of cxx, and look for it in the module folder.
+if ($Products -contains 'ip-intelligence') {
+    $asn = "51Degrees-IPIV4AsnIpiV41.ipi"
+    New-Item -ItemType SymbolicLink -Force `
+        -Target (Join-Path $RepoPath "cxx/ip-intelligence-data/$asn") `
+        -Path (Join-Path (Get-ProductPath $RepoPath 'ip-intelligence') $asn) | Out-Null
+}
+
 # The Device Detection tests look for their files in the module folder.
 if ($Products -contains 'device-detection') {
     foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml") {
