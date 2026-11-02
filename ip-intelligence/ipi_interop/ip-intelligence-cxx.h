@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 4.5.100 (4110d6813e167a803a06489318b33b83a230fa32) by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 4.5.100-48-gc77e080 (c77e0804adeffa06050dc4229ca41494eb619aa9) by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -295,7 +295,6 @@
 #define fiftyoneDegreesPropertiesCreate ipi_fiftyoneDegreesPropertiesCreate
 #define fiftyoneDegreesPropertiesDefault ipi_fiftyoneDegreesPropertiesDefault
 #define fiftyoneDegreesPropertiesFree ipi_fiftyoneDegreesPropertiesFree
-#define fiftyoneDegreesPropertiesGetComponentMask ipi_fiftyoneDegreesPropertiesGetComponentMask
 #define fiftyoneDegreesPropertiesGetNameFromRequiredIndex ipi_fiftyoneDegreesPropertiesGetNameFromRequiredIndex
 #define fiftyoneDegreesPropertiesGetPropertyIndexFromName ipi_fiftyoneDegreesPropertiesGetPropertyIndexFromName
 #define fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex ipi_fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex
@@ -5706,8 +5705,17 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
  *
  * ## Terms
  *
- * **Required Property Index** : the 0 based index of the property in the list
- * of required properties. Not the same as the property index.
+ * **Required Property Index** : the 0 based index of the property in the
+ * names the caller gave when the data set was created, which is the index
+ * every read by position takes. A reload does not change it. A name the data
+ * does not have keeps its index, and reads as a property the data set does
+ * not have. When the caller named no property, it is the index of the
+ * property in the list of available properties, which a reload can change.
+ *
+ * **Available Index** : the 0 based index of the property in the list of
+ * available properties, which holds the properties the data has in ascending
+ * order of name. Not the same as the required property index when the caller
+ * named properties.
  *
  * **Property Index** : the 0 based index of the property in the source used to 
  * create the required properties. Not the same as the required property index.
@@ -5739,9 +5747,12 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
  * 1. Separated string of property names. Valid separators include space,
  * comma and pipe.
  * 2. An array of strings.
- * 3. Existing properties results from a previous creation operation. This 
- * method is used when a data set is being reloaded due to a change in the 
- * underlying data.
+ * 3. Existing properties results from a previous creation operation. This
+ * method is used when a data set is being reloaded due to a change in the
+ * underlying data. The new results are created from the names the caller
+ * gave the first time, so a property the previous data did not have is
+ * available once the new data has it, and a caller that named no property
+ * gets every property of the new data.
  *
  * Creation also requires a method to retrieve the name of the properties from 
  * the underlying data source. A method pointer conforming to 
@@ -5756,20 +5767,22 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
  * collection field of the collection item.
  *
  * Some, or all, of the required properties may not be present in the
- * underlying data source. Any missing properties will be ignored in the
- * results. The get  name from required index method can be used to iterate
- * over the available  properties. The number of available properties after
- * creation can be obtained  from the count field of properties results.
+ * underlying data source. A missing property is left out of the available
+ * properties, and keeps its required property index, which reads as a
+ * property the data set does not have. The number of required property
+ * indexes is given by #fiftyoneDegreesPropertiesGetRequiredPropertyCount, and
+ * the name at each by #fiftyoneDegreesPropertiesGetNameFromRequiredIndex. The
+ * count field and the items of the results are the available properties,
+ * which are in available index order, so a caller pairing them with required
+ * property indexes reads the wrong properties.
  *
- * Whilst the property names can be provided as string(s) the property names 
- * referenced from the properties results are collection items from a strings 
- * collection. The properties methods are responsible for releasing the 
+ * Whilst the property names can be provided as string(s) the property names
+ * referenced from the properties results are collection items from a strings
+ * collection. The properties methods are responsible for releasing the
  * references to these strings when the properties results are freed.
  *
- * The resulting require properties index will be in ascending order of the 
- * property name a string. As such the ordered list can be used with a binary 
- * search (divide and conquer) to quickly determine the required property index
- * from the property name.
+ * The available properties are in ascending order of the property name, so
+ * a binary search quickly finds a property from its name.
  *
  * ## Free
  *
@@ -5841,10 +5854,22 @@ typedef struct fiftyone_degrees_property_available_t {
     byte componentIndex; /**< Index in the data set's component list of the
                          component the property belongs to. Initialised to
                          zero and set by the engine when it initialises its
-                         available components. Used to turn required
-                         property indexes into the mask of components to
-                         evaluate. */
+                         available components. */
+    int32_t requiredPropertyIndex; /**< Index of the property in the names
+                                   the caller gave, the first if the name was
+                                   given more than once. When the caller named
+                                   no property, the index of this item */
 } fiftyoneDegreesPropertyAvailable;
+
+/**
+ * A property name the caller gave, in the place the caller gave it.
+ */
+typedef struct fiftyone_degrees_property_named_t {
+	int32_t availableIndex; /**< Index of the property in the available
+	                            properties, or -1 when the data does not have
+	                            the property */
+	const fiftyoneDegreesString *name; /**< The name as the caller gave it */
+} fiftyoneDegreesPropertyNamed;
 
 FIFTYONE_DEGREES_ARRAY_TYPE(
 	fiftyoneDegreesPropertyAvailable,
@@ -5853,6 +5878,14 @@ FIFTYONE_DEGREES_ARRAY_TYPE(
 	                                Initialised to false and set by the engine.
 	                                A list created from an existing list keeps
 	                                the value, which carries it across a reload */
+	uint32_t namedCount; /**< Number of names the caller gave, which is the
+	                         number of required property indexes when the
+	                         caller named properties */
+	fiftyoneDegreesPropertyNamed *named; /**< The names the caller gave, in the
+	                                         caller's order, or NULL when the
+	                                         caller named no property. A list
+	                                         created from an existing list is
+	                                         created from these names */
 )
 
 /** Array of properties which are available in a data set. */
@@ -5914,14 +5947,17 @@ typedef uint32_t(*fiftyoneDegreesEvidencePropertiesGetMethod)(
 EXTERNAL_VAR fiftyoneDegreesPropertiesRequired fiftyoneDegreesPropertiesDefault;
 
 /**
- * Creates a properties result instance for use with future property 
- * operations. The resulting required properties will be provided in ascending 
- * order.
- * @param properties required to be available as either a separated list of 
- * property names, an array of property names or an existing properties results 
- * structure from another data set. Valid separators include pipe, comma and 
- * space. The fields are evaluated in order of existing, array and then string.
- * the first field with a value is used.
+ * Creates a properties result instance for use with future property
+ * operations. The available properties are in ascending order of name, and
+ * the required property index of each name given is its place among the
+ * names given.
+ * @param properties required to be available as either a separated list of
+ * property names, an array of property names or an existing properties results
+ * structure from another data set. Valid separators include pipe, comma and
+ * space, and a run of separators separates two names. The fields are
+ * evaluated in order of existing, array and then string. The first field
+ * with a value is used. Existing results give the names they were created
+ * with.
  * @param state pointer to state used with the get method
  * @param getPropertyMethod method used to return the property name from a 
  * string collection
@@ -5947,12 +5983,14 @@ EXTERNAL int fiftyoneDegreesPropertiesGetPropertyIndexFromName(
 	const char *propertyName);
 
 /**
- * Gets the required property index in the list of all required properties from 
- * the name.
+ * Gets the required property index of the property named, which is its
+ * place in the names the caller gave, the first if the name was given more
+ * than once. When the caller named no property, it is the index of the
+ * property in the available properties.
  * @param available properties instance
  * @param propertyName string containing the property name
- * @return 0 based index of the property in the required properties or -1 if 
- * not available
+ * @return 0 based required property index, or -1 if the data set does not
+ * have the property
  */
 EXTERNAL int fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName(
 	fiftyoneDegreesPropertiesAvailable *available,
@@ -5961,68 +5999,118 @@ EXTERNAL int fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName(
 /**
  * Maps the required property index to the index in the source data structure.
  * @param available properties instance
- * @param requiredPropertyIndex index of the property in the required 
- * properties structure
- * @return 0 based index of the property in the source or -1 if not available
+ * @param requiredPropertyIndex index of the property in the names the caller
+ * gave, or when the caller named no property, in the available properties
+ * @return 0 based index of the property in the source, or -1 if the index is
+ * outside the names given or the data set does not have the property
  */
 EXTERNAL int fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex(
 	fiftyoneDegreesPropertiesAvailable *available,
 	int requiredPropertyIndex);
 
 /**
- * Gets the name as a string from the required property index.
+ * Gets the name as a string from the required property index. A property the
+ * data set does not have gives the name the caller gave.
  * @param available properties instance
- * @param requiredPropertyIndex index of the property in the required
- * properties structure
- * @return string representation of the property
+ * @param requiredPropertyIndex index of the property in the names the caller
+ * gave, or when the caller named no property, in the available properties
+ * @return string representation of the property, or NULL if the index is
+ * outside the names given
  */
-EXTERNAL fiftyoneDegreesString* 
+EXTERNAL fiftyoneDegreesString*
 	fiftyoneDegreesPropertiesGetNameFromRequiredIndex(
 		fiftyoneDegreesPropertiesAvailable *available,
 		int requiredPropertyIndex);
 
 /**
- * Mask with every component enabled.
+ * The functions below are inline, so they add no name to the library.
  */
-#define FIFTYONE_DEGREES_COMPONENT_MASK_ALL UINT32_MAX
+#if defined(_MSC_VER)
+#define FIFTYONE_DEGREES_PROPERTIES_INLINE static __inline
+#elif defined(__GNUC__) || defined(__clang__)
+#define FIFTYONE_DEGREES_PROPERTIES_INLINE static __inline__
+#else
+#define FIFTYONE_DEGREES_PROPERTIES_INLINE static inline
+#endif
 
 /**
- * Number of components the mask can address.
+ * Gets the number of required property indexes, which is the number of names
+ * the caller gave, or when the caller named no property, the number of
+ * available properties. Use it, rather than the count field, with
+ * #fiftyoneDegreesPropertiesGetNameFromRequiredIndex and the reads that take
+ * a required property index.
+ * @param available properties instance
+ * @return number of required property indexes
  */
-#define FIFTYONE_DEGREES_COMPONENT_MASK_BITS 32
+FIFTYONE_DEGREES_PROPERTIES_INLINE uint32_t
+	fiftyoneDegreesPropertiesGetRequiredPropertyCount(
+		const fiftyoneDegreesPropertiesAvailable *available) {
+	if (available == NULL) {
+		return 0;
+	}
+	return available->named != NULL ? available->namedCount : available->count;
+}
 
 /**
- * True if component index i is enabled under the mask. Components at index
- * 32 and above are beyond the mask and are always enabled, so a data set
- * with more than 32 components is filtered for the first 32 only and the
- * shift never exceeds the width of the mask.
- * @param mask the component mask
- * @param i component index
+ * Gets the available index of the property at the required property index.
+ * @param available properties instance
+ * @param requiredPropertyIndex index of the property in the names the caller
+ * gave, or when the caller named no property, in the available properties
+ * @return 0 based available index, or -1 if the index is outside the names
+ * given or the data set does not have the property
  */
-#define FIFTYONE_DEGREES_COMPONENT_MASK_ENABLED(mask, i) \
-	((uint32_t)(i) >= FIFTYONE_DEGREES_COMPONENT_MASK_BITS || \
-	((mask) & (1u << (i))) != 0)
+FIFTYONE_DEGREES_PROPERTIES_INLINE int fiftyoneDegreesPropertiesGetAvailableIndex(
+	const fiftyoneDegreesPropertiesAvailable *available,
+	int requiredPropertyIndex) {
+	if (available == NULL || requiredPropertyIndex < 0) {
+		return -1;
+	}
+	if (available->named != NULL) {
+		return (uint32_t)requiredPropertyIndex < available->namedCount ?
+			(int)available->named[requiredPropertyIndex].availableIndex :
+			-1;
+	}
+	return (uint32_t)requiredPropertyIndex < available->count ?
+		requiredPropertyIndex :
+		-1;
+}
 
 /**
- * Builds the mask of components whose graphs a detection must evaluate from
- * the required property indexes a caller will read. Bit i means component i,
- * using the componentIndex recorded on each available property. The engine
- * must record that index when it initialises its available components, as
- * the Hash and IP intelligence engines do. Under an engine that does not,
- * every property reads as component 0.
- * @param available the available properties of the data set
- * @param requiredPropertyIndexes array of required property indexes, or NULL
- * to enable every component
- * @param requiredPropertyIndexesCount number of entries in the array. A
- * negative count enables every component. Zero with a non NULL array enables
- * none. Indexes outside the available properties are ignored, as are
- * components at index 32 and above, which the mask cannot address.
- * @return the component mask
+ * Gets the available index of the property named.
+ * @param available properties instance
+ * @param propertyName string containing the property name
+ * @return 0 based available index, or -1 if the data set does not have the
+ * property
  */
-EXTERNAL uint32_t fiftyoneDegreesPropertiesGetComponentMask(
-	fiftyoneDegreesPropertiesAvailable *available,
-	const int *requiredPropertyIndexes,
-	int requiredPropertyIndexesCount);
+FIFTYONE_DEGREES_PROPERTIES_INLINE int
+	fiftyoneDegreesPropertiesGetAvailableIndexFromName(
+		fiftyoneDegreesPropertiesAvailable *available,
+		const char *propertyName) {
+	return fiftyoneDegreesPropertiesGetAvailableIndex(
+		available,
+		fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName(
+			available,
+			propertyName));
+}
+
+/**
+ * Maps the available index to the index in the source data structure.
+ * @param available properties instance
+ * @param availableIndex index of the property in the available properties
+ * @return 0 based index of the property in the source, or -1 if the index is
+ * outside the available properties
+ */
+FIFTYONE_DEGREES_PROPERTIES_INLINE int
+	fiftyoneDegreesPropertiesGetPropertyIndexFromAvailableIndex(
+		const fiftyoneDegreesPropertiesAvailable *available,
+		int availableIndex) {
+	if (available == NULL ||
+		availableIndex < 0 ||
+		(uint32_t)availableIndex >= available->count) {
+		return -1;
+	}
+	return (int)available->items[availableIndex].propertyIndex;
+}
 
 /**
  * Check if the 'SetHeader' properties are included in the
@@ -8574,9 +8662,44 @@ fiftyoneDegreesException *exception) { \
  * that values contained in the data set used for processing can always be
  * returned.
  *
+ * ## First read
+ *
+ * When the caller named the properties the data set was created with,
+ * populating the results walks the graph of each component they answer for,
+ * as #fiftyoneDegreesResultsWalkWhenPopulated decides, and the call that
+ * populates them reports a walk that fails. Otherwise populating the results
+ * walks no graph. Each component the results answer for is marked pending,
+ * and the first read of one of its properties walks the component's graph
+ * against the data set the results hold. A component is walked at most once
+ * each time the results are populated, so a walk that fails is not repeated,
+ * and the component's properties then read as if it had no profile. Anything
+ * that depends on every component, such as a value made from all of them or
+ * the items of the results read directly, needs
+ * #fiftyoneDegreesResultsEvaluateAll first, which walks nothing when the
+ * results walked every graph as they were populated.
+ *
+ * ## Overrides
+ *
+ * Results can hold values from the evidence that override the values of
+ * properties. A read looks for one with
+ * #fiftyoneDegreesResultsGetOverrideValues before it walks the property's
+ * component, so a property with an override value is read without walking
+ * the graph, and a component whose properties are only read from overrides
+ * is never walked.
+ *
+ * ## Threads
+ *
+ * A results structure is used by one thread at a time, because reading a
+ * value writes into the results, and when no properties were named the first
+ * read of a component's property walks the component's graph. Different
+ * results can be used on different threads at once, and the resource manager
+ * they come from can be shared, unless the library is compiled with
+ * FIFTYONE_DEGREES_NO_THREADING.
+ *
  * @{
  */
 
+#include <string.h>
 
 /**
  * Enum containing reasons which cause a value to not be present or valid.
@@ -8620,15 +8743,51 @@ typedef enum e_fiftyone_degrees_results_no_value_reason {
 	FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_UNKNOWN /**< None of the above */
 } fiftyoneDegreesResultsNoValueReason;
 
+struct fiftyone_degrees_results_base_t;
+
 /**
- * Base results structure which any processing results should extend.
+ * Walks the graph of one component for the results, setting what a read of
+ * the component's properties needs. Each engine supplies its own walk.
+ * @param results pointer to the results to walk the component for
+ * @param componentIndex index of the component in the data set
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ */
+typedef void (*fiftyoneDegreesResultsEvaluateMethod)(
+	struct fiftyone_degrees_results_base_t *results,
+	byte componentIndex,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Number of 32 bit words holding one bit for each possible component index.
+ */
+#define FIFTYONE_DEGREES_RESULTS_PENDING_WORDS 8
+
+/**
+ * Base results structure which any processing results should extend. It is
+ * used by one thread at a time, as the Threads section above describes.
  */
 typedef struct fiftyone_degrees_results_base_t {
 	void *dataSet; /**< Pointer to the data set associated with the results */
+	fiftyoneDegreesResultsEvaluateMethod evaluate; /**< Walks one component's
+												   graph, or NULL if the
+												   results walk none on a
+												   read */
+	uint32_t pending[FIFTYONE_DEGREES_RESULTS_PENDING_WORDS]; /**< One bit for
+															  each component
+															  whose graph is
+															  still to be
+															  walked */
+	fiftyoneDegreesOverrideValueArray *overrides; /**< Values from the
+												  evidence that override the
+												  values of properties, or
+												  NULL if the results hold
+												  none */
 } fiftyoneDegreesResultsBase;
 
 /**
  * Initialise a set of results by setting the data set they are associated with.
+ * No component is pending, no walk is set and no override values are held.
  * @param results pointer to the results to initialise
  * @param dataSet pointer to the data set which will be using the results
  * @return pointer to the initialised results
@@ -8636,6 +8795,144 @@ typedef struct fiftyone_degrees_results_base_t {
 EXTERNAL fiftyoneDegreesResultsBase* fiftyoneDegreesResultsInit(
 	fiftyoneDegreesResultsBase *results,
 	void *dataSet);
+
+/**
+ * Marks a function defined in this header, so that it adds no name to the
+ * libraries.
+ */
+#if defined(_MSC_VER)
+#define FIFTYONE_DEGREES_RESULTS_INLINE static __inline
+#elif defined(__GNUC__) || defined(__clang__)
+#define FIFTYONE_DEGREES_RESULTS_INLINE static __inline__
+#else
+#define FIFTYONE_DEGREES_RESULTS_INLINE static inline
+#endif
+
+/**
+ * Marks every component as walked, before the results are populated again.
+ * @param results pointer to the results
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsPendingClear(
+	fiftyoneDegreesResultsBase *results) {
+	memset(results->pending, 0, sizeof(results->pending));
+}
+
+/**
+ * Marks the component as waiting for the first read of one of its
+ * properties.
+ * @param results pointer to the results
+ * @param componentIndex index of the component in the data set
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsPendingSet(
+	fiftyoneDegreesResultsBase *results,
+	byte componentIndex) {
+	results->pending[componentIndex >> 5] |=
+		(uint32_t)1 << (componentIndex & 31);
+}
+
+/**
+ * Returns true if populating the results walks the graph of each component
+ * they answer for, rather than leaving each walk to the first read of one of
+ * the component's properties. That is when the caller named the properties
+ * the data set was created with, as every graph the results need is then
+ * known before anything is read.
+ * @param dataSet pointer to the data set the results are populated from
+ * @return true if populating the results walks the graphs
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE bool fiftyoneDegreesResultsWalkWhenPopulated(
+	const fiftyoneDegreesDataSetBase *dataSet) {
+	return dataSet->available != NULL && dataSet->available->named != NULL;
+}
+
+/**
+ * Walks the component's graph if it is pending, and marks it walked whether
+ * or not the walk succeeds, so a failed walk is not repeated. Called before
+ * a read of a property of the component.
+ * @param results pointer to the results
+ * @param componentIndex index of the component in the data set
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsEvaluate(
+	fiftyoneDegreesResultsBase *results,
+	byte componentIndex,
+	fiftyoneDegreesException *exception) {
+	uint32_t *word = &results->pending[componentIndex >> 5];
+	const uint32_t bit = (uint32_t)1 << (componentIndex & 31);
+	if ((*word & bit) != 0) {
+		*word &= ~bit;
+		if (results->evaluate != NULL) {
+			results->evaluate(results, componentIndex, exception);
+		}
+	}
+}
+
+/**
+ * Walks every pending component in component order, stopping at the first
+ * walk that fails. Called before anything that depends on every component,
+ * such as a value made from all of them, or the items of the results read
+ * directly.
+ * @param results pointer to the results
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsEvaluateAll(
+	fiftyoneDegreesResultsBase *results,
+	fiftyoneDegreesException *exception) {
+	uint32_t word, bit;
+	for (word = 0; word < FIFTYONE_DEGREES_RESULTS_PENDING_WORDS; word++) {
+		while (results->pending[word] != 0) {
+			bit = 0;
+			while ((results->pending[word] & ((uint32_t)1 << bit)) == 0) {
+				bit++;
+			}
+			fiftyoneDegreesResultsEvaluate(
+				results,
+				(byte)(word * 32 + bit),
+				exception);
+			if (FIFTYONE_DEGREES_EXCEPTION_FAILED) {
+				return;
+			}
+		}
+	}
+}
+
+/**
+ * Returns true if the results hold an override value for the property, so
+ * that a read can answer without walking the property's component.
+ * @param results pointer to the results to check
+ * @param availableIndex index of the property in the available properties
+ * @return true if there is an override value for the property
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE bool fiftyoneDegreesResultsHasOverrideValue(
+	fiftyoneDegreesResultsBase *results,
+	uint32_t availableIndex) {
+	return results->overrides != NULL &&
+		fiftyoneDegreesOverrideHasValueForRequiredPropertyIndex(
+			results->overrides,
+			availableIndex);
+}
+
+/**
+ * Adds the override values the results hold for the property to the list.
+ * Each read calls this before #fiftyoneDegreesResultsEvaluate, so a property
+ * with an override value is read without walking its component.
+ * @param results pointer to the results to get the values from
+ * @param availableIndex index of the property in the available properties
+ * @param values list to add the values to
+ * @return the number of values added, which is zero if there is no override
+ * value for the property
+ */
+FIFTYONE_DEGREES_RESULTS_INLINE uint32_t fiftyoneDegreesResultsGetOverrideValues(
+	fiftyoneDegreesResultsBase *results,
+	uint32_t availableIndex,
+	fiftyoneDegreesList *values) {
+	return results->overrides == NULL ? 0 :
+		fiftyoneDegreesOverrideValuesAdd(
+			results->overrides,
+			availableIndex,
+			values);
+}
 
 /**
  * @}
@@ -9181,10 +9478,12 @@ EXTERNAL fiftyoneDegreesIpiCgResult fiftyoneDegreesIpiGraphEvaluateTrace(
 #endif
 /**
  * Default value for the value cache size used in the default collection
- * configuration.
+ * configuration. The Balanced preset reads the values of every property of a
+ * lookup through this cache, so it holds enough of them that most reads find
+ * their value there.
  */
 #ifndef FIFTYONE_DEGREES_VALUE_CACHE_SIZE
-#define FIFTYONE_DEGREES_VALUE_CACHE_SIZE 500
+#define FIFTYONE_DEGREES_VALUE_CACHE_SIZE 50000
 #endif
 /**
  * Default value for the value cache loaded size used in the default collection
@@ -9396,6 +9695,13 @@ FIFTYONE_DEGREES_ARRAY_TYPE(
 /**
  * Array of Ipi results used to easily access and track the size of the
  * array.
+ *
+ * The results are used by one thread at a time, because reading a value
+ * writes into the results and, when no properties were named, the first read
+ * of a component walks its graph.
+ * Different results can be used on different threads at once, and the
+ * resource manager can be shared, unless the library is compiled with
+ * FIFTYONE_DEGREES_NO_THREADING.
  */
 typedef fiftyoneDegreesResultIpiArray fiftyoneDegreesResultsIpi;
 
@@ -9757,6 +10063,13 @@ EXTERNAL void fiftyoneDegreesResultsIpiFree(
  * component and no exception is set. A property of that component has no value
  * with the reason #FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_NULL_PROFILE, unless
  * it is mandatory with a default value, in which case it reads as that default.
+ *
+ * When the caller named the properties the data set was created with, the
+ * graph of each component a named property belongs to is walked here, and a
+ * walk that fails sets the exception. Otherwise populating the results walks
+ * no graph, and the graph of each component is walked the first time one of
+ * its properties is read, against the data set the results hold, as
+ * #fiftyoneDegreesResultsIpiGetValues describes.
  * @param results preallocated results structure to populate
  * @param ipAddress byte array to process
  * @param ipAddressLength of the IP address byte array
@@ -9774,6 +10087,13 @@ EXTERNAL void fiftyoneDegreesResultsIpiFromIpAddress(
 /**
  * Process a single IP Address and populate the IP range offset in the results
  * structure.
+ *
+ * When the caller named the properties the data set was created with, the
+ * graph of each component a named property belongs to is walked here, and a
+ * walk that fails sets the exception. Otherwise populating the results walks
+ * no graph, and the graph of each component is walked the first time one of
+ * its properties is read, against the data set the results hold, as
+ * #fiftyoneDegreesResultsIpiGetValues describes.
  * @param results preallocated results structure to populate
  * @param ipAddress string to process
  * @param ipAddressLength of the ipAddress string
@@ -9789,6 +10109,13 @@ EXTERNAL void fiftyoneDegreesResultsIpiFromIpAddressString(
 /**
  * Processes the evidence value pairs in the evidence collection and
  * populates the result in the results structure.
+ *
+ * When the caller named the properties the data set was created with, the
+ * graph of each component a named property belongs to is walked here, and a
+ * walk that fails sets the exception. Otherwise populating the results walks
+ * no graph, and the graph of each component is walked the first time one of
+ * its properties is read, against the data set the results hold, as
+ * #fiftyoneDegreesResultsIpiGetValues describes.
  * @param results preallocated results structure to populate containing a
  *                pointer to an initialised resource manager
  * @param evidence to process containing parsed or unparsed values
@@ -9801,99 +10128,19 @@ EXTERNAL void fiftyoneDegreesResultsIpiFromEvidence(
 	fiftyoneDegreesException* exception);
 
 /**
- * Processes the IP address exactly as #fiftyoneDegreesResultsIpiFromIpAddress,
- * but evaluates only the graphs needed by the required properties whose
- * indexes are supplied. It is meant for a service that knows, for every
- * request, which properties it will read. Other callers should use
- * #fiftyoneDegreesResultsIpiFromIpAddress.
- *
- * The result shape is unchanged, one item per available component in
- * component order. A component whose graph was not evaluated keeps a null
- * profile offset, so its properties report no value with the NULL_PROFILE
- * reason. A property that is mandatory with a default value reads as that
- * default instead, as it does for a component that produced no profile.
- *
- * The indexes are turned into a 32 bit mask, bit i meaning the graph for
- * component i in componentsList. Components at index 32 and above are beyond
- * the mask and are always evaluated, so a data file with more than 32
- * components is filtered for the first 32 only.
- *
- * An index is a position in the required properties of the data set the
- * results use, which are sorted by name. A reloaded data file that gains or
- * loses a required property moves the indexes of the properties after it, so
- * look them up again after a reload, for example with
- * #fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName.
- * @param results preallocated results structure to populate
- * @param ipAddress byte array to process
- * @param ipAddressLength of the IP address byte array
- * @param type of the ip
- * @param requiredPropertyIndexes array of required property indexes the
- * caller will read, or NULL to evaluate every graph
- * @param requiredPropertyIndexesCount number of entries in the array. A
- * negative count evaluates every graph. A count of zero with a non NULL array
- * evaluates no graph. Indexes outside the required properties are ignored.
- * @param exception pointer to an exception data structure to be used if an
- * exception occurs. See exceptions.h.
- */
-EXTERNAL void fiftyoneDegreesResultsIpiFromIpAddressForProperties(
-	fiftyoneDegreesResultsIpi* results,
-	const unsigned char* ipAddress,
-	size_t ipAddressLength,
-	fiftyoneDegreesIpType type,
-	const int *requiredPropertyIndexes,
-	int requiredPropertyIndexesCount,
-	fiftyoneDegreesException* exception);
-
-/**
- * Processes the IP address string exactly as
- * #fiftyoneDegreesResultsIpiFromIpAddressString, but evaluates only the
- * graphs needed by the required properties whose indexes are supplied. See
- * #fiftyoneDegreesResultsIpiFromIpAddressForProperties for the rules that
- * apply to the indexes.
- * @param results preallocated results structure to populate
- * @param ipAddress string to process
- * @param ipAddressLength of the ipAddress string
- * @param requiredPropertyIndexes array of required property indexes the
- * caller will read, or NULL to evaluate every graph
- * @param requiredPropertyIndexesCount number of entries in the array
- * @param exception pointer to an exception data structure to be used if an
- * exception occurs. See exceptions.h.
- */
-EXTERNAL void fiftyoneDegreesResultsIpiFromIpAddressStringForProperties(
-	fiftyoneDegreesResultsIpi* results,
-	const char* ipAddress,
-	size_t ipAddressLength,
-	const int *requiredPropertyIndexes,
-	int requiredPropertyIndexesCount,
-	fiftyoneDegreesException* exception);
-
-/**
- * Processes the evidence exactly as #fiftyoneDegreesResultsIpiFromEvidence,
- * but evaluates only the graphs needed by the required properties whose
- * indexes are supplied. See #fiftyoneDegreesResultsIpiFromIpAddressForProperties
- * for the rules that apply to the indexes.
- * @param results preallocated results structure to populate containing a
- *                pointer to an initialised resource manager
- * @param evidence to process containing parsed or unparsed values
- * @param requiredPropertyIndexes array of required property indexes the
- * caller will read, or NULL to evaluate every graph
- * @param requiredPropertyIndexesCount number of entries in the array
- * @param exception pointer to an exception data structure to be used if an
- * exception occurs. See exceptions.h.
- */
-EXTERNAL void fiftyoneDegreesResultsIpiFromEvidenceForProperties(
-	fiftyoneDegreesResultsIpi* results,
-	fiftyoneDegreesEvidenceKeyValuePairArray* evidence,
-	const int *requiredPropertyIndexes,
-	int requiredPropertyIndexesCount,
-	fiftyoneDegreesException* exception);
-
-/**
  * Gets whether or not the results provided contain valid values for the
  * property index provided.
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results pointer to the results to check
- * @param requiredPropertyIndex index in the required properties of the
- * property to check for values of
+ * @param requiredPropertyIndex index of the property in the names given
+ * when the data set was created, which a reload does not change. With no
+ * names given it is the index in the available properties, which a reload
+ * can change, so look it up from the name for each data set
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return true if there are valid values in the results for the property index
@@ -9907,9 +10154,17 @@ EXTERNAL bool fiftyoneDegreesResultsIpiGetHasValues(
 /**
  * Gets the reason why a results does not contain valid values for a given
  * property. 
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results pointer to the results to check
- * @param requiredPropertyIndex index in the required properties of the
- * property to check for values of
+ * @param requiredPropertyIndex index of the property in the names given
+ * when the data set was created, which a reload does not change. With no
+ * names given it is the index in the available properties, which a reload
+ * can change, so look it up from the name for each data set
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return enum indicating why a valid value cannot be returned by the results
@@ -9934,8 +10189,17 @@ EXTERNAL const char* fiftyoneDegreesResultsIpiGetNoValueReasonMessage(
  * the caller to release the collection item returned. The 
  * fiftyoneDegreesResultsIpiGetValueString method should be used to get
  * the string representation of the value.
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results pointer to the results structure to release
- * @param requiredPropertyIndex
+ * @param requiredPropertyIndex index of the property in the names given
+ * when the data set was created, which a reload does not change. With no
+ * names given it is the index in the available properties, which a reload
+ * can change, so look it up from the name for each data set
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return a pointer to the first value item 
@@ -9947,6 +10211,12 @@ EXTERNAL const fiftyoneDegreesProfilePercentage* fiftyoneDegreesResultsIpiGetVal
 
 /**
  * Adds to builder the values associated in the results for the property name.
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results pointer to the results structure to release
  * @param propertyName name of the property to be used with the values
  * @param builder string builder to fill with values
@@ -9963,6 +10233,12 @@ EXTERNAL void fiftyoneDegreesResultsIpiAddValuesString(
 
 /**
  * Sets the buffer the values associated in the results for the property name.
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results pointer to the results structure to release
  * @param propertyName name of the property to be used with the values
  * @param buffer character buffer allocated by the caller
@@ -9983,8 +10259,17 @@ EXTERNAL size_t fiftyoneDegreesResultsIpiGetValuesString(
 
 /**
  * Sets the buffer the values associated in the results for the property name.
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results pointer to the results structure to release
- * @param requiredPropertyIndex required property index of for the values
+ * @param requiredPropertyIndex index of the property in the names given
+ * when the data set was created, which a reload does not change. With no
+ * names given it is the index in the available properties, which a reload
+ * can change, so look it up from the name for each data set
  * @param buffer character buffer allocated by the caller
  * @param bufferLength of the character buffer
  * @param separator string to be used to separate multiple values if available
@@ -10327,8 +10612,17 @@ typedef struct fiftyone_degrees_weighted_values_collection_t {
  * This function extracts weighted values for specified properties from the results
  * and returns them as a collection.
  * 
+ *
+ * When no properties were named, the first read of a property of a component
+ * walks the component's graph for the results. If the walk fails the exception
+ * is set, and the component is not walked again until the results are next
+ * populated, so later reads of its properties read as if it had no profile for
+ * the address.
  * @param results Pointer to the IP Intelligence results
- * @param requiredPropertyIndexes Array of required property indexes to extract
+ * @param requiredPropertyIndexes Array of required property indexes to extract,
+ * each the index of a property in the names given when the data set was
+ * created, as #fiftyoneDegreesResultsIpiGetValues takes. An index with no
+ * property in the data set gives no values. NULL extracts every index
  * @param requiredPropertyIndexesLength Number of indexes in the requiredPropertyIndexes array
  * @param tempData Temporary data structure for string conversion operations
  * @param exception Pointer to an exception structure for error handling
@@ -10912,6 +11206,7 @@ MAP_TYPE(EvidencePrefixMap)
 MAP_TYPE(EvidencePrefix)
 MAP_TYPE(Headers)
 MAP_TYPE(ResourceHandle)
+MAP_TYPE(ResultsEvaluateMethod)
 MAP_TYPE(InterlockDoubleWidth)
 MAP_TYPE(Pool)
 MAP_TYPE(PoolResourceCreate)
@@ -10942,6 +11237,7 @@ MAP_TYPE(OverrideValueArray)
 MAP_TYPE(EvidenceKeyValuePair)
 MAP_TYPE(EvidenceKeyValuePairArray)
 MAP_TYPE(PropertyAvailable)
+MAP_TYPE(PropertyNamed)
 MAP_TYPE(PropertyValueType)
 MAP_TYPE(PropertiesAvailable)
 MAP_TYPE(EvidencePropertyIndex)
@@ -11094,7 +11390,10 @@ MAP_TYPE(WeightedItemList)
 #define EvidenceAddString fiftyoneDegreesEvidenceAddString /**< Synonym for #fiftyoneDegreesEvidenceAddString function. */
 #define PropertiesGetRequiredPropertyIndexFromName fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName /**< Synonym for #fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName function. */
 #define PropertiesGetNameFromRequiredIndex fiftyoneDegreesPropertiesGetNameFromRequiredIndex /**< Synonym for #fiftyoneDegreesPropertiesGetNameFromRequiredIndex function. */
-#define PropertiesGetComponentMask fiftyoneDegreesPropertiesGetComponentMask /**< Synonym for #fiftyoneDegreesPropertiesGetComponentMask function. */
+#define PropertiesGetRequiredPropertyCount fiftyoneDegreesPropertiesGetRequiredPropertyCount /**< Synonym for #fiftyoneDegreesPropertiesGetRequiredPropertyCount function. */
+#define PropertiesGetAvailableIndex fiftyoneDegreesPropertiesGetAvailableIndex /**< Synonym for #fiftyoneDegreesPropertiesGetAvailableIndex function. */
+#define PropertiesGetAvailableIndexFromName fiftyoneDegreesPropertiesGetAvailableIndexFromName /**< Synonym for #fiftyoneDegreesPropertiesGetAvailableIndexFromName function. */
+#define PropertiesGetPropertyIndexFromAvailableIndex fiftyoneDegreesPropertiesGetPropertyIndexFromAvailableIndex /**< Synonym for #fiftyoneDegreesPropertiesGetPropertyIndexFromAvailableIndex function. */
 #define PropertiesIsSetHeaderAvailable fiftyoneDegreesPropertiesIsSetHeaderAvailable /**< Synonym for #fiftyoneDegreesPropertiesIsSetHeaderAvailable */
 #define CollectionHeaderFromFile fiftyoneDegreesCollectionHeaderFromFile /**< Synonym for #fiftyoneDegreesCollectionHeaderFromFile function. */
 #define CollectionCreateFromFile fiftyoneDegreesCollectionCreateFromFile /**< Synonym for #fiftyoneDegreesCollectionCreateFromFile function. */
@@ -11114,6 +11413,13 @@ MAP_TYPE(WeightedItemList)
 #define TextFileIterateWithLimit fiftyoneDegreesTextFileIterateWithLimit /**< Synonym for #fiftyoneDegreesTextFileIterateWithLimit function. */
 #define TextFileIterate fiftyoneDegreesTextFileIterate /**< Synonym for #fiftyoneDegreesTextFileIterate function. */
 #define ResourceManagerInit fiftyoneDegreesResourceManagerInit /**< Synonym for #fiftyoneDegreesResourceManagerInit function. */
+#define ResultsPendingClear fiftyoneDegreesResultsPendingClear /**< Synonym for #fiftyoneDegreesResultsPendingClear function. */
+#define ResultsPendingSet fiftyoneDegreesResultsPendingSet /**< Synonym for #fiftyoneDegreesResultsPendingSet function. */
+#define ResultsWalkWhenPopulated fiftyoneDegreesResultsWalkWhenPopulated /**< Synonym for #fiftyoneDegreesResultsWalkWhenPopulated function. */
+#define ResultsEvaluate fiftyoneDegreesResultsEvaluate /**< Synonym for #fiftyoneDegreesResultsEvaluate function. */
+#define ResultsEvaluateAll fiftyoneDegreesResultsEvaluateAll /**< Synonym for #fiftyoneDegreesResultsEvaluateAll function. */
+#define ResultsHasOverrideValue fiftyoneDegreesResultsHasOverrideValue /**< Synonym for #fiftyoneDegreesResultsHasOverrideValue function. */
+#define ResultsGetOverrideValues fiftyoneDegreesResultsGetOverrideValues /**< Synonym for #fiftyoneDegreesResultsGetOverrideValues function. */
 #define PropertiesGetPropertyIndexFromRequiredIndex fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex /**< Synonym for #fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex function. */
 #define DataSetRelease fiftyoneDegreesDataSetRelease /**< Synonym for #fiftyoneDegreesDataSetRelease function. */
 #define DataSetReset fiftyoneDegreesDataSetReset /**< Synonym for #fiftyoneDegreesDataSetReset function. */
@@ -11206,9 +11512,6 @@ MAP_TYPE(WeightedItemList)
 #define EXCEPTION_THROW FIFTYONE_DEGREES_EXCEPTION_THROW /**< Synonym for #FIFTYONE_DEGREES_EXCEPTION_THROW macro. */
 #define EXCEPTION_CHECK FIFTYONE_DEGREES_EXCEPTION_CHECK /**< Synonym for #FIFTYONE_DEGREES_EXCEPTION_CHECK macro. */
 #define STRING FIFTYONE_DEGREES_STRING /**< Synonym for #FIFTYONE_DEGREES_STRING macro. */
-#define COMPONENT_MASK_ALL FIFTYONE_DEGREES_COMPONENT_MASK_ALL /**< Synonym for #FIFTYONE_DEGREES_COMPONENT_MASK_ALL macro. */
-#define COMPONENT_MASK_BITS FIFTYONE_DEGREES_COMPONENT_MASK_BITS /**< Synonym for #FIFTYONE_DEGREES_COMPONENT_MASK_BITS macro. */
-#define COMPONENT_MASK_ENABLED FIFTYONE_DEGREES_COMPONENT_MASK_ENABLED /**< Synonym for #FIFTYONE_DEGREES_COMPONENT_MASK_ENABLED macro. */
 #define COLLECTION_RELEASE FIFTYONE_DEGREES_COLLECTION_RELEASE /**< Synonym for #FIFTYONE_DEGREES_COLLECTION_RELEASE macro. */
 #define FILE_MAX_PATH FIFTYONE_DEGREES_FILE_MAX_PATH /**< Synonym for #FIFTYONE_DEGREES_FILE_MAX_PATH macro. */
 #define THREAD_CREATE FIFTYONE_DEGREES_THREAD_CREATE /**< Synonym for #FIFTYONE_DEGREES_THREAD_CREATE macro. */
@@ -11318,9 +11621,6 @@ MAP_TYPE(WeightedValuesCollection)
 #define ResultsIpiFromIpAddress fiftyoneDegreesResultsIpiFromIpAddress /**< Synonym for #fiftyoneDegreesResultsIpiFromIpAddress function. */
 #define ResultsIpiFromIpAddressString fiftyoneDegreesResultsIpiFromIpAddressString /**< Synonym for #fiftyoneDegreesResultsIpiFromIpAddressString function. */
 #define ResultsIpiFromEvidence fiftyoneDegreesResultsIpiFromEvidence /**< Synonym for #fiftyoneDegreesResultsIpiFromEvidence function. */
-#define ResultsIpiFromIpAddressForProperties fiftyoneDegreesResultsIpiFromIpAddressForProperties /**< Synonym for #fiftyoneDegreesResultsIpiFromIpAddressForProperties function. */
-#define ResultsIpiFromIpAddressStringForProperties fiftyoneDegreesResultsIpiFromIpAddressStringForProperties /**< Synonym for #fiftyoneDegreesResultsIpiFromIpAddressStringForProperties function. */
-#define ResultsIpiFromEvidenceForProperties fiftyoneDegreesResultsIpiFromEvidenceForProperties /**< Synonym for #fiftyoneDegreesResultsIpiFromEvidenceForProperties function. */
 #define ResultsIpiGetValues fiftyoneDegreesResultsIpiGetValues /**< Synonym for #fiftyoneDegreesResultsIpiGetValues function. */
 #define ResultsIpiAddValuesString fiftyoneDegreesResultsIpiAddValuesString /**< Synonym for #fiftyoneDegreesResultsIpiAddValuesString function. */
 #define ResultsIpiGetValuesString fiftyoneDegreesResultsIpiGetValuesString /**< Synonym for #fiftyoneDegreesResultsIpiGetValuesString function. */
