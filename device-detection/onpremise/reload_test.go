@@ -352,10 +352,15 @@ func TestNewWithUnusableDataFile(t *testing.T) {
 
 func TestProcessFreesResultsWhenLookupFails(t *testing.T) {
 	good := readGoodFile(t)
+	// Naming the device id makes a lookup walk the graph of every component,
+	// so that a lookup reads the data file. With no properties named, a
+	// lookup walks no graph, and each is walked when a property of its
+	// component is first read.
 	e := newReloadTestEngine(t,
 		WithDataFile(writeDataFile(t, good)),
 		WithAutoUpdate(false),
-		WithFileWatch(false))
+		WithFileWatch(false),
+		WithProperties([]string{"DeviceId"}))
 	// Cutting short the copy the data set reads makes the next lookup fail.
 	err := os.Truncate(e.dataFileLastUsedByManager, int64(len(good)/2))
 	if err != nil {
