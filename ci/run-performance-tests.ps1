@@ -35,22 +35,19 @@ if ($Products -contains 'device-detection') {
 }
 
 if ($Products -contains 'ip-intelligence') {
+    $output = Join-Path $rootDir "summary-ip-intelligence.json"
+    Remove-Item $output -ErrorAction SilentlyContinue
     $env:DATA_FILE = "$rootDir/assets/51Degrees-EnterpriseIpiV41.ipi"
     Push-Location (Join-Path $RepoName 'examples/ip-intelligence')
     try {
         Write-Host "Running the IP Intelligence performance example..."
-        go run ./performance
-        # The example writes its figures to a report.
-        switch -File performance_report.log -Regex {
-            'Average ([^ ]+) ms per' { $lower.AvgMillisecsPerLookup = [double]$matches.1 }
-            'Average ([^ ]+) detections per second' { $higher.LookupsPerSecond = [double]$matches.1 }
-        }
-        if (!$higher.LookupsPerSecond -or !$lower.AvgMillisecsPerLookup) {
-            Get-Content performance_report.log | Write-Error
-        }
+        go run ./performance -json-output $output
     } finally {
         Pop-Location
     }
+    $results = Get-Content $output | ConvertFrom-Json -AsHashtable
+    $higher.LookupsPerSecond = $results.HigherIsBetter.DetectionsPerSecond
+    $lower.AvgMillisecsPerLookup = $results.LowerIsBetter.AvgMillisecsPerDetection
 }
 
 if (!$higher.Count -and !$lower.Count) {
