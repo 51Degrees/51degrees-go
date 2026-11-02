@@ -9,7 +9,8 @@ on:
       common-ci-ref:
         type: string
         default: ''
-  # Started by hand until the first release is out; then it runs at 02:00 UTC.
+  schedule:
+    - cron: '0 2 * * *'
 
 jobs:
   # Moves cxx to the latest 51degrees-cxx release, remakes the engines' C
