@@ -1,4 +1,2 @@
-github.com/51Degrees/common-go/v4 v4.5.1 h1:W/jUu++ZiZp9k3r9Yy8jZIcTKS13Luu2JDo48FYE4jQ=
-github.com/51Degrees/common-go/v4 v4.5.1/go.mod h1:+siIyLfHfsLmpLJ4svhllQD8zDfKFRtqBAVCAWYI6jI=
 github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
 github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=

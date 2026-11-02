@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	common_go "github.com/51Degrees/common-go/v4"
+	common_go "github.com/51Degrees/51degrees-go/common/v4"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 )
 

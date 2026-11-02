@@ -6,8 +6,7 @@ module github.com/51Degrees/51degrees-go/examples/mixed
 go 1.21.0
 
 require (
+	github.com/51Degrees/51degrees-go/common/v4 v4.5.166
 	github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.166
 	github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.166
 )
-
-require github.com/51Degrees/common-go/v4 v4.5.1 // indirect
