@@ -1,5 +1,4 @@
 param (
-    [Parameter(Mandatory)][string]$RepoName,
     [string]$DeviceDetection,
     [string]$DeviceDetectionUrl,
     [string]$IpIntelligence,
@@ -8,7 +7,8 @@ param (
 $ErrorActionPreference = "Stop"
 
 . $PSScriptRoot/products.ps1
-$Products = Get-AffectedProducts $RepoName
+$RepoPath = Join-Path $PSScriptRoot ".."
+$Products = Get-AffectedProducts $RepoPath
 
 # Device Detection: the Lite data file and the evidence the tests and examples
 # use. IP Intelligence: the Enterprise data file and its evidence, and the
@@ -34,6 +34,6 @@ if (!$Assets) {
 if ($Products -contains 'device-detection') {
     foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml") {
         New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$asset" `
-            -Path (Join-Path (Get-ProductPath $RepoName 'device-detection') $asset) | Out-Null
+            -Path (Join-Path (Get-ProductPath $RepoPath 'device-detection') $asset) | Out-Null
     }
 }
