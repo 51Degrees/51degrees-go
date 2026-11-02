@@ -1,3 +1,4 @@
+/* Generated from 51degrees-cxx 4.5.100 (4110d6813e167a803a06489318b33b83a230fa32) by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -124,6 +125,295 @@
 #ifndef FIFTYONE_DEGREES_COMMON_H_INCLUDED
 #define FIFTYONE_DEGREES_COMMON_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+#ifndef FIFTYONE_DEGREES_IPI_SYMBOLS_H_INCLUDED
+#define FIFTYONE_DEGREES_IPI_SYMBOLS_H_INCLUDED
+
+/*
+ * Gives the copy of common built for IP Intelligence its own linked names, so
+ * that one program can link both Device Detection and IP Intelligence. The two
+ * copies are compiled with definitions that change structure sizes, so each
+ * product has to bind to its own copy.
+ *
+ * Every function and global the common C files give external linkage is listed
+ * here. Types have no linked names, so they are not here, and no structure
+ * changes. Source code keeps using the fiftyoneDegrees names.
+ *
+ * Every common header includes this file first when
+ * FIFTYONE_DEGREES_IPI_SYMBOLS is defined, so declarations, definitions and
+ * callers are renamed together. A build that doesn't define it compiles as if
+ * this file didn't exist, which is what keeps language wrappers unchanged. It
+ * is a separate define because Device Detection builds and language wrappers
+ * can set FIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT.
+ *
+ * ci/check-common-symbols.ps1 fails the build when a name is missing.
+ */
+
+#define fiftyoneDegreesBoolToInt ipi_fiftyoneDegreesBoolToInt
+#define fiftyoneDegreesCacheCreate ipi_fiftyoneDegreesCacheCreate
+#define fiftyoneDegreesCacheFree ipi_fiftyoneDegreesCacheFree
+#define fiftyoneDegreesCacheGet ipi_fiftyoneDegreesCacheGet
+#define fiftyoneDegreesCacheHash32 ipi_fiftyoneDegreesCacheHash32
+#define fiftyoneDegreesCacheHash64 ipi_fiftyoneDegreesCacheHash64
+#define fiftyoneDegreesCacheRelease ipi_fiftyoneDegreesCacheRelease
+#define fiftyoneDegreesCollectionBinarySearch ipi_fiftyoneDegreesCollectionBinarySearch
+#define fiftyoneDegreesCollectionCreateFromFile ipi_fiftyoneDegreesCollectionCreateFromFile
+#define fiftyoneDegreesCollectionCreateFromFileWithOffsetShift ipi_fiftyoneDegreesCollectionCreateFromFileWithOffsetShift
+#define fiftyoneDegreesCollectionCreateFromMemory ipi_fiftyoneDegreesCollectionCreateFromMemory
+#define fiftyoneDegreesCollectionCreateFromMemoryWithOffsetShift ipi_fiftyoneDegreesCollectionCreateFromMemoryWithOffsetShift
+#define fiftyoneDegreesCollectionGetInteger32 ipi_fiftyoneDegreesCollectionGetInteger32
+#define fiftyoneDegreesCollectionGetIsMemoryOnly ipi_fiftyoneDegreesCollectionGetIsMemoryOnly
+#define fiftyoneDegreesCollectionHeaderFromFile ipi_fiftyoneDegreesCollectionHeaderFromFile
+#define fiftyoneDegreesCollectionHeaderFromMemory ipi_fiftyoneDegreesCollectionHeaderFromMemory
+#define fiftyoneDegreesCollectionReadFileFixed ipi_fiftyoneDegreesCollectionReadFileFixed
+#define fiftyoneDegreesCollectionReadFilePosition ipi_fiftyoneDegreesCollectionReadFilePosition
+#define fiftyoneDegreesCollectionReadFileVariable ipi_fiftyoneDegreesCollectionReadFileVariable
+#define fiftyoneDegreesComponentGetDefaultProfileId ipi_fiftyoneDegreesComponentGetDefaultProfileId
+#define fiftyoneDegreesComponentGetFinalSize ipi_fiftyoneDegreesComponentGetFinalSize
+#define fiftyoneDegreesComponentGetHeaders ipi_fiftyoneDegreesComponentGetHeaders
+#define fiftyoneDegreesComponentGetKeyValuePair ipi_fiftyoneDegreesComponentGetKeyValuePair
+#define fiftyoneDegreesComponentGetName ipi_fiftyoneDegreesComponentGetName
+#define fiftyoneDegreesComponentInitList ipi_fiftyoneDegreesComponentInitList
+#define fiftyoneDegreesComponentReadFromFile ipi_fiftyoneDegreesComponentReadFromFile
+#define fiftyoneDegreesConvertWkbToWkt ipi_fiftyoneDegreesConvertWkbToWkt
+#define fiftyoneDegreesDataMalloc ipi_fiftyoneDegreesDataMalloc
+#define fiftyoneDegreesDataReset ipi_fiftyoneDegreesDataReset
+#define fiftyoneDegreesDataSetFree ipi_fiftyoneDegreesDataSetFree
+#define fiftyoneDegreesDataSetGet ipi_fiftyoneDegreesDataSetGet
+#define fiftyoneDegreesDataSetInitFromFile ipi_fiftyoneDegreesDataSetInitFromFile
+#define fiftyoneDegreesDataSetInitHeaders ipi_fiftyoneDegreesDataSetInitHeaders
+#define fiftyoneDegreesDataSetInitInMemory ipi_fiftyoneDegreesDataSetInitInMemory
+#define fiftyoneDegreesDataSetInitProperties ipi_fiftyoneDegreesDataSetInitProperties
+#define fiftyoneDegreesDataSetRelease ipi_fiftyoneDegreesDataSetRelease
+#define fiftyoneDegreesDataSetReloadManagerFromFile ipi_fiftyoneDegreesDataSetReloadManagerFromFile
+#define fiftyoneDegreesDataSetReloadManagerFromMemory ipi_fiftyoneDegreesDataSetReloadManagerFromMemory
+#define fiftyoneDegreesDataSetReset ipi_fiftyoneDegreesDataSetReset
+#define fiftyoneDegreesEvidenceAddPair ipi_fiftyoneDegreesEvidenceAddPair
+#define fiftyoneDegreesEvidenceAddString ipi_fiftyoneDegreesEvidenceAddString
+#define fiftyoneDegreesEvidenceCreate ipi_fiftyoneDegreesEvidenceCreate
+#define fiftyoneDegreesEvidenceFree ipi_fiftyoneDegreesEvidenceFree
+#define fiftyoneDegreesEvidenceIterate ipi_fiftyoneDegreesEvidenceIterate
+#define fiftyoneDegreesEvidenceIterateForHeaders ipi_fiftyoneDegreesEvidenceIterateForHeaders
+#define fiftyoneDegreesEvidenceMapPrefix ipi_fiftyoneDegreesEvidenceMapPrefix
+#define fiftyoneDegreesEvidencePrefixString ipi_fiftyoneDegreesEvidencePrefixString
+#define fiftyoneDegreesExceptionCheckAndExit ipi_fiftyoneDegreesExceptionCheckAndExit
+#define fiftyoneDegreesExceptionGetMessage ipi_fiftyoneDegreesExceptionGetMessage
+#define fiftyoneDegreesFileAddTempFileName ipi_fiftyoneDegreesFileAddTempFileName
+#define fiftyoneDegreesFileCopy ipi_fiftyoneDegreesFileCopy
+#define fiftyoneDegreesFileCreateDirectory ipi_fiftyoneDegreesFileCreateDirectory
+#define fiftyoneDegreesFileCreateTempFile ipi_fiftyoneDegreesFileCreateTempFile
+#define fiftyoneDegreesFileDelete ipi_fiftyoneDegreesFileDelete
+#define fiftyoneDegreesFileDeleteUnusedTempFiles ipi_fiftyoneDegreesFileDeleteUnusedTempFiles
+#define fiftyoneDegreesFileGetBaseName ipi_fiftyoneDegreesFileGetBaseName
+#define fiftyoneDegreesFileGetExistingTempFile ipi_fiftyoneDegreesFileGetExistingTempFile
+#define fiftyoneDegreesFileGetFileName ipi_fiftyoneDegreesFileGetFileName
+#define fiftyoneDegreesFileGetPath ipi_fiftyoneDegreesFileGetPath
+#define fiftyoneDegreesFileGetSize ipi_fiftyoneDegreesFileGetSize
+#define fiftyoneDegreesFileHandleGet ipi_fiftyoneDegreesFileHandleGet
+#define fiftyoneDegreesFileHandleRelease ipi_fiftyoneDegreesFileHandleRelease
+#define fiftyoneDegreesFileNewTempFile ipi_fiftyoneDegreesFileNewTempFile
+#define fiftyoneDegreesFileOpen ipi_fiftyoneDegreesFileOpen
+#define fiftyoneDegreesFilePoolInit ipi_fiftyoneDegreesFilePoolInit
+#define fiftyoneDegreesFilePoolRelease ipi_fiftyoneDegreesFilePoolRelease
+#define fiftyoneDegreesFilePoolReset ipi_fiftyoneDegreesFilePoolReset
+#define fiftyoneDegreesFileReadToByteArray ipi_fiftyoneDegreesFileReadToByteArray
+#define fiftyoneDegreesFileSeek ipi_fiftyoneDegreesFileSeek
+#define fiftyoneDegreesFileTell ipi_fiftyoneDegreesFileTell
+#define fiftyoneDegreesFileWrite ipi_fiftyoneDegreesFileWrite
+#define fiftyoneDegreesFloatIsEqual ipi_fiftyoneDegreesFloatIsEqual
+#define fiftyoneDegreesFloatToNative ipi_fiftyoneDegreesFloatToNative
+#define fiftyoneDegreesFree ipi_fiftyoneDegreesFree
+#define fiftyoneDegreesFreeAligned ipi_fiftyoneDegreesFreeAligned
+#define fiftyoneDegreesGetCollectionKeyTypeForStoredValueType ipi_fiftyoneDegreesGetCollectionKeyTypeForStoredValueType
+#define fiftyoneDegreesHeaderGetIndex ipi_fiftyoneDegreesHeaderGetIndex
+#define fiftyoneDegreesHeadersCreate ipi_fiftyoneDegreesHeadersCreate
+#define fiftyoneDegreesHeadersFree ipi_fiftyoneDegreesHeadersFree
+#define fiftyoneDegreesHeadersGetHeaderFromUniqueId ipi_fiftyoneDegreesHeadersGetHeaderFromUniqueId
+#define fiftyoneDegreesHeadersIsHttp ipi_fiftyoneDegreesHeadersIsHttp
+#define fiftyoneDegreesIndicesPropertyProfileCreate ipi_fiftyoneDegreesIndicesPropertyProfileCreate
+#define fiftyoneDegreesIndicesPropertyProfileFree ipi_fiftyoneDegreesIndicesPropertyProfileFree
+#define fiftyoneDegreesIndicesPropertyProfileLookup ipi_fiftyoneDegreesIndicesPropertyProfileLookup
+#define fiftyoneDegreesIntToBool ipi_fiftyoneDegreesIntToBool
+#define fiftyoneDegreesIpAddressParse ipi_fiftyoneDegreesIpAddressParse
+#define fiftyoneDegreesIpAddressesCompare ipi_fiftyoneDegreesIpAddressesCompare
+#define fiftyoneDegreesJsonDocumentEnd ipi_fiftyoneDegreesJsonDocumentEnd
+#define fiftyoneDegreesJsonDocumentStart ipi_fiftyoneDegreesJsonDocumentStart
+#define fiftyoneDegreesJsonPropertyEnd ipi_fiftyoneDegreesJsonPropertyEnd
+#define fiftyoneDegreesJsonPropertySeparator ipi_fiftyoneDegreesJsonPropertySeparator
+#define fiftyoneDegreesJsonPropertyStart ipi_fiftyoneDegreesJsonPropertyStart
+#define fiftyoneDegreesJsonPropertyValues ipi_fiftyoneDegreesJsonPropertyValues
+#define fiftyoneDegreesListAdd ipi_fiftyoneDegreesListAdd
+#define fiftyoneDegreesListFree ipi_fiftyoneDegreesListFree
+#define fiftyoneDegreesListGetAsString ipi_fiftyoneDegreesListGetAsString
+#define fiftyoneDegreesListInit ipi_fiftyoneDegreesListInit
+#define fiftyoneDegreesListRelease ipi_fiftyoneDegreesListRelease
+#define fiftyoneDegreesListReset ipi_fiftyoneDegreesListReset
+#define fiftyoneDegreesMalloc ipi_fiftyoneDegreesMalloc
+#define fiftyoneDegreesMallocAligned ipi_fiftyoneDegreesMallocAligned
+#define fiftyoneDegreesMemoryAdvance ipi_fiftyoneDegreesMemoryAdvance
+#define fiftyoneDegreesMemoryStandardFree ipi_fiftyoneDegreesMemoryStandardFree
+#define fiftyoneDegreesMemoryStandardFreeAligned ipi_fiftyoneDegreesMemoryStandardFreeAligned
+#define fiftyoneDegreesMemoryStandardMalloc ipi_fiftyoneDegreesMemoryStandardMalloc
+#define fiftyoneDegreesMemoryStandardMallocAligned ipi_fiftyoneDegreesMemoryStandardMallocAligned
+#define fiftyoneDegreesMemoryTrackingFree ipi_fiftyoneDegreesMemoryTrackingFree
+#define fiftyoneDegreesMemoryTrackingFreeAligned ipi_fiftyoneDegreesMemoryTrackingFreeAligned
+#define fiftyoneDegreesMemoryTrackingGetAllocated ipi_fiftyoneDegreesMemoryTrackingGetAllocated
+#define fiftyoneDegreesMemoryTrackingGetMax ipi_fiftyoneDegreesMemoryTrackingGetMax
+#define fiftyoneDegreesMemoryTrackingMalloc ipi_fiftyoneDegreesMemoryTrackingMalloc
+#define fiftyoneDegreesMemoryTrackingMallocAligned ipi_fiftyoneDegreesMemoryTrackingMallocAligned
+#define fiftyoneDegreesMemoryTrackingReset ipi_fiftyoneDegreesMemoryTrackingReset
+#define fiftyoneDegreesMutexClose ipi_fiftyoneDegreesMutexClose
+#define fiftyoneDegreesMutexCreate ipi_fiftyoneDegreesMutexCreate
+#define fiftyoneDegreesMutexLock ipi_fiftyoneDegreesMutexLock
+#define fiftyoneDegreesMutexUnlock ipi_fiftyoneDegreesMutexUnlock
+#define fiftyoneDegreesNativeToFloat ipi_fiftyoneDegreesNativeToFloat
+#define fiftyoneDegreesOverrideHasValueForRequiredPropertyIndex ipi_fiftyoneDegreesOverrideHasValueForRequiredPropertyIndex
+#define fiftyoneDegreesOverrideProfileIds ipi_fiftyoneDegreesOverrideProfileIds
+#define fiftyoneDegreesOverridePropertiesCreate ipi_fiftyoneDegreesOverridePropertiesCreate
+#define fiftyoneDegreesOverridePropertiesFree ipi_fiftyoneDegreesOverridePropertiesFree
+#define fiftyoneDegreesOverrideValuesAdd ipi_fiftyoneDegreesOverrideValuesAdd
+#define fiftyoneDegreesOverrideValuesCreate ipi_fiftyoneDegreesOverrideValuesCreate
+#define fiftyoneDegreesOverrideValuesFree ipi_fiftyoneDegreesOverrideValuesFree
+#define fiftyoneDegreesOverrideValuesGetFirst ipi_fiftyoneDegreesOverrideValuesGetFirst
+#define fiftyoneDegreesOverrideValuesReset ipi_fiftyoneDegreesOverrideValuesReset
+#define fiftyoneDegreesOverridesAdd ipi_fiftyoneDegreesOverridesAdd
+#define fiftyoneDegreesOverridesExtractFromEvidence ipi_fiftyoneDegreesOverridesExtractFromEvidence
+#define fiftyoneDegreesOverridesGetOverridingRequiredPropertyIndex ipi_fiftyoneDegreesOverridesGetOverridingRequiredPropertyIndex
+#define fiftyoneDegreesPoolFree ipi_fiftyoneDegreesPoolFree
+#define fiftyoneDegreesPoolInit ipi_fiftyoneDegreesPoolInit
+#define fiftyoneDegreesPoolItemGet ipi_fiftyoneDegreesPoolItemGet
+#define fiftyoneDegreesPoolItemRelease ipi_fiftyoneDegreesPoolItemRelease
+#define fiftyoneDegreesPoolReset ipi_fiftyoneDegreesPoolReset
+#define fiftyoneDegreesProcessGetId ipi_fiftyoneDegreesProcessGetId
+#define fiftyoneDegreesProfileGetByIndex ipi_fiftyoneDegreesProfileGetByIndex
+#define fiftyoneDegreesProfileGetByProfileId ipi_fiftyoneDegreesProfileGetByProfileId
+#define fiftyoneDegreesProfileGetByProfileIdIndirect ipi_fiftyoneDegreesProfileGetByProfileIdIndirect
+#define fiftyoneDegreesProfileGetOffsetForProfileId ipi_fiftyoneDegreesProfileGetOffsetForProfileId
+#define fiftyoneDegreesProfileIterateProfilesForPropertyAndValue ipi_fiftyoneDegreesProfileIterateProfilesForPropertyAndValue
+#define fiftyoneDegreesProfileIterateProfilesForPropertyWithTypeAndValue ipi_fiftyoneDegreesProfileIterateProfilesForPropertyWithTypeAndValue
+#define fiftyoneDegreesProfileIterateProfilesForPropertyWithTypeAndValueAndOffsetExtractor ipi_fiftyoneDegreesProfileIterateProfilesForPropertyWithTypeAndValueAndOffsetExtractor
+#define fiftyoneDegreesProfileIterateValueIndexes ipi_fiftyoneDegreesProfileIterateValueIndexes
+#define fiftyoneDegreesProfileIterateValuesForProperty ipi_fiftyoneDegreesProfileIterateValuesForProperty
+#define fiftyoneDegreesProfileIterateValuesForPropertyWithIndex ipi_fiftyoneDegreesProfileIterateValuesForPropertyWithIndex
+#define fiftyoneDegreesProfileOffsetAsPureOffset ipi_fiftyoneDegreesProfileOffsetAsPureOffset
+#define fiftyoneDegreesProfileOffsetToPureOffset ipi_fiftyoneDegreesProfileOffsetToPureOffset
+#define fiftyoneDegreesProfileReadFromFile ipi_fiftyoneDegreesProfileReadFromFile
+#define fiftyoneDegreesPropertiesCreate ipi_fiftyoneDegreesPropertiesCreate
+#define fiftyoneDegreesPropertiesDefault ipi_fiftyoneDegreesPropertiesDefault
+#define fiftyoneDegreesPropertiesFree ipi_fiftyoneDegreesPropertiesFree
+#define fiftyoneDegreesPropertiesGetComponentMask ipi_fiftyoneDegreesPropertiesGetComponentMask
+#define fiftyoneDegreesPropertiesGetNameFromRequiredIndex ipi_fiftyoneDegreesPropertiesGetNameFromRequiredIndex
+#define fiftyoneDegreesPropertiesGetPropertyIndexFromName ipi_fiftyoneDegreesPropertiesGetPropertyIndexFromName
+#define fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex ipi_fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex
+#define fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName ipi_fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName
+#define fiftyoneDegreesPropertiesIsSetHeaderAvailable ipi_fiftyoneDegreesPropertiesIsSetHeaderAvailable
+#define fiftyoneDegreesPropertyGet ipi_fiftyoneDegreesPropertyGet
+#define fiftyoneDegreesPropertyGetByName ipi_fiftyoneDegreesPropertyGetByName
+#define fiftyoneDegreesPropertyGetCategory ipi_fiftyoneDegreesPropertyGetCategory
+#define fiftyoneDegreesPropertyGetDescription ipi_fiftyoneDegreesPropertyGetDescription
+#define fiftyoneDegreesPropertyGetName ipi_fiftyoneDegreesPropertyGetName
+#define fiftyoneDegreesPropertyGetStoredType ipi_fiftyoneDegreesPropertyGetStoredType
+#define fiftyoneDegreesPropertyGetStoredTypeByIndex ipi_fiftyoneDegreesPropertyGetStoredTypeByIndex
+#define fiftyoneDegreesPropertyGetUrl ipi_fiftyoneDegreesPropertyGetUrl
+#define fiftyoneDegreesPropertyGetValueType ipi_fiftyoneDegreesPropertyGetValueType
+#define fiftyoneDegreesPropertyValueTypeGetUnderlyingType ipi_fiftyoneDegreesPropertyValueTypeGetUnderlyingType
+#define fiftyoneDegreesResourceHandleDecUse ipi_fiftyoneDegreesResourceHandleDecUse
+#define fiftyoneDegreesResourceHandleGetUse ipi_fiftyoneDegreesResourceHandleGetUse
+#define fiftyoneDegreesResourceHandleIncUse ipi_fiftyoneDegreesResourceHandleIncUse
+#define fiftyoneDegreesResourceManagerFree ipi_fiftyoneDegreesResourceManagerFree
+#define fiftyoneDegreesResourceManagerInit ipi_fiftyoneDegreesResourceManagerInit
+#define fiftyoneDegreesResourceReplace ipi_fiftyoneDegreesResourceReplace
+#define fiftyoneDegreesResultsInit ipi_fiftyoneDegreesResultsInit
+#define fiftyoneDegreesSetUpMemoryTracking ipi_fiftyoneDegreesSetUpMemoryTracking
+#define fiftyoneDegreesSignalClose ipi_fiftyoneDegreesSignalClose
+#define fiftyoneDegreesSignalCreate ipi_fiftyoneDegreesSignalCreate
+#define fiftyoneDegreesSignalSet ipi_fiftyoneDegreesSignalSet
+#define fiftyoneDegreesSignalWait ipi_fiftyoneDegreesSignalWait
+#define fiftyoneDegreesStatusGetMessage ipi_fiftyoneDegreesStatusGetMessage
+#define fiftyoneDegreesStoredBinaryValueCompareWithString ipi_fiftyoneDegreesStoredBinaryValueCompareWithString
+#define fiftyoneDegreesStoredBinaryValueGet ipi_fiftyoneDegreesStoredBinaryValueGet
+#define fiftyoneDegreesStoredBinaryValueRead ipi_fiftyoneDegreesStoredBinaryValueRead
+#define fiftyoneDegreesStoredBinaryValueToBoolOrDefault ipi_fiftyoneDegreesStoredBinaryValueToBoolOrDefault
+#define fiftyoneDegreesStoredBinaryValueToDoubleOrDefault ipi_fiftyoneDegreesStoredBinaryValueToDoubleOrDefault
+#define fiftyoneDegreesStoredBinaryValueToIntOrDefault ipi_fiftyoneDegreesStoredBinaryValueToIntOrDefault
+#define fiftyoneDegreesStringBuilderAddChar ipi_fiftyoneDegreesStringBuilderAddChar
+#define fiftyoneDegreesStringBuilderAddChars ipi_fiftyoneDegreesStringBuilderAddChars
+#define fiftyoneDegreesStringBuilderAddDouble ipi_fiftyoneDegreesStringBuilderAddDouble
+#define fiftyoneDegreesStringBuilderAddInteger ipi_fiftyoneDegreesStringBuilderAddInteger
+#define fiftyoneDegreesStringBuilderAddIpAddress ipi_fiftyoneDegreesStringBuilderAddIpAddress
+#define fiftyoneDegreesStringBuilderAddStringValue ipi_fiftyoneDegreesStringBuilderAddStringValue
+#define fiftyoneDegreesStringBuilderComplete ipi_fiftyoneDegreesStringBuilderComplete
+#define fiftyoneDegreesStringBuilderInit ipi_fiftyoneDegreesStringBuilderInit
+#define fiftyoneDegreesStringCompare ipi_fiftyoneDegreesStringCompare
+#define fiftyoneDegreesStringCompareLength ipi_fiftyoneDegreesStringCompareLength
+#define fiftyoneDegreesStringGet ipi_fiftyoneDegreesStringGet
+#define fiftyoneDegreesStringRead ipi_fiftyoneDegreesStringRead
+#define fiftyoneDegreesStringSubString ipi_fiftyoneDegreesStringSubString
+#define fiftyoneDegreesTextFileIterate ipi_fiftyoneDegreesTextFileIterate
+#define fiftyoneDegreesTextFileIterateWithLimit ipi_fiftyoneDegreesTextFileIterateWithLimit
+#define fiftyoneDegreesThreadingGetIsThreadSafe ipi_fiftyoneDegreesThreadingGetIsThreadSafe
+#define fiftyoneDegreesTreeCount ipi_fiftyoneDegreesTreeCount
+#define fiftyoneDegreesTreeDelete ipi_fiftyoneDegreesTreeDelete
+#define fiftyoneDegreesTreeEmpty ipi_fiftyoneDegreesTreeEmpty
+#define fiftyoneDegreesTreeFind ipi_fiftyoneDegreesTreeFind
+#define fiftyoneDegreesTreeInsert ipi_fiftyoneDegreesTreeInsert
+#define fiftyoneDegreesTreeIterateNodes ipi_fiftyoneDegreesTreeIterateNodes
+#define fiftyoneDegreesTreeNodeInit ipi_fiftyoneDegreesTreeNodeInit
+#define fiftyoneDegreesTreeNodeRemove ipi_fiftyoneDegreesTreeNodeRemove
+#define fiftyoneDegreesTreeRootInit ipi_fiftyoneDegreesTreeRootInit
+#define fiftyoneDegreesUnsetMemoryTracking ipi_fiftyoneDegreesUnsetMemoryTracking
+#define fiftyoneDegreesValueGet ipi_fiftyoneDegreesValueGet
+#define fiftyoneDegreesValueGetByName ipi_fiftyoneDegreesValueGetByName
+#define fiftyoneDegreesValueGetByNameAndType ipi_fiftyoneDegreesValueGetByNameAndType
+#define fiftyoneDegreesValueGetContent ipi_fiftyoneDegreesValueGetContent
+#define fiftyoneDegreesValueGetDescription ipi_fiftyoneDegreesValueGetDescription
+#define fiftyoneDegreesValueGetIndexByName ipi_fiftyoneDegreesValueGetIndexByName
+#define fiftyoneDegreesValueGetIndexByNameAndType ipi_fiftyoneDegreesValueGetIndexByNameAndType
+#define fiftyoneDegreesValueGetName ipi_fiftyoneDegreesValueGetName
+#define fiftyoneDegreesValueGetUrl ipi_fiftyoneDegreesValueGetUrl
+#define fiftyoneDegreesValueGetWeight ipi_fiftyoneDegreesValueGetWeight
+#define fiftyoneDegreesValueIsWeighted ipi_fiftyoneDegreesValueIsWeighted
+#define fiftyoneDegreesWeightedItemListAdd ipi_fiftyoneDegreesWeightedItemListAdd
+#define fiftyoneDegreesWeightedItemListExtend ipi_fiftyoneDegreesWeightedItemListExtend
+#define fiftyoneDegreesWeightedItemListFree ipi_fiftyoneDegreesWeightedItemListFree
+#define fiftyoneDegreesWeightedItemListInit ipi_fiftyoneDegreesWeightedItemListInit
+#define fiftyoneDegreesWeightedItemListRelease ipi_fiftyoneDegreesWeightedItemListRelease
+#define fiftyoneDegreesWriteWkbAsWktToStringBuilder ipi_fiftyoneDegreesWriteWkbAsWktToStringBuilder
+#define fiftyoneDegreesYamlFileIterate ipi_fiftyoneDegreesYamlFileIterate
+#define fiftyoneDegreesYamlFileIterateWithLimit ipi_fiftyoneDegreesYamlFileIterateWithLimit
+
+/* Memory only builds define these three names as NULL. */
+#ifndef FIFTYONE_DEGREES_MEMORY_ONLY
+#define fiftyoneDegreesProfileGetFinalSize ipi_fiftyoneDegreesProfileGetFinalSize
+#define fiftyoneDegreesStringGetFinalSize ipi_fiftyoneDegreesStringGetFinalSize
+#define fiftyoneDegreesThrowUnsupportedStoredValueType ipi_fiftyoneDegreesThrowUnsupportedStoredValueType
+#endif
+
+#endif /* FIFTYONE_DEGREES_IPI_SYMBOLS_H_INCLUDED */
+#endif
+
 #ifdef _MSC_FULL_VER
 #define DEPRECATED __declspec(deprecated)
 #else
@@ -146,6 +436,19 @@
 // the item is related to 51Degrees.
 #ifndef FIFTYONE_DEGREES_COMMON_COOKIE_PREFIX
 #define FIFTYONE_DEGREES_COMMON_COOKIE_PREFIX "51D_"
+#endif
+
+// The common C++ headers open this inside their own namespace. It expands to
+// nothing unless FIFTYONE_DEGREES_IPI_CXX_SYMBOLS is defined. It then changes
+// the linked names of the classes in the IP Intelligence copy and leaves source
+// names alone, because members of an inline namespace are found through the
+// namespace around it.
+#ifdef FIFTYONE_DEGREES_IPI_CXX_SYMBOLS
+#define FIFTYONE_DEGREES_COMMON_CXX_BEGIN inline namespace IpiCopy {
+#define FIFTYONE_DEGREES_COMMON_CXX_END }
+#else
+#define FIFTYONE_DEGREES_COMMON_CXX_BEGIN
+#define FIFTYONE_DEGREES_COMMON_CXX_END
 #endif
 
 #endif
@@ -173,6 +476,9 @@
 
 #ifndef FIFTYONE_DEGREES_DATA_H_INCLUDED
 #define FIFTYONE_DEGREES_DATA_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -304,6 +610,9 @@ EXTERNAL void* fiftyoneDegreesDataMalloc(
 #ifndef FIFTYONE_DEGREES_EXCEPTIONS_H_INCLUDED
 #define FIFTYONE_DEGREES_EXCEPTIONS_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesExceptions Exceptions
@@ -401,6 +710,9 @@ EXTERNAL void* fiftyoneDegreesDataMalloc(
 
 #ifndef FIFTYONE_DEGREES_INIT_H_INCLUDED
 #define FIFTYONE_DEGREES_INIT_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -656,7 +968,10 @@ FIFTYONE_DEGREES_EXCEPTION_CLEAR
 
 /**
  * Returns an English error message for the exception. The caller must free the
- * memory when they have finished consuming the error message.
+ * memory when they have finished consuming the error message. An exception
+ * holds no file name, so a message about a file says 'null'. A caller that has
+ * the status and the file name gets a message naming the file from
+ * #fiftyoneDegreesStatusGetMessage.
  * @param exception to get a string message from
  * @return pointer to the newly allocated message string
  */
@@ -711,6 +1026,9 @@ EXTERNAL void fiftyoneDegreesExceptionCheckAndExit(
 #ifndef FIFTYONE_DEGREES_THREADING_INCLUDED
 #define FIFTYONE_DEGREES_THREADING_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -760,10 +1078,13 @@ typedef void*(*FIFTYONE_DEGREES_THREAD_ROUTINE)(void*);
 
 /**
  * Mutex used to synchronise access to data structures that could be used
- * in parallel in a multi threaded environment.
+ * in parallel in a multi threaded environment. On Windows this is a slim
+ * reader writer lock taken only for exclusive access, which stays in user mode
+ * unless another thread holds it. The cache takes a lock for every item it
+ * hands out, so a lock that entered the kernel each time stops threads scaling.
  */
 #ifdef _MSC_VER
-typedef HANDLE fiftyoneDegreesMutex;
+typedef SRWLOCK fiftyoneDegreesMutex;
 #else
 typedef pthread_mutex_t fiftyoneDegreesMutex;
 /**
@@ -880,17 +1201,18 @@ void fiftyoneDegreesSignalWait(fiftyoneDegreesSignal *signal);
  * @param m mutex to create
  */
 #ifdef _MSC_VER
-#define FIFTYONE_DEGREES_MUTEX_CREATE(m) m = CreateMutex(NULL,FALSE,NULL)
+#define FIFTYONE_DEGREES_MUTEX_CREATE(m) InitializeSRWLock(&m)
 #else
 #define FIFTYONE_DEGREES_MUTEX_CREATE(m) fiftyoneDegreesMutexCreate(&m)
 #endif
 
 /**
- * Frees the mutex at the pointer provided.
+ * Frees the mutex at the pointer provided. A slim reader writer lock holds no
+ * resources, so there is nothing to free on Windows.
  * @param m mutex to close
  */
 #ifdef _MSC_VER
-#define FIFTYONE_DEGREES_MUTEX_CLOSE(m) if (m != NULL) { CloseHandle(m); }
+#define FIFTYONE_DEGREES_MUTEX_CLOSE(m)
 #else
 #define FIFTYONE_DEGREES_MUTEX_CLOSE(m) fiftyoneDegreesMutexClose(&m)
 #endif
@@ -900,7 +1222,7 @@ void fiftyoneDegreesSignalWait(fiftyoneDegreesSignal *signal);
  * @param m mutex to lock
  */
 #ifdef _MSC_VER
-#define FIFTYONE_DEGREES_MUTEX_LOCK(m) WaitForSingleObject(*m, INFINITE)
+#define FIFTYONE_DEGREES_MUTEX_LOCK(m) AcquireSRWLockExclusive(m)
 #else
 #define FIFTYONE_DEGREES_MUTEX_LOCK(m) fiftyoneDegreesMutexLock(m)
 #endif
@@ -910,7 +1232,7 @@ void fiftyoneDegreesSignalWait(fiftyoneDegreesSignal *signal);
  * @param m mutex to unlock
  */
 #ifdef _MSC_VER
-#define FIFTYONE_DEGREES_MUTEX_UNLOCK(m) ReleaseMutex(*m)
+#define FIFTYONE_DEGREES_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(m)
 #else
 #define FIFTYONE_DEGREES_MUTEX_UNLOCK(m) fiftyoneDegreesMutexUnlock(m)
 #endif
@@ -921,7 +1243,7 @@ void fiftyoneDegreesSignalWait(fiftyoneDegreesSignal *signal);
  * @return true if valid
  */
 #ifdef _MSC_VER
-#define FIFTYONE_DEGREES_MUTEX_VALID(m) (*m != NULL)
+#define FIFTYONE_DEGREES_MUTEX_VALID(m) (m != NULL)
 #else
 #define FIFTYONE_DEGREES_MUTEX_VALID(m) fiftyoneDegreesMutexValid(m)
 #endif
@@ -1272,6 +1594,9 @@ typedef struct fiftyone_degrees_interlock_dw_type_t {
 #ifndef FIFTYONE_DEGREES_FILE_H_INCLUDED
 #define FIFTYONE_DEGREES_FILE_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /* Define NDEBUG if needed, to ensure asserts are disabled in release builds */
 #if !defined(DEBUG) && !defined(_DEBUG) && !defined(NDEBUG)
 #define NDEBUG
@@ -1322,6 +1647,9 @@ typedef struct fiftyone_degrees_interlock_dw_type_t {
 
 #ifndef FIFTYONE_DEGREES_FILE_OFFSET_H_INCLUDED
 #define FIFTYONE_DEGREES_FILE_OFFSET_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -1408,6 +1736,9 @@ fiftyoneDegreesFileOffset; /**< Type for file offset in API. [signed] */
 #ifndef FIFTYONE_DEGREES_MEMORY_H_INCLUDED
 #define FIFTYONE_DEGREES_MEMORY_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 #include <stdlib.h>
 #include <stdbool.h>
 /* *********************************************************************
@@ -1434,6 +1765,9 @@ fiftyoneDegreesFileOffset; /**< Type for file offset in API. [signed] */
 
 #ifndef FIFTYONE_DEGREES_TREE_INCLUDED
 #define FIFTYONE_DEGREES_TREE_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 
 /**
@@ -1781,6 +2115,9 @@ EXTERNAL_VAR void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFreeAligned)(void*
 
 #ifndef FIFTYONE_DEGREES_POOL_H_INCLUDED
 #define FIFTYONE_DEGREES_POOL_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -2348,6 +2685,14 @@ EXTERNAL void fiftyoneDegreesFilePoolReset(fiftyoneDegreesFilePool *filePool);
 EXTERNAL const char* fiftyoneDegreesFileGetFileName(const char *filePath);
 
 /**
+ * Gets the name of the file after the last separator in the path. A forward
+ * slash and a backslash both count as a separator.
+ * @param path full path to the file.
+ * @return the file name, or NULL if the path has no separator or ends with one.
+ */
+EXTERNAL const char* fiftyoneDegreesFileGetBaseName(const char *path);
+
+/**
  * @}
  */
 #endif
@@ -2375,6 +2720,9 @@ EXTERNAL const char* fiftyoneDegreesFileGetFileName(const char *filePath);
 
 #ifndef FIFTYONE_DEGREES_COLLECTION_H_INCLUDED
 #define FIFTYONE_DEGREES_COLLECTION_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -2616,6 +2964,9 @@ EXTERNAL const char* fiftyoneDegreesFileGetFileName(const char *filePath);
 #ifndef FIFTYONE_DEGREES_COLLECTION_KEY_H_INCLUDED
 #define FIFTYONE_DEGREES_COLLECTION_KEY_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesCollectionKey CollectionKey
@@ -2650,6 +3001,9 @@ EXTERNAL const char* fiftyoneDegreesFileGetFileName(const char *filePath);
 
 #ifndef FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_H_INCLUDED
 #define FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 
 /**
@@ -2859,6 +3213,9 @@ typedef struct fiftyone_degrees_collection_key_t {
 
 #ifndef FIFTYONE_DEGREES_CACHE_H_INCLUDED
 #define FIFTYONE_DEGREES_CACHE_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /* Define NDEBUG if needed, to ensure asserts are disabled in release builds */
 #if !defined(DEBUG) && !defined(_DEBUG) && !defined(NDEBUG)
@@ -3549,6 +3906,9 @@ EXTERNAL long fiftyoneDegreesCollectionBinarySearch(
 #ifndef FIFTYONE_DEGREES_EVIDENCE_H_INCLUDED
 #define FIFTYONE_DEGREES_EVIDENCE_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon * @defgroup FiftyOneDegreesEvidence Evidence
  *
@@ -3670,6 +4030,9 @@ EXTERNAL long fiftyoneDegreesCollectionBinarySearch(
 #ifndef FIFTYONE_DEGREES_IP_H_INCLUDED
 #define FIFTYONE_DEGREES_IP_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup fiftyoneDegreesIp IP
@@ -3776,6 +4139,9 @@ EXTERNAL int fiftyoneDegreesIpAddressesCompare(
 #ifndef FIFTYONE_DEGREES_STRING_H_INCLUDED
 #define FIFTYONE_DEGREES_STRING_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesString String
@@ -3842,6 +4208,9 @@ EXTERNAL int fiftyoneDegreesIpAddressesCompare(
 
 #ifndef FIFTYONE_DEGREES_FLOAT_H_INCLUDED
 #define FIFTYONE_DEGREES_FLOAT_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -4162,6 +4531,9 @@ EXTERNAL const char *fiftyoneDegreesStringSubString(const char *a, const char *b
 #ifndef FIFTYONE_DEGREES_STRING_BUILDER_H_INCLUDED
 #define FIFTYONE_DEGREES_STRING_BUILDER_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesString String
@@ -4342,6 +4714,9 @@ EXTERNAL fiftyoneDegreesStringBuilder* fiftyoneDegreesStringBuilderComplete(
 #ifndef FIFTYONE_DEGREES_ARRAY_H_INCLUDED
 #define FIFTYONE_DEGREES_ARRAY_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesArray Arrays
@@ -4421,6 +4796,9 @@ i->capacity = c; \
 #ifndef FIFTYONE_DEGREES_PAIR_H_INCLUDED
 #define FIFTYONE_DEGREES_PAIR_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 #include <stddef.h>
 
 typedef struct fiftyone_degrees_key_value_pair_t {
@@ -4457,6 +4835,9 @@ FIFTYONE_DEGREES_ARRAY_TYPE(fiftyoneDegreesKeyValuePair, )
 
 #ifndef FIFTYONE_DEGREES_HEADERS_H_INCLUDED
 #define FIFTYONE_DEGREES_HEADERS_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -4558,6 +4939,9 @@ FIFTYONE_DEGREES_ARRAY_TYPE(fiftyoneDegreesKeyValuePair, )
 
 #ifndef FIFTYONE_DEGREES_LIST_H_INCLUDED
 #define FIFTYONE_DEGREES_LIST_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -5020,13 +5404,25 @@ EXTERNAL uint32_t fiftyoneDegreesEvidenceIterate(
  * headers where multiple header values need to be combined into a single 
  * value.
  *
+ * A pseudo header is only assembled when every header that forms it has
+ * evidence and the values, the separators between them and a null terminator
+ * fit in the buffer. A pseudo header that does not fit is ignored, meaning the
+ * callback is not called for it, no error is reported and iteration moves on
+ * to the next header. This method never allocates memory to hold a longer
+ * value, which is why the caller chooses the length of the buffer up front. A
+ * single header does not use the buffer but has the same limit, so one that
+ * could not fit with a null terminator is ignored in the same way. When the
+ * buffer is null nothing is assembled and no limit applies, which suits a
+ * caller only checking which headers are present.
+ *
  * @param evidence key value pairs including prefixes
  * @param prefixes one or more prefix flags to return values for
  * @param state pointer passed to the callback method
  * @param headers to return evidence for if available
  * @param buffer that MIGHT be used with the callback, null to disable 
  * assembling headers
- * @param length of the buffer
+ * @param length of the buffer including the null terminator, where zero means
+ * every header is ignored unless the buffer is null
  * @param callback method called when a matching prefix is found
  * @return true if the callback was called successfully, otherwise false
  */
@@ -5068,6 +5464,9 @@ EXTERNAL bool fiftyoneDegreesEvidenceIterateForHeaders(
 
 #ifndef FIFTYONE_DEGREES_MANAGER_INCLUDED
 #define FIFTYONE_DEGREES_MANAGER_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -5286,7 +5685,9 @@ EXTERNAL int32_t fiftyoneDegreesResourceHandleGetUse(
 /**
  * Replaces the resource with the new resource. If the existing resource is 
  * not being used it will be freed. Otherwise it is left to the decrement 
- * function to free the resource when the usage count is zero.
+ * function to free the resource when the usage count is zero. The memory of
+ * the replaced handle itself, a few tens of bytes, is kept until the manager
+ * is freed, because a thread can still be reading it.
  * @param manager the resource manager to initialise with the resource
  * @param newResource pointer to the resource which the manager should manage
  * access to
@@ -5422,6 +5823,9 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
 #ifndef FIFTYONE_DEGREES_PROPERTIES_H_INCLUDED
 #define FIFTYONE_DEGREES_PROPERTIES_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 #include <stdint.h>
 #ifdef _MSC_FULL_VER
 #include <string.h>
@@ -5430,6 +5834,9 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
 #define _stricmp strcasecmp
 #define _strnicmp strncasecmp
 #endif
+
+/** Characters which separate the names in a required properties string. */
+#define FIFTYONE_DEGREES_PROPERTIES_SEPARATORS "|, "
 
 /**
  * Index in the properties collection to a property which is required to get
@@ -5467,7 +5874,14 @@ typedef struct fiftyone_degrees_property_available_t {
                          evaluate. */
 } fiftyoneDegreesPropertyAvailable;
 
-FIFTYONE_DEGREES_ARRAY_TYPE(fiftyoneDegreesPropertyAvailable,)
+FIFTYONE_DEGREES_ARRAY_TYPE(
+	fiftyoneDegreesPropertyAvailable,
+	bool allComponentsRequired; /**< True if every component must be resolved
+	                                whether or not it has an available property.
+	                                Initialised to false and set by the engine.
+	                                A list created from an existing list keeps
+	                                the value, which carries it across a reload */
+)
 
 /** Array of properties which are available in a data set. */
 typedef fiftyoneDegreesPropertyAvailableArray 
@@ -5685,6 +6099,9 @@ EXTERNAL void fiftyoneDegreesPropertiesFree(
 #ifndef FIFTYONE_DEGREES_DATE_H_INCLUDED
 #define FIFTYONE_DEGREES_DATE_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesDate Date
@@ -5752,6 +6169,9 @@ typedef struct fiftyone_degrees_date_t {
 
 #ifndef FIFTYONE_DEGREES_COMPONENT_H_INCLUDED
 #define FIFTYONE_DEGREES_COMPONENT_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -5946,6 +6366,9 @@ EXTERNAL fiftyoneDegreesHeaderPtrs* fiftyoneDegreesComponentGetHeaders(
 #ifndef FIFTYONE_DEGREES_PROPERTY_H_INCLUDED
 #define FIFTYONE_DEGREES_PROPERTY_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesProperty Property
@@ -6113,7 +6536,8 @@ EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesPropertyGetCategory(
  * @param item used to store the resulting string in.
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
- * @return a pointer to a string in the collection item data structure.
+ * @return a pointer to a string in the collection item data structure, or to
+ * an empty string if the property has no URL.
  */
 EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesPropertyGetUrl(
 	const fiftyoneDegreesCollection *stringsCollection,
@@ -6198,6 +6622,9 @@ EXTERNAL const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
 #ifndef FIFTYONE_DEGREES_PROPERTY_VALUE_H_INCLUDED
 #define FIFTYONE_DEGREES_PROPERTY_VALUE_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesValue Values
@@ -6258,6 +6685,9 @@ EXTERNAL const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
 
 #ifndef FIFTYONE_DEGREES_STORED_BINARY_VALUE_H_INCLUDED
 #define FIFTYONE_DEGREES_STORED_BINARY_VALUE_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -6442,6 +6872,9 @@ EXTERNAL bool fiftyoneDegreesStoredBinaryValueToBoolOrDefault(
 #ifndef FIFTYONE_DEGREES_PROFILE_H_INCLUDED
 #define FIFTYONE_DEGREES_PROFILE_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesProfile Profile
@@ -6514,6 +6947,9 @@ EXTERNAL bool fiftyoneDegreesStoredBinaryValueToBoolOrDefault(
 
 #ifndef FIFTYONE_DEGREES_INDICES_H_INCLUDED
 #define FIFTYONE_DEGREES_INDICES_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
  /**
   * @ingroup FiftyOneDegreesCommon
@@ -7100,7 +7536,8 @@ EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesValueGetName(
  * @param item used to store the resulting string in.
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
- * @return a pointer to a string in the collection item data structure.
+ * @return a pointer to a string in the collection item data structure, or to
+ * an empty string if the value has no description.
  */
 EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesValueGetDescription(
 	const fiftyoneDegreesCollection *strings,
@@ -7117,7 +7554,9 @@ EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesValueGetDescription(
  * @param item used to store the resulting string in.
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
- * @return a pointer to a string in the collection item data structure.
+ * @return a pointer to a string in the collection item data structure, to an
+ * empty string if the value has no URL, or NULL if the field is negative as it
+ * is when it holds a weight.
  */
 EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesValueGetUrl(
 	const fiftyoneDegreesCollection *strings,
@@ -7268,6 +7707,9 @@ EXTERNAL uint16_t fiftyoneDegreesValueGetWeight(
 
 #ifndef FIFTYONE_DEGREES_OVERRIDES_INCLUDED
 #define FIFTYONE_DEGREES_OVERRIDES_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -7564,6 +8006,9 @@ EXTERNAL void fiftyoneDegreesOverrideProfileIds(
 #ifndef FIFTYONE_DEGREES_JSON_H_INCLUDED
 #define FIFTYONE_DEGREES_JSON_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
  /**
   * @ingroup FiftyOneDegreesCommon
   * @defgroup FiftyOneDegreesJson JSON
@@ -7730,6 +8175,9 @@ EXTERNAL void fiftyoneDegreesJsonPropertySeparator(fiftyoneDegreesJson* json);
 #ifndef FIFTYONE_DEGREES_CONFIG_H_INCLUDED
 #define FIFTYONE_DEGREES_CONFIG_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesConfig Config
@@ -7839,9 +8287,19 @@ typedef struct fiftyone_degrees_config_device_detecton_t {
 	bool updateMatchedUserAgent; /**< True if the detection should record the
 									matched characters from the target
 									User-Agent */
-	size_t maxMatchedUserAgentLength; /**< Number of characters to consider in
-										the matched User-Agent. Ignored if
-										updateMatchedUserAgent is false. */
+	/**
+	 * Limit in bytes on the length of a single header such as User-Agent, of
+	 * a pseudo header including the separators between its values, and of
+	 * the matched User-Agent. The working memory for a pseudo header is
+	 * allocated from this value when a set of results is created, and
+	 * detection does not grow it. A value longer than the limit is ignored
+	 * and detection moves on to the next header. A direct User-Agent call
+	 * over the limit gives the same results as evidence holding that value.
+	 * The limit applies whether or not updateMatchedUserAgent is true. To
+	 * raise the limit set a larger value before the data set is created,
+	 * which also raises the memory each set of results holds.
+	 */
+	size_t maxMatchedUserAgentLength;
 	bool allowUnmatched; /**< True if there should be at least one matched node
 						 in order for the results to be considered valid. By
 						 default, this is false */
@@ -7873,24 +8331,32 @@ typedef struct fiftyone_degrees_config_device_detecton_t {
 FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE_DEFAULT
 
 /**
+ * Default limit in bytes for maxMatchedUserAgentLength. No RFC or browser sets
+ * a limit on these headers. In the 20,000 evidence sample the longest pseudo
+ * header is 316 bytes and the longest User-Agent 331, with none over 500. A
+ * longer value is ignored, because in practice that does not happen.
+ */
+#define FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_MAX_LENGTH 500
+
+/**
  * Default value for the #fiftyoneDegreesConfigDeviceDetection structure with
- * index
+ * index.
  */
 #define FIFTYONE_DEGREES_DEVICE_DETECTION_CONFIG_DEFAULT_WITH_INDEX \
 	FIFTYONE_DEGREES_CONFIG_DEFAULT_WITH_INDEX, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE, \
-	500, /* Default to 500 characters for the matched User-Agent */ \
+	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_MAX_LENGTH, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_UNMATCHED, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_SPECIAL_EVIDENCE
 
  /**
-  * Default value for the #fiftyoneDegreesConfigDeviceDetection structure 
+  * Default value for the #fiftyoneDegreesConfigDeviceDetection structure
   * without index.
   */
 #define FIFTYONE_DEGREES_DEVICE_DETECTION_CONFIG_DEFAULT_NO_INDEX \
 	FIFTYONE_DEGREES_CONFIG_DEFAULT_NO_INDEX, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE, \
-	500, /* Default to 500 characters for the matched User-Agent */ \
+	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_MAX_LENGTH, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_UNMATCHED, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_SPECIAL_EVIDENCE
 
@@ -7949,6 +8415,9 @@ FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE_DEFAULT
 
 #ifndef FIFTYONE_DEGREES_DATASET_H_INCLUDED
 #define FIFTYONE_DEGREES_DATASET_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -8225,8 +8694,8 @@ void fiftyoneDegreesDataSetFree(fiftyoneDegreesDataSetBase *dataSet);
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return the status associated with the data set reload. Any value other than
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded
- * correctly
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and
+ * the current one stays in use
  */
 fiftyoneDegreesStatusCode fiftyoneDegreesDataSetReloadManagerFromMemory(
 	fiftyoneDegreesResourceManager *manager,
@@ -8258,8 +8727,8 @@ fiftyoneDegreesStatusCode fiftyoneDegreesDataSetReloadManagerFromMemory(
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return the status associated with the data set reload. Any value other than
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded
- * correctly
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and
+ * the current one stays in use
  */
 fiftyoneDegreesStatusCode fiftyoneDegreesDataSetReloadManagerFromFile(
 	fiftyoneDegreesResourceManager* manager,
@@ -8292,8 +8761,8 @@ fiftyoneDegreesStatusCode fiftyoneDegreesDataSetReloadManagerFromFile(
  * @param exception pointer to an exception data structure to be used if an \
  * exception occurs. See exceptions.h \
  * @return the status associated with the data set reload. Any value other than \
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded \
- * correctly \
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and \
+ * the current one stays in use \
  */ \
 fiftyoneDegreesStatusCode fiftyoneDegrees##t##ReloadManagerFromMemory( \
 fiftyoneDegreesResourceManager *manager, \
@@ -8322,8 +8791,8 @@ fiftyoneDegreesException *exception) { \
  * @param exception pointer to an exception data structure to be used if an \
  * exception occurs. See exceptions.h \
  * @return the status associated with the data set reload. Any value other than \
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded \
- * correctly \
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and \
+ * the current one stays in use \
  */ \
 fiftyoneDegreesStatusCode fiftyoneDegrees##t##ReloadManagerFromFile( \
 fiftyoneDegreesResourceManager* manager, \
@@ -8349,8 +8818,8 @@ fiftyoneDegreesException *exception) { \
  * @param exception pointer to an exception data structure to be used if an \
  * exception occurs. See exceptions.h \
  * @return the status associated with the data set reload. Any value other than \
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded \
- * correctly \
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and \
+ * the current one stays in use \
   */ \
 fiftyoneDegreesStatusCode fiftyoneDegrees##t##ReloadManagerFromOriginalFile( \
 fiftyoneDegreesResourceManager* manager, \
@@ -8532,6 +9001,9 @@ void fiftyoneDegreesDataSetDeviceDetectionReset(
 #ifndef FIFTYONE_DEGREES_RESULTS_INCLUDED
 #define FIFTYONE_DEGREES_RESULTS_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /**
  * @ingroup FiftyOneDegreesCommon
  * @defgroup FiftyOneDegreesResults Results
@@ -8652,8 +9124,14 @@ typedef struct fiftyone_degrees_results_device_detection_t {
 	fiftyoneDegreesResultsBase b; /**< Base results */
 	fiftyoneDegreesOverrideValueArray *overrides; /**< Any value overrides in
 												  the results */
-	char* bufferPseudo; /**< Working memory used for pseudo headers */
-	int bufferPseudoLength; /**< Number of bytes in bufferPseudo */
+	char* bufferPseudo; /**< Working memory used for pseudo headers, allocated
+						when the results are created and not grown during
+						detection. A pseudo header that does not fit is
+						ignored */
+	int bufferPseudoLength; /**< Number of bytes in bufferPseudo, being the
+							maxMatchedUserAgentLength configuration value plus
+							one for the null terminator. A single header over
+							that value is ignored too */
 	char* bufferTransform; /**< Working memory used to transform evidence */
 	int bufferTransformLength; /**< Number of bytes in bufferTransform */
 } fiftyoneDegreesResultsDeviceDetection;
@@ -9462,10 +9940,13 @@ fiftyoneDegreesHashInitManagerFromFile(
  * @param properties the properties that will be consumed from the data set, or
  * NULL if all available properties in the Hash data file should be available
  * for consumption
- * @param memory pointer to continuous memory containing the Hash data set
+ * @param memory pointer to continuous memory containing the Hash data set,
+ * which stays with the caller
  * @param size the number of bytes that make up the Hash data set
  * @param exception pointer to an exception data structure to be used if an
- * exception occurs. See exceptions.h.
+ * exception occurs. See exceptions.h. Holds the status if the data set could
+ * not be initialised, for example from memory that is short or rejected, and
+ * the number returned then means nothing.
  * @return the total number of bytes needed to initialise a Hash resource
  * and associated manager with the configuration provided or zero
  */
@@ -9486,7 +9967,9 @@ EXTERNAL size_t fiftyoneDegreesHashSizeManagerFromMemory(
  * @param properties the properties that will be consumed from the data set, or
  * NULL if all available properties in the Hash data file should be available
  * for consumption
- * @param memory pointer to continuous memory containing the Hash data set
+ * @param memory pointer to continuous memory containing the Hash data set. If
+ * the data set is not created the memory stays with the caller, even if the
+ * configuration says to free it
  * @param size the number of bytes that make up the Hash data set
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
@@ -9822,8 +10305,8 @@ EXTERNAL size_t fiftyoneDegreesResultsHashGetValuesStringAllProperties(
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return the status associated with the data set reload. Any value other than
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded
- * correctly
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and
+ * the current one stays in use
  */
 EXTERNAL fiftyoneDegreesStatusCode
 fiftyoneDegreesHashReloadManagerFromOriginalFile(
@@ -9845,8 +10328,8 @@ fiftyoneDegreesHashReloadManagerFromOriginalFile(
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return the status associated with the data set reload. Any value other than
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded
- * correctly
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and
+ * the current one stays in use
  */
 EXTERNAL fiftyoneDegreesStatusCode
 fiftyoneDegreesHashReloadManagerFromFile(
@@ -9871,8 +10354,8 @@ fiftyoneDegreesHashReloadManagerFromFile(
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return the status associated with the data set reload. Any value other than
- * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded
- * correctly
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS means the data set was not reloaded and
+ * the current one stays in use
  */
 EXTERNAL fiftyoneDegreesStatusCode
 fiftyoneDegreesHashReloadManagerFromMemory(
@@ -10057,6 +10540,9 @@ EXTERNAL char* fiftyoneDegreesHashGetDeviceIdFromResults(
 #ifndef FIFTYONE_DEGREES_SYNONYM_COMMON_INCLUDED
 #define FIFTYONE_DEGREES_SYNONYM_COMMON_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -10078,6 +10564,9 @@ EXTERNAL char* fiftyoneDegreesHashGetDeviceIdFromResults(
  * in the end user terms of the application under an appropriate heading,
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 #include <stdio.h>
 
@@ -10114,6 +10603,9 @@ EXTERNAL char* fiftyoneDegreesHashGetDeviceIdFromResults(
 
 #ifndef FIFTYONE_DEGREES_BOOL_INCLUDED
 #define FIFTYONE_DEGREES_BOOL_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 #include <stdbool.h>
 
@@ -10163,6 +10655,9 @@ EXTERNAL int fiftyoneDegreesBoolToInt(bool b);
 #ifndef FIFTYONE_DEGREES_PROCESS_H_INCLUDED
 #define FIFTYONE_DEGREES_PROCESS_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 
 /**
  * Get the ID of the current process
@@ -10196,6 +10691,9 @@ EXTERNAL uint64_t fiftyoneDegreesProcessGetId();
 
 #ifndef FIFTYONE_DEGREES_YAMLFILE_H_INCLUDED
 #define FIFTYONE_DEGREES_YAMLFILE_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 #include <stdio.h>
 #include <ctype.h>
@@ -10317,6 +10815,9 @@ EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesYamlFileIterate(
 #ifndef FIFTYONE_DEGREES_WKBTOT_H_INCLUDED
 #define FIFTYONE_DEGREES_WKBTOT_H_INCLUDED
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 #include <stdbool.h>
 
 
@@ -10404,6 +10905,9 @@ fiftyoneDegreesConvertWkbToWkt
 #ifndef FIFTYONE_DEGREES_CONSTANTS_H
 #define FIFTYONE_DEGREES_CONSTANTS_H
 
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
 #include <stdint.h>
 
 /**
@@ -10447,6 +10951,9 @@ static const uint8_t fiftyoneDegreesIpAddressStringMaxLength = 50;
 
 #ifndef FIFTYONE_DEGREES_WEIGHTED_ITEM_H_INCLUDED
 #define FIFTYONE_DEGREES_WEIGHTED_ITEM_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -11037,7 +11544,7 @@ MAP_TYPE(WeightedItemList)
  * -
  * [getHighEntropyValues()](https://developer.mozilla.org/en-US/docs/Web/API/NavigatorUAData/getHighEntropyValues)
  * -
- * [device.sua](https://51degrees.com/blog/openrtb-structured-user-agent-and-user-agent-client-hints?utm_source=code&utm_medium=comment&utm_campaign=device-detection-cxx&utm_content=transform.h&utm_term=top)
+ * [device.sua](https://51degrees.com/blog/openrtb-structured-user-agent-and-user-agent-client-hints?utm_source=code&utm_medium=comment&utm_campaign=51degrees-cxx&utm_content=transform.h&utm_term=top)
  * - [OpenRTB 2.6
  * spec](https://iabtechlab.com/wp-content/uploads/2022/04/OpenRTB-2-6_FINAL.pdf)
  *
