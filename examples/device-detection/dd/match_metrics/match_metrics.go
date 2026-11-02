@@ -133,9 +133,6 @@ func verifyOutputFormat(matchReport string) string {
 	return "Match metrics in format:\n" + readableFormat
 }
 
-// import "fmt"
-// import "github.com/51Degrees/device-detection-go/ddonpremise"
-
 func runMatchMetrics(perf dd.PerformanceProfile) string {
 	// Initialise manager
 	manager := dd.NewResourceManager()

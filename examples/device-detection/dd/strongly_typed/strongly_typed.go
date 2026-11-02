@@ -26,9 +26,6 @@ package main
 TODO: To be implemented
 */
 
-// import "fmt"
-// import "github.com/51Degrees/device-detection-go/ddonpremise"
-
 func main() {
 	// TODO: To be implemented
 }
