@@ -1,4 +1,4 @@
-module github.com/51Degrees/device-detection-go/v4
+module github.com/51Degrees/51degrees-go/device-detection/v4
 
 go 1.19
 

@@ -58,10 +58,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/51Degrees/device-detection-go/v4/dd"
-	ddOnpremise "github.com/51Degrees/device-detection-go/v4/onpremise"
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_interop"
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_onpremise"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	ddOnpremise "github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
 // ddResponseProperties lists device detection properties included in the JSON response.

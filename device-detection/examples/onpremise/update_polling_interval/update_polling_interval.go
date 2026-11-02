@@ -4,8 +4,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/51Degrees/device-detection-go/v4/examples/onpremise/common"
-	"github.com/51Degrees/device-detection-go/v4/onpremise"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/examples/onpremise/common"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 )
 
 func processExampleEvidence(engine *onpremise.Engine, evidence []onpremise.Evidence) {

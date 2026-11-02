@@ -111,9 +111,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/51Degrees/ip-intelligence-go/v4/examples/common"
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_interop"
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_onpremise"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/examples/common"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
 func processEvidence(engine *ipi_onpremise.Engine, ipAddress string) {

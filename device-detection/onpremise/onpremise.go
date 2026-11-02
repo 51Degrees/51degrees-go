@@ -9,7 +9,7 @@ import (
 	"time"
 
 	common_go "github.com/51Degrees/common-go/v4"
-	"github.com/51Degrees/device-detection-go/v4/dd"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
 
 // Engine is an implementation of the on-premise (based on a local data file) device detection. It encapsulates

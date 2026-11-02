@@ -64,7 +64,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/51Degrees/device-detection-go/v4/dd"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
 
 // Evidence where all fields are in string format

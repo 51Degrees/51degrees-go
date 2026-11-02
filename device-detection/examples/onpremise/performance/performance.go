@@ -58,12 +58,12 @@ import ( //	"runtime"
 	"sync/atomic"
 	"time"
 
-	dd_example "github.com/51Degrees/device-detection-go/v4/examples/dd"
-	"github.com/51Degrees/device-detection-go/v4/examples/onpremise/common"
+	dd_example "github.com/51Degrees/51degrees-go/device-detection/v4/examples/dd"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/examples/onpremise/common"
 	"gopkg.in/yaml.v3"
 
-	"github.com/51Degrees/device-detection-go/v4/dd"
-	"github.com/51Degrees/device-detection-go/v4/onpremise"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 )
 
 // File to output the performance report

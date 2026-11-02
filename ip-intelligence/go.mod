@@ -1,4 +1,4 @@
-module github.com/51Degrees/ip-intelligence-go/v4
+module github.com/51Degrees/51degrees-go/ip-intelligence/v4
 
 go 1.21.0
 

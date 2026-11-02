@@ -31,10 +31,10 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/51Degrees/device-detection-go/v4/examples/onpremise/common"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/examples/onpremise/common"
 
-	"github.com/51Degrees/device-detection-go/v4/dd"
-	"github.com/51Degrees/device-detection-go/v4/onpremise"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 )
 
 // matchMetrics performs a device detection on the input Evidence and

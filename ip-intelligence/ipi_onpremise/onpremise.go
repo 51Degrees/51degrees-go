@@ -10,7 +10,7 @@ import (
 	"time"
 
 	common_go "github.com/51Degrees/common-go/v4"
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 )
 
 // Engine is an implementation of the on-premise (based on a local data file) IP intelligence. It encapsulates

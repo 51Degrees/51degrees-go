@@ -9,7 +9,7 @@ This module allows you to call functions for determining to set up with an IP In
 
 ## Module Structure
 
-**Module**: `ip-intelligence-go` at path `github.com/51Degrees/ip-intelligence-go/v4`
+**Module**: `ip-intelligence-go` at path `github.com/51Degrees/51degrees-go/ip-intelligence/v4`
 
 This Go version contains the following packages:
 - `ipi_interop` - a lower level API wrapping the C IP Intelligence library
@@ -42,7 +42,7 @@ bash go env -w CGO_ENABLED=1
 Import the package as usual and it will get build automatically:
 
 ```
-go import "github.com/51Degrees/ip-intelligence-go/v4/ipi_onpremise"
+go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ```
 
 ### Vendored C Library

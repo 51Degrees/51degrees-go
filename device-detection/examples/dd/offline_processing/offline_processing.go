@@ -48,10 +48,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	dd_example "github.com/51Degrees/device-detection-go/v4/examples/dd"
+	dd_example "github.com/51Degrees/51degrees-go/device-detection/v4/examples/dd"
 	"gopkg.in/yaml.v3"
 
-	"github.com/51Degrees/device-detection-go/v4/dd"
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
 
 // function match performs a match on an input Evidence, calulates

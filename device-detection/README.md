@@ -54,7 +54,7 @@ go env -w CGO_ENABLED=1
 
 ## Module and Packages
 
-This module name `device-detection-go` at path `github.com/51Degrees/device-detection-go/v4`
+This module name `device-detection-go` at path `github.com/51Degrees/51degrees-go/device-detection/v4`
 
 This Go Lite version contains the following packages:
 - `dd` - a lower level API wrapping the C device detection library
@@ -67,7 +67,7 @@ This Go Lite version contains the following packages:
 Import the package as usual and it will get build automatically:
 
 ```
-import "github.com/51Degrees/device-detection-go/v4/dd"
+import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 ```
 
 ### Vendored C Library
