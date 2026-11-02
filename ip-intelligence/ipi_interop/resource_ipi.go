@@ -26,6 +26,7 @@ package ipi_interop
 //#include "ip-intelligence-cxx.h"
 import "C"
 import (
+	"errors"
 	"fmt"
 	"time"
 	"unsafe"
@@ -67,9 +68,11 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 	return nil
 }
 
-// ReloadFromFile reloads the data set being used by the resource manager using
-// the specified data file location. This is corresponding to the C API
-// fiftyoneDegreesIpiReloadManagerFromFile.
+// ReloadFromFile replaces the data set being used by the resource manager with
+// one loaded from the specified data file, using the configuration and
+// properties given. It calls the C API fiftyoneDegreesIpiInitManagerFromFile,
+// which checks the status and the exception before it makes the new data set
+// active, so a file that fails to load leaves the data set in use unchanged.
 func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties string, filePath string) error {
 	exp := NewException()
 	defer exp.Free()
@@ -80,6 +83,12 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 	propsRequired := NewPropertiesRequired(properties)
 	defer propsRequired.Free()
 
+	// The init function makes the new data set active without releasing the
+	// one it replaces. Holding that one across the call and releasing it
+	// afterwards frees it once the last lookup using it has finished.
+	previous := C.DataSetGet(manager.CPtr)
+	defer C.DataSetRelease(previous)
+
 	s := C.IpiInitManagerFromFile(
 		manager.CPtr,
 		config.CPtr,
@@ -87,20 +96,7 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 		cPath,
 		exp.CPtr,
 	)
-
-	// Check exception
-	if !exp.IsOkay() {
-		return fmt.Errorf(C.GoString(C.ExceptionGetMessage(exp.CPtr)))
-	}
-
-	// Check status code
-	if s != C.SUCCESS {
-		cMessage := C.StatusGetMessage(s, cPath)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return fmt.Errorf(C.GoString(cMessage))
-	}
-
-	return nil
+	return reloadError(s, exp, cPath)
 }
 
 // ReloadFromOriginalFile reloads the data set being used by the resource
@@ -111,12 +107,31 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 	exp := NewException()
 	defer exp.Free()
 
-	C.IpiReloadManagerFromOriginalFile(
+	s := C.IpiReloadManagerFromOriginalFile(
 		manager.CPtr,
 		exp.CPtr,
 	)
+	if s == C.SUCCESS && exp.IsOkay() {
+		return nil
+	}
+	cDataSet := C.DataSetGet(manager.CPtr)
+	defer C.DataSetRelease(cDataSet)
+	return reloadError(s, exp, &cDataSet.masterFileName[0])
+}
+
+// reloadError returns the failure of a reload, or nil if it worked. A reload
+// can report a failure in the exception alone or in the status alone, so both
+// are checked.
+func reloadError(s C.StatusCode, exp *Exception, fileName *C.char) error {
 	if !exp.IsOkay() {
-		return fmt.Errorf(C.GoString(C.ExceptionGetMessage(exp.CPtr)))
+		cMessage := C.ExceptionGetMessage(exp.CPtr)
+		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
+		return errors.New(C.GoString(cMessage))
+	}
+	if s != C.SUCCESS {
+		cMessage := C.StatusGetMessage(s, fileName)
+		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
+		return errors.New(C.GoString(cMessage))
 	}
 	return nil
 }

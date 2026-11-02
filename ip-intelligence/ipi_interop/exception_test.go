@@ -30,6 +30,7 @@ func TestNewException(t *testing.T) {
 		if exception == nil {
 			t.Fatal("NewException returned nil")
 		}
+		defer exception.Free()
 
 		if exception.CPtr == nil {
 			t.Fatal("NewException created Exception with nil CPtr")
@@ -87,6 +88,7 @@ func TestException_IsOkay(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exception := NewException()
+			defer exception.Free()
 			if tt.setup != nil {
 				tt.setup(exception)
 			}
@@ -102,6 +104,7 @@ func TestExceptionFullFlow(t *testing.T) {
 	t.Run("exception lifecycle", func(t *testing.T) {
 		// Create new exception
 		exception := NewException()
+		defer exception.Free()
 		if !exception.IsOkay() {
 			t.Error("New exception should be okay")
 		}
