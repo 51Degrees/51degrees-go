@@ -10,7 +10,7 @@ import (
 	"time"
 
 	common_go "github.com/51Degrees/common-go/v4"
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 )
 
 // Engine is an implementation of the on-premise (based on a local data file) IP intelligence. It encapsulates
@@ -28,6 +28,8 @@ type Engine struct {
 
 	stopCh           chan *sync.WaitGroup
 	reloadFileEvents chan struct{}
+	// reloadLoop is done once reloadFileEvent has returned.
+	reloadLoop sync.WaitGroup
 
 	product                   string
 	dataFileLastUsedByManager string
@@ -130,6 +132,7 @@ func (e *Engine) handleFileExternallyChanged() {
 func (e *Engine) run() error {
 	e.recoverEngine()
 
+	e.reloadLoop.Add(1)
 	go e.reloadFileEvent()
 
 	if err := e.processFileExternallyChanged(); err != nil {
@@ -169,9 +172,13 @@ func (e *Engine) Stop() {
 		wg.Wait()
 	}
 
+	// Closing the channel ends the reload loop once a reload in progress has
+	// finished, so the manager is not freed while it is being reloaded.
+	close(e.reloadFileEvents)
+	e.reloadLoop.Wait()
+
 	e.isStopped = true
 	close(e.stopCh)
-	close(e.reloadFileEvents)
 
 	if e.manager != nil {
 		e.manager.Free()
@@ -199,11 +206,14 @@ func (e *Engine) recoverEngine() {
 	}()
 }
 
-// reloadFileEvent listens for file reload events and triggers processing when an external file change is detected.
+// reloadFileEvent reloads the data file each time the file puller has pulled a
+// new one, until the engine stops. A failed reload is logged and the engine
+// keeps the data it has, so a later file is still loaded.
 func (e *Engine) reloadFileEvent() {
+	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
 		if err := e.processFileExternallyChanged(); err != nil {
-			return
+			e.logger.Printf("failed to reload pulled data file: %v", err)
 		}
 	}
 }
@@ -293,6 +303,9 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		}
 
 		if err := ipi_interop.InitManagerFromFile(e.manager, *e.config, strings.Join(e.managerProperties, ","), filePath); err != nil {
+			if e.IsCreateTempDataCopyEnabled() {
+				e.removeCopy(filePath)
+			}
 			return fmt.Errorf("failed to init manager from file: %+v", err)
 		}
 		e.dataFileLastUsedByManager = filePath
@@ -308,17 +321,25 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 
 	err = e.manager.ReloadFromFile(*e.config, strings.Join(e.managerProperties, ","), filePath)
 	if err != nil {
+		// The data set in use is kept, so the copy made for this reload is
+		// not needed.
+		e.removeCopy(filePath)
 		return fmt.Errorf("failed to reload manager from file: %w", err)
 	}
 
-	err = os.Remove(e.dataFileLastUsedByManager)
-	if err != nil {
-		return err
-	}
-
+	e.removeCopy(e.dataFileLastUsedByManager)
 	e.dataFileLastUsedByManager = filePath
 
 	return nil
+}
+
+// removeCopy deletes a temporary copy of the data file. Windows cannot delete
+// a copy that a data set still has open, so a failure is logged and the copy is
+// left for Stop, which removes the temporary directory.
+func (e *Engine) removeCopy(path string) {
+	if err := os.Remove(path); err != nil {
+		e.logger.Printf("failed to remove data file copy: %v", err)
+	}
 }
 
 // getPublishedDate retrieves the published date of the data file being used by the engine.

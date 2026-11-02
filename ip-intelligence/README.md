@@ -1,6 +1,6 @@
 # 51Degrees IP Intelligence API
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=ip-intelligence-go&utm_content=readme.md&utm_term=51degrees-ip-intelligence-api "Data rewards the curious") **IP Intelligence in GO**
+![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-ip-intelligence-api "Data rewards the curious") **IP Intelligence in GO**
 
 ## Introduction
 
@@ -9,7 +9,7 @@ This module allows you to call functions for determining to set up with an IP In
 
 ## Module Structure
 
-**Module**: `ip-intelligence-go` at path `github.com/51Degrees/ip-intelligence-go/v4`
+**Module**: `ip-intelligence-go` at path `github.com/51Degrees/51degrees-go/ip-intelligence/v4`
 
 This Go version contains the following packages:
 - `ipi_interop` - a lower level API wrapping the C IP Intelligence library
@@ -23,7 +23,7 @@ This Go version contains the following packages:
 ### Data File Setup
 
 To process IP addresses, you will need to use the 51Degrees data file.
-See [ip-intelligence-data](https://github.com/51Degrees/ip-intelligence-data) repo for the instructions on how to get a Lite data file or [contact us](https://51degrees.com/contact-us?utm_source=github&utm_medium=readme&utm_campaign=ip-intelligence-go&utm_content=readme.md&utm_term=data-file-setup) to get an Enterprise data file.
+See [ip-intelligence-data](https://github.com/51Degrees/ip-intelligence-data) repo for the instructions on how to get a Lite data file or [contact us](https://51degrees.com/contact-us?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=data-file-setup) to get an Enterprise data file.
 
 ### Windows Configuration
 
@@ -42,7 +42,7 @@ bash go env -w CGO_ENABLED=1
 Import the package as usual and it will get build automatically:
 
 ```
-go import "github.com/51Degrees/ip-intelligence-go/v4/ipi_onpremise"
+go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ```
 
 ### Vendored C Library
@@ -68,5 +68,5 @@ go doc -all
 
 ### Examples
 
-Examples can be found in the [examples](examples) directory.
-Users can follow its [README.md](examples/README.md) for details and comments in each examples for how to run them.
+Examples can be found in the [examples/ip-intelligence](../examples/ip-intelligence) folder.
+Users can follow its [README.md](../examples/ip-intelligence/README.md) for details and comments in each examples for how to run them.

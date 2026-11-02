@@ -1,6 +1,6 @@
 # 51Degrees Device Detection Engines
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=device-detection-go&utm_content=readme.md&utm_term=51degrees-device-detection-engines "Data rewards the curious") **Go Device Detection**
+![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-device-detection-engines "Data rewards the curious") **Go Device Detection**
 
 ## Introduction
 
@@ -34,7 +34,7 @@ Or download [51Degrees-LiteV4.1.hash](https://github.com/51Degrees/device-detect
 
 This 'lite' file has a significantly reduced set of properties. To obtain a
 file with a more complete set of device properties see the
-[51Degrees website](https://51degrees.com/pricing?utm_source=github&utm_medium=readme&utm_campaign=device-detection-go&utm_content=readme.md&utm_term=data-file).
+[51Degrees website](https://51degrees.com/pricing?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=data-file).
 
 ### Software
 
@@ -54,11 +54,11 @@ go env -w CGO_ENABLED=1
 
 ## Module and Packages
 
-This module name `device-detection-go` at path `github.com/51Degrees/device-detection-go/v4`
+This module name `device-detection-go` at path `github.com/51Degrees/51degrees-go/device-detection/v4`
 
 This Go Lite version contains the following packages:
 - `dd` - a lower level API wrapping the C device detection library
-- `onpremise` - a higher level Engine API providing device detection and [automatic data file updates](https://51degrees.com/documentation/_features__automatic_datafile_updates.html?utm_source=github&utm_medium=readme&utm_campaign=device-detection-go&utm_content=readme.md&utm_term=module-and-packages)
+- `onpremise` - a higher level Engine API providing device detection and [automatic data file updates](https://51degrees.com/documentation/_features__automatic_datafile_updates.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=module-and-packages)
 
 ## Build and Usage
 
@@ -67,7 +67,7 @@ This Go Lite version contains the following packages:
 Import the package as usual and it will get build automatically:
 
 ```
-import "github.com/51Degrees/device-detection-go/v4/dd"
+import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 ```
 
 ### Vendored C Library
@@ -93,4 +93,4 @@ go doc -all
 
 ## Examples
 
-Examples can be found in the [examples](examples) sudbirectory. Users can follow its [README.md](examples/README.md) for details and comments in each examples for how to run them.
+Examples can be found in the [examples/device-detection](../examples/device-detection) folder. Users can follow its [README.md](../examples/device-detection/README.md) for details and comments in each examples for how to run them.
