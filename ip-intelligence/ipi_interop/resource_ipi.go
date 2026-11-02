@@ -64,9 +64,11 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 	return nil
 }
 
-// ReloadFromFile reloads the data set being used by the resource manager using
-// the specified data file location. This is corresponding to the C API
-// fiftyoneDegreesIpiReloadManagerFromFile.
+// ReloadFromFile reloads the data set being used by the resource manager from
+// the data file at filePath. This matches the C API
+// fiftyoneDegreesIpiReloadManagerFromFile. The reload keeps the configuration
+// and required properties of the loaded data set, so config and properties
+// are not used. The replaced data set is freed once no results refer to it.
 func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties string, filePath string) error {
 	exp := NewException()
 	defer exp.Free()
@@ -74,13 +76,8 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 	cPath := C.CString(filePath)
 	defer C.free(unsafe.Pointer(cPath))
 
-	propsRequired := NewPropertiesRequired(properties)
-	defer propsRequired.Free()
-
-	s := C.IpiInitManagerFromFile(
+	s := C.IpiReloadManagerFromFile(
 		manager.CPtr,
-		config.CPtr,
-		propsRequired.CPtr,
 		cPath,
 		exp.CPtr,
 	)
