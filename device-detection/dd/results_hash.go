@@ -464,10 +464,13 @@ func (results *ResultsHash) ValuesString(
 
 // AvailableProperties returns a list of available properties. The index
 // of this property can be used obtain further details about the property.
+// With properties named, these are the names given, in the order given,
+// including any the data set has no property for, as the index of each is
+// its place among the names given.
 func (results *ResultsHash) AvailableProperties() []string {
 	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
 	cAvailable := dataSet.b.b.available
-	availableCount := int(cAvailable.count)
+	availableCount := int(C.PropertiesGetRequiredPropertyCount(cAvailable))
 	a := make([]string, 0, availableCount)
 	// Loop through the C available properties list and add it to the
 	// new Go available array.
