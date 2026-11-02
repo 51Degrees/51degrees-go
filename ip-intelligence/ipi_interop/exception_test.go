@@ -21,7 +21,11 @@
  * ********************************************************************* */
 package ipi_interop
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestNewException(t *testing.T) {
 	t.Run("create new exception", func(t *testing.T) {
@@ -118,4 +122,22 @@ func TestExceptionFullFlow(t *testing.T) {
 			t.Error("Exception should be okay after Clear()")
 		}
 	})
+}
+
+// TestMessageError checks that a message the C library allocates reaches the
+// error unchanged. The C message for a missing data file holds the file's
+// path, and the % in the path must not be read as a formatting verb.
+func TestMessageError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing-%d.ipi")
+
+	manager := NewResourceManager()
+	defer manager.Free()
+
+	err := InitManagerFromFile(manager, *NewConfigIpi(InMemory), "", path)
+	if err == nil {
+		t.Fatal("InitManagerFromFile() accepted a missing file")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error does not hold the path %q: %v", path, err)
+	}
 }

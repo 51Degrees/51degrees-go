@@ -22,10 +22,21 @@
 
 package ipi_interop
 
-//#include <string.h>
-//#include "ip-intelligence-cxx.h"
+/*
+#include <string.h>
+#include "ip-intelligence-cxx.h"
+
+// Frees a message the library allocated for the caller. fiftyoneDegreesFree
+// is a function pointer, which Go cannot call directly.
+static void freeMessage(const char *message) {
+	fiftyoneDegreesFree((void *)message);
+}
+*/
 import "C"
-import "runtime"
+import (
+	"errors"
+	"runtime"
+)
 
 const StatusNotSet = C.FIFTYONE_DEGREES_STATUS_NOT_SET
 
@@ -72,4 +83,13 @@ func (e *Exception) Clear() {
 func (e *Exception) IsOkay() bool {
 	return (e.CPtr == nil ||
 		e.CPtr.status == C.FIFTYONE_DEGREES_STATUS_NOT_SET)
+}
+
+// messageError returns an error holding a message that the C library
+// allocated for the caller, such as the result of ExceptionGetMessage or
+// StatusGetMessage, and frees the message. errors.New keeps the text as it
+// is, where fmt.Errorf would read any % in it as a formatting verb.
+func messageError(message *C.char) error {
+	defer C.freeMessage(message)
+	return errors.New(C.GoString(message))
 }

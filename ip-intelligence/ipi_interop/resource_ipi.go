@@ -26,7 +26,6 @@ package ipi_interop
 //#include "ip-intelligence-cxx.h"
 import "C"
 import (
-	"fmt"
 	"time"
 	"unsafe"
 )
@@ -54,14 +53,12 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 
 	// Check exception
 	if !exp.IsOkay() {
-		return fmt.Errorf(C.GoString(C.ExceptionGetMessage(exp.CPtr)))
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
 	}
 
 	// Check status code
 	if s != C.SUCCESS {
-		cMessage := C.StatusGetMessage(s, cPath)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return fmt.Errorf(C.GoString(cMessage))
+		return messageError(C.StatusGetMessage(s, cPath))
 	}
 
 	return nil
@@ -90,14 +87,12 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 
 	// Check exception
 	if !exp.IsOkay() {
-		return fmt.Errorf(C.GoString(C.ExceptionGetMessage(exp.CPtr)))
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
 	}
 
 	// Check status code
 	if s != C.SUCCESS {
-		cMessage := C.StatusGetMessage(s, cPath)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return fmt.Errorf(C.GoString(cMessage))
+		return messageError(C.StatusGetMessage(s, cPath))
 	}
 
 	return nil
@@ -116,7 +111,7 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 		exp.CPtr,
 	)
 	if !exp.IsOkay() {
-		return fmt.Errorf(C.GoString(C.ExceptionGetMessage(exp.CPtr)))
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
 	}
 	return nil
 }
