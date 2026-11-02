@@ -3,9 +3,9 @@
 ![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-go "Data rewards the curious") **Go modules for Device Detection and IP Intelligence**
 
 > [!IMPORTANT]
-> This repository is being set up. The Go repositories listed below are being merged into it, and until the move is finished, use the modules from those repositories as before.
+> The Go modules are published from this repository from version 4.5.166, under new module paths (see [What is where](#what-is-where)). The Go repositories listed below were merged into it, and their modules get no further releases.
 
-## What is moving here
+## Where it came from
 
 | Repository | Contents |
 | --- | --- |
@@ -26,7 +26,13 @@ Each repository is brought in with its full history, so commit SHAs match the or
 | `cxx` | The [51degrees-cxx](https://github.com/51Degrees/51degrees-cxx) submodule, which the engines' C sources are made from |
 | `ci` | The scripts the shared 51Degrees CI workflows call |
 
-Nothing is published under these module paths yet. A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`.
+A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`, so it is installed with, for example:
+
+```sh
+go get github.com/51Degrees/51degrees-go/device-detection/v4
+```
+
+Code moving from the old modules changes its imports from `github.com/51Degrees/common-go/v4`, `github.com/51Degrees/device-detection-go/v4` and `github.com/51Degrees/ip-intelligence-go/v4` to the paths above. The packages in them are the same.
 
 ## Working on the code
 
@@ -42,6 +48,6 @@ Each module requires the others at a published version, as your own code would. 
 pwsh ci/create-workspace.ps1
 ```
 
-`go.work` isn't committed.
+`go.work` isn't committed. The CI builds pull requests in the workspace, so a change to an engine is tested with the examples in the same pull request.
 
 The engines compile C sources made from the `cxx` submodule. After moving the submodule to another 51degrees-cxx release, run `pwsh ci/update-amalgamation.ps1` and commit the result. The build fails when they don't match.

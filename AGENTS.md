@@ -28,8 +28,12 @@ script also adds a `replace` for each requirement between these modules.
 `go.work` is never committed, and nothing else may add a `replace` to a
 `go.mod`, as it would be published with the module.
 
-CI builds each module both in the workspace and without it (`GOWORK=off`), to
-check the module as it is published.
+CI tests pull requests and publishes in the workspace, so the examples run
+against the code being changed or released, as the .NET repository's CI does
+with its projects. It also builds each published module without the workspace
+(`GOWORK=off`), to check the module as it is published. The examples aren't
+built without the workspace in CI: a change to an engine and its examples in
+one pull request would fail against the last release.
 
 ## The C sources
 
