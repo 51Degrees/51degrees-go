@@ -1,0 +1,28 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      dryrun:
+        type: boolean
+        default: false
+      common-ci-ref:
+        type: string
+        default: ''
+
+jobs:
+  Publish:
+    name: Publish
+    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@main
+    with:
+      repo-name: ${{ github.event.repository.name }}
+      org-name: ${{ github.event.repository.owner.login }}
+      dryrun: ${{ inputs.dryrun || false }}
+      common-ci-ref: ${{ inputs.common-ci-ref || '' }}
+      cache-assets: true
+    secrets:
+      token: ${{ secrets.ACCESS_TOKEN }}
+      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
+      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
+      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
+      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
