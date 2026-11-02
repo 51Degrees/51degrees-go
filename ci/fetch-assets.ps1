@@ -39,10 +39,13 @@ if ($Products -contains 'ip-intelligence') {
         -Path (Join-Path (Get-ProductPath $RepoPath 'ip-intelligence') $asn) | Out-Null
 }
 
-# The Device Detection tests look for their files in the module folder.
+# The Device Detection tests and examples look for their files in their own
+# module folder.
 if ($Products -contains 'device-detection') {
-    foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml") {
-        New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$asset" `
-            -Path (Join-Path (Get-ProductPath $RepoPath 'device-detection') $asset) | Out-Null
+    foreach ($folder in (Get-ProductPath $RepoPath 'device-detection'), (Join-Path $RepoPath 'examples/device-detection')) {
+        foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml") {
+            New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$asset" `
+                -Path (Join-Path $folder $asset) | Out-Null
+        }
     }
 }

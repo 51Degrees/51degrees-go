@@ -7,8 +7,8 @@ $AllProducts = @('common', 'device-detection', 'ip-intelligence')
 # Folders that belong to a single product. A change anywhere else, including
 # common, which both engines are built on, and CI, affects every product.
 $ProductPaths = @{
-    'device-detection' = @('device-detection/')
-    'ip-intelligence' = @('ip-intelligence/')
+    'device-detection' = @('device-detection/', 'examples/device-detection/')
+    'ip-intelligence' = @('ip-intelligence/', 'examples/ip-intelligence/')
 }
 
 # Returns the products the changed paths affect.

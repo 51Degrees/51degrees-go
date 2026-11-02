@@ -17,13 +17,13 @@ $higher = [ordered]@{}
 $lower = [ordered]@{}
 
 if ($Products -contains 'device-detection') {
-    # Absolute, because the example runs from the module folder.
+    # Absolute, because the example runs from its module folder.
     $output = Join-Path $rootDir "summary-device-detection.json"
     Remove-Item $output -ErrorAction SilentlyContinue
-    Push-Location (Get-ProductPath $RepoName 'device-detection')
+    Push-Location (Join-Path $RepoName 'examples/device-detection')
     try {
         Write-Host "Running the Device Detection performance example..."
-        go run ./examples/dd/performance -json-output $output `
+        go run ./dd/performance -json-output $output `
             -data-file "$rootDir/assets/51Degrees-LiteV4.1.hash" `
             -evidence-file "$rootDir/assets/20000 Evidence Records.yml"
     } finally {
@@ -36,10 +36,10 @@ if ($Products -contains 'device-detection') {
 
 if ($Products -contains 'ip-intelligence') {
     $env:DATA_FILE = "$rootDir/assets/51Degrees-EnterpriseIpiV41.ipi"
-    Push-Location (Get-ProductPath $RepoName 'ip-intelligence')
+    Push-Location (Join-Path $RepoName 'examples/ip-intelligence')
     try {
         Write-Host "Running the IP Intelligence performance example..."
-        go run ./examples/performance
+        go run ./performance
         # The example writes its figures to a report.
         switch -File performance_report.log -Regex {
             'Average ([^ ]+) ms per' { $lower.AvgMillisecsPerLookup = [double]$matches.1 }

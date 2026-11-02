@@ -22,12 +22,12 @@ function Test-Examples([string]$Product, [string]$ModulePath, [string]$JUnitName
     }
 }
 
-# The examples of each engine are packages of that engine's module.
+# The examples of each engine are a module of their own.
 if ($Products -contains 'device-detection') {
     $env:LICENSE_KEY = $DeviceDetection
     $env:DATA_FILE = "$PWD/assets/51Degrees-LiteV4.1.hash"
     $env:EVIDENCE_YAML = "$PWD/assets/20000 Evidence Records.yml"
-    Test-Examples 'device-detection' (Join-Path (Get-ProductPath $RepoName 'device-detection') 'examples') 'device-detection'
+    Test-Examples 'device-detection' (Join-Path $RepoName 'examples/device-detection') 'device-detection'
 }
 
 if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
@@ -37,13 +37,11 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
     $env:EVIDENCE_YAML = "$PWD/assets/ip-intelligence-evidence.yml"
     # Used only by the mixed examples, which combine both products.
     $env:DD_DATA_FILE = "$PWD/assets/TAC-HashV41.hash"
-    $ipi = Get-ProductPath $RepoName 'ip-intelligence'
     if ($Products -contains 'ip-intelligence') {
-        Test-Examples 'ip-intelligence' (Join-Path $ipi 'examples') 'ip-intelligence'
+        Test-Examples 'ip-intelligence' (Join-Path $RepoName 'examples/ip-intelligence') 'ip-intelligence'
     }
-    # The mixed examples are their own Go module, so ./... above does not reach
-    # them. They also use Device Detection, so a change to it runs them too.
-    Test-Examples 'ip-intelligence' (Join-Path $ipi 'examples/mixed') 'mixed'
+    # The mixed examples use both engines, so a change to either runs them.
+    Test-Examples 'ip-intelligence' (Join-Path $RepoName 'examples/mixed') 'mixed'
 }
 
 exit $failed

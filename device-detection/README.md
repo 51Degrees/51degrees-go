@@ -93,4 +93,4 @@ go doc -all
 
 ## Examples
 
-Examples can be found in the [examples](examples) sudbirectory. Users can follow its [README.md](examples/README.md) for details and comments in each examples for how to run them.
+Examples can be found in the [examples/device-detection](../examples/device-detection) folder. Users can follow its [README.md](../examples/device-detection/README.md) for details and comments in each examples for how to run them.

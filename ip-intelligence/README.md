@@ -68,5 +68,5 @@ go doc -all
 
 ### Examples
 
-Examples can be found in the [examples](examples) directory.
-Users can follow its [README.md](examples/README.md) for details and comments in each examples for how to run them.
+Examples can be found in the [examples/ip-intelligence](../examples/ip-intelligence) folder.
+Users can follow its [README.md](../examples/ip-intelligence/README.md) for details and comments in each examples for how to run them.

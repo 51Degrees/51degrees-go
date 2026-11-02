@@ -14,3 +14,34 @@
 | [ip-intelligence-go](https://github.com/51Degrees/ip-intelligence-go) | IP Intelligence |
 
 Each repository is brought in with its full history, so commit SHAs match the original repositories. Open issues and pull requests move here too.
+
+## What is where
+
+| Folder | Go module |
+| --- | --- |
+| `common` | `github.com/51Degrees/51degrees-go/common/v4` |
+| `device-detection` | `github.com/51Degrees/51degrees-go/device-detection/v4` |
+| `ip-intelligence` | `github.com/51Degrees/51degrees-go/ip-intelligence/v4` |
+| `examples/device-detection`, `examples/ip-intelligence`, `examples/mixed` | The examples, each a module of its own that isn't published |
+| `cxx` | The [51degrees-cxx](https://github.com/51Degrees/51degrees-cxx) submodule, which the engines' C sources are made from |
+| `ci` | The scripts the shared 51Degrees CI workflows call |
+
+Nothing is published under these module paths yet. A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`.
+
+## Working on the code
+
+Clone with the submodules:
+
+```sh
+git clone --recurse-submodules https://github.com/51Degrees/51degrees-go.git
+```
+
+Each module requires the others at a published version, as your own code would. To build and test them against each other instead, create a Go workspace:
+
+```sh
+pwsh ci/create-workspace.ps1
+```
+
+`go.work` isn't committed.
+
+The engines compile C sources made from the `cxx` submodule. After moving the submodule to another 51degrees-cxx release, run `pwsh ci/update-amalgamation.ps1` and commit the result. The build fails when they don't match.
