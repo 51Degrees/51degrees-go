@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> This repo is being merged into the monorepo https://github.com/51Degrees/51degrees-go. The move is in progress. Please don't open new issues or PRs here.
+
 # 51Degrees Common Go-Code Library
 
 ![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=common-go&utm_content=readme.md&utm_term=51degrees-common-go-code-library "Data rewards the curious") **51Degrees Common C Code**
