@@ -5,7 +5,7 @@
 
 ## Introduction
 
-This directory contains usage examples of the [ip-intelligence-go](https://github.com/51degrees/ip-intelligence-go) module.
+This directory contains usage examples of the [ip-intelligence-go](https://github.com/51Degrees/51degrees-go/tree/main/ip-intelligence) module.
 
 ## Pre-requisites
 

@@ -28,7 +28,7 @@
 This example shows how to use 51Degrees on-premise IP intelligence to
 process IP address before and after IPI file will be updated.
 
-This example is available in full on [GitHub](https://github.com/51Degrees/ip-intelligence-go-examples/tree/main/ipi_onpremise/update_polling_interval).
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/ip-intelligence/update_polling_interval).
 
 @include{doc} example-require-datafile-ipi.txt
 

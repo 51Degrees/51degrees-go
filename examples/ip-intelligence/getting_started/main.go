@@ -28,7 +28,7 @@ The example shows how to use 51Degrees on-premise IP intelligence to determine t
 (IpRangeStart, IpRangeEnd, RegisteredCountry, RegisteredName, Longitude, Latitude, Areas, Mcc) of a given IP address
 in golang wrapper integration.
 
-This example is available in full on [GitHub](https://github.com/51Degrees/ip-intelligence-go-examples/tree/main/ipi_onpremise/getting_started).
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/ip-intelligence/getting_started).
 
 @include{doc} example-require-datafile-ipi.txt
 @include{doc} example-how-to-run-ipi.txt

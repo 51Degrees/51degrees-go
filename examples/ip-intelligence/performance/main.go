@@ -35,7 +35,7 @@ Requesting properties from a single component
 reduces detection time compared with requesting properties from multiple components. If you
 don't specify any properties to detect, then all properties are detected.
 
-This example is available in full on [GitHub](https://github.com/51Degrees/ip-intelligence-go-examples/tree/main/ipi_onpremise/performance).
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/ip-intelligence/performance).
 
 @include{doc} example-require-datafile-ipi.txt
 

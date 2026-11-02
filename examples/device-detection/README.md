@@ -4,7 +4,7 @@
 
 ## Introduction
 
-This directory contains examples of how to use module [device-detection-go](https://github.com/51degrees/device-detection-go)
+This directory contains examples of how to use module [device-detection-go](https://github.com/51Degrees/51degrees-go/tree/main/device-detection)
 
 ## Pre-requisites
 To run these examples you will need a data file and example evidence for some of the tests.  To fetch these assets please run (from the repository root):

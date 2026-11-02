@@ -35,8 +35,8 @@ To run this example, perform the following command:
 go test -run Example_offline_processing
 ```
 
-This example will output to a file located at
-"../device-detection-go/dd/device-detection-cxx/device-detection-data/20000 Evidence Records.processed.yml".
+This example will output to a file next to the evidence file, named
+"20000 Evidence Records.processed.yml".
 This contains IsMobile, BrowserName, BrowserVersion, PlatformName, PlatformVersion, DeviceId
 */
 
