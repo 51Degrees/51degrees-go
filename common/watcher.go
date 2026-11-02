@@ -39,8 +39,10 @@ func newWatcher(filepath string, interval time.Duration, wait time.Duration) (*W
 		changed:   make(chan os.FileInfo),
 		errors:    make(chan error),
 		stopInter: make(chan bool),
-		stop:      make(chan bool),
-		running:   false,
+		// Buffered so the goroutine can report that it stopped without
+		// waiting for a reader.
+		stop:    make(chan bool, 1),
+		running: false,
 	}, nil
 }
 
@@ -52,47 +54,76 @@ func (fw *Watcher) Start() error {
 	}
 	fw.running = true
 
+	// Every wait in the goroutine also waits for Stop, so it never blocks on
+	// a channel once the watcher has been stopped.
 	go func() {
+		defer func() {
+			select {
+			case fw.stop <- true:
+			default:
+			}
+		}()
+
 		hasChanged := false
 		prevInfo, _ := os.Stat(fw.filepath)
 
 		for {
-			select {
-			case <-fw.stopInter:
-				fw.running = false
-				fw.stop <- true
-				return
-			default:
-				info, err := os.Stat(fw.filepath)
-				if err != nil {
-					if !os.IsNotExist(err) {
-						fw.errors <- err
+			info, err := os.Stat(fw.filepath)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					select {
+					case fw.errors <- err:
+					case <-fw.stopInter:
+						return
 					}
-					time.Sleep(fw.interval)
-					continue
 				}
-
-				if prevInfo == nil ||
-					info.Size() != prevInfo.Size() ||
-					info.ModTime() != prevInfo.ModTime() {
-
-					hasChanged = true
-					prevInfo = info
-
-					time.Sleep(fw.wait)
-					continue
-
-				} else if hasChanged {
-					hasChanged = false
-					fw.changed <- info
+				if !fw.sleep(fw.interval) {
+					return
 				}
+				continue
+			}
 
-				time.Sleep(fw.interval)
+			if prevInfo == nil ||
+				info.Size() != prevInfo.Size() ||
+				info.ModTime() != prevInfo.ModTime() {
+
+				hasChanged = true
+				prevInfo = info
+
+				if !fw.sleep(fw.wait) {
+					return
+				}
+				continue
+
+			} else if hasChanged {
+				hasChanged = false
+				select {
+				case fw.changed <- info:
+				case <-fw.stopInter:
+					return
+				}
+			}
+
+			if !fw.sleep(fw.interval) {
+				return
 			}
 		}
 	}()
 
 	return nil
+}
+
+// sleep waits for the duration, returning false if the watcher is stopped
+// first.
+func (fw *Watcher) sleep(d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-fw.stopInter:
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // Changed returns a channel that emits os.FileInfo for each detected file modification.
@@ -116,5 +147,6 @@ func (fw *Watcher) Stop() error {
 		return fmt.Errorf("error: the watcher is not running")
 	}
 	fw.stopInter <- true
+	fw.running = false
 	return nil
 }

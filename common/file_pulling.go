@@ -49,7 +49,7 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 
 	var lastModificationTimestamp *time.Time
 
-	if len(e.getFilePath()) > 0 {
+	if len(e.GetDataFile()) > 0 {
 		file, err := os.Stat(e.GetDataFile())
 		if err != nil {
 			e.logger.Printf("failed to get file info: %v", err)

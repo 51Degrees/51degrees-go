@@ -12,10 +12,16 @@ import (
 // FileUpdater manages to update a data file by pulling changes and optionally creating temporary copies or syncing states.
 // It supports auto-updates, file change detection, and customizable intervals for data pulls with optional randomization.
 type FileUpdater struct {
-	dataFile     string
-	dataFileUrl  string
-	tempDataDir  string
-	tempDataFile string
+	// The fields are held by pointer, so a getter with a value receiver
+	// copies only the pointer and does not read the fields the puller and
+	// the watcher write while they run.
+	*fileUpdater
+}
+
+type fileUpdater struct {
+	dataFile    string
+	dataFileUrl string
+	tempDataDir string
 
 	fileWatcherStarted          bool
 	isFileWatcherEnabled        bool
@@ -38,7 +44,7 @@ type FileUpdater struct {
 
 // NewFileUpdater initializes a new FileUpdater instance with default settings for updating and managing a data file.
 func NewFileUpdater(dataFileUrl string) *FileUpdater {
-	return &FileUpdater{
+	return &FileUpdater{&fileUpdater{
 		dataFileUrl: dataFileUrl,
 		tempDataDir: "",
 
@@ -55,7 +61,7 @@ func NewFileUpdater(dataFileUrl string) *FileUpdater {
 			logger:  DefaultLogger,
 			enabled: true,
 		},
-	}
+	}}
 }
 
 // SetDataFileUrl sets the URL of the data file used for updates.
@@ -211,7 +217,6 @@ func (e *FileUpdater) copyFileForReloadManager() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	e.tempDataFile = tempFilepath
 	fullPath := filepath.Join(dirPath, tempFilepath)
 
 	return fullPath, nil
@@ -268,15 +273,6 @@ func (e *FileUpdater) Watch(onChange func()) error {
 // RunWatcher starts the file watcher's goroutine to monitor file changes asynchronously.
 func (e *FileUpdater) RunWatcher() {
 	go e.fileWatcher.run()
-}
-
-// getFilePath returns the file path of the data file or its temporary copy depending on configuration settings.
-func (e *FileUpdater) getFilePath() string {
-	if e.isCreateTempDataCopyEnabled {
-		return filepath.Join(e.tempDataDir, e.tempDataFile)
-	}
-
-	return e.dataFile
 }
 
 // IncreaseFileExternallyChangedCount increments the counter tracking the number of times a file has been externally modified.
