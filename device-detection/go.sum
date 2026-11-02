@@ -1,4 +1,2 @@
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
-gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
-gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.166 h1:XWuMUqCqefg/y1dlpTfxsARV+dff5I3TTMKQXBZud98=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.166/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
