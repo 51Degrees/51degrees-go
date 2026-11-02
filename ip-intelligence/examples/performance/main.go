@@ -344,6 +344,9 @@ func runPerformance(engine *ipi_onpremise.Engine, params *common.ExampleParams, 
 func main() {
 	// Parse command-line flags
 	singleThreaded := flag.Bool("single", false, "Run in single-threaded mode (default is multi-threaded)")
+	// Where to write the results JSON the nightly performance graphs read.
+	// Empty leaves it unwritten, which is what an interactive run wants.
+	jsonOutputPath := flag.String("json-output", "", "Path to write the performance results JSON to")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -402,6 +405,19 @@ func main() {
 			// print report to the file
 			if err := report.PrintReport(reportFile); err != nil {
 				log.Fatalf("Failed to print report: %v", err)
+			}
+
+			// Write the machine-readable results the performance graphs read,
+			// when CI asks for them. The example writes this itself so the
+			// published figure does not depend on the wording or number
+			// formatting of the report above, which is free to change.
+			if *jsonOutputPath != "" {
+				results := common.NewPerformanceResults().
+					AddHigherIsBetter("DetectionsPerSecond", report.DetectionPerSecond()).
+					AddLowerIsBetter("AvgMillisecsPerDetection", report.AverageProcessingTime())
+				if err := results.WriteTo(*jsonOutputPath); err != nil {
+					log.Fatalf("Failed to write the performance results: %v", err)
+				}
 			}
 
 			engine.Stop()
