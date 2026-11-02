@@ -118,6 +118,21 @@ func (results *ResultsHash) Count() int {
 
 /* Metric Getters */
 
+// evaluateAll walks the graph of each component the results have not yet
+// walked. The walk of a component's graph sets the match metrics and the
+// matched User-Agent of its result, and unless the data set was created with
+// its properties named, a component's graph is walked only when one of its
+// properties is first read. So the getters below that read the results call
+// this first. It walks nothing when no graph is left to walk.
+func (results *ResultsHash) evaluateAll() error {
+	exp := NewException()
+	C.ResultsEvaluateAll(&results.CPtr.b.b, exp.CPtr)
+	if !exp.IsOkay() {
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
+	}
+	return nil
+}
+
 // DeviceId returns the unique device id. This matches the C API
 // fiftyoneDegreesHashGetDeviceIdFromResults.
 func (results *ResultsHash) DeviceId() (id string, err error) {
@@ -143,6 +158,9 @@ func (results *ResultsHash) DeviceIdByIndex(
 			"index %d is out of range. Only %d results available",
 			index, results.Count())
 	}
+	if err := results.evaluateAll(); err != nil {
+		return "", err
+	}
 
 	cResults := (*results.CResults).([]C.ResultHash)
 	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
@@ -161,8 +179,9 @@ func (results *ResultsHash) DeviceIdByIndex(
 }
 
 // Iterations returns the number of iterations carried out in order to find
-// a match.
+// a match. A graph that cannot be read counts as one that matched nothing.
 func (results *ResultsHash) Iterations() int32 {
+	_ = results.evaluateAll()
 	iterations := int32(0)
 	cResults := (*results.CResults).([]C.ResultHash)
 	for i := 0; i < int(results.CPtr.count); i++ {
@@ -179,12 +198,17 @@ func (results *ResultsHash) IterationsByIndex(index uint32) (int32, error) {
 			"index %d is out of range. Only %d results available",
 			index, results.Count())
 	}
+	if err := results.evaluateAll(); err != nil {
+		return 0, err
+	}
 	cResults := (*results.CResults).([]C.ResultHash)
 	return int32(cResults[index].iterations), nil
 }
 
-// Drift returns the maximum drift for a matched substring.
+// Drift returns the maximum drift for a matched substring. A graph that cannot
+// be read counts as one that matched nothing.
 func (results *ResultsHash) Drift() int32 {
+	_ = results.evaluateAll()
 	drift := int32(0)
 	cResults := (*results.CResults).([]C.ResultHash)
 	for i := 0; i < int(results.CPtr.count); i++ {
@@ -201,13 +225,18 @@ func (results *ResultsHash) DriftByIndex(index uint32) (int32, error) {
 			"index %d is out of range. Only %d results available",
 			index, results.Count())
 	}
+	if err := results.evaluateAll(); err != nil {
+		return 0, err
+	}
 	cResults := (*results.CResults).([]C.ResultHash)
 	return int32(cResults[index].drift), nil
 }
 
 // Difference returns the total difference between the results returned and
-// the target User-Agent.
+// the target User-Agent. A graph that cannot be read counts as one that
+// matched nothing.
 func (results *ResultsHash) Difference() int32 {
+	_ = results.evaluateAll()
 	difference := int32(0)
 	cResults := (*results.CResults).([]C.ResultHash)
 	for i := 0; i < int(results.CPtr.count); i++ {
@@ -224,12 +253,17 @@ func (results *ResultsHash) DifferenceByIndex(index uint32) (int32, error) {
 			"index %d is out of range. Only %d results available",
 			index, results.Count())
 	}
+	if err := results.evaluateAll(); err != nil {
+		return 0, err
+	}
 	cResults := (*results.CResults).([]C.ResultHash)
 	return int32(cResults[index].difference), nil
 }
 
 // MatchedNodes returns the number of hash nodes matched within the evidence.
+// A graph that cannot be read counts as one that matched nothing.
 func (results *ResultsHash) MatchedNodes() int32 {
+	_ = results.evaluateAll()
 	matchedNodes := int32(0)
 	cResults := (*results.CResults).([]C.ResultHash)
 	for i := 0; i < int(results.CPtr.count); i++ {
@@ -238,8 +272,10 @@ func (results *ResultsHash) MatchedNodes() int32 {
 	return matchedNodes
 }
 
-// Method returns the method used to determine the match result.
+// Method returns the method used to determine the match result. A graph that
+// cannot be read counts as one that matched nothing.
 func (results *ResultsHash) Method() MatchMethod {
+	_ = results.evaluateAll()
 	method := None
 	cResults := (*results.CResults).([]C.ResultHash)
 	for i := 0; i < int(results.CPtr.count); i++ {
@@ -258,6 +294,9 @@ func (results *ResultsHash) MethodByIndex(index uint32) (MatchMethod, error) {
 		return None, fmt.Errorf(
 			"index %d is out of range. Only %d results available",
 			index, results.Count())
+	}
+	if err := results.evaluateAll(); err != nil {
+		return None, err
 	}
 	cResults := (*results.CResults).([]C.ResultHash)
 	return cMethodMap[cResults[index].method], nil
@@ -291,6 +330,9 @@ func (results *ResultsHash) UserAgent(index int) (string, error) {
 		return "", fmt.Errorf(
 			"index %d is out of range. Only %d results available",
 			index, results.Count())
+	}
+	if err := results.evaluateAll(); err != nil {
+		return "", err
 	}
 	cResults := (*results.CResults).([]C.ResultHash)
 	return C.GoString(cResults[index].b.matchedUserAgent), nil
