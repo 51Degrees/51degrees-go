@@ -1,0 +1,11 @@
+# IDE specific files
+.idea/
+.idea/*
+.vscode/
+.vscode/*
+*.swp
+*.swo
+*~
+.DS_Store
+
+4.**/
