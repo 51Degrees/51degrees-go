@@ -1,6 +1,6 @@
 # 51Degrees Ip Intelligence API Examples
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=ip-intelligence-go&utm_content=examples-readme.md&utm_term=51degrees-ip-intelligence-api-examples "Data rewards the curious")
+![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-readme.md&utm_term=51degrees-ip-intelligence-api-examples "Data rewards the curious")
 **IP Intelligence Go Examples**
 
 ## Introduction

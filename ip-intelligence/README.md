@@ -1,6 +1,6 @@
 # 51Degrees IP Intelligence API
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=ip-intelligence-go&utm_content=readme.md&utm_term=51degrees-ip-intelligence-api "Data rewards the curious") **IP Intelligence in GO**
+![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-ip-intelligence-api "Data rewards the curious") **IP Intelligence in GO**
 
 ## Introduction
 
@@ -23,7 +23,7 @@ This Go version contains the following packages:
 ### Data File Setup
 
 To process IP addresses, you will need to use the 51Degrees data file.
-See [ip-intelligence-data](https://github.com/51Degrees/ip-intelligence-data) repo for the instructions on how to get a Lite data file or [contact us](https://51degrees.com/contact-us?utm_source=github&utm_medium=readme&utm_campaign=ip-intelligence-go&utm_content=readme.md&utm_term=data-file-setup) to get an Enterprise data file.
+See [ip-intelligence-data](https://github.com/51Degrees/ip-intelligence-data) repo for the instructions on how to get a Lite data file or [contact us](https://51degrees.com/contact-us?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=data-file-setup) to get an Enterprise data file.
 
 ### Windows Configuration
 

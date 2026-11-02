@@ -60,7 +60,7 @@ config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
 		// 3. No license key is required when using a custom URL
 		// For production use, you will eventually need to use a Distributor service and
 		// license key to keep your data file updated.
-		// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=ip-intelligence-go&utm_content=examples-update_polling_interval-main.go&utm_term=top
+		// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=top
 		ipi_onpremise.WithLicenseKey(params.LicenseKey),
 
 		// WithAutoUpdate enables or disables auto update
@@ -209,7 +209,7 @@ func main() {
 				// 3. No license key is required when using a custom URL
 				// For production use, you will eventually need to use a Distributor service and
 				// license key to keep your data file updated.
-				// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=ip-intelligence-go&utm_content=examples-update_polling_interval-main.go&utm_term=main
+				// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=main
 				ipi_onpremise.WithLicenseKey(params.LicenseKey),
 
 				// Enable automatic updates.
