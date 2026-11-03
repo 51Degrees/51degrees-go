@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/getting_started.go
+@example getting_started/main.go
 # Getting started example of using 51Degrees IP intelligence.
 
 The example shows how to use 51Degrees on-premise IP intelligence to determine the IP parameters

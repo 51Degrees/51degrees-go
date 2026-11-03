@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/performance.go
+@example performance/main.go
 # The example illustrates a "clock-time" benchmark for assessing detection speed.
 
 It's important to understand the trade-offs between performance, memory usage and accuracy, that
