@@ -10,19 +10,6 @@ import (
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 )
 
-// testPropertyIndexer is a mock for the resultsPropertyIndexer interface that
-// maps property names to fixed indexes without any CGO dependency.
-type testPropertyIndexer struct {
-	nameToIndex map[string]int
-}
-
-func (m *testPropertyIndexer) GetPropertyIndexByName(name string) int {
-	if idx, ok := m.nameToIndex[name]; ok {
-		return idx
-	}
-	return -1
-}
-
 // Mock implementations for testing
 type mockResourceManager struct {
 	freed           bool
@@ -377,191 +364,16 @@ func TestEngine_recoverEngine(t *testing.T) {
 	engine.recoverEngine()
 }
 
+// TestEngine_GetPropertyNameByIndex checks an engine with no data set loaded.
+// TestReloadToDifferentProperties checks engines with data, across reloads.
 func TestEngine_GetPropertyNameByIndex(t *testing.T) {
-	tests := []struct {
-		name     string
-		index    int
-		cache    map[int]string
-		expected string
-	}{
-		{
-			name:     "existing index",
-			index:    0,
-			cache:    map[int]string{0: "IpRangeStart", 1: "Country"},
-			expected: "IpRangeStart",
-		},
-		{
-			name:     "non-existing index",
-			index:    99,
-			cache:    map[int]string{0: "IpRangeStart", 1: "Country"},
-			expected: "",
-		},
-		{
-			name:     "empty cache",
-			index:    0,
-			cache:    map[int]string{},
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			engine := &Engine{
-				propertyNameCache: tt.cache,
-			}
-
-			result := engine.GetPropertyNameByIndex(tt.index)
-			if result != tt.expected {
-				t.Errorf("Expected %q, got %q", tt.expected, result)
-			}
-		})
-	}
-}
-
-// TestInitPropertyIndexesWithIndexer_EmptyProperties confirms that when
-// managerProperties is nil or empty the engine:
-//   - calls availablePropertyNamesProvider to discover all property names,
-//   - populates both name caches from those names, and
-//   - leaves propertyIndexes nil so that GetWeightedValuesByIndexes passes NULL
-//     to the C layer (which then returns all available properties).
-func TestInitPropertyIndexesWithIndexer_EmptyProperties(t *testing.T) {
-	// Inject deterministic property names without requiring a real ResourceManager.
-	origProvider := availablePropertyNamesProvider
-	availablePropertyNamesProvider = func(_ *ipi_interop.ResourceManager) []string {
-		return []string{"IpRangeStart", "Country", "City"}
-	}
-	defer func() { availablePropertyNamesProvider = origProvider }()
-
-	engine := &Engine{
-		managerProperties:  nil,
-		propertyIndexCache: make(map[string]int),
-		propertyNameCache:  make(map[int]string),
-	}
-
-	mock := &testPropertyIndexer{
-		nameToIndex: map[string]int{
-			"IpRangeStart": 0,
-			"Country":      3,
-			"City":         7,
-		},
-	}
-
-	engine.initPropertyIndexesWithIndexer(mock)
-
-	// propertyIndexes must remain nil: a nil slice causes GetWeightedValuesByIndexes
-	// to pass a NULL index array to the C layer, which returns all properties.
-	if engine.propertyIndexes != nil {
-		t.Errorf("propertyIndexes should be nil in all-properties mode, got %v", engine.propertyIndexes)
-	}
-
-	// Every property provided by the mock dataset must be resolvable by name.
-	wantNameCache := map[int]string{0: "IpRangeStart", 3: "Country", 7: "City"}
-	for idx, name := range wantNameCache {
-		if got := engine.GetPropertyNameByIndex(idx); got != name {
-			t.Errorf("GetPropertyNameByIndex(%d) = %q, want %q", idx, got, name)
+	engine := &Engine{}
+	for _, index := range []int{-1, 0, 99} {
+		if got := engine.GetPropertyNameByIndex(index); got != "" {
+			t.Errorf("GetPropertyNameByIndex(%d) = %q with no data set, want \"\"",
+				index, got)
 		}
 	}
-
-	// Every property must also be findable by name in the index cache.
-	wantIndexCache := map[string]int{"IpRangeStart": 0, "Country": 3, "City": 7}
-	for name, idx := range wantIndexCache {
-		if got, ok := engine.propertyIndexCache[name]; !ok || got != idx {
-			t.Errorf("propertyIndexCache[%q] = %d, want %d", name, got, idx)
-		}
-	}
-}
-
-// TestInitPropertyIndexesWithIndexer_ExplicitProperties confirms that when
-// managerProperties is non-empty the engine builds propertyIndexes for each
-// named property and populates both caches — preserving the pre-existing
-// targeted-query behaviour.
-func TestInitPropertyIndexesWithIndexer_ExplicitProperties(t *testing.T) {
-	props := []string{"IpRangeStart", "Country"}
-	engine := &Engine{
-		managerProperties:  props,
-		propertyIndexCache: make(map[string]int),
-		propertyNameCache:  make(map[int]string),
-	}
-
-	mock := &testPropertyIndexer{
-		nameToIndex: map[string]int{
-			"IpRangeStart": 0,
-			"Country":      3,
-		},
-	}
-
-	engine.initPropertyIndexesWithIndexer(mock)
-
-	if len(engine.propertyIndexes) != len(props) {
-		t.Fatalf("expected %d propertyIndexes, got %d", len(props), len(engine.propertyIndexes))
-	}
-	if engine.propertyIndexes[0] != 0 {
-		t.Errorf("propertyIndexes[0] = %d, want 0", engine.propertyIndexes[0])
-	}
-	if engine.propertyIndexes[1] != 3 {
-		t.Errorf("propertyIndexes[1] = %d, want 3", engine.propertyIndexes[1])
-	}
-
-	if got := engine.GetPropertyNameByIndex(0); got != "IpRangeStart" {
-		t.Errorf("GetPropertyNameByIndex(0) = %q, want IpRangeStart", got)
-	}
-	if got := engine.GetPropertyNameByIndex(3); got != "Country" {
-		t.Errorf("GetPropertyNameByIndex(3) = %q, want Country", got)
-	}
-	if got, ok := engine.propertyIndexCache["IpRangeStart"]; !ok || got != 0 {
-		t.Errorf("propertyIndexCache[IpRangeStart] = %d, want 0", got)
-	}
-}
-
-// TestAvailablePropertyNamesProviderCalledForEmpty verifies that
-// availablePropertyNamesProvider is invoked when managerProperties is empty,
-// and is not invoked when an explicit list is provided.
-func TestAvailablePropertyNamesProviderCalledForEmpty(t *testing.T) {
-	t.Run("called when empty", func(t *testing.T) {
-		called := false
-		orig := availablePropertyNamesProvider
-		availablePropertyNamesProvider = func(_ *ipi_interop.ResourceManager) []string {
-			called = true
-			return []string{"TestProp"}
-		}
-		defer func() { availablePropertyNamesProvider = orig }()
-
-		engine := &Engine{
-			managerProperties:  nil,
-			propertyIndexCache: make(map[string]int),
-			propertyNameCache:  make(map[int]string),
-		}
-		engine.initPropertyIndexesWithIndexer(&testPropertyIndexer{
-			nameToIndex: map[string]int{"TestProp": 0},
-		})
-
-		if !called {
-			t.Error("availablePropertyNamesProvider should be called when managerProperties is nil")
-		}
-	})
-
-	t.Run("not called when explicit", func(t *testing.T) {
-		called := false
-		orig := availablePropertyNamesProvider
-		availablePropertyNamesProvider = func(_ *ipi_interop.ResourceManager) []string {
-			called = true
-			return nil
-		}
-		defer func() { availablePropertyNamesProvider = orig }()
-
-		engine := &Engine{
-			managerProperties:  []string{"IpRangeStart"},
-			propertyIndexCache: make(map[string]int),
-			propertyNameCache:  make(map[int]string),
-		}
-		engine.initPropertyIndexesWithIndexer(&testPropertyIndexer{
-			nameToIndex: map[string]int{"IpRangeStart": 0},
-		})
-
-		if called {
-			t.Error("availablePropertyNamesProvider should not be called when managerProperties is explicit")
-		}
-	})
 }
 
 func TestConstants(t *testing.T) {
@@ -621,23 +433,6 @@ func BenchmarkEngine_hasDefaultDistributorParams(b *testing.B) {
 	}
 }
 
-func BenchmarkEngine_GetPropertyNameByIndex(b *testing.B) {
-	engine := &Engine{
-		propertyNameCache: map[int]string{
-			0: "IpRangeStart",
-			1: "IpRangeEnd",
-			2: "Country",
-			3: "City",
-			4: "Latitude",
-		},
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = engine.GetPropertyNameByIndex(i % 5)
-	}
-}
-
 // Integration-style tests (these would require actual data files in a real scenario)
 func TestEngine_Integration(t *testing.T) {
 	if testing.Short() {
@@ -649,24 +444,16 @@ func TestEngine_Integration(t *testing.T) {
 	t.Log("Integration test placeholder - would require actual IP intelligence data file")
 }
 
-// Test for race conditions
+// Test for race conditions. TestLookupsDuringReloads checks lookups and names
+// while reloads replace the data set.
 func TestEngine_ConcurrentAccess(t *testing.T) {
-	engine := &Engine{
-		propertyNameCache: map[int]string{
-			0: "IpRangeStart",
-			1: "Country",
-		},
-		propertyIndexCache: map[string]int{
-			"IpRangeStart": 0,
-			"Country":      1,
-		},
-	}
+	engine := &Engine{}
 
 	var wg sync.WaitGroup
 	numGoroutines := 10
 	numIterations := 100
 
-	// Test concurrent reads from property caches
+	// Test concurrent reads of the property names
 	wg.Add(numGoroutines)
 	for i := 0; i < numGoroutines; i++ {
 		go func() {

@@ -124,7 +124,8 @@ func (r *ResultsIpi) GetPropertyIndexByName(propertyName string) int {
 // getPropertyNameSafe retrieves the property name associated with a required index from the given dataset safely.
 // Returns an empty string if the required index is invalid or out of bounds.
 func (r *ResultsIpi) getPropertyNameSafe(dataSet *C.DataSetIpi, requiredIndex C.int) string {
-	if requiredIndex < 0 || requiredIndex >= C.int(dataSet.b.b.available.count) {
+	count := C.fiftyoneDegreesPropertiesGetRequiredPropertyCount(dataSet.b.b.available)
+	if requiredIndex < 0 || C.uint32_t(requiredIndex) >= count {
 		return ""
 	}
 
@@ -167,9 +168,12 @@ type header struct {
 	rawWeighting          C.uint32_t
 }
 
-// GetWeightedValuesByIndexes retrieves weighted values using pre-computed property indexes
-// and a property name resolver function to avoid expensive CGO calls for name resolution.
-// The resolver function should provide fast index→name mapping (e.g., from Engine's cache).
+// GetWeightedValuesByIndexes retrieves weighted values for the required property
+// indexes, or for every required property when indexes is nil. An index is a
+// place in the required properties of the data set the results were made from.
+// The resolver, which may be nil, names each index without a CGO call, and must
+// give names from that same data set. Where it gives no name, the name is read
+// from the data set.
 func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResolver func(int) string) (Values, error) {
 	dataSet := (*C.DataSetIpi)(r.CPtr.b.dataSet)
 	exception := NewException()
@@ -217,6 +221,9 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 	weightedByReqIndex := make(map[C.int]bool)
 	typeException := NewException()
 	defer typeException.Free()
+	// Names read from the data set, once for each property rather than for
+	// each of its values.
+	var namesRead map[C.int]string
 
 	// Create a Go slice from the C array
 	headers := unsafe.Slice(collection.items, collection.itemsCount)
@@ -225,11 +232,20 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 
 		requiredPropertyIndex := nextHeader.requiredPropertyIndex
 
-		// OPTIMIZATION: Use Engine's property name cache to avoid expensive CGO calls
-		propName := propertyNameResolver(int(requiredPropertyIndex))
+		propName := ""
+		if propertyNameResolver != nil {
+			propName = propertyNameResolver(int(requiredPropertyIndex))
+		}
 		if propName == "" {
-			// Fallback to CGO call if not in cache (shouldn't happen for managed properties)
-			propName = r.getPropertyNameSafe(dataSet, requiredPropertyIndex)
+			if namesRead == nil {
+				namesRead = make(map[C.int]string)
+			}
+			name, read := namesRead[requiredPropertyIndex]
+			if !read {
+				name = r.getPropertyNameSafe(dataSet, requiredPropertyIndex)
+				namesRead[requiredPropertyIndex] = name
+			}
+			propName = name
 		}
 
 		values.InitProperty(propName)

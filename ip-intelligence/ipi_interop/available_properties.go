@@ -27,25 +27,22 @@ package ipi_interop
 import "C"
 import "unsafe"
 
-// GetAvailablePropertyNames returns the names of all properties available in
-// the dataset after the manager has been initialized. It enumerates the
-// available-properties set stored in the dataset, which is the same set used
-// by the C results-collection function when it receives a NULL property-index
-// array (i.e. the "return all properties" path).
-//
-// This function is called by the engine when no explicit properties list was
-// supplied, so that the Go-side name cache covers every property the C engine
-// may return.
+// GetAvailablePropertyNames returns the names of the required properties that
+// the manager's current data set has, in required property index order. They
+// are the names the engine was given that the data file has, or every property
+// of the data file when the engine was given none.
 func GetAvailablePropertyNames(manager *ResourceManager) []string {
 	cDataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 
-	count := int(cDataSet.b.b.available.count)
+	available := cDataSet.b.b.available
+	count := int(C.fiftyoneDegreesPropertiesGetRequiredPropertyCount(available))
 	names := make([]string, 0, count)
 	for i := 0; i < count; i++ {
-		res := C.fiftyoneDegreesPropertiesGetNameFromRequiredIndex(
-			cDataSet.b.b.available, C.int(i),
-		)
+		if C.fiftyoneDegreesPropertiesGetAvailableIndex(available, C.int(i)) < 0 {
+			continue
+		}
+		res := C.fiftyoneDegreesPropertiesGetNameFromRequiredIndex(available, C.int(i))
 		if res != nil {
 			names = append(names, C.GoString(&res.value))
 		}
