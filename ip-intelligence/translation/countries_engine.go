@@ -27,8 +27,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/51Degrees/pipeline-go/core"
-	pltranslation "github.com/51Degrees/pipeline-go/elements/translation"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )

@@ -26,8 +26,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_interop"
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // fakeProcessor is a stand-in for the on-premise engine.

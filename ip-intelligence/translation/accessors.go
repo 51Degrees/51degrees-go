@@ -22,7 +22,7 @@
 
 package translation
 
-import "github.com/51Degrees/pipeline-go/core"
+import "github.com/51Degrees/51degrees-go/pipeline/v4/core"
 
 // CountryNamesData provides typed access to the CountryCodeTranslationEngine
 // (Engine 1) output: weighted English country names. It mirrors the .NET

@@ -27,8 +27,8 @@ import (
 	"log/slog"
 	"math"
 
-	"github.com/51Degrees/ip-intelligence-go/v4/ipi_interop"
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // IpiProcessor is the subset of the on-premise IP Intelligence engine that the

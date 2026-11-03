@@ -25,7 +25,7 @@ package translation
 import (
 	"log/slog"
 
-	pltranslation "github.com/51Degrees/pipeline-go/elements/translation"
+	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
 )
 
 // CountryCodeTranslationEngineBuilder builds Engine 1, which translates the

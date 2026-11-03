@@ -25,8 +25,8 @@ package translation
 import (
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
-	pltranslation "github.com/51Degrees/pipeline-go/elements/translation"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
 )
 
 // --- test doubles and helpers -------------------------------------------------

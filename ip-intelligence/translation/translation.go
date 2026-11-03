@@ -33,7 +33,7 @@
 //	  -> CountriesTranslationEngine    (English name -> browser language + All lists)
 //
 // This mirrors the .NET FiftyOne.IpIntelligence.Translation package and reuses
-// the generic translation behaviour in pipeline-go's elements/translation.
+// the generic translation behaviour in the Pipeline module's elements/translation.
 package translation
 
 // Element-data keys used by the country translation flow elements.
