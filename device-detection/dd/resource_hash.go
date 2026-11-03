@@ -180,9 +180,10 @@ func constructResponseHeaders(manager *ResourceManager) map[string]([]string) {
 	// Release the dataset
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 
-	// Loop through available properties
+	// Loop through available properties, which with properties named are the
+	// names given, as PropertiesGetNameFromRequiredIndex takes them
 	cAvailable := cDataSet.b.b.available
-	availableCount := int(cAvailable.count)
+	availableCount := int(C.PropertiesGetRequiredPropertyCount(cAvailable))
 	responseHeaders := make(map[string]([]string))
 	// Loop through the C available properties list and add it to the
 	// new Go available array.
