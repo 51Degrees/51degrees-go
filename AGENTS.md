@@ -76,6 +76,6 @@ commits. The nightly pipeline also merges every non-draft pull request into
 
 ## History
 
-The history of common-go, device-detection-go, ip-intelligence-go and
-pipeline-go was brought in with `git subtree add`, so commit SHAs match the
+The history of common-go, device-detection-go, ip-intelligence-go and the Go
+pipeline library was brought in with `git subtree add`, so commit SHAs match the
 original repositories. Use `git log --follow` to trace a file back through its move.
