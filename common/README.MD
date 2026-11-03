@@ -91,5 +91,5 @@ Test files:
 - Compatible with Go modules
 
 ## Related Projects
-- [51Degrees Device Detection Go](https://github.com/51Degrees/device-detection-go)
-- [51Degrees IP Intelligence Go](https://github.com/51Degrees/ip-intelligence-go)
+- [51Degrees Device Detection Go](https://github.com/51Degrees/51degrees-go/tree/main/device-detection)
+- [51Degrees IP Intelligence Go](https://github.com/51Degrees/51degrees-go/tree/main/ip-intelligence)

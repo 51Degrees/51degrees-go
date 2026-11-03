@@ -47,7 +47,7 @@ go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 
 ### Vendored C Library
 
-Implementation wraps an amalgamated C library from [ip-intelligence-cxx](https://github.com/51Degrees/ip-intelligence-cxx) repo
+Implementation wraps an amalgamated C library from [ip-intelligence-cxx](https://github.com/51Degrees/51degrees-cxx) repo
 
 ## Development
 
