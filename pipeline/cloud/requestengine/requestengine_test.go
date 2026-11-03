@@ -33,7 +33,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // cloudServer is a fake 51Degrees cloud service for tests.

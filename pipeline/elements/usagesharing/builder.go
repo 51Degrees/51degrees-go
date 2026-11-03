@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // Builder constructs a Usage Sharing Element.

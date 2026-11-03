@@ -22,7 +22,7 @@
 
 package core
 
-import "github.com/51Degrees/pipeline-go/core/typedmap"
+import "github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
 
 // ElementData is a container, within Flow Data, for the Property values relating
 // to a particular Flow Element. Values are set by the Element during processing

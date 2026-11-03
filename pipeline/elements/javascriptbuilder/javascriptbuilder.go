@@ -35,9 +35,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
-	"github.com/51Degrees/pipeline-go/elements/sequence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/jsonbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 )
 
 // The generated artifact is JavaScript, and the Mustache renderer deliberately

@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 func TestDataFileTierMessage(t *testing.T) {

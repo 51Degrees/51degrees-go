@@ -31,9 +31,9 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/51Degrees/pipeline-go/cloud/requestengine"
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // BaseCloudAspectEngine supplies the shared behavior for Cloud Aspect Engines.

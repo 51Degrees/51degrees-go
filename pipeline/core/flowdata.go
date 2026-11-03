@@ -25,7 +25,7 @@ package core
 import (
 	"sync"
 
-	"github.com/51Degrees/pipeline-go/core/typedmap"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
 )
 
 // FlowData is the fundamental unit of work within the Pipeline API. It carries

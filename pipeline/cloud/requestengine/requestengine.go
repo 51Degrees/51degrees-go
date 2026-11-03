@@ -39,8 +39,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // DataKey is the Element Data key under which the Cloud Request Engine stores

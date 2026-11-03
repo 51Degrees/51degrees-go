@@ -25,7 +25,7 @@ package setheaders
 import (
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // fakeEngine produces SetHeader-prefixed Properties for the Set Headers Element

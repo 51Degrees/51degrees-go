@@ -47,10 +47,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
-	"github.com/51Degrees/pipeline-go/examples/starsign"
-	"github.com/51Degrees/pipeline-go/web"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/web"
 )
 
 const (

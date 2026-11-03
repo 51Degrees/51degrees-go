@@ -32,8 +32,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // DataKey is the Element Data key for the JSON Builder Element.

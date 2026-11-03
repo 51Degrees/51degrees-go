@@ -33,8 +33,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/sequence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 )
 
 type capture struct {

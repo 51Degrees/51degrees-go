@@ -40,11 +40,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/51Degrees/pipeline-go/cloud/aspectengine"
-	"github.com/51Degrees/pipeline-go/cloud/requestengine"
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
-	"github.com/51Degrees/pipeline-go/examples/starsign"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/aspectengine"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 const aspectKey = "starsign"

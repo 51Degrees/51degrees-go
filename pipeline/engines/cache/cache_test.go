@@ -25,7 +25,7 @@ package cache
 import (
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 func TestLRUEviction(t *testing.T) {

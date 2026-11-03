@@ -37,10 +37,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/javascriptbuilder"
-	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
-	"github.com/51Degrees/pipeline-go/elements/setheaders"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/javascriptbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/jsonbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/setheaders"
 )
 
 // Default intercepted URL paths.

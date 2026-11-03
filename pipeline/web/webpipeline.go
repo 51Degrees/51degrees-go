@@ -31,11 +31,11 @@ package web
 import (
 	"log/slog"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/javascriptbuilder"
-	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
-	"github.com/51Degrees/pipeline-go/elements/sequence"
-	"github.com/51Degrees/pipeline-go/elements/setheaders"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/javascriptbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/jsonbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/setheaders"
 )
 
 // PipelineConfig controls assembly of a web-ready Pipeline.

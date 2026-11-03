@@ -25,8 +25,8 @@ package engines
 import (
 	"log/slog"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines/dataupdate"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/dataupdate"
 )
 
 // OnPremiseAspectEngine is an Aspect Engine that performs processing using a

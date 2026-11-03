@@ -25,7 +25,7 @@ package translation
 import (
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // ipEngine is a fake source element producing values to be translated.

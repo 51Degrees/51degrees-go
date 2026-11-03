@@ -26,9 +26,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/sequence"
-	"github.com/51Degrees/pipeline-go/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // deviceEngine is a fake engine producing a mix of value types for the JSON

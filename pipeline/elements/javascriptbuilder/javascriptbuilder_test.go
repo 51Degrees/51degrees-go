@@ -26,9 +26,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/jsonbuilder"
-	"github.com/51Degrees/pipeline-go/elements/sequence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/jsonbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 )
 
 func TestMustacheVariables(t *testing.T) {

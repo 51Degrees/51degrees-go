@@ -49,8 +49,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/elements/sequence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 )
 
 // DataKey is the identifier for the Usage Sharing Element. It produces no
@@ -495,17 +495,17 @@ func serverIP() string {
 	return serverIPValue
 }
 
-// coreVersion returns the pipeline-go module version from the build info, or the
+// coreVersion returns the Pipeline module version from the build info, or the
 // fallback apiVersion when it is unavailable (for example in tests or a dev
 // build), so shared usage reports which Pipeline version produced it.
 func coreVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, d := range info.Deps {
-			if d.Path == "github.com/51Degrees/pipeline-go" && d.Version != "" {
+			if d.Path == "github.com/51Degrees/51degrees-go/pipeline/v4" && d.Version != "" {
 				return d.Version
 			}
 		}
-		if info.Main.Path == "github.com/51Degrees/pipeline-go" &&
+		if info.Main.Path == "github.com/51Degrees/51degrees-go/pipeline/v4" &&
 			info.Main.Version != "" && info.Main.Version != "(devel)" {
 			return info.Main.Version
 		}

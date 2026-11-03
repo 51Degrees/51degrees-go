@@ -1,4 +1,4 @@
-module github.com/51Degrees/pipeline-go
+module github.com/51Degrees/51degrees-go/pipeline/v4
 
 go 1.22
 

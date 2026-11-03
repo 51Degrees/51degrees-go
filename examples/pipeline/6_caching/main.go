@@ -38,10 +38,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
-	"github.com/51Degrees/pipeline-go/engines/cache"
-	"github.com/51Degrees/pipeline-go/examples/starsign"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/cache"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 const evidenceDateOfBirth = "query.date-of-birth"

@@ -35,7 +35,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // Default cache configuration values from the caching specification.

@@ -28,8 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines/cache"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/cache"
 )
 
 // AspectEngine is a specialization of Flow Element with the features common to

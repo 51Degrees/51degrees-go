@@ -28,8 +28,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/51Degrees/pipeline-go/cloud/requestengine"
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // TestResponseJSONDistinguishesFailure verifies that when the cloud request ran

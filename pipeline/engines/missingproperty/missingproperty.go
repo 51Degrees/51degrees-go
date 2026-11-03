@@ -32,7 +32,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // Reason codes set on core.PropertyMissingError.Reason so a caller can branch

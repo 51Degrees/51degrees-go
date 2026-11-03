@@ -34,7 +34,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // guidRe matches an RFC 4122 GUID. The session id is written into a JS string

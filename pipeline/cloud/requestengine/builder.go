@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // Builder constructs a CloudRequestEngine. The Resource Key is required.

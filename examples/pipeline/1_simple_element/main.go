@@ -35,8 +35,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/examples/starsign"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 // EvidenceDateOfBirth is the Evidence key the element reads.

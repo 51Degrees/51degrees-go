@@ -31,7 +31,7 @@ package engines
 import (
 	"sync/atomic"
 
-	"github.com/51Degrees/pipeline-go/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // AspectData is a specialization of Element Data produced by an Aspect Engine.
