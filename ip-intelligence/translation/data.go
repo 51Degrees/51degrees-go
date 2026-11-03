@@ -25,23 +25,21 @@ package translation
 import (
 	"embed"
 
-	pltranslation "github.com/51Degrees/pipeline-go/elements/translation"
+	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
 )
 
-// translationFS embeds the translation YAML from the ip-intelligence-data
-// submodule so the package stays a single source of truth with the data repo.
+// translationFS embeds the translation YAML, a copy of the Translations folder
+// of ip-intelligence-data that ci/update-translations.ps1 makes from the cxx
+// submodule. A Go module holds only its own files, so the data is part of the
+// package rather than read from a submodule.
 // countrycodes.en_GB.yml maps ISO code -> English name; the OSM/
 // countries.<locale>.yml files map English name -> localized name.
 //
-// The submodule must be checked out for the build to succeed (git submodule
-// update --init translation/ip-intelligence-data).
-//
-//go:embed ip-intelligence-data/Translations
+//go:embed Translations
 var translationFS embed.FS
 
-// translationRoot is the embed path prefix for the Translations folder inside
-// the ip-intelligence-data submodule.
-const translationRoot = "ip-intelligence-data/Translations"
+// translationRoot is the embed path prefix for the Translations folder.
+const translationRoot = "Translations"
 
 // countryCodeSources returns the country-code translation source, keyed by file
 // name so the locale can be derived from it.

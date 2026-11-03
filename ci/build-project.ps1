@@ -7,6 +7,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 . $PSScriptRoot/products.ps1
 
 & $PSScriptRoot/update-amalgamation.ps1 -Check
+& $PSScriptRoot/update-translations.ps1 -Check
 
 # The tests build the packages too. Building first makes a compile error show
 # as its own failure. Each module is also built on its own, without the

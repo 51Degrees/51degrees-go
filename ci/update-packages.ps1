@@ -20,6 +20,7 @@ if ($release -and $release -ne $current) {
     git -C $RepoName submodule update --init --recursive cxx
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
+& (Join-Path $RepoName ci/update-translations.ps1)
 
 # Update the dependencies of each module, without the workspace. The examples
 # move to the latest release of the published modules. A change to them alone
