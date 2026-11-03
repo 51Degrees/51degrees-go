@@ -12,6 +12,7 @@
 | [common-go](https://github.com/51Degrees/common-go) | The common library the engines are built on: data file updates and file watching |
 | [device-detection-go](https://github.com/51Degrees/device-detection-go) | Device Detection |
 | [ip-intelligence-go](https://github.com/51Degrees/ip-intelligence-go) | IP Intelligence |
+| [pipeline-go](https://github.com/51Degrees/pipeline-go) | The Pipeline API, from version 4.5.168 |
 
 Each repository is brought in with its full history, so commit SHAs match the original repositories. Open issues and pull requests move here too.
 
@@ -22,7 +23,8 @@ Each repository is brought in with its full history, so commit SHAs match the or
 | `common` | `github.com/51Degrees/51degrees-go/common/v4` |
 | `device-detection` | `github.com/51Degrees/51degrees-go/device-detection/v4` |
 | `ip-intelligence` | `github.com/51Degrees/51degrees-go/ip-intelligence/v4` |
-| `examples/device-detection`, `examples/ip-intelligence`, `examples/mixed` | The examples, each a module of its own that isn't published |
+| `pipeline` | `github.com/51Degrees/51degrees-go/pipeline/v4` |
+| `examples/device-detection`, `examples/ip-intelligence`, `examples/mixed`, `examples/pipeline` | The examples, each a module of its own that isn't published |
 | `cxx` | The [51degrees-cxx](https://github.com/51Degrees/51degrees-cxx) submodule, which the engines' C sources are made from |
 | `ci` | The scripts the shared 51Degrees CI workflows call |
 
