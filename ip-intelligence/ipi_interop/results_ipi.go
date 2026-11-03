@@ -40,7 +40,6 @@ var uint16Max = float64(C.UINT16_MAX)
 // value is profileGroupWeight*valueWeight, so a value that fills its matched IP
 // range reaches this maximum.
 var maxWeighting = uint16Max * uint16Max
-
 // ResultsIpi represents a structure to manage IP-related results in the C library.
 // It contains a pointer to the C.ResultsIpi structure and a dynamic C result slice.
 type ResultsIpi struct {
