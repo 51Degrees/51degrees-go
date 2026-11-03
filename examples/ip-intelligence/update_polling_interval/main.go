@@ -22,7 +22,7 @@
 
 /**
 
-@example examples/onpremise/update_polling_interval.go
+@example update_polling_interval/main.go
 # Update polling interval example of using 51Degrees IP intelligence.
 
 This example shows how to use 51Degrees on-premise IP intelligence to

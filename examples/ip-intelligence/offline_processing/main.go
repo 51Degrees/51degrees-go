@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/offline_processing.go
+@example offline_processing/main.go
 # Offline processing example of using 51Degrees IP intelligence.
 
 This example demonstrates one possible use of the 51Degrees on-premise IP intelligence
