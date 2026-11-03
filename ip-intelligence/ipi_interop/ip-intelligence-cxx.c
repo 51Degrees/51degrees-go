@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 4.5.100-48-gc77e080 (c77e0804adeffa06050dc4229ca41494eb619aa9) by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 4.5.101 (e0a6561f521476151fbd4ba4710b94edf3c0c0b5) by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
