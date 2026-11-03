@@ -29,10 +29,10 @@ script also adds a `replace` for each requirement between these modules.
 `go.mod`, as it would be published with the module.
 
 CI makes the workspace only when a folder of a published module (`common`,
-`device-detection`, `ip-intelligence`) has changed since the latest release,
-that is when it tests the next release (`ci/setup-environment.ps1`). The
-examples then run against that code, as the .NET repository's CI does with its
-projects. Otherwise they run against the published modules their go.mod files
+`device-detection`, `ip-intelligence`, `pipeline`) has changed since the
+latest release, that is when it tests the next release
+(`ci/setup-environment.ps1`). The examples then run against that code, as the
+.NET repository's CI does with its projects. Otherwise they run against the published modules their go.mod files
 name. The same check decides whether there is a release at all
 (`ci/get-next-package-version.ps1`), so a change to the examples, the
 documentation or CI alone releases nothing. The nightly package update moves
@@ -76,6 +76,6 @@ commits. The nightly pipeline also merges every non-draft pull request into
 
 ## History
 
-The history of common-go, device-detection-go and ip-intelligence-go was
-brought in with `git subtree add`, so commit SHAs match the original
-repositories. Use `git log --follow` to trace a file back through its move.
+The history of common-go, device-detection-go, ip-intelligence-go and
+pipeline-go was brought in with `git subtree add`, so commit SHAs match the
+original repositories. Use `git log --follow` to trace a file back through its move.

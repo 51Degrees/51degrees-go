@@ -2,5 +2,8 @@
   "exclude": [
     "^device-detection/dd/device-detection-cxx\\.[ch]$",
     "^ip-intelligence/ipi_interop/ip-intelligence-cxx\\.[ch]$"
+  ],
+  "allowUntagged": [
+    "^pipeline/engines/missingproperty/missingproperty\\.go$"
   ]
 }

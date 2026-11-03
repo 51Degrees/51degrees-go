@@ -9,7 +9,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 # Go finds a version of a module in a folder by a tag named after the folder,
 # such as device-detection/v4.5.166, so a release is these tags. The shared
 # workflow then tags the repository with the plain version.
-$Modules = @('common', 'device-detection', 'ip-intelligence')
+$Modules = @('common', 'device-detection', 'ip-intelligence', 'pipeline')
 
 # A published version can't be replaced: sum.golang.org keeps the checksum of
 # the first one it sees, so a moved tag breaks every build that uses it.

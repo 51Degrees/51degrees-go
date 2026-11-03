@@ -2,13 +2,14 @@
 # modules this repository builds and tests, and works out which of them a pull
 # request touches.
 
-$AllProducts = @('common', 'device-detection', 'ip-intelligence')
+$AllProducts = @('common', 'device-detection', 'ip-intelligence', 'pipeline')
 
 # Folders that belong to a single product. A change anywhere else, including
 # common, which both engines are built on, and CI, affects every product.
 $ProductPaths = @{
     'device-detection' = @('device-detection/', 'examples/device-detection/')
     'ip-intelligence' = @('ip-intelligence/', 'examples/ip-intelligence/')
+    'pipeline' = @('pipeline/', 'examples/pipeline/')
 }
 
 # Returns the products the changed paths affect.
@@ -78,7 +79,7 @@ function Invoke-GoTests {
 
 # The folders of the published modules. A release is needed only when one of
 # them has changed.
-$LibraryPaths = @('common', 'device-detection', 'ip-intelligence')
+$LibraryPaths = @('common', 'device-detection', 'ip-intelligence', 'pipeline')
 
 # Returns the latest release, the highest plain version tag, or nothing.
 function Get-LatestRelease([string]$RepoPath) {
