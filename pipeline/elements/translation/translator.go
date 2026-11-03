@@ -28,8 +28,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/51Degrees/pipeline-go/core"
-	"github.com/51Degrees/pipeline-go/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // BaseLanguage is the language that source values are assumed to already be in.
