@@ -22,15 +22,14 @@
 
 // Package translation implements the Translation Engine, which translates values
 // from a source Element's Data using YAML translation sources and writes the
-// translated values into a shared Translation Element Data.
+// translated values into a Translation Element Data.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/translation-engine.md
 package translation
 
 import (
+	"errors"
 	"fmt"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -38,14 +37,16 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
-// DataKey is the Element Data key shared by all Translation Engines in a
-// Pipeline. They write their translated Properties into this single instance.
+// DataKey is the default Element Data key for a Translation Engine. Engines that
+// share it write their translated Properties into a single instance; an Engine
+// can be given a distinct key via Builder.SetElementDataKey.
 const DataKey = "translation"
 
 // Evidence keys used for language selection, in order of precedence.
 const (
-	EvidenceTranslation    = "query.translation"
-	EvidenceAcceptLanguage = "header.accept-language"
+	EvidenceTranslation         = "query.translation"
+	EvidenceQueryAcceptLanguage = "query.accept-language"
+	EvidenceAcceptLanguage      = "header.accept-language"
 )
 
 // MissingBehavior controls what happens when a translation is unavailable.
@@ -84,12 +85,11 @@ type Engine struct {
 	translations    []mapping
 	fixedLanguage   string
 	missingBehavior MissingBehavior
-	// lookups maps a normalized language code to a source-value -> translation map.
-	lookups map[string]map[string]string
+	languages       *Languages
 }
 
-// Data is the shared Translation Element Data. It uses a concurrent map because
-// multiple Translation Engines may write to it in parallel.
+// Data is a Translation Element Data. It uses a concurrent map because multiple
+// Translation Engines may write to a shared instance in parallel.
 type Data struct {
 	values typedmap.Map
 }
@@ -128,186 +128,66 @@ func GetAs[T any](d *Data, name string) (T, error) {
 // Process translates the configured Properties for the request's target language.
 func (e *Engine) Process(fd core.FlowData) error {
 	source, sourceErr := fd.Get(e.sourceKey)
-	table := e.tableFor(e.resolveLanguageCandidates(fd))
-
-	out := fd.GetOrAdd(DataKey, func(core.FlowData) core.ElementData { return newData() }).(*Data)
-
-	for _, m := range e.translations {
-		// Always write the destination Property (matching the .NET reference) so a
-		// missing source value is surfaced as a present-but-empty value rather
-		// than an absent Property.
-		if sourceErr != nil {
-			out.Set(m.destination, e.missingSource(fd, m.source))
-			continue
-		}
-		raw, err := source.Get(m.source)
-		if err != nil {
-			out.Set(m.destination, e.missingSource(fd, m.source))
-			continue
-		}
-		out.Set(m.destination, e.translateValue(fd, table, raw))
-	}
-	return nil
-}
-
-// missingSource produces the destination value when a source value is absent,
-// according to the configured MissingBehavior.
-func (e *Engine) missingSource(fd core.FlowData, propName string) string {
-	if e.missingBehavior == FlowError {
-		fd.AddError(fmt.Errorf("no source value for translation property '%s'", propName), e)
-	}
-	return ""
-}
-
-// translateValue translates a source value of any supported shape.
-func (e *Engine) translateValue(fd core.FlowData, table map[string]string, raw any) any {
-	switch v := raw.(type) {
-	case string:
-		return e.translateString(fd, table, v)
-	case []string:
-		out := make([]string, len(v))
-		for i, s := range v {
-			out[i] = e.translateString(fd, table, s)
-		}
-		return out
-	case core.WeightedValue[string]:
-		return e.translateString(fd, table, v.Value())
-	case []core.WeightedValue[string]:
-		out := make([]string, len(v))
-		for i, wv := range v {
-			out[i] = e.translateString(fd, table, wv.Value())
-		}
-		return out
-	case engines.PropertyValueAccessor:
-		if !v.HasValue() {
-			return raw
-		}
-		return e.translateValue(fd, table, v.AsInterface())
-	default:
-		return raw
-	}
-}
-
-func (e *Engine) translateString(fd core.FlowData, table map[string]string, value string) string {
-	if table != nil {
-		if translated, ok := table[value]; ok {
-			return translated
-		}
-	}
-	switch e.missingBehavior {
-	case EmptyString:
-		return ""
-	case FlowError:
-		fd.AddError(fmt.Errorf("no translation available for '%s'", value), e)
-		return value
-	default: // Original
-		return value
-	}
-}
-
-// resolveLanguageCandidates returns the target-language candidates in order of
-// preference: a fixed language if set, otherwise query.translation followed by
-// every Accept-Language entry in descending q-order. The first candidate with a
-// matching translation table is used.
-func (e *Engine) resolveLanguageCandidates(fd core.FlowData) []string {
-	if e.fixedLanguage != "" {
-		return []string{normalizeLang(e.fixedLanguage)}
-	}
-	var out []string
-	if v, ok := fd.Evidence().Get(EvidenceTranslation); ok {
-		if s := fmt.Sprintf("%v", v); s != "" {
-			out = append(out, normalizeLang(s))
-		}
-	}
-	if v, ok := fd.Evidence().Get(EvidenceAcceptLanguage); ok {
-		for _, l := range parseAcceptLanguage(fmt.Sprintf("%v", v)) {
-			out = append(out, normalizeLang(l))
-		}
-	}
-	return out
-}
-
-// tableFor returns the translation table for the first of the given language
-// candidates that resolves to one.
-func (e *Engine) tableFor(candidates []string) map[string]string {
-	for _, lang := range candidates {
-		if t := e.tableForOne(lang); t != nil {
-			return t
-		}
-	}
-	return nil
-}
-
-// tableForOne returns the translation table for a single language, falling back
-// to a two-letter language match if there is no exact locale match.
-func (e *Engine) tableForOne(lang string) map[string]string {
-	if lang == "" {
+	if sourceErr != nil {
+		// The whole source element is absent: record a single error and write no
+		// destination Properties.
+		fd.AddError(fmt.Errorf(
+			"no source element '%s' was available to translate", e.sourceKey), e)
 		return nil
 	}
-	if t, ok := e.lookups[lang]; ok {
-		return t
-	}
-	base := lang
-	if i := strings.IndexByte(lang, '_'); i >= 0 {
-		base = lang[:i]
-	}
-	if t, ok := e.lookups[base]; ok {
-		return t
-	}
-	// Deterministic prefix fallback: pick the lowest-sorted matching code so the
-	// result does not depend on map iteration order.
-	codes := make([]string, 0, len(e.lookups))
-	for code := range e.lookups {
-		if strings.HasPrefix(code, base) {
-			codes = append(codes, code)
+
+	candidates := CandidatesFromEvidence(fd, e.fixedLanguage)
+	_, table, ok := e.languages.Resolve(candidates)
+
+	// Under FlowError, a request that names no language, or names only languages
+	// with no configured translator (and no base-language fallback), is reported
+	// as a single engine-level error and no Properties are written. Under the
+	// other behaviors a nil table simply yields identity/empty translations.
+	if !ok && e.missingBehavior == FlowError && !containsBaseLanguage(candidates) {
+		if len(candidates) == 0 {
+			fd.AddError(errors.New(
+				"the evidence did not contain a language to translate to"), e)
+		} else {
+			fd.AddError(fmt.Errorf(
+				"there was no translator configured for the language '%s'",
+				candidates[0]), e)
 		}
+		return nil
 	}
-	if len(codes) > 0 {
-		sort.Strings(codes)
-		return e.lookups[codes[0]]
+
+	translator := NewTranslator(table, e.missingBehavior)
+
+	out := fd.GetOrAdd(e.DataKey(),
+		func(core.FlowData) core.ElementData { return newData() }).(*Data)
+
+	for _, m := range e.translations {
+		raw, err := source.Get(m.source)
+		if err != nil {
+			// The source element is present but this Property is not: write a
+			// no-value result and record no error.
+			out.Set(m.destination, engines.NoValue[string](fmt.Sprintf(
+				"The source property '%s' was not present in the source data.",
+				m.source)))
+			continue
+		}
+		value, errs := translator.TranslateValue(raw)
+		out.Set(m.destination, value)
+		for _, translationErr := range errs {
+			fd.AddError(translationErr, e)
+		}
 	}
 	return nil
 }
 
-// normalizeLang converts a locale to a canonical lower-case underscore form
-// (e.g. "en-GB" -> "en_gb").
-func normalizeLang(s string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), "-", "_"))
-}
-
-// parseAcceptLanguage parses an Accept-Language header value into languages
-// ordered by descending q-value.
-// See https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Accept-Language
-func parseAcceptLanguage(header string) []string {
-	type entry struct {
-		lang string
-		q    float64
-	}
-	var entries []entry
-	for _, part := range strings.Split(header, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		lang := part
-		q := 1.0
-		if i := strings.Index(part, ";"); i >= 0 {
-			lang = strings.TrimSpace(part[:i])
-			params := part[i+1:]
-			if j := strings.Index(params, "q="); j >= 0 {
-				if parsed, err := strconv.ParseFloat(strings.TrimSpace(params[j+2:]), 64); err == nil {
-					q = parsed
-				}
-			}
-		}
-		if lang != "" && lang != "*" {
-			entries = append(entries, entry{lang: lang, q: q})
+// containsBaseLanguage reports whether any candidate requests the base language
+// (e.g. "en" / "en_gb"). In that case the source values are already in that
+// language, so translation is intentionally skipped rather than treated as a
+// missing translator under FlowError.
+func containsBaseLanguage(candidates []string) bool {
+	for _, c := range candidates {
+		if c != "" && strings.HasPrefix(c, BaseLanguage) {
+			return true
 		}
 	}
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].q > entries[j].q })
-	out := make([]string, len(entries))
-	for i, e := range entries {
-		out[i] = e.lang
-	}
-	return out
+	return false
 }

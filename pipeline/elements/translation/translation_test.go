@@ -209,6 +209,115 @@ func TestLocaleFromName(t *testing.T) {
 	}
 }
 
+func TestTranslateCaseInsensitive(t *testing.T) {
+	// The lookup is case-insensitive: a mixed-case source value matches a
+	// lower-case table key.
+	e, err := NewBuilder().
+		SetSourceElementDataKey("ip").
+		AddSourceContent("countries.fr_FR.yml", "england: Angleterre").
+		AddTranslation("Country", "CountryTranslated").
+		SetFixedLanguage("fr_FR").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p := buildPipeline(t, e)
+	defer p.Close()
+	fd := p.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, _ := fd.Get(DataKey)
+	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "Angleterre" {
+		t.Fatalf("case-insensitive lookup failed, got %q", v)
+	}
+}
+
+func TestBuildValidation(t *testing.T) {
+	base := func() *Builder {
+		return NewBuilder().
+			SetSourceElementDataKey("ip").
+			AddSourceContent("countries.fr_FR.yml", "England: Angleterre").
+			AddTranslation("Country", "CountryTranslated")
+	}
+	// Missing source key.
+	if _, err := NewBuilder().AddTranslation("a", "b").
+		AddSourceContent("x.fr_FR.yml", "A: B").Build(); err == nil {
+		t.Fatal("expected error for missing source element data key")
+	}
+	// No translations.
+	if _, err := NewBuilder().SetSourceElementDataKey("ip").
+		AddSourceContent("x.fr_FR.yml", "A: B").Build(); err == nil {
+		t.Fatal("expected error for no translations")
+	}
+	// No sources.
+	if _, err := NewBuilder().SetSourceElementDataKey("ip").
+		AddTranslation("a", "b").Build(); err == nil {
+		t.Fatal("expected error for no sources")
+	}
+	// A source whose name does not encode a valid locale.
+	b := base()
+	b.AddSourceContent("animals.mmm_kp.yml", "Dog: Chien")
+	if _, err := b.Build(); err == nil {
+		t.Fatal("expected error for a source with an invalid locale in its name")
+	}
+	// The valid baseline still builds.
+	if _, err := base().Build(); err != nil {
+		t.Fatalf("valid configuration should build: %v", err)
+	}
+}
+
+func TestMissingSourceElementRaisesError(t *testing.T) {
+	// When the whole source element is absent, a single error is raised and no
+	// destination Properties are written.
+	e, err := NewBuilder().
+		SetSourceElementDataKey("absent").
+		AddSourceContent("countries.fr_FR.yml", "England: Angleterre").
+		AddTranslation("Country", "CountryTranslated").
+		SetFixedLanguage("fr_FR").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p := buildPipeline(t, e)
+	defer p.Close()
+	fd := p.CreateFlowData()
+	if err := fd.Process(); err == nil {
+		t.Fatal("expected an error when the source element is absent")
+	}
+	if _, err := fd.Get(DataKey); err == nil {
+		t.Fatal("no translation data should be written when the source element is absent")
+	}
+}
+
+func TestFlowErrorNoLanguage(t *testing.T) {
+	// Under FlowError, a request that names no language is a single engine-level
+	// error rather than a per-value error.
+	p := buildPipeline(t, frEngine(t, FlowError, ""))
+	defer p.Close()
+	fd := p.CreateFlowData()
+	err := fd.Process()
+	if err == nil {
+		t.Fatal("expected an error when no language is requested under FlowError")
+	}
+}
+
+func TestInvalidFixedLanguageFallsBackToEvidence(t *testing.T) {
+	// A fixed language that is not a valid locale is ignored and selection falls
+	// back to the evidence.
+	p := buildPipeline(t, frEngine(t, Original, "french"))
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence(EvidenceTranslation, "fr-FR")
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, _ := fd.Get(DataKey)
+	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "Angleterre" {
+		t.Fatalf("invalid fixed language should fall back to evidence, got %q", v)
+	}
+}
+
 func TestBareLocaleSourceFile(t *testing.T) {
 	// A source file named "<locale>.yaml" (no "[x]." prefix), as used in the
 	// specification's own example, must load correctly.
