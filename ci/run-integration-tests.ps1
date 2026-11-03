@@ -44,4 +44,22 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
     Test-Examples 'ip-intelligence' (Join-Path $RepoName 'examples/mixed') 'mixed'
 }
 
+# The Pipeline examples have no tests of their own, so building them is the
+# check that they still work with the Pipeline module.
+if ($Products -contains 'pipeline') {
+    $examples = Join-Path $RepoName 'examples/pipeline'
+    Push-Location $examples
+    try {
+        Write-Host "Building the Pipeline examples"
+        go build ./...
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Building the Pipeline examples failed with exit code $LASTEXITCODE"
+            $failed = $LASTEXITCODE
+        }
+    } finally {
+        Pop-Location
+    }
+    Test-Examples 'pipeline' $examples 'pipeline'
+}
+
 exit $failed

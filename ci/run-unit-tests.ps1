@@ -11,6 +11,7 @@ $Packages = @{
     'common' = @('./...')
     'device-detection' = @('./dd', './onpremise')
     'ip-intelligence' = @('./ipi_interop', './ipi_onpremise')
+    'pipeline' = @('./...')
 }
 $failed = 0
 

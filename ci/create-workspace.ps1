@@ -22,9 +22,11 @@ $modules = @(
     'common'
     'device-detection'
     'ip-intelligence'
+    'pipeline'
     'examples/device-detection'
     'examples/ip-intelligence'
     'examples/mixed'
+    'examples/pipeline'
 )
 
 $version = $modules | ForEach-Object {
