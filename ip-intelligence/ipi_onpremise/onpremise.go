@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
@@ -39,26 +40,16 @@ type Engine struct {
 
 	isStopped bool
 
-	managerProperties  []string
-	propertyIndexCache map[string]int // name → index mapping
-	propertyNameCache  map[int]string // index → name mapping (readonly after init)
-	propertyIndexes    []int
+	managerProperties []string
+	// names holds the property names of the data set loaded last. namesMu
+	// stops two loads replacing it at once.
+	names   atomic.Pointer[ipi_interop.PropertyNames]
+	namesMu sync.Mutex
 }
 
 const (
 	defaultDataFileUrl = "" // TODO: set default file path url (when it will be available)
 )
-
-// availablePropertyNamesProvider is the function used to enumerate all
-// property names from a loaded dataset. It is a package-level variable so that
-// tests can inject a mock without requiring a real ResourceManager or CGO.
-var availablePropertyNamesProvider = ipi_interop.GetAvailablePropertyNames
-
-// resultsPropertyIndexer is the subset of ResultsIpi needed to resolve a
-// property name to its required-property index in the current dataset.
-type resultsPropertyIndexer interface {
-	GetPropertyIndexByName(string) int
-}
 
 // New creates an instance of the on-premise IP intelligence engine.  WithDataFile must be provided
 // to specify the path to the data file, otherwise initialization will fail
@@ -70,12 +61,10 @@ func New(opts ...EngineOptions) (*Engine, error) {
 		FileUpdater: fileUpdater,
 		logger:      logger,
 
-		config:             nil,
-		stopCh:             make(chan *sync.WaitGroup),
-		reloadFileEvents:   make(chan struct{}),
-		managerProperties:  nil, // nil means "all properties"
-		propertyIndexCache: make(map[string]int),
-		propertyNameCache:  make(map[int]string),
+		config:            nil,
+		stopCh:            make(chan *sync.WaitGroup),
+		reloadFileEvents:  make(chan struct{}),
+		managerProperties: nil, // nil means "all properties"
 	}
 
 	for _, opt := range opts {
@@ -98,9 +87,6 @@ func New(opts ...EngineOptions) (*Engine, error) {
 		engine.Stop()
 		return nil, err
 	}
-
-	// Pre-compute property indexes using a temporary results object
-	engine.initPropertyIndexes()
 
 	// if file watcher is enabled, start the watcher
 	if engine.IsFileWatcherEnabled() {
@@ -179,6 +165,13 @@ func (e *Engine) Stop() {
 
 	e.isStopped = true
 	close(e.stopCh)
+
+	// The names hold a data set of the manager, so they go first.
+	e.namesMu.Lock()
+	if names := e.names.Swap(nil); names != nil {
+		names.Release()
+	}
+	e.namesMu.Unlock()
 
 	if e.manager != nil {
 		e.manager.Free()
@@ -273,8 +266,22 @@ func (e *Engine) processFileExternallyChanged() error {
 	if err := e.reloadManager(reloadFilePath); err != nil {
 		return err
 	}
+	e.refreshPropertyNames()
 
 	return nil
+}
+
+// refreshPropertyNames reads the property names of the data set the manager
+// has now, in place of those of the data set loaded before it.
+func (e *Engine) refreshPropertyNames() {
+	e.namesMu.Lock()
+	defer e.namesMu.Unlock()
+	if e.isStopped || e.manager == nil {
+		return
+	}
+	if old := e.names.Swap(ipi_interop.NewPropertyNames(e.manager)); old != nil {
+		old.Release()
+	}
 }
 
 // this function will be called when the engine is started or the is new file available
@@ -384,9 +391,20 @@ func (e *Engine) ProcessWithResults(ipAddress string, results *ipi_interop.Resul
 	var err error
 
 	if results.HasValues() {
-		// OPTIMIZATION: Use pre-computed indexes with Engine's bidirectional property mapping
-		// This eliminates expensive index→name CGO calls by using Engine's readonly cache
-		values, err = results.GetWeightedValuesByIndexes(e.propertyIndexes, e.GetPropertyNameByIndex)
+		// The values are those of every required property of the results' own
+		// data set. The names read at the last load are used only for results
+		// from that data set, so results made before a reload, or reused across
+		// one, are named from their own data set instead.
+		var resolver func(int) string
+		if names := e.names.Load().For(results); names != nil {
+			resolver = func(index int) string {
+				if index >= 0 && index < len(names) {
+					return names[index]
+				}
+				return ""
+			}
+		}
+		values, err = results.GetWeightedValuesByIndexes(nil, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -410,59 +428,9 @@ func (e *Engine) appendLicenceKey() error {
 	return nil
 }
 
-// initPropertyIndexes pre-computes bidirectional property index↔name caches.
-// It creates a temporary ResultsIpi to resolve property names to their numeric
-// required-property indexes, then delegates to initPropertyIndexesWithIndexer.
-func (e *Engine) initPropertyIndexes() {
-	r := ipi_interop.NewResultsIpi(e.manager)
-	defer r.Free()
-	e.initPropertyIndexesWithIndexer(r)
-}
-
-// initPropertyIndexesWithIndexer seeds the engine's bidirectional name↔index
-// caches using the provided indexer to resolve each property name.
-//
-// Two modes of operation:
-//
-//   - Empty managerProperties (nil or zero-length): the C engine was initialized
-//     with an empty properties string, which signals "load all properties".
-//     This function enumerates every available property from the live dataset via
-//     availablePropertyNamesProvider and populates only the name caches.
-//     propertyIndexes is left nil so that ProcessWithResults passes a NULL index
-//     array to the C layer, which responds by returning all available properties.
-//
-//   - Explicit managerProperties: builds the propertyIndexes slice used to
-//     request exactly those properties from the C layer, and seeds the caches for
-//     fast index→name resolution during result assembly.
-func (e *Engine) initPropertyIndexesWithIndexer(indexer resultsPropertyIndexer) {
-	if len(e.managerProperties) == 0 {
-		// All-properties mode: enumerate the dataset to seed the name cache so
-		// GetPropertyNameByIndex can resolve every index the C engine returns.
-		for _, prop := range availablePropertyNamesProvider(e.manager) {
-			idx := indexer.GetPropertyIndexByName(prop)
-			e.propertyIndexCache[prop] = idx
-			e.propertyNameCache[idx] = prop
-		}
-		// propertyIndexes stays nil → C gets NULL → all available properties returned.
-		return
-	}
-
-	// Explicit-properties mode: build the index list for targeted C queries.
-	e.propertyIndexes = make([]int, len(e.managerProperties))
-	for i, prop := range e.managerProperties {
-		idx := indexer.GetPropertyIndexByName(prop)
-		e.propertyIndexes[i] = idx
-		e.propertyIndexCache[prop] = idx
-		e.propertyNameCache[idx] = prop
-	}
-}
-
-// GetPropertyNameByIndex returns the property name for the given required-property
-// index from the engine's read-only post-init cache. Returns an empty string for
-// unknown indexes; the caller falls back to a CGO lookup in that case.
+// GetPropertyNameByIndex returns the name of the property at the required
+// property index in the data set loaded last, or an empty string for an index
+// outside its required properties.
 func (e *Engine) GetPropertyNameByIndex(index int) string {
-	if name, exists := e.propertyNameCache[index]; exists {
-		return name
-	}
-	return "" // Unknown index
+	return e.names.Load().Name(index)
 }

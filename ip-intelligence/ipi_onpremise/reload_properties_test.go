@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
@@ -20,6 +21,10 @@ const (
 	enterpriseTestDataFile = "51Degrees-EnterpriseIpiV41.ipi"
 	// propertiesTestShownDifferences is how many differences a failure lists.
 	propertiesTestShownDifferences = 20
+	// duringReloadsLookups is how many goroutines look up while reloads run.
+	duringReloadsLookups = 8
+	// duringReloadsCount is how many times the data file is reloaded.
+	duringReloadsCount = 20
 )
 
 var propertiesTestAddresses = []string{
@@ -29,26 +34,20 @@ var propertiesTestAddresses = []string{
 	"2001:4860:4860::8888",
 }
 
-// propertiesTestFiles returns the absolute paths of the ASN and Enterprise
-// data files.
-func propertiesTestFiles(t *testing.T) (string, string) {
+// testDataPath returns the absolute path of a data file in the module folder.
+func testDataPath(t *testing.T, name string) string {
 	t.Helper()
-	paths := make([]string, 0, 2)
-	for _, name := range []string{reloadTestDataFile, enterpriseTestDataFile} {
-		path, err := filepath.EvalSymlinks(filepath.Join("..", name))
-		if err == nil {
-			path, err = filepath.Abs(path)
-		}
-		if err != nil {
-			if os.Getenv("CI") != "" {
-				t.Fatal(err)
-			}
-			t.Skipf("put %s and %s in the module folder to run this test: %v",
-				reloadTestDataFile, enterpriseTestDataFile, err)
-		}
-		paths = append(paths, path)
+	path, err := filepath.EvalSymlinks(filepath.Join("..", name))
+	if err == nil {
+		path, err = filepath.Abs(path)
 	}
-	return paths[0], paths[1]
+	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal(err)
+		}
+		t.Skipf("put %s in the module folder to run this test: %v", name, err)
+	}
+	return path
 }
 
 // pointAt makes path give the content of target, replacing what was there
@@ -151,26 +150,28 @@ func namedProperties(t *testing.T, asn, enterprise string) []string {
 	return append([]string{only}, shared...)
 }
 
-// lookups returns the values found for each address by property name. A
-// failed lookup is kept under "(error)", so it counts as a difference.
-func lookups(t *testing.T, e *Engine) map[string]map[string]string {
-	t.Helper()
+// lookupAt returns the values found for an address by property name. A failed
+// lookup is kept under "(error)", so it counts as a difference.
+func lookupAt(e *Engine, address string) map[string]string {
+	values, err := e.Process(address)
+	if err != nil {
+		return map[string]string{"(error)": err.Error()}
+	}
+	formatted := make(map[string]string, len(values))
+	for name, list := range values {
+		parts := make([]string, 0, len(list))
+		for _, v := range list {
+			parts = append(parts, fmt.Sprintf("%v@%.4f", v.Value, v.Weight))
+		}
+		formatted[name] = strings.Join(parts, "|")
+	}
+	return formatted
+}
+
+func lookups(e *Engine) map[string]map[string]string {
 	all := make(map[string]map[string]string)
 	for _, address := range propertiesTestAddresses {
-		values, err := e.Process(address)
-		if err != nil {
-			all[address] = map[string]string{"(error)": err.Error()}
-			continue
-		}
-		formatted := make(map[string]string, len(values))
-		for name, list := range values {
-			parts := make([]string, 0, len(list))
-			for _, v := range list {
-				parts = append(parts, fmt.Sprintf("%v@%.4f", v.Value, v.Weight))
-			}
-			formatted[name] = strings.Join(parts, "|")
-		}
-		all[address] = formatted
+		all[address] = lookupAt(e, address)
 	}
 	return all
 }
@@ -219,8 +220,8 @@ func sameAnswers(t *testing.T, reloaded, fresh map[string]map[string]string) {
 }
 
 // checkReload loads the first file, reloads the second through the path the
-// temporary copy setting chooses, and checks that the engine then answers as
-// a fresh engine on the second file does.
+// temporary copy setting chooses, and checks that the engine then answers and
+// names its properties as a fresh engine on the second file does.
 func checkReload(
 	t *testing.T,
 	first string,
@@ -231,7 +232,7 @@ func checkReload(
 	master := filepath.Join(t.TempDir(), "data.ipi")
 	pointAt(t, master, first)
 	e := propertiesTestEngine(t, master, properties, temp)
-	for address, values := range lookups(t, e) {
+	for address, values := range lookups(e) {
 		if message, failed := values["(error)"]; failed {
 			t.Errorf("%s failed before the reload: %s", address, message)
 		}
@@ -241,11 +242,25 @@ func checkReload(
 		t.Fatalf("reload: %v", err)
 	}
 	fresh := propertiesTestEngine(t, second, properties, false)
-	sameAnswers(t, lookups(t, e), lookups(t, fresh))
+	sameAnswers(t, lookups(e), lookups(fresh))
+	// The required properties are the names given, or every property of the
+	// file when none were given. One past the last index has no name.
+	count := len(properties)
+	if properties == nil {
+		count = len(ipi_interop.GetAvailablePropertyNames(fresh.manager))
+	}
+	for i := 0; i <= count; i++ {
+		got, want := e.GetPropertyNameByIndex(i), fresh.GetPropertyNameByIndex(i)
+		if got != want {
+			t.Errorf("GetPropertyNameByIndex(%d) after the reload %q, fresh engine %q",
+				i, got, want)
+		}
+	}
 }
 
 func TestReloadToDifferentProperties(t *testing.T) {
-	asn, enterprise := propertiesTestFiles(t)
+	asn := testDataPath(t, reloadTestDataFile)
+	enterprise := testDataPath(t, enterpriseTestDataFile)
 	named := namedProperties(t, asn, enterprise)
 	cases := []struct {
 		name          string
@@ -270,4 +285,62 @@ func TestReloadToDifferentProperties(t *testing.T) {
 			checkReload(t, c.first, c.second, c.properties, c.temp)
 		})
 	}
+}
+
+// TestLookupsDuringReloads looks up while reloads replace the data set again
+// and again, so a data set can be freed and another loaded at its address,
+// and checks that every lookup names its values from its own data set.
+func TestLookupsDuringReloads(t *testing.T) {
+	asn := testDataPath(t, reloadTestDataFile)
+	master := filepath.Join(t.TempDir(), "data.ipi")
+	pointAt(t, master, asn)
+	e := propertiesTestEngine(t, master, nil, true)
+	want := lookupAt(e, reloadTestAddress)
+
+	done := make(chan struct{})
+	failures := make(chan string, duringReloadsLookups)
+	var wg sync.WaitGroup
+	wg.Add(duringReloadsLookups)
+	for i := 0; i < duringReloadsLookups; i++ {
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if got := lookupAt(e, reloadTestAddress); !sameValues(got, want) {
+					failures <- fmt.Sprintf("during the reloads %v, before them %v",
+						got, want)
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < duringReloadsCount; i++ {
+		pointAt(t, master, asn)
+		if err := e.processFileExternallyChanged(); err != nil {
+			t.Errorf("reload %d: %v", i, err)
+			break
+		}
+	}
+	close(done)
+	wg.Wait()
+	close(failures)
+	for failure := range failures {
+		t.Error(failure)
+	}
+}
+
+func sameValues(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for name, value := range a {
+		if other, ok := b[name]; !ok || other != value {
+			return false
+		}
+	}
+	return true
 }
