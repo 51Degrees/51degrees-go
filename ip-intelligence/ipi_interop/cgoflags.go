@@ -25,10 +25,14 @@ package ipi_interop
 /*
 * Cgo concatenate all C linker and compiler directives so create this file to
 * centralize the specifications of these flags.
+*
+* Large data file support reads files past 2 GiB with fseeko and ftello, which
+* take an off_t. _FILE_OFFSET_BITS=64 makes off_t 64 bit where it is not
+* already, as on Windows with the MinGW compiler cgo uses.
  */
 
 /*
-#cgo CFLAGS: -DFIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT=1 -DFIFTYONE_DEGREES_REDUCED_FILE -DFIFTYONE_DEGREES_IPI_SYMBOLS
+#cgo CFLAGS: -DFIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT=1 -D_FILE_OFFSET_BITS=64 -DFIFTYONE_DEGREES_REDUCED_FILE -DFIFTYONE_DEGREES_IPI_SYMBOLS
 #cgo CFLAGS: -fcommon
 #cgo LDFLAGS: -lm
 #cgo !darwin LDFLAGS: -latomic
