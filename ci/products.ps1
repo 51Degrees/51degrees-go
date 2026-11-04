@@ -30,10 +30,12 @@ function Resolve-AffectedProducts([string[]]$Changed) {
 }
 
 # Returns the products a pull request changes, or every product when the
-# checkout is not a pull request (a publish, or a run on main).
-function Get-AffectedProducts([string]$RepoPath) {
+# checkout is not a pull request (a publish, or a build of the branch itself).
+# A pull request is checked out with the branch it merges into merged in, so
+# the merge base with that branch leaves only the pull request's own changes.
+function Get-AffectedProducts([string]$RepoPath, [string]$Branch = 'main') {
     $head = git -C $RepoPath rev-parse HEAD
-    $base = git -C $RepoPath merge-base origin/main HEAD 2>$null
+    $base = git -C $RepoPath merge-base "origin/$Branch" HEAD 2>$null
     if ($LASTEXITCODE -ne 0 -or !$base -or $base -eq $head) {
         $global:LASTEXITCODE = 0
         return $AllProducts

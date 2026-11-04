@@ -67,7 +67,11 @@ into the folders the tests search.
 
 The workflows call the shared workflows in
 [common-ci](https://github.com/51Degrees/common-ci), which run the scripts in
-`ci/`. `ci/products.ps1` works out which modules a change affects.
+`ci/`. `ci/products.ps1` works out which modules a change affects, measured
+from the branch the pull request merges into, `rc`. `ci/select-options.ps1`
+leaves macOS and performance to the builds of `rc` itself and of the release
+pull request, which `.github/workflows/release-pull-request.yml` builds on
+every entry.
 
 The Pull Requests workflow is started by hand. A run that passes squash-merges
 the pull request unless `dryrun` is ticked, which loses the pull request's own
