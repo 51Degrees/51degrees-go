@@ -23,8 +23,7 @@ makes the examples use the code in this repository instead, as the README says.
 
 ### Prerequisites
 
-- Git, and [Git LFS](https://git-lfs.github.com/) for the Device Detection
-  data file.
+- Git.
 - Go 1.21 or later, because the IP Intelligence modules ask for 1.21.0. CI
   tests Go 1.23 and 1.24 (`ci/options.json`).
 - A C compiler for cgo, being GCC on Linux, Clang on macOS and MinGW-x64 on
@@ -36,11 +35,12 @@ makes the examples use the code in this repository instead, as the README says.
   go env -w CGO_ENABLED=1
   ```
 
-- Network access to GitHub, and to the Go module proxy for the published
-  modules.
-- For the IP Intelligence data file, PowerShell 7 (`pwsh`) on any system, or
-  `curl`, `gunzip` and `md5sum` (`md5` on macOS) for the shell script on Linux
-  and macOS.
+- Network access to GitHub, to the Go module proxy for the published modules,
+  and to `distributor.51degrees.com` for the data files.
+- For the data files, `curl`, `gzip` and `md5sum` (`md5` on macOS) on Linux
+  and macOS, where the examples download with the shell script, and Windows
+  PowerShell 5.1 or PowerShell 7 on Windows, where they use the PowerShell
+  script.
 
 Clone the repository with its submodules.
 
@@ -57,77 +57,36 @@ git submodule update --init --recursive
 
 ### Data files
 
-The examples use the free Lite data files, which need no licence key. They
-come from the `cxx` submodule, and two layouts exist. Read the
-"Working on the code" section of `README.md` in your checkout to find out
-which one applies.
+The examples use the free Lite data files, which need no licence key. They are
+not stored in this repository. The `cxx` submodule holds the
+[data](https://github.com/51Degrees/data) repository as `cxx/data`, which has a
+link to each file, and a script downloads them into `cxx/data/device-detection`
+and `cxx/data/ip-intelligence`. Download them before running the Device
+Detection example, for the reason "Run" gives.
 
-- **The section gives no command for the data files.** This is the layout on
-  `rc` and `main` today. The files are in `cxx/device-detection-data` and
-  `cxx/ip-intelligence-data`. Follow "Without cxx/data".
-- **The section gives `sh cxx/data/get-data-files.sh`.** The draft pull request
-  [#41](https://github.com/51Degrees/51degrees-go/pull/41) moves the examples
-  to the [data](https://github.com/51Degrees/data) repository, which cxx
-  carries as `cxx/data`. Once it is merged, follow "With cxx/data".
-
-Go by the README rather than by whether `cxx/data` exists, because the folder
-can arrive with a newer `cxx` before the examples here read it.
-
-Do not use `pwsh ci/fetch-assets.ps1 .`, which the module and example READMEs
-give. It calls common-ci's `steps/fetch-assets.ps1` from the folder it runs
-in, so it works only inside CI.
-
-#### Without cxx/data
-
-The Device Detection Lite file is stored with Git LFS. Install Git LFS, for
-example with `sudo apt-get install git-lfs` on Ubuntu, then pull the file in
-its submodule, as `cxx/README.md` says.
-
-```
-git lfs install
-cd cxx/device-detection-data
-git lfs pull
-cd ../..
-```
-
-A script in `cxx/ip-intelligence-data` downloads the IP Intelligence Lite
-file. Run it from inside that folder, because it saves the file in the folder
-it runs from.
-
-```
-cd cxx/ip-intelligence-data
-pwsh ./get-lite-file-from-azure.ps1
-cd ../..
-```
-
-On Linux and macOS, `./get-lite-file-from-azure.sh` in the same folder does
-the same. Either script also downloads the Asn file over the copy committed in
-the submodule, so `git status` then shows the submodule as modified, which is
-expected.
-
-#### With cxx/data
+On Linux and macOS, run the shell script.
 
 ```
 sh cxx/data/get-data-files.sh
 ```
 
-In PowerShell, run `./cxx/data/get-data-files.ps1` instead. Either script
-downloads every free file into `cxx/data/device-detection` and
-`cxx/data/ip-intelligence`, and keeps a file that is already there. In this
-layout the `dd` and `onpremise` examples, and the IP Intelligence examples
-given a `DATA_FILE` that the data repository links to, download a missing file
-themselves.
+On Windows, run the PowerShell script. Windows PowerShell can refuse to run a
+script file under the policy Windows sets by default, so run it the way the
+examples do.
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File cxx/data/get-data-files.ps1
+```
+
+Where PowerShell 7 is installed, `pwsh cxx/data/get-data-files.ps1` does the
+same on any system. Either script downloads every free file, and keeps a file
+that is already there. To download one file, give its name, as in
+`sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash`.
 
 #### Check the files
 
-- `cxx/device-detection-data/51Degrees-LiteV4.1.hash` is more than 10 MB. A
-  file of about 130 bytes that starts with
-  `version https://git-lfs.github.com/spec/v1` is a Git LFS pointer, which
-  means Git LFS has not pulled the file.
-- `cxx/ip-intelligence-data/51Degrees-LiteV41.ipi` is more than 100 MB.
-
-With `cxx/data`, the same files are in `cxx/data/device-detection` and
-`cxx/data/ip-intelligence`.
+- `cxx/data/device-detection/51Degrees-LiteV4.1.hash` is more than 10 MB.
+- `cxx/data/ip-intelligence/51Degrees-LiteV41.ipi` is more than 100 MB.
 
 ### Run
 
@@ -136,10 +95,13 @@ the repository root. The first run downloads the modules and compiles the C
 library, so it takes longer than later runs.
 
 The Device Detection example finds `51Degrees-LiteV4.1.hash` by searching
-every folder below the folder two above the one it runs in
-(`GetFilePathByName` in `examples/device-detection/dd/example_base.go`). From
-`examples/device-detection` that is the repository root, so the search reaches
-the file in `cxx`.
+every folder below the folder two above the one it runs in, and takes the
+first file with that name in lexical order (`GetFilePathByName` in
+`examples/device-detection/dd/example_base.go`, which calls `dd.GetFilePath`
+in the published module). From `examples/device-detection` that is the
+repository root, so the search reaches `cxx/data/device-detection`. The
+example downloads the file only when the search finds no file with that name
+at all, so download it first, as "Data files" says.
 
 ```
 cd examples/device-detection
@@ -151,10 +113,13 @@ The IP Intelligence example reads the data file named by the `DATA_FILE`
 environment variable, and otherwise looks for `51Degrees-EnterpriseIpiV41.ipi`
 in the folder it runs in, without searching
 (`examples/ip-intelligence/common/example_base.go`). So name the Lite file.
+When that file is missing, the example downloads it first, because the data
+repository links to it (`GetDataFile` in
+`examples/ip-intelligence/common/file.go`).
 
 ```
 cd examples/ip-intelligence
-DATA_FILE=../../cxx/ip-intelligence-data/51Degrees-LiteV41.ipi go run ./getting_started
+DATA_FILE=../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi go run ./getting_started
 cd ../..
 ```
 
@@ -162,15 +127,16 @@ In PowerShell, set the variable first.
 
 ```
 cd examples/ip-intelligence
-$env:DATA_FILE = '../../cxx/ip-intelligence-data/51Degrees-LiteV41.ipi'
+$env:DATA_FILE = '../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi'
 go run ./getting_started
 cd ../..
 ```
 
-With `cxx/data`, the path is
-`../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi`.
-
 ### Correct output
+
+When an example downloads its data file, it first logs
+`<file> is missing, so it is being downloaded by running` with the command on
+the next line, and the script's `Downloading` and `Saved` lines follow.
 
 The Device Detection example prints these lines. It compares its output with
 this text itself, and stops with `Output does not match expected.` and exit
@@ -213,10 +179,13 @@ the service that the example starts itself, with the placeholder key
 
 ### Pitfalls
 
-- **A Git LFS pointer instead of the data file.** The Device Detection search
-  takes the first file with the right name, and on a checkout without Git LFS
-  that is the pointer in `cxx/device-detection-data`. The example then stops
-  with an error from `InitManagerFromFile`. Check the file sizes as above.
+- **Running the Device Detection example before the download.** cxx still
+  has an older data submodule, `cxx/device-detection-data`, whose copy of the
+  file is a Git LFS pointer unless Git LFS has fetched it. The search in the
+  published `dd` module does not pass over the pointer, so the example uses
+  it and stops with an error from `InitManagerFromFile`. Download the file
+  into `cxx/data` first, which the search reaches before that folder, and
+  check the file sizes as above.
 - **Running from the wrong folder.** There is no `go.mod` at the repository
   root, and each examples folder is a module of its own, so run `go run` from
   that folder. Without `DATA_FILE`, the IP Intelligence example finds no data
@@ -225,10 +194,6 @@ the service that the example starts itself, with the placeholder key
 - **cgo turned off or no C compiler.** The engines are C code built through
   cgo, so Go needs `CGO_ENABLED=1` and a C compiler on the `PATH`, as the
   READMEs say.
-- **Windows line endings.** Git for Windows usually checks files out with
-  `core.autocrlf=true`, and `cxx/ip-intelligence-data` has no
-  `.gitattributes`, so its shell script gets Windows line endings and the
-  shell cannot run it. Use the PowerShell script on Windows.
 - **A linker warning on macOS.** The linker warns that `-lm` is given more
   than once. The warning is harmless (`ci/products.ps1`).
 - **Memory.** The IP Intelligence example loads the whole data file into
