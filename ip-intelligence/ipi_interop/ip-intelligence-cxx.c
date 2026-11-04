@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 4.5.101 (e0a6561f521476151fbd4ba4710b94edf3c0c0b5) by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 4.5.102-9-gf03dbfd (f03dbfd6ab9a7ecc898543936dd0338da0668513) by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -13256,6 +13256,8 @@ static void freeFileHandle(Pool *pool, void *fileHandle) {
 #pragma warning (default:4100)  
 #endif
 
+/* Windows uses _fseeki64 and _ftelli64 with every compiler, because MinGW's
+   fseeko and ftello take a 32 bit offset unless _FILE_OFFSET_BITS is 64. */
 int fiftyoneDegreesFileSeek(
    FILE * const stream,
    const FileOffset offset,
@@ -13263,7 +13265,7 @@ int fiftyoneDegreesFileSeek(
 
 	return
 #ifdef FIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT
-#	ifdef _MSC_VER
+#	ifdef _WIN32
 	_fseeki64
 #	else
 	fseeko
@@ -13278,7 +13280,7 @@ FileOffset fiftyoneDegreesFileTell(FILE * const stream) {
 
 	return
 #ifdef FIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT
-#	ifdef _MSC_VER
+#	ifdef _WIN32
 	_ftelli64
 #	else
 	ftello
