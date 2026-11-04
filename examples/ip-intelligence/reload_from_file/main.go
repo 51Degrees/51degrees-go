@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/reload_from_file.go
+@example reload_from_file/main.go
 # Reload from file example of using 51Degrees IP intelligence.
 
 This example illustrates how to use a single reference to the resource manager

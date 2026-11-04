@@ -72,9 +72,9 @@ import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 
 ### Vendored C Library
 An amalgamation is an alternative way to distribute a library's source code using only a few files (as low as one or two).
-This go module depends on and ships an amalgamation of the device-detection C-library [device-detection-cxx](https://github.com/51degrees/device-detection-cxx) repository, which is then built automatically by CGo during `go build`.
+This go module depends on and ships an amalgamation of the device-detection C-library [device-detection-cxx](https://github.com/51degrees/51degrees-cxx) repository, which is then built automatically by CGo during `go build`.
 
-The amalgamation is produced automatically and regularly by the [Nightly Package Update](https://github.com/51Degrees/device-detection-go/actions/workflows/nightly-package-update.yml) CI workflow from the device-detection C-library source code.
+The amalgamation is produced automatically and regularly by the [Nightly Package Update](https://github.com/51Degrees/51degrees-go/actions/workflows/nightly-pipeline.yml) CI workflow from the device-detection C-library source code.
 
 ## Test
 
