@@ -25,29 +25,18 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 
-// tracking is true while allocatedDuring has the C library's memory tracking
-// switched on.
-var tracking bool
-
 // allocatedDuring runs f with the C library's memory tracking switched on and
 // returns the bytes the library allocated during f that are still allocated.
 // Tests use it to check that calls release what the library allocates. f must
 // only free library memory allocated inside f, because the tracker knows
-// nothing of earlier allocations. Inside another call, which TestMain makes
-// around every test, it measures what f adds to the tracked total.
-func allocatedDuring(f func()) uint64 {
-	if tracking {
-		before := uint64(C.fiftyoneDegreesMemoryTrackingGetAllocated())
-		f()
-		after := uint64(C.fiftyoneDegreesMemoryTrackingGetAllocated())
-		if after > before {
-			return after - before
-		}
-		return 0
-	}
-	tracking = true
+// nothing of earlier allocations, and must not call SizeManagerFromFile, which
+// switches the tracking off itself. Tracking is switched off even when f stops
+// the test early, so it is not left on for the tests that follow.
+func allocatedDuring(f func()) (left uint64) {
 	C.fiftyoneDegreesSetUpMemoryTracking()
+	defer func() {
+		left = uint64(C.fiftyoneDegreesUnsetMemoryTracking())
+	}()
 	f()
-	tracking = false
-	return uint64(C.fiftyoneDegreesUnsetMemoryTracking())
+	return left
 }

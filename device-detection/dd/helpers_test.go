@@ -85,25 +85,34 @@ func performMultiPerfProfiles(perfFunc PerfProfileFunc, t *testing.T) {
 // different performance profile
 func testDifferentPerformanceProfiles(properties string, testFunc TestFunc, t *testing.T) {
 	f := func(perf PerformanceProfile, t *testing.T) {
-		// Setup a resource manager, freed even if the test function stops
-		// early.
-		manager := NewResourceManager()
-		defer manager.Free()
-		// Create config per performance
-		config := NewConfigHash(perf)
-		config.SetAllowUnmatched(false)
-		err := InitManagerFromFile(
-			manager,
-			*config,
-			properties,
-			testDataFilePath,
-		)
-		if err != nil {
-			log.Fatalf("Failed to initialize resource manager from file \"%s\"\n.",
-				testDataFilePath)
+		// The C library's memory tracking is on while the test runs, so
+		// anything made from the manager that the test does not free fails
+		// it.
+		left := allocatedDuring(func() {
+			// Setup a resource manager, freed even if the test function
+			// stops early.
+			manager := NewResourceManager()
+			defer manager.Free()
+			// Create config per performance
+			config := NewConfigHash(perf)
+			config.SetAllowUnmatched(false)
+			err := InitManagerFromFile(
+				manager,
+				*config,
+				properties,
+				testDataFilePath,
+			)
+			if err != nil {
+				log.Fatalf("Failed to initialize resource manager from file \"%s\"\n.",
+					testDataFilePath)
+			}
+			// Run the test
+			testFunc(manager, t)
+		})
+		if left != 0 {
+			t.Errorf("%d bytes of native memory were not freed with "+
+				"performance profile %d.", left, perf)
 		}
-		// Run the test
-		testFunc(manager, t)
 	}
 	performMultiPerfProfiles(f, t)
 }
@@ -118,17 +127,5 @@ func TestMain(m *testing.M) {
 	}
 
 	testDataFilePath = filePath
-
-	// Every test runs with the C library's memory tracking on, so a test that
-	// leaves results, evidence, properties or a manager unfreed fails the run.
-	code := 0
-	left := allocatedDuring(func() { code = m.Run() })
-	if left != 0 {
-		log.Printf("%d bytes of native memory were not freed by the tests.",
-			left)
-		if code == 0 {
-			code = 1
-		}
-	}
-	os.Exit(code)
+	os.Exit(m.Run())
 }
