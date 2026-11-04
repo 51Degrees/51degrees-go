@@ -292,3 +292,27 @@ func TestSharedElementOutlivesPipelinesThatLeaveItOpen(t *testing.T) {
 	}
 	el.Close()
 }
+
+func TestBuildFromConfigurationClosesBuiltElementsOnFailure(t *testing.T) {
+	first := &closeCountingElement{BaseElement: NewBaseElement("first", nil, nil)}
+	cause := errors.New("the second element cannot be built")
+	r := NewBuilderRegistry()
+	r.Register("FirstBuilder", func(map[string]any, *slog.Logger) (FlowElement, error) {
+		return first, nil
+	})
+	r.Register("FailingBuilder", func(map[string]any, *slog.Logger) (FlowElement, error) {
+		return nil, cause
+	})
+	_, err := r.BuildFromConfiguration(PipelineOptions{
+		Elements: []ElementOptions{
+			{BuilderName: "FirstBuilder"},
+			{BuilderName: "FailingBuilder"},
+		},
+	}, nil)
+	if !errors.Is(err, cause) {
+		t.Fatalf("expected the second element's error, got %v", err)
+	}
+	if first.closes != 1 {
+		t.Fatalf("the first element was closed %d times", first.closes)
+	}
+}
