@@ -182,10 +182,12 @@ the service that the example starts itself, with the placeholder key
 - **Running the Device Detection example before the download.** cxx still
   has an older data submodule, `cxx/device-detection-data`, whose copy of the
   file is a Git LFS pointer unless Git LFS has fetched it. The search in the
-  published `dd` module does not pass over the pointer, so the example uses
-  it and stops with an error from `InitManagerFromFile`. Download the file
-  into `cxx/data` first, which the search reaches before that folder, and
-  check the file sizes as above.
+  published `dd` module, at the version `examples/device-detection/go.mod`
+  requires (v4.5.169), does not pass over the pointer, although the one in
+  `device-detection/dd/file.go` here does. So the example uses the pointer
+  and stops with an error from `InitManagerFromFile`. Download the file into
+  `cxx/data` first, which the search reaches before that folder, and check the
+  file sizes as above.
 - **Running from the wrong folder.** There is no `go.mod` at the repository
   root, and each examples folder is a module of its own, so run `go run` from
   that folder. Without `DATA_FILE`, the IP Intelligence example finds no data
