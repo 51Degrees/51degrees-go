@@ -85,6 +85,14 @@ the pull request unless `dryrun` is ticked, which loses the pull request's own
 commits. The nightly pipeline also merges every non-draft pull request into
 `main` that passes, and publishes `main` when it has changed.
 
+## Releases
+
+Pull requests go to `rc`, not `main`, and stay drafts until they have been
+reviewed, because the nightly merges any pull request into `rc` that is not a
+draft and has no review requested. When a release is wanted, one pull request
+merges `rc` into `main`, and the "Only rc into main" check fails a pull request
+into `main` from any other branch.
+
 ## History
 
 The history of common-go, device-detection-go, ip-intelligence-go and the Go

@@ -1,6 +1,6 @@
-github.com/51Degrees/51degrees-go/common/v4 v4.5.167 h1:mJiuL8LohtwSPVLS+rFL1ZDQT1XcrYkkThJD/xoWb1g=
-github.com/51Degrees/51degrees-go/common/v4 v4.5.167/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
-github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.167 h1:Vyj6UVqCA2xcL//F80J45+MLBAGROUvdFMq+CYT9TP8=
-github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.167/go.mod h1:g3HWNjRsqx12XTTivvW6Z8W22OXYB59xbKtO3Yyn6Ts=
-github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.167 h1:puXX0hZihJ0T9qszMIWuMl6x0HVEi7HrqiMm74WEAJM=
-github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.167/go.mod h1:hCv9wNOLAImdruVPRsoSj8tsWxdxrPpANHDUzM3OdKg=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.169 h1:KELx8ZlRJnewi4Xpht44LgpN0qbpklpS1za8qZlXTq4=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.169/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
+github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.169 h1:sppo2V4swadgNIN8wGuBlVdzpDqFRTkOJIrTt4kLciY=
+github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.169/go.mod h1:A5sKSETgRAQPXePnBdxJAm2F2a0m7awDEEIrDPvlYKM=
+github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.169 h1:1ev1k5cDCB0rnxZXYdmBhxhbNoAkNEv+KEnr9E/wWqA=
+github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.169/go.mod h1:UnTyc3ng9fGRiY+2SYeNBWi/fCEORp0aonckFaB6mtU=
