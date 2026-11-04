@@ -35,7 +35,7 @@ func RunExample(exampleFunc ExampleFunc) {
 
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,
-		DataFile:     dataFile,
+		DataFile:     GetDataFile(dataFile),
 		DataFileUrl:  dataFileUrl,
 		EvidenceYaml: evidenceYaml,
 	}
