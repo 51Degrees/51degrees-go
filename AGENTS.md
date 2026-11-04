@@ -57,11 +57,22 @@ examples check that.
 
 ## Data files
 
-The Lite data file in `cxx/device-detection-data` is a Git LFS file, which CI
-doesn't fetch. Code that searches folders for `51Degrees-LiteV4.1.hash` can
-find that pointer first, so give tools the fetched file explicitly, as
-`ci/run-performance-tests.ps1` does. `ci/fetch-assets.ps1` links the data files
-into the folders the tests search.
+The data files come from the [data](https://github.com/51Degrees/data)
+repository, which is the `cxx/data` submodule. That repository holds a
+`<file>.link` for each file, and its `get-data-files.ps1` and
+`get-data-files.sh` scripts save the file beside the link. CI takes most files
+from common-ci's assets instead, and `ci/fetch-assets.ps1` links them into the
+folders the tests search. `ci/fetch-assets.ps1` also runs the data
+repository's script to download the Asn file that the IP Intelligence reload
+tests use.
+
+When an example's data file is missing and the data repository links to it,
+the examples' helpers run the script for that file
+(`examples/device-detection/dd/example_base.go` and
+`examples/ip-intelligence/common/file.go`). cxx still has the old
+`device-detection-data` submodule, whose data files are Git LFS pointers
+unless Git LFS has fetched them, so `dd.GetFilePath` passes over Git LFS
+pointer files.
 
 ## CI
 
