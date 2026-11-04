@@ -30,14 +30,21 @@ if (!$Assets) {
     -DeviceDetection:$DeviceDetection -DeviceDetectionUrl:$DeviceDetectionUrl `
     -IpIntelligence:$IpIntelligence -IpIntelligenceUrl:$IpIntelligenceUrl
 
-# The IP Intelligence reload tests use the small ASN data file from the
-# ip-intelligence-data submodule of cxx, and the Enterprise data file, which
-# has different properties, and look for both in the module folder.
+# The IP Intelligence reload tests use the small Asn data file and the
+# Enterprise data file, which has different properties, and look for both in
+# the module folder. The script in the data submodule of cxx downloads the Asn
+# file.
 if ($Products -contains 'ip-intelligence') {
     $folder = Get-ProductPath $RepoPath 'ip-intelligence'
+    $data = Join-Path $RepoPath "cxx/data"
     $asn = "51Degrees-IPIV4AsnIpiV41.ipi"
+    $global:LASTEXITCODE = 0
+    & (Join-Path $data "get-data-files.ps1") $asn
+    if ($LASTEXITCODE -ne 0) {
+        throw "$asn was not downloaded"
+    }
     New-Item -ItemType SymbolicLink -Force `
-        -Target (Join-Path $RepoPath "cxx/ip-intelligence-data/$asn") `
+        -Target (Join-Path $data "ip-intelligence/$asn") `
         -Path (Join-Path $folder $asn) | Out-Null
     $enterprise = "51Degrees-EnterpriseIpiV41.ipi"
     New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$enterprise" `

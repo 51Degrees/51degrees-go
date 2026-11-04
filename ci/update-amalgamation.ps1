@@ -6,7 +6,7 @@ Generates the C sources each Go engine compiles from the cxx submodule.
 cgo compiles the C files in a package's own folder, and a Go module holds only
 its own folder, so each engine carries the 51degrees-cxx sources it needs as one
 amalgamated .c file and one .h file, made by ci/amalgamate.awk. Each file starts
-with the cxx version it was made from.
+with the cxx commit it was made from, and its release when the commit is one.
 
 With -Check, nothing is written, and the script fails if a committed file
 differs from what it would generate. Line endings are not compared.
@@ -48,9 +48,14 @@ $outputs = [ordered]@{
         @("$src/ipi/fiftyone.h", "$src/ipi/graph/graph.h")
 }
 
-$version = git -C (Join-Path $root cxx) describe --tags --always
+# A shallow clone has the tag on its own commit but not the history before it,
+# so only a tag on the commit itself is named, to give the same header in every
+# clone.
 $commit = git -C (Join-Path $root cxx) rev-parse HEAD
-$header = "/* Generated from 51degrees-cxx $version ($commit) by ci/update-amalgamation.ps1. Do not edit by hand. */"
+$release = git -C (Join-Path $root cxx) tag --points-at HEAD |
+    Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -First 1
+$version = if ($release) { "$release ($commit)" } else { $commit }
+$header = "/* Generated from 51degrees-cxx $version by ci/update-amalgamation.ps1. Do not edit by hand. */"
 
 $stale = @()
 Push-Location $root
