@@ -53,7 +53,9 @@ type Pipeline interface {
 	// make the same decision.
 	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md
 	IsSuppressProcessExceptions() bool
-	// Close releases the resources held by the Pipeline's elements.
+	// Close stops the Pipeline and releases the resources held by its
+	// elements, unless the builder's SetAutoCloseElements(false) left them for
+	// the caller to close.
 	Close() error
 }
 
@@ -62,6 +64,7 @@ type pipeline struct {
 	logger                    *slog.Logger
 	concurrent                bool
 	suppressProcessExceptions bool
+	closeElements             bool
 	properties                []PropertyMetadata
 	filter                    EvidenceKeyFilter
 
@@ -182,6 +185,9 @@ func (p *pipeline) Close() error {
 		// Wait for in-flight processing to finish so a stateful element is not
 		// closed underneath a running Process.
 		p.inFlight.Wait()
+		if !p.closeElements {
+			return
+		}
 		for _, e := range p.elements {
 			if err := e.Close(); err != nil && p.closeErr == nil {
 				p.closeErr = err

@@ -29,9 +29,14 @@ import "C"
 // returns the bytes the library allocated during f that are still allocated.
 // Tests use it to check that calls release what the library allocates. f must
 // only free library memory allocated inside f, because the tracker knows
-// nothing of earlier allocations.
-func allocatedDuring(f func()) uint64 {
+// nothing of earlier allocations, and must not call SizeManagerFromFile, which
+// switches the tracking off itself. Tracking is switched off even when f stops
+// the test early, so it is not left on for the tests that follow.
+func allocatedDuring(f func()) (left uint64) {
 	C.fiftyoneDegreesSetUpMemoryTracking()
+	defer func() {
+		left = uint64(C.fiftyoneDegreesUnsetMemoryTracking())
+	}()
 	f()
-	return uint64(C.fiftyoneDegreesUnsetMemoryTracking())
+	return left
 }
