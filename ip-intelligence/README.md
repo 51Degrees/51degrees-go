@@ -23,7 +23,16 @@ This Go version contains the following packages:
 ### Data File Setup
 
 To process IP addresses, you will need to use the 51Degrees data file.
-See [ip-intelligence-data](https://github.com/51Degrees/ip-intelligence-data) repo for the instructions on how to get a Lite data file or [contact us](https://51degrees.com/contact-us?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=data-file-setup) to get an Enterprise data file.
+A free Lite data file is available through the [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, or [contact us](https://51degrees.com/contact-us?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=data-file-setup) to get an Enterprise data file.
+To download the Lite file into `cxx/data/ip-intelligence`, run one of these from the repository root.
+
+```
+sh cxx/data/get-data-files.sh 51Degrees-LiteV41.ipi
+```
+
+```
+./cxx/data/get-data-files.ps1 51Degrees-LiteV41.ipi
+```
 
 ### Windows Configuration
 

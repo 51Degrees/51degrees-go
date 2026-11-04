@@ -9,8 +9,12 @@ import (
 )
 
 func processExampleEvidence(engine *onpremise.Engine, evidence []onpremise.Evidence) {
-	//Process evidence
-	resultsHash, _ := engine.Process(evidence)
+	//Process evidence. There are no results to free when it fails.
+	resultsHash, err := engine.Process(evidence)
+	if err != nil {
+		log.Printf("Failed to process evidence: %v", err)
+		return
+	}
 	defer resultsHash.Free()
 	//Get values from results
 	vendor, _ := resultsHash.ValuesString("HardwareVendor", ",")

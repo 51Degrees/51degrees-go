@@ -9,8 +9,23 @@ This directory contains usage examples of the [ip-intelligence-go](https://githu
 
 ## Pre-requisites
 
-To run these examples you will need a data file and example evidence. To fetch these assets follow the instructions in
-the [ip-intelligence-data](https://github.com/51Degrees/ip-intelligence-data) repo and put in the root of this repository.
+To run these examples you will need a data file and example evidence. The examples use `51Degrees-EnterpriseIpiV41.ipi`
+and `20000_ipi_evidence_records.yml` unless `DATA_FILE` and `EVIDENCE_YAML` name other files, as shown below.
+
+The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to
+the free Lite and Asn data files and holds example evidence in `cxx/data/ip-intelligence/evidence.yml`. To download the
+Lite and Asn files into `cxx/data/ip-intelligence`, run one of these from the repository root.
+
+```
+sh cxx/data/get-data-files.sh ip-intelligence
+```
+
+```
+./cxx/data/get-data-files.ps1 ip-intelligence
+```
+
+When `DATA_FILE` names a file that the data repository links to and the file is missing, the examples download it by
+running the same script for that file.
 
 ### Software
 

@@ -256,6 +256,9 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Action
 			actReport := report{0, 0, 0, 0}
@@ -267,8 +270,6 @@ func main() {
 
 			// Print the final performance report
 			printReport(&actReport, "")
-
-			engine.Stop()
 
 			return nil
 		},

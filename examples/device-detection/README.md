@@ -7,16 +7,17 @@
 This directory contains examples of how to use module [device-detection-go](https://github.com/51Degrees/51degrees-go/tree/main/device-detection)
 
 ## Pre-requisites
-To run these examples you will need a data file and example evidence for some of the tests.  To fetch these assets please run (from the repository root):
+To run these examples you will need a data file and example evidence for some of the tests. The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to both. To download them into `cxx/data/device-detection`, run one of these from the repository root.
 
 ```
-pwsh ci/fetch-assets.ps1 .
+sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash "20000 Evidence Records.yml"
 ```
 
-or alternatively you can download them from [device-detection-data](https://github.com/51Degrees/device-detection-data) repo (the links are below) and put in the root of this repository.
+```
+./cxx/data/get-data-files.ps1 51Degrees-LiteV4.1.hash "20000 Evidence Records.yml"
+```
 
-- [51Degrees-LiteV4.1.hash](https://github.com/51Degrees/device-detection-data/blob/main/51Degrees-LiteV4.1.hash)
-- [20000 Evidence Records.yml](https://github.com/51Degrees/device-detection-data/blob/main/20000%20Evidence%20Records.yml)
+The examples under `dd` and `onpremise` also download a file that is missing, by running the same script for that file.
 
 ### Software
 

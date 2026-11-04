@@ -63,8 +63,10 @@ func TestAvailableProperties(t *testing.T) {
 		expectedAvailable int
 	}{"IsMobile", "IsMobile", 1}
 	manager := initResourceManager(data.properties, t)
+	defer freeResourceManager(manager, t)
 	// Create results hash
 	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
 
 	available := results.AvailableProperties()
 
@@ -78,12 +80,6 @@ func TestAvailableProperties(t *testing.T) {
 		t.Errorf("Expected \"%s\" but get \"%s\".\n",
 			data.expectedProperty, available[0])
 	}
-
-	// Free results hash
-	results.Free()
-
-	// Free resource manager
-	freeResourceManager(manager, t)
 }
 
 // This tests property name is returned correctly from a
@@ -101,8 +97,10 @@ func TestPropertyName(t *testing.T) {
 	}
 
 	manager := initResourceManager(propertiesString, t)
+	defer freeResourceManager(manager, t)
 	// Create results hash
 	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
 
 	available := results.AvailableProperties()
 
@@ -127,12 +125,6 @@ func TestPropertyName(t *testing.T) {
 			properties[name] = false
 		}
 	}
-
-	// Free results hash
-	results.Free()
-
-	// Free resource manager
-	freeResourceManager(manager, t)
 }
 
 // This tests a required property index is returned correctly
@@ -150,8 +142,10 @@ func TestRequiredPropertyIndexFromName(t *testing.T) {
 	}
 
 	manager := initResourceManager(propertiesString, t)
+	defer freeResourceManager(manager, t)
 	// Create results hash
 	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
 
 	available := results.AvailableProperties()
 
@@ -171,12 +165,6 @@ func TestRequiredPropertyIndexFromName(t *testing.T) {
 			properties[name] = false
 		}
 	}
-
-	// Free results hash
-	results.Free()
-
-	// Free resource manager
-	freeResourceManager(manager, t)
 }
 
 // This tests a name the data set has no property for keeps its place among

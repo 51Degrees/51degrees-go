@@ -65,6 +65,14 @@ Clone with the submodules:
 git clone --recurse-submodules https://github.com/51Degrees/51degrees-go.git
 ```
 
+The tests and examples use the free data files that the [data](https://github.com/51Degrees/data) repository links to. The data repository is the `cxx/data` submodule, and its scripts download the files into `cxx/data/device-detection` and `cxx/data/ip-intelligence`.
+
+```sh
+sh cxx/data/get-data-files.sh
+```
+
+In PowerShell, run `./cxx/data/get-data-files.ps1` instead.
+
 Each module requires the others at a published version, as your own code would. To build and test them against each other instead, create a Go workspace:
 
 ```sh

@@ -24,13 +24,16 @@ by the [prebid-server](https://github.com/prebid/prebid-server/) module and it h
 ### Data File
 
 In order to perform device detection, you will need to use a 51Degrees data file.
-A 'lite' file can be found at [device-detection-data](https://github.com/51degrees/device-detection-data). You can run:
+A free 'lite' file is available through the [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository.
+To download it into `cxx/data/device-detection`, run one of these from the repository root. The `dd` and `onpremise` examples also download it when it is missing.
 
 ```
-pwsh ci/fetch-assets.ps1 .
+sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash
 ```
 
-Or download [51Degrees-LiteV4.1.hash](https://github.com/51Degrees/device-detection-data/blob/main/51Degrees-LiteV4.1.hash) directly.
+```
+./cxx/data/get-data-files.ps1 51Degrees-LiteV4.1.hash
+```
 
 This 'lite' file has a significantly reduced set of properties. To obtain a
 file with a more complete set of device properties see the
