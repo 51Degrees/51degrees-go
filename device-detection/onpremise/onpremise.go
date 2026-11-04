@@ -81,13 +81,16 @@ func New(opts ...EngineOptions) (*Engine, error) {
 		return nil, err
 	}
 
-	// if file watcher is enabled, start the watcher
+	// if file watcher is enabled, start the watcher. The data set is loaded
+	// by now, so a failure stops the engine to free it.
 	if engine.IsFileWatcherEnabled() {
 		if err := engine.InitFileWatcher(engine.logger, engine.stopCh); err != nil {
+			engine.Stop()
 			return nil, err
 		}
 
 		if err := engine.Watch(engine.handleFileExternallyChanged); err != nil {
+			engine.Stop()
 			return nil, err
 		}
 
@@ -391,6 +394,7 @@ func mapEvidence(evidenceList []Evidence) (*dd.Evidence, error) {
 	for _, evidence := range evidenceList {
 		err := evidenceHash.Add(evidence.Prefix, evidence.Key, evidence.Value)
 		if err != nil {
+			evidenceHash.Free()
 			return nil, fmt.Errorf("failed to add evidence: %w", err)
 		}
 	}

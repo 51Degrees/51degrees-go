@@ -243,3 +243,52 @@ func TestBuildRollbackRecursesParallelChildren(t *testing.T) {
 type passthroughElement struct{ *BaseElement }
 
 func (e *passthroughElement) Process(FlowData) error { return nil }
+
+// closeCountingElement records how many times it has been closed.
+type closeCountingElement struct {
+	*BaseElement
+	closes int
+}
+
+func (e *closeCountingElement) Process(FlowData) error { return nil }
+
+func (e *closeCountingElement) Close() error {
+	e.closes++
+	return nil
+}
+
+func TestCloseClosesElementsByDefault(t *testing.T) {
+	el := &closeCountingElement{BaseElement: NewBaseElement("device", nil, nil)}
+	p, err := NewPipelineBuilder().AddFlowElement(el).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Close()
+	if el.closes != 1 {
+		t.Fatalf("closing the pipeline closed the element %d times", el.closes)
+	}
+}
+
+func TestSharedElementOutlivesPipelinesThatLeaveItOpen(t *testing.T) {
+	el := &closeCountingElement{BaseElement: NewBaseElement("device", nil, nil)}
+	p1, err := NewPipelineBuilder().
+		SetAutoCloseElements(false).AddFlowElement(el).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := NewPipelineBuilder().
+		SetAutoCloseElements(false).AddFlowElement(el).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1.Close()
+	fd := p2.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatalf("the second pipeline failed after the first closed: %v", err)
+	}
+	p2.Close()
+	if el.closes != 0 {
+		t.Fatalf("the pipelines closed the shared element %d times", el.closes)
+	}
+	el.Close()
+}

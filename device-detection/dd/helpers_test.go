@@ -85,8 +85,10 @@ func performMultiPerfProfiles(perfFunc PerfProfileFunc, t *testing.T) {
 // different performance profile
 func testDifferentPerformanceProfiles(properties string, testFunc TestFunc, t *testing.T) {
 	f := func(perf PerformanceProfile, t *testing.T) {
-		// Setup a resource manager
+		// Setup a resource manager, freed even if the test function stops
+		// early.
 		manager := NewResourceManager()
+		defer manager.Free()
 		// Create config per performance
 		config := NewConfigHash(perf)
 		config.SetAllowUnmatched(false)
@@ -102,9 +104,6 @@ func testDifferentPerformanceProfiles(properties string, testFunc TestFunc, t *t
 		}
 		// Run the test
 		testFunc(manager, t)
-
-		// Free the resource manager
-		manager.Free()
 	}
 	performMultiPerfProfiles(f, t)
 }
@@ -119,5 +118,17 @@ func TestMain(m *testing.M) {
 	}
 
 	testDataFilePath = filePath
-	os.Exit(m.Run())
+
+	// Every test runs with the C library's memory tracking on, so a test that
+	// leaves results, evidence, properties or a manager unfreed fails the run.
+	code := 0
+	left := allocatedDuring(func() { code = m.Run() })
+	if left != 0 {
+		log.Printf("%d bytes of native memory were not freed by the tests.",
+			left)
+		if code == 0 {
+			code = 1
+		}
+	}
+	os.Exit(code)
 }

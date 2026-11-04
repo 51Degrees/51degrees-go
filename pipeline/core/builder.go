@@ -33,6 +33,7 @@ type PipelineBuilder struct {
 	logger                    *slog.Logger
 	concurrent                bool
 	suppressProcessExceptions bool
+	keepElementsOpen          bool
 }
 
 // NewPipelineBuilder creates an empty PipelineBuilder.
@@ -63,6 +64,16 @@ func (b *PipelineBuilder) SetConcurrent(v bool) *PipelineBuilder {
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md
 func (b *PipelineBuilder) SetSuppressProcessExceptions(v bool) *PipelineBuilder {
 	b.suppressProcessExceptions = v
+	return b
+}
+
+// SetAutoCloseElements configures whether closing the Pipeline also closes its
+// elements, which it does by default. Pass false when an element is shared
+// with other Pipelines, and close the element once every Pipeline using it has
+// been closed.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/resource-cleanup.md#pipeline
+func (b *PipelineBuilder) SetAutoCloseElements(v bool) *PipelineBuilder {
+	b.keepElementsOpen = !v
 	return b
 }
 
@@ -112,6 +123,7 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		logger:                    logger,
 		concurrent:                concurrent,
 		suppressProcessExceptions: b.suppressProcessExceptions,
+		closeElements:             !b.keepElementsOpen,
 		properties:                properties,
 		filter:                    NewAggregateFilter(filters...),
 	}
