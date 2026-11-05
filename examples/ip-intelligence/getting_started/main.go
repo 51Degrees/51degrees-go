@@ -140,11 +140,11 @@ var addresses = []string{
 }
 
 // printProperties writes each property's value for the address, with its
-// weight, and shows a property the data file does not have as needing the
-// Enterprise data file.
+// weight. With a free data file, a property that only the Enterprise data
+// file has values for is shown as needing it.
 func printProperties(
 	engine *ipi_onpremise.Engine,
-	available map[string]bool,
+	free bool,
 	address string) {
 	values, err := engine.Process(address)
 	if err != nil {
@@ -153,16 +153,15 @@ func printProperties(
 
 	fmt.Printf("IP address %s:\n", address)
 	for _, property := range common.Properties {
-		if !available[property] {
-			fmt.Printf("\t%s: %s\n", property, common.NeedsEnterprise)
-			continue
-		}
 		value, weight, found := values.GetValueWeightByProperty(property)
-		if !found {
+		switch {
+		case found:
+			fmt.Printf("\t%s: %v (weight %.2f)\n", property, value, weight)
+		case free && !common.FreeProperties[property]:
+			fmt.Printf("\t%s: %s\n", property, common.NeedsEnterprise)
+		default:
 			fmt.Printf("\t%s: no value for this address\n", property)
-			continue
 		}
-		fmt.Printf("\t%s: %v (weight %.2f)\n", property, value, weight)
 	}
 	fmt.Println()
 }
@@ -195,11 +194,13 @@ func main() {
 			// stops it however this function returns.
 			defer engine.Stop()
 
-			available := common.AvailableProperties(engine)
+			free := common.IsFreeDataFile(engine, common.Properties)
 			for _, address := range addresses {
-				printProperties(engine, available, address)
+				printProperties(engine, free, address)
 			}
-			common.PrintEnterpriseNote(available, common.Properties, contactUs)
+			if free {
+				common.PrintEnterpriseNote(contactUs)
+			}
 
 			return nil
 		})

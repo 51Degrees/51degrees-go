@@ -107,8 +107,8 @@ type MixedResponse struct {
 type mixedHandler struct {
 	ddEngine  *ddOnpremise.Engine
 	ipiEngine *ipi_onpremise.Engine
-	// ipiAvailable holds the IP intelligence properties the data file has.
-	ipiAvailable map[string]bool
+	// ipiFree is whether the IP intelligence data file is a free one.
+	ipiFree bool
 }
 
 // newMixedHandler returns a handler for both engines.
@@ -116,9 +116,9 @@ func newMixedHandler(
 	ddEngine *ddOnpremise.Engine,
 	ipiEngine *ipi_onpremise.Engine) *mixedHandler {
 	return &mixedHandler{
-		ddEngine:     ddEngine,
-		ipiEngine:    ipiEngine,
-		ipiAvailable: common.IpProperties(ipiEngine),
+		ddEngine:  ddEngine,
+		ipiEngine: ipiEngine,
+		ipiFree:   common.IsFreeIpData(ipiEngine, ipiResponseProperties),
 	}
 }
 
@@ -156,7 +156,7 @@ func (h *mixedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("IP Intelligence error: %v", ipiErr)
 	}
 
-	resp := buildResponse(clientIP, ddResults, ipiValues, h.ipiAvailable)
+	resp := buildResponse(clientIP, ddResults, ipiValues, h.ipiFree)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -202,7 +202,7 @@ func buildResponse(
 	clientIP string,
 	results *dd.ResultsHash,
 	values ipi_interop.Values,
-	ipiAvailable map[string]bool) MixedResponse {
+	ipiFree bool) MixedResponse {
 	missing := false
 
 	ddMap := make(map[string]string)
@@ -227,16 +227,14 @@ func buildResponse(
 
 	ipiMap := make(map[string]string)
 	for _, prop := range ipiResponseProperties {
-		if !ipiAvailable[prop] {
+		val, weight, found := values.GetValueWeightByProperty(prop)
+		switch {
+		case found:
+			ipiMap[prop] = fmt.Sprintf("%v (weight: %.2f)", val, weight)
+		case ipiFree && !common.FreeIpProperties[prop]:
 			ipiMap[prop] = common.NeedsEnterprise
 			missing = true
-			continue
 		}
-		val, weight, found := values.GetValueWeightByProperty(prop)
-		if !found {
-			continue
-		}
-		ipiMap[prop] = fmt.Sprintf("%v (weight: %.2f)", val, weight)
 	}
 
 	resp := MixedResponse{

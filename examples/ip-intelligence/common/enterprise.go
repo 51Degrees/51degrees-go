@@ -6,37 +6,44 @@ import (
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
-// NeedsEnterprise is shown in place of the value of a property that the data
-// file in use does not have, because only the Enterprise data file has it.
+// NeedsEnterprise is shown in place of the value of a property that only the
+// Enterprise data file has values for.
 const NeedsEnterprise = "needs the Enterprise data file"
 
-// maxProperties is more than the number of properties any data file has.
-const maxProperties = 4096
-
-// AvailableProperties returns the properties the engine's data file has, out
-// of those the engine was given, or every property of the data file when it
-// was given none. The free data files have only a few.
-func AvailableProperties(engine *ipi_onpremise.Engine) map[string]bool {
-	available := make(map[string]bool)
-	for i := 0; i < maxProperties; i++ {
-		if name := engine.GetPropertyNameByIndex(i); name != "" {
-			available[name] = true
-		}
-	}
-	return available
+// FreeProperties are the properties the free Lite data file has values for.
+// It lists the other properties too, but with no values, so only the
+// Enterprise data file can give them.
+var FreeProperties = map[string]bool{
+	"RegisteredCountry": true,
+	"RegisteredName":    true,
+	"RegisteredOwner":   true,
 }
 
-// PrintEnterpriseNote writes, when any of the properties is not in the data
-// file, where to ask for a copy of the Enterprise data file that has them.
-func PrintEnterpriseNote(
-	available map[string]bool,
-	properties []string,
-	contactUs string) {
+// probeAddress has a range and a location in the Enterprise data file.
+const probeAddress = "185.28.167.77"
+
+// IsFreeDataFile reports whether the engine's data file is a free one. It is
+// when none of the properties but the free ones has a value for an address
+// that the Enterprise data file has values for.
+func IsFreeDataFile(engine *ipi_onpremise.Engine, properties []string) bool {
+	values, err := engine.Process(probeAddress)
+	if err != nil {
+		return false
+	}
 	for _, property := range properties {
-		if !available[property] {
-			fmt.Printf("\nSome of these properties need the Enterprise data "+
-				"file. Contact us for a copy at %s\n", contactUs)
-			return
+		if FreeProperties[property] {
+			continue
+		}
+		if _, found := values.GetValueByProperty(property); found {
+			return false
 		}
 	}
+	return true
+}
+
+// PrintEnterpriseNote writes where to ask for a copy of the Enterprise data
+// file, which has values for the properties the free data file does not.
+func PrintEnterpriseNote(contactUs string) {
+	fmt.Printf("\nSome of these properties need the Enterprise data file. "+
+		"Contact us for a copy at %s\n", contactUs)
 }

@@ -161,22 +161,22 @@ func printDDResults(results *dd.ResultsHash) bool {
 }
 
 // printIPIResults writes the IP intelligence property values to stdout, and
-// reports whether any property needs the Enterprise data file.
-func printIPIResults(values ipi_interop.Values, available map[string]bool) bool {
+// reports whether any property needs the Enterprise data file, which with a
+// free data file is any but the free ones.
+func printIPIResults(values ipi_interop.Values, free bool) bool {
 	fmt.Println("\n  --- IP Intelligence ---")
 	missing := false
 	for _, prop := range ipiProperties {
-		if !available[prop] {
+		val, weight, found := values.GetValueWeightByProperty(prop)
+		switch {
+		case found:
+			fmt.Printf("  %-20s %v (weight: %.2f)\n", prop+":", val, weight)
+		case free && !common.FreeIpProperties[prop]:
 			fmt.Printf("  %-20s %s\n", prop+":", common.NeedsEnterprise)
 			missing = true
-			continue
-		}
-		val, weight, found := values.GetValueWeightByProperty(prop)
-		if !found {
+		default:
 			fmt.Printf("  %-20s no value for this address\n", prop+":")
-			continue
 		}
-		fmt.Printf("  %-20s %v (weight: %.2f)\n", prop+":", val, weight)
 	}
 	return missing
 }
@@ -188,7 +188,7 @@ func processCase(
 	tc testCase,
 	ddEngine *ddOnpremise.Engine,
 	ipiEngine *ipi_onpremise.Engine,
-	available map[string]bool) bool {
+	free bool) bool {
 	fmt.Printf("\n[%s]\n", tc.name)
 	fmt.Printf("  User-Agent: %s\n", tc.userAgent)
 	fmt.Printf("  Client IP:  %s\n\n", tc.clientIP)
@@ -221,7 +221,7 @@ func processCase(
 
 	if ipiErr != nil {
 		log.Printf("IP Intelligence error: %v", ipiErr)
-	} else if printIPIResults(ipiValues, available) {
+	} else if printIPIResults(ipiValues, free) {
 		missing = true
 	}
 	return missing
@@ -263,10 +263,10 @@ func main() {
 	log.Printf("Device Detection data: %s", ddDataFile)
 	log.Printf("IP Intelligence data:  %s", ipiDataFile)
 
-	available := common.IpProperties(ipiEngine)
+	free := common.IsFreeIpData(ipiEngine, ipiProperties)
 	missing := false
 	for _, tc := range hardcodedCases {
-		if processCase(tc, ddEngine, ipiEngine, available) {
+		if processCase(tc, ddEngine, ipiEngine, free) {
 			missing = true
 		}
 	}

@@ -343,8 +343,9 @@ func main() {
 			// Run example
 			runOfflineProcessing(engine, params)
 
-			common.PrintEnterpriseNote(
-				common.AvailableProperties(engine), common.Properties, contactUs)
+			if common.IsFreeDataFile(engine, common.Properties) {
+				common.PrintEnterpriseNote(contactUs)
+			}
 
 			return nil
 		})

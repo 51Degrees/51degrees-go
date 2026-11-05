@@ -42,17 +42,33 @@ func HasDeviceProperty(results *dd.ResultsHash, property string) bool {
 	return results.RequiredPropertyIndexFromName(property) >= 0
 }
 
-// maxProperties is more than the number of properties any data file has.
-const maxProperties = 4096
+// FreeIpProperties are the IP Intelligence properties the free Lite data file
+// has values for. It lists the other properties too, but with no values, so
+// only the Enterprise data file can give them.
+var FreeIpProperties = map[string]bool{
+	"RegisteredCountry": true,
+	"RegisteredName":    true,
+	"RegisteredOwner":   true,
+}
 
-// IpProperties returns the properties the IP Intelligence engine's data file
-// has, out of those the engine was given. The free data file has only a few.
-func IpProperties(engine *ipi_onpremise.Engine) map[string]bool {
-	available := make(map[string]bool)
-	for i := 0; i < maxProperties; i++ {
-		if name := engine.GetPropertyNameByIndex(i); name != "" {
-			available[name] = true
+// probeAddress has a range and a location in the Enterprise data file.
+const probeAddress = "185.28.167.77"
+
+// IsFreeIpData reports whether the IP Intelligence engine's data file is a
+// free one. It is when none of the properties but the free ones has a value
+// for an address that the Enterprise data file has values for.
+func IsFreeIpData(engine *ipi_onpremise.Engine, properties []string) bool {
+	values, err := engine.Process(probeAddress)
+	if err != nil {
+		return false
+	}
+	for _, property := range properties {
+		if FreeIpProperties[property] {
+			continue
+		}
+		if _, found := values.GetValueByProperty(property); found {
+			return false
 		}
 	}
-	return available
+	return true
 }

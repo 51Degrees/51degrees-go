@@ -121,11 +121,12 @@ import (
 // data file, which automatic updates download.
 const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-update_polling_interval-main.go&utm_term=licence-key"
 
-// processEvidence logs each property's value for the address, and a property
-// the data file does not have as needing the Enterprise data file.
+// processEvidence logs each property's value for the address. With a free
+// data file, a property that only the Enterprise data file has values for is
+// logged as needing it.
 func processEvidence(
 	engine *ipi_onpremise.Engine,
-	available map[string]bool,
+	free bool,
 	ipAddress string) {
 	result, err := engine.Process(ipAddress)
 	if err != nil {
@@ -135,13 +136,13 @@ func processEvidence(
 
 	log.Printf("IP address %s:", ipAddress)
 	for _, property := range common.Properties {
-		if !available[property] {
-			log.Printf("%s: %s", property, common.NeedsEnterprise)
-			continue
-		}
-		if value, weight, found := result.GetValueWeightByProperty(property); found {
+		value, weight, found := result.GetValueWeightByProperty(property)
+		switch {
+		case found:
 			log.Printf("%s: %+v (weight %.2f)", property, value, weight)
-		} else {
+		case free && !common.FreeProperties[property]:
+			log.Printf("%s: %s", property, common.NeedsEnterprise)
+		default:
 			log.Printf("%s: no value for this address", property)
 		}
 	}
@@ -169,9 +170,9 @@ func runWithoutUpdates(params *common.ExampleParams) {
 	}
 	defer engine.Stop()
 
-	available := common.AvailableProperties(engine)
-	processEvidence(engine, available, evidences[0])
-	processEvidence(engine, available, evidences[1])
+	free := common.IsFreeDataFile(engine, common.Properties)
+	processEvidence(engine, free, evidences[0])
+	processEvidence(engine, free, evidences[1])
 
 	fmt.Printf("\nAutomatic updates download the Enterprise data file with a "+
 		"licence key, which IPI_KEY gives, or from a copy you host, whose "+
@@ -250,21 +251,21 @@ func main() {
 
 			defer engine.Stop()
 
-			available := common.AvailableProperties(engine)
+			free := common.IsFreeDataFile(engine, common.Properties)
 
 			//process before file has been updated
-			processEvidence(engine, available, evidences[0])
-			processEvidence(engine, available, evidences[1])
+			processEvidence(engine, free, evidences[0])
+			processEvidence(engine, free, evidences[1])
 
 			<-time.After(30 * time.Second)
 
-			// The data file can have changed, so its properties are read
-			// again before the second pair of addresses.
-			available = common.AvailableProperties(engine)
+			// The data file can have been replaced, so it is checked again
+			// before the second pair of addresses.
+			free = common.IsFreeDataFile(engine, common.Properties)
 
 			//process after file has been updated
-			processEvidence(engine, available, evidences[2])
-			processEvidence(engine, available, evidences[3])
+			processEvidence(engine, free, evidences[2])
+			processEvidence(engine, free, evidences[3])
 
 			return nil
 		})
