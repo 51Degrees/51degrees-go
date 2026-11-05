@@ -2,7 +2,7 @@
 
 ![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **Pipeline API** for Go
 
-[Developer Documentation](https://51degrees.com/documentation/_pipeline_api__index.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=developer-documentation "developer documentation")
+[Developer Documentation](https://51degrees.com/documentation/_pipeline_api__concepts__pipeline_basics.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=developer-documentation "developer documentation")
 | [![Go Reference](https://pkg.go.dev/badge/github.com/51Degrees/51degrees-go/pipeline/v4.svg)](https://pkg.go.dev/github.com/51Degrees/51degrees-go/pipeline/v4)
 
 ## Introduction
