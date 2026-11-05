@@ -34,6 +34,8 @@ func writeTestFile(t *testing.T, path, content string) {
 // Test that a file the examples can't find is downloaded with the data
 // repository's script when the data folder has a link file for it.
 func TestGetFilePathByNameDownloads(t *testing.T) {
+	// Outside GitHub Actions the examples send their own source.
+	t.Setenv("GITHUB_ACTIONS", "")
 	root := t.TempDir()
 	data := filepath.Join(root, "cxx", "data")
 	name := "test-download.hash"
@@ -81,5 +83,20 @@ func TestGetFilePathByNameDownloads(t *testing.T) {
 	if string(source) != downloadSource {
 		t.Errorf("Expected the source %s, but got %s instead.",
 			downloadSource, source)
+	}
+
+	// In GitHub Actions the data repository's scripts send their own source,
+	// so that test runs are not counted as people running the examples.
+	if err := os.Remove(found); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITHUB_ACTIONS", "true")
+	found = GetFilePathByName([]string{name})
+	source, err = os.ReadFile(found)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(source) != 0 {
+		t.Errorf("Expected no source in GitHub Actions, but got %s.", source)
 	}
 }
