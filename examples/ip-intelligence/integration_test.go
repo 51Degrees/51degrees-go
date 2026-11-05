@@ -32,8 +32,14 @@ func TestUpdatePollingInterval(t *testing.T) {
 }
 
 // The cloud example needs a Resource Key that includes IP Intelligence
-// properties, so it runs only when one is given.
+// properties, so it is always built but run only when one is given.
 func TestGettingStartedCloud(t *testing.T) {
+	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
+	build.Stdout = os.Stdout
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		t.Fatal(err)
+	}
 	if os.Getenv("_51DEGREES_RESOURCE_KEY") == "" {
 		t.Skip("_51DEGREES_RESOURCE_KEY is not set, so the cloud example is not run")
 	}
