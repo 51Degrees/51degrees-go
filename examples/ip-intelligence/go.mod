@@ -6,8 +6,8 @@ module github.com/51Degrees/51degrees-go/examples/ip-intelligence
 go 1.21.0
 
 require (
-	github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.169
+	github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.171
 	github.com/goccy/go-yaml v1.19.2
 )
 
-require github.com/51Degrees/51degrees-go/common/v4 v4.5.169 // indirect
+require github.com/51Degrees/51degrees-go/common/v4 v4.5.171 // indirect
