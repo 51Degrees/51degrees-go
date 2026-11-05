@@ -1,8 +1,8 @@
 # 51Degrees Pipeline API
 
-![51Degrees](https://raw.githubusercontent.com/51Degrees/common-ci/main/images/logo/360x67.png "Data rewards the curious") **Pipeline API** for Go
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **Pipeline API** for Go
 
-[Developer Documentation](https://51degrees.com/pipeline-go/index.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=developer-documentation "developer documentation")
+[Developer Documentation](https://51degrees.com/documentation/_pipeline_api__index.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=developer-documentation "developer documentation")
 | [![Go Reference](https://pkg.go.dev/badge/github.com/51Degrees/51degrees-go/pipeline/v4.svg)](https://pkg.go.dev/github.com/51Degrees/51degrees-go/pipeline/v4)
 
 ## Introduction
@@ -24,7 +24,7 @@ integration. The only third-party dependency is
 [`fsnotify`](https://github.com/fsnotify/fsnotify), used to watch data files for
 changes.
 
-The [tested versions](https://51degrees.com/documentation/_info__tested_versions.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=tested-versions)
+The [tested versions](https://51degrees.com/documentation/_product_summaries__tested_versions.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=tested-versions)
 page shows the versions that are currently tested against. The software may run
 fine against other versions, but additional caution should be applied.
 
@@ -75,7 +75,7 @@ There are several examples available that demonstrate how to make use of the
 Pipeline API in isolation. These are described in the table below.
 If you want examples that demonstrate how to use 51Degrees products such as
 device detection, then these are available in this repository's
-[examples](../examples) folder and on our [website](https://51degrees.com/documentation/_examples__device_detection__index.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=examples).
+[examples](../examples) folder and on our [website](https://51degrees.com/documentation/_device_detection__examples__index.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=examples).
 
 | Example                                                  | Description |
 |----------------------------------------------------------|-------------|

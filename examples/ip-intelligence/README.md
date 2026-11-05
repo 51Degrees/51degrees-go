@@ -1,6 +1,6 @@
 # 51Degrees Ip Intelligence API Examples
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-readme.md&utm_term=51degrees-ip-intelligence-api-examples "Data rewards the curious")
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious")
 **IP Intelligence Go Examples**
 
 ## Introduction
@@ -64,8 +64,8 @@ Below is a table that describes the examples:
 | mixed/getting_started_web     | A web example featuring both device detection and IP intelligence                                                |
 
 The `mixed` examples intentionally combine Device Detection and IP Intelligence
-and live in their own Go module — see [mixed/README.md](mixed/README.md) for how
-to run them (they cannot be run with `go run` from the repository root).
+and live in their own Go module. See [mixed/README.md](../mixed/README.md) for
+how to run them, as they cannot be run with `go run` from the repository root.
 
 ## Run examples
 
