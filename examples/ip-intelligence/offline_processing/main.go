@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/offline_processing.go
+@example offline_processing/main.go
 # Offline processing example of using 51Degrees IP intelligence.
 
 This example demonstrates one possible use of the 51Degrees on-premise IP intelligence
@@ -332,11 +332,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Run example
 			runOfflineProcessing(engine, params)
-
-			engine.Stop()
 
 			return nil
 		})

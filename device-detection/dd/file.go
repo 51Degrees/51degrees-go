@@ -26,6 +26,7 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 import (
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -33,9 +34,18 @@ import (
 	"strings"
 )
 
+// A Git LFS pointer file starts with lfsPointerStart and is smaller than
+// lfsPointerLimitBytes, as the Git LFS specification defines it
+// (https://github.com/git-lfs/git-lfs/blob/main/docs/spec.md).
+const (
+	lfsPointerStart      = "version https://git-lfs.github.com/spec/"
+	lfsPointerLimitBytes = 1024
+)
+
 // GetFilePath take a directory and search for the target file in that directory,
 // including the subdirectories. The directory is a relative path to the current
-// directory of the caller file.
+// directory of the caller file. A Git LFS pointer file is passed over, as it
+// only stands in for the file.
 func GetFilePath(dir string, names []string) (found string, err error) {
 	// Target directory
 	var path string
@@ -59,7 +69,7 @@ func GetFilePath(dir string, names []string) (found string, err error) {
 			return err
 		}
 		for _, name := range names {
-			if strings.EqualFold(info.Name(), name) {
+			if strings.EqualFold(info.Name(), name) && !isLfsPointer(path) {
 				foundPath = path
 				// Return error Exist here to stop the walk
 				return fs.ErrExist
@@ -75,4 +85,20 @@ func GetFilePath(dir string, names []string) (found string, err error) {
 		e = nil
 	}
 	return foundPath, e
+}
+
+// isLfsPointer returns whether the file at path is a Git LFS pointer file.
+func isLfsPointer(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.Size() >= lfsPointerLimitBytes {
+		return false
+	}
+	start := make([]byte, len(lfsPointerStart))
+	n, _ := io.ReadFull(f, start)
+	return string(start[:n]) == lfsPointerStart
 }

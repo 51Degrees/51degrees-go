@@ -89,6 +89,9 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			engine, err := New(tt.options...)
+			if engine != nil {
+				defer engine.Stop()
+			}
 
 			if tt.expectError {
 				if err == nil {
@@ -122,9 +125,6 @@ func TestNew(t *testing.T) {
 			if engine.reloadFileEvents == nil {
 				t.Error("Reload events channel should not be nil")
 			}
-
-			// Clean up
-			engine.Stop()
 		})
 	}
 }

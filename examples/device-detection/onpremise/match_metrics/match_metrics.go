@@ -42,8 +42,11 @@ import (
 func matchMetrics(
 	engine *onpremise.Engine,
 	evidence []onpremise.Evidence) string {
-	// Perform detection
-	results, _ := engine.Process(evidence)
+	// Perform detection. There are no results to free when it fails.
+	results, err := engine.Process(evidence)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	// Make sure results object is freed after function execution.
 	defer results.Free()
@@ -180,11 +183,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Run example
 			runMatchMetrics(engine)
-
-			engine.Stop()
 
 			return nil
 		},

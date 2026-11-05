@@ -65,6 +65,7 @@ import (
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 // Evidence where all fields are in string format
@@ -322,16 +323,11 @@ func main() {
 	manager = dd.NewResourceManager()
 	config = dd.NewConfigHash(dd.Balanced)
 	config.SetUseUpperPrefixHeaders(false)
-	fileNames := []string{"51Degrees-LiteV4.1.hash"}
-	filePath, err := dd.GetFilePath(
-		"..",
-		fileNames)
-	if err != nil {
-		log.Fatalf("Could not find any file that matches any of \"%s\".\n",
-			strings.Join(fileNames, ", "))
-	}
+	// The data file is found by searching up from here, and when it is
+	// missing it is downloaded from the data repository, which links to it.
+	filePath := examples.GetFilePathByName([]string{"51Degrees-LiteV4.1.hash"})
 	// Init manager
-	err = dd.InitManagerFromFile(
+	err := dd.InitManagerFromFile(
 		manager,
 		*config,
 		"",

@@ -6,6 +6,7 @@ import (
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 type ExampleParams struct {
@@ -35,7 +36,7 @@ func RunExample(exampleFunc ExampleFunc) {
 
 	params := ExampleParams{
 		LicenseKey:   licenseKey,
-		DataFile:     dataFile,
+		DataFile:     dd_example.GetDataFile(dataFile),
 		EvidenceYaml: evidenceYaml,
 	}
 
