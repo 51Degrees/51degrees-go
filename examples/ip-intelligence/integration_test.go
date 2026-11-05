@@ -32,6 +32,10 @@ func TestReloadFromFileFreeDataFile(t *testing.T) {
 	testFree(t, "reload_from_file")
 }
 
+func TestPerformanceFreeDataFile(t *testing.T) {
+	testFree(t, "performance")
+}
+
 func TestUpdatePollingIntervalFreeDataFile(t *testing.T) {
 	testFree(t, "update_polling_interval")
 }

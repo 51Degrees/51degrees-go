@@ -64,7 +64,7 @@ engine, err := ipi_onpremise.New(
 	// File System Watcher is by default enabled
 	ipi_onpremise.WithFileWatch(true),
 	// Optional properties configuration
-	ipi_onpremise.WithProperties(common.Properties),
+	ipi_onpremise.WithProperties(common.NetworkProperties),
 )
 ```
 <br/>
@@ -95,7 +95,7 @@ ipi_onpremise.WithFileWatch(true),
 <b>WithProperties</b> (Optional) Configures the list of properties to be returned. If not configured - all properties will be returned.
 
 ```
-ipi_onpremise.WithProperties(common.Properties),
+ipi_onpremise.WithProperties(common.NetworkProperties),
 ```
 <br/>
 ### Expected output:
@@ -149,7 +149,7 @@ func executeTest(engine *ipi_onpremise.Engine, report *common.Report, ipAddress 
 	}
 
 	var actual bytes.Buffer
-	for _, property := range common.Properties {
+	for _, property := range common.NetworkProperties {
 		if property == "Mcc" {
 			// Only Mcc property has weight
 			value, weight, found := res.GetValueWeightByProperty(property)
@@ -334,7 +334,7 @@ func runReloadFromFile(engine *ipi_onpremise.Engine, params *common.ExampleParam
 
 // main is the entry point of the program, managing configuration, initializing the engine, and executing processing logic.
 func main() {
-	common.RunExample(
+	common.RunExampleWithDataFile(common.AsnDataFile,
 		func(params *common.ExampleParams) error {
 			//Create config
 			config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
@@ -352,7 +352,7 @@ func main() {
 				// File System Watcher is by default enabled
 				ipi_onpremise.WithFileWatch(true),
 				// Defined list of properties
-				ipi_onpremise.WithProperties(common.Properties),
+				ipi_onpremise.WithProperties(common.NetworkProperties),
 			)
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
@@ -364,8 +364,8 @@ func main() {
 			// Run example
 			runReloadFromFile(engine, params)
 
-			if common.IsFreeDataFile(engine, common.Properties) {
-				common.PrintEnterpriseNote(contactUs)
+			if common.IsFreeDataFile(engine, common.NetworkProperties) {
+				common.PrintEnterpriseOffer(contactUs)
 			}
 
 			return nil

@@ -135,7 +135,7 @@ func processEvidence(
 	}
 
 	log.Printf("IP address %s:", ipAddress)
-	for _, property := range common.Properties {
+	for _, property := range common.NetworkProperties {
 		value, weight, found := result.GetValueWeightByProperty(property)
 		switch {
 		case found:
@@ -163,14 +163,14 @@ func runWithoutUpdates(params *common.ExampleParams) {
 		ipi_onpremise.WithDataFile(params.DataFile),
 		ipi_onpremise.WithAutoUpdate(false),
 		ipi_onpremise.WithTempDataCopy(false),
-		ipi_onpremise.WithProperties(common.Properties),
+		ipi_onpremise.WithProperties(common.NetworkProperties),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Stop()
 
-	free := common.IsFreeDataFile(engine, common.Properties)
+	free := common.IsFreeDataFile(engine, common.NetworkProperties)
 	processEvidence(engine, free, evidences[0])
 	processEvidence(engine, free, evidences[1])
 
@@ -181,7 +181,7 @@ func runWithoutUpdates(params *common.ExampleParams) {
 }
 
 func main() {
-	common.RunExample(
+	common.RunExampleWithDataFile(common.AsnDataFile,
 		func(params *common.ExampleParams) error {
 			if params.LicenseKey == "" && params.DataFileUrl == "" {
 				runWithoutUpdates(params)
@@ -251,7 +251,7 @@ func main() {
 
 			defer engine.Stop()
 
-			free := common.IsFreeDataFile(engine, common.Properties)
+			free := common.IsFreeDataFile(engine, common.NetworkProperties)
 
 			//process before file has been updated
 			processEvidence(engine, free, evidences[0])
@@ -261,7 +261,7 @@ func main() {
 
 			// The data file can have been replaced, so it is checked again
 			// before the second pair of addresses.
-			free = common.IsFreeDataFile(engine, common.Properties)
+			free = common.IsFreeDataFile(engine, common.NetworkProperties)
 
 			//process after file has been updated
 			processEvidence(engine, free, evidences[2])

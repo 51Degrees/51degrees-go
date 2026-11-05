@@ -10,13 +10,16 @@ import (
 // Enterprise data file has values for.
 const NeedsEnterprise = "needs the Enterprise data file"
 
-// FreeProperties are the properties the free Lite data file has values for.
-// It lists the other properties too, but with no values, so only the
+// FreeProperties are the properties the free data files have values for, the
+// first three from the Lite file and the last two from the Asn file. The Lite
+// file lists the other properties too, but with no values, so only the
 // Enterprise data file can give them.
 var FreeProperties = map[string]bool{
 	"RegisteredCountry": true,
 	"RegisteredName":    true,
 	"RegisteredOwner":   true,
+	"Asn":               true,
+	"AsnName":           true,
 }
 
 // probeAddress has a range and a location in the Enterprise data file.
@@ -39,6 +42,14 @@ func IsFreeDataFile(engine *ipi_onpremise.Engine, properties []string) bool {
 		}
 	}
 	return true
+}
+
+// PrintEnterpriseOffer writes, for an example that shows no properties, where
+// to ask for a copy of the Enterprise data file.
+func PrintEnterpriseOffer(contactUs string) {
+	fmt.Printf("\nThis example used a free data file. The Enterprise data "+
+		"file adds the location, range and connection properties. Contact us "+
+		"for a copy at %s\n", contactUs)
 }
 
 // PrintEnterpriseNote writes where to ask for a copy of the Enterprise data
