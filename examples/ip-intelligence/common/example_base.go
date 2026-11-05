@@ -4,6 +4,16 @@ import (
 	"os"
 )
 
+// LiteDataFile is the free data file the examples use when DATA_FILE names no
+// other. The data repository links it, so an example downloads it the first
+// time it runs.
+const LiteDataFile = "51Degrees-LiteV41.ipi"
+
+// EvidenceFile holds the addresses the offline processing, performance and
+// reload examples read when EVIDENCE_YAML names no other file. The data
+// repository has it.
+const EvidenceFile = "evidence.yml"
+
 type ExampleParams struct {
 	LicenseKey     string
 	Product        string
@@ -23,12 +33,12 @@ func RunExample(exampleFunc ExampleFunc) {
 
 	dataFile := os.Getenv("DATA_FILE")
 	if dataFile == "" {
-		dataFile = "51Degrees-EnterpriseIpiV41.ipi"
+		dataFile = LiteDataFile
 	}
 
 	evidenceYaml := os.Getenv("EVIDENCE_YAML")
 	if evidenceYaml == "" {
-		evidenceYaml = "20000_ipi_evidence_records.yml"
+		evidenceYaml = GetDataFolderFile(EvidenceFile)
 	}
 
 	dataFileUrl := os.Getenv("IPI_DATA_FILE_URL")

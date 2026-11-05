@@ -24,7 +24,8 @@ package main
 
 /*
 This example illustrates how to perform simple device detections on given
-User-Agent strings.
+User-Agent strings. It runs with the free Lite data file, and shows the
+properties that only the Enterprise data file has as needing it.
 */
 
 import (
@@ -36,40 +37,59 @@ import (
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
 
-// function match performs a match on an input User-Agent string and determine
-// if the device is a mobile device. Returns output string.
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-dd-getting_started-getting_started.go&utm_term=enterprise-data-file"
+
+// properties are those the example shows. The free data file has the first
+// five, and the Enterprise data file has them all.
+var properties = append([]string{
+	"IsMobile",
+	"PlatformName",
+	"PlatformVersion",
+	"BrowserName",
+	"BrowserVersion",
+}, dd_example.EnterpriseProperties...)
+
+// match performs a detection on the User-Agent and returns each property's
+// value, or that it needs the Enterprise data file when the data file does
+// not have it, and whether any property needs it.
 func match(
 	results *dd.ResultsHash,
-	ua string) string {
+	ua string) (string, bool) {
 	// Perform detection
 	err := results.MatchUserAgent(ua)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	propertyName := "IsMobile"
+	output := ""
+	missing := false
+	for _, property := range properties {
+		if !dd_example.HasProperty(results, property) {
+			output += fmt.Sprintf("\t%s: %s\n", property, dd_example.NeedsEnterprise)
+			missing = true
+			continue
+		}
 
-	// If results has values for required property
-	hasValues, err := results.HasValues(propertyName)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	returnStr := ""
-	if !hasValues {
-		returnStr = fmt.Sprintf("Property %s does not have a matched value.\n", propertyName)
-	} else {
-		// Get the values in string
-		value, err := results.ValuesString(
-			propertyName,
-			",")
+		// If results has values for the property
+		hasValues, err := results.HasValues(property)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		returnStr = fmt.Sprintf("\tIsMobile: %s\n", value)
-	}
+		if !hasValues {
+			output += fmt.Sprintf("\t%s: no value for this User-Agent\n", property)
+			continue
+		}
 
-	return returnStr
+		// Get the values in string
+		value, err := results.ValuesString(property, ",")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		output += fmt.Sprintf("\t%s: %s\n", property, value)
+	}
+	return output, missing
 }
 
 func runGettingStarted(perf dd.PerformanceProfile) string {
@@ -96,59 +116,33 @@ func runGettingStarted(perf dd.PerformanceProfile) string {
 	// Make sure results object is freed after function execution.
 	defer results.Free()
 
-	// User-Agent string of an iPhone mobile device.
-	const uaMobile = "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
-		"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 " +
-		"Safari/9537.53"
-
-	// User-Agent string of Firefox Web browser version 41 on desktop.
-	const uaDesktop = "Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) " +
-		"Gecko/20100101 Firefox/41.0"
-
-	// User-Agent string of a MediaHub device.
-	const uaMediaHub = "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36"
-
-	// Perform detection on mobile User-Agent
-	actual := fmt.Sprintf("Mobile User-Agent: %s\n", uaMobile)
-	actual += match(results, uaMobile)
-
-	// Perform detection on desktop User-Agent
-	actual += fmt.Sprintf("\nDesktop User-Agent: %s\n", uaDesktop)
-	actual += match(results, uaDesktop)
-
-	// Perform detection on MediaHub User-Agent
-	actual += fmt.Sprintf("\nMediaHub User-Agent: %s\n", uaMediaHub)
-	actual += match(results, uaMediaHub)
-
-	// Expected output
-	expected := "Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53\n"
-	expected += "\tIsMobile: True\n"
-	expected += "\n"
-	expected += "Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0\n"
-	expected += "\tIsMobile: False\n"
-	expected += "\n"
-	expected += "MediaHub User-Agent: Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36\n"
-	expected += "\tIsMobile: False\n"
-	if actual != expected {
-		log.Println("Expected:")
-		log.Println(expected)
-		log.Println("")
-		log.Println("Actual:")
-		log.Println(actual)
-		log.Fatalln("Output does not match expected.")
+	// User-Agent strings of an iPhone, Firefox 41 on a Windows desktop, and
+	// a MediaHub device.
+	userAgents := []struct{ name, ua string }{
+		{"Mobile", "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
+			"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 " +
+			"Safari/9537.53"},
+		{"Desktop", "Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) " +
+			"Gecko/20100101 Firefox/41.0"},
+		{"MediaHub", "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 " +
+			"(KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36"},
 	}
-	return actual
+
+	output := ""
+	missing := false
+	for _, userAgent := range userAgents {
+		values, needs := match(results, userAgent.ua)
+		output += fmt.Sprintf("%s User-Agent: %s\n%s\n", userAgent.name, userAgent.ua, values)
+		if needs {
+			missing = true
+		}
+	}
+	if missing {
+		output += dd_example.EnterpriseNote(contactUs)
+	}
+	return output
 }
 
 func main() {
 	dd_example.PerformExample(dd.Default, runGettingStarted)
-	// Output:
-	// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
-	// 	IsMobile: True
-	//
-	// Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0
-	// 	IsMobile: False
-	//
-	// MediaHub User-Agent: Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36
-	// 	IsMobile: False
 }

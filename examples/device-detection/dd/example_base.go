@@ -49,11 +49,33 @@ const EnterpriseDataFile = "Enterprise-HashV41.hash"
 const UaFileCSV = "20000 User Agents.csv"
 const EvidenceFileYaml = "20000 Evidence Records.yml"
 
+// EnterpriseProperties are properties that only the Enterprise data file
+// has, which the examples show beside the free ones.
+var EnterpriseProperties = []string{"HardwareVendor", "HardwareName", "DeviceType"}
+
+// NeedsEnterprise is shown in place of the value of a property that the data
+// file in use does not have, because only the Enterprise data file has it.
+const NeedsEnterprise = "needs the Enterprise data file"
+
+// HasProperty reports whether the data file has the property, which the
+// results must have been asked for.
+func HasProperty(results *dd.ResultsHash, property string) bool {
+	return results.RequiredPropertyIndexFromName(property) >= 0
+}
+
+// EnterpriseNote returns where to ask for a copy of the Enterprise data file,
+// for an example to print when the data file lacks a property it shows.
+func EnterpriseNote(contactUs string) string {
+	return fmt.Sprintf("Some of these properties need the Enterprise data "+
+		"file. Contact us for a copy at %s\n", contactUs)
+}
+
 // The data repository, the data submodule of cxx, has a link file in
 // dataFolder for each file its scripts download.
 var dataFolder = filepath.Join("cxx", "data", "device-detection")
 
 // Sent with each download the examples start, so that they can be counted.
+// In GitHub Actions the scripts send their own source.
 const downloadSource = "examples-51degrees-go"
 
 // Evidence where all fields are in string format
@@ -163,20 +185,30 @@ func getDataFile(name string) (string, bool) {
 
 	// The data repository is the folder above the data folder.
 	data := filepath.Dir(filepath.Dir(link))
-	var cmd *exec.Cmd
+	var args []string
 	var command string
 	if runtime.GOOS == "windows" {
 		script := filepath.Join(data, "get-data-files.ps1")
-		cmd = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy",
-			"Bypass", "-File", script, name, "-Source", downloadSource)
+		args = []string{"powershell", "-NoProfile", "-ExecutionPolicy",
+			"Bypass", "-File", script, name}
 		command = fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass "+
-			"-File \"%s\" \"%s\" -Source %s", script, name, downloadSource)
+			"-File \"%s\" \"%s\"", script, name)
+		if source := exampleSource(); source != "" {
+			args = append(args, "-Source", source)
+			command += " -Source " + source
+		}
 	} else {
 		script := filepath.Join(data, "get-data-files.sh")
-		cmd = exec.Command("sh", script, "-s", downloadSource, name)
-		command = fmt.Sprintf("sh \"%s\" -s %s \"%s\"",
-			script, downloadSource, name)
+		args = []string{"sh", script}
+		command = fmt.Sprintf("sh \"%s\"", script)
+		if source := exampleSource(); source != "" {
+			args = append(args, "-s", source)
+			command += " -s " + source
+		}
+		args = append(args, name)
+		command += fmt.Sprintf(" \"%s\"", name)
 	}
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	log.Printf("%s is missing, so it is being downloaded by running\n%s\n",
@@ -189,6 +221,16 @@ func getDataFile(name string) (string, bool) {
 	log.Fatalf("%s could not be downloaded. Run this command to try again.\n%s\n",
 		name, command)
 	return "", false
+}
+
+// exampleSource returns the source to send with a download, or nothing in
+// GitHub Actions, where the data repository's scripts send their own so that
+// test runs are not counted as people running the examples.
+func exampleSource() string {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		return ""
+	}
+	return downloadSource
 }
 
 // findAbove returns the working folder, or the first folder above it, joined

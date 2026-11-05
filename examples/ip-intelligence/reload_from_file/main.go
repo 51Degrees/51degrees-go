@@ -137,6 +137,10 @@ type detection struct {
 	iteration uint32
 }
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-reload_from_file-main.go&utm_term=enterprise-data-file"
+
 // executeTest runs a test by processing an IP address through the engine and updating the report.
 func executeTest(engine *ipi_onpremise.Engine, report *common.Report, ipAddress string, iteration uint32) {
 	res, err := engine.Process(ipAddress)
@@ -359,6 +363,9 @@ func main() {
 
 			// Run example
 			runReloadFromFile(engine, params)
+
+			common.PrintEnterpriseNote(
+				common.AvailableProperties(engine), common.Properties, contactUs)
 
 			return nil
 		})

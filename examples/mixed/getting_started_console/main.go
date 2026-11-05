@@ -26,24 +26,29 @@
 // The example processes four hardcoded evidence records (User-Agent header + client IP)
 // and prints the detected device properties alongside IP intelligence data.
 //
-// Required environment variables:
+// It runs with the free Lite data files, downloading one that is missing, and
+// shows the properties that need the Enterprise data files as needing them.
+// These environment variables give other data files:
 //
-//	DATA_FILE    Path to the IP Intelligence .ipi data file
-//	DD_DATA_FILE Path to the Device Detection .hash data file
+//	DATA_FILE    Path to an IP Intelligence .ipi data file
+//	DD_DATA_FILE Path to a Device Detection .hash data file
 package main
 
 import (
 	"fmt"
 	"log"
-	"os"
-	"sort"
 	"sync"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	ddOnpremise "github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
+	"github.com/51Degrees/51degrees-go/examples/mixed/common"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
+
+// contactUs is where to ask for a copy of the Enterprise data files, which
+// have the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-mixed-getting_started_console-main.go&utm_term=enterprise-data-file"
 
 // testCase holds a single set of evidence for the mixed example.
 type testCase struct {
@@ -90,7 +95,9 @@ var hardcodedCases = []testCase{
 	},
 }
 
-// ddProperties lists the device detection properties to display.
+// ddProperties lists the device detection properties to display. The free
+// data file has the platform and browser ones, and the hardware ones need the
+// Enterprise data file.
 var ddProperties = []string{
 	"HardwareName",
 	"HardwareModel",
@@ -98,6 +105,19 @@ var ddProperties = []string{
 	"PlatformVersion",
 	"BrowserName",
 	"BrowserVersion",
+}
+
+// ipiProperties lists the IP intelligence properties to display. The free
+// data file has the registered ones, and the location ones need the
+// Enterprise data file.
+var ipiProperties = []string{
+	"RegisteredCountry",
+	"RegisteredName",
+	"RegisteredOwner",
+	"Country",
+	"Town",
+	"Latitude",
+	"Longitude",
 }
 
 // buildDDEvidence constructs the DD evidence slice for a test case,
@@ -118,53 +138,57 @@ func buildDDEvidence(tc testCase) []ddOnpremise.Evidence {
 	return ev
 }
 
-// printDDResults writes device detection property values to stdout.
-func printDDResults(results *dd.ResultsHash) {
+// printDDResults writes device detection property values to stdout, and
+// reports whether any property needs the Enterprise data file.
+func printDDResults(results *dd.ResultsHash) bool {
 	fmt.Println("  --- Device Detection ---")
+	missing := false
 	for _, prop := range ddProperties {
-		hasValues, err := results.HasValues(prop)
-		if err != nil || !hasValues {
+		if !common.HasDeviceProperty(results, prop) {
+			fmt.Printf("  %-20s %s\n", prop+":", common.NeedsEnterprise)
+			missing = true
 			continue
 		}
-		value, err := results.ValuesString(prop, ",")
-		if err != nil {
-			continue
+		value := "no value for this device"
+		if hasValues, err := results.HasValues(prop); err == nil && hasValues {
+			if v, err := results.ValuesString(prop, ","); err == nil {
+				value = v
+			}
 		}
 		fmt.Printf("  %-20s %s\n", prop+":", value)
 	}
+	return missing
 }
 
-// printIPIResults writes all IP intelligence properties to stdout,
-// sorted alphabetically for consistent output.
-func printIPIResults(values ipi_interop.Values) {
+// printIPIResults writes the IP intelligence property values to stdout, and
+// reports whether any property needs the Enterprise data file.
+func printIPIResults(values ipi_interop.Values, available map[string]bool) bool {
 	fmt.Println("\n  --- IP Intelligence ---")
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, prop := range keys {
-		if prop == "Mcc" {
-			// Only Mcc property has weight
-			val, weight, found := values.GetValueWeightByProperty(prop)
-			if !found {
-				continue
-			}
-			fmt.Printf("  %-20s %v (weight: %.2f)\n", prop+":", val, weight)
-		} else {
-			// All other properties are non-weighted
-			val, found := values.GetValueByProperty(prop)
-			if !found {
-				continue
-			}
-			fmt.Printf("  %-20s %v\n", prop+":", val)
+	missing := false
+	for _, prop := range ipiProperties {
+		if !available[prop] {
+			fmt.Printf("  %-20s %s\n", prop+":", common.NeedsEnterprise)
+			missing = true
+			continue
 		}
+		val, weight, found := values.GetValueWeightByProperty(prop)
+		if !found {
+			fmt.Printf("  %-20s no value for this address\n", prop+":")
+			continue
+		}
+		fmt.Printf("  %-20s %v (weight: %.2f)\n", prop+":", val, weight)
 	}
+	return missing
 }
 
-// processCase runs one evidence record through both engines concurrently
-// and prints the combined results.
-func processCase(tc testCase, ddEngine *ddOnpremise.Engine, ipiEngine *ipi_onpremise.Engine) {
+// processCase runs one evidence record through both engines concurrently,
+// prints the combined results, and reports whether any property needs the
+// Enterprise data file.
+func processCase(
+	tc testCase,
+	ddEngine *ddOnpremise.Engine,
+	ipiEngine *ipi_onpremise.Engine,
+	available map[string]bool) bool {
 	fmt.Printf("\n[%s]\n", tc.name)
 	fmt.Printf("  User-Agent: %s\n", tc.userAgent)
 	fmt.Printf("  Client IP:  %s\n\n", tc.clientIP)
@@ -187,29 +211,27 @@ func processCase(tc testCase, ddEngine *ddOnpremise.Engine, ipiEngine *ipi_onpre
 	}()
 	wg.Wait()
 
+	missing := false
 	if ddErr != nil {
 		log.Printf("Device Detection error: %v", ddErr)
 	} else {
 		defer ddResults.Free()
-		printDDResults(ddResults)
+		missing = printDDResults(ddResults)
 	}
 
 	if ipiErr != nil {
 		log.Printf("IP Intelligence error: %v", ipiErr)
-	} else {
-		printIPIResults(ipiValues)
+	} else if printIPIResults(ipiValues, available) {
+		missing = true
 	}
+	return missing
 }
 
 func main() {
-	ipiDataFile := os.Getenv("DATA_FILE")
-	if ipiDataFile == "" {
-		ipiDataFile = "51Degrees-EnterpriseIpiV41.ipi"
-	}
-	ddDataFile := os.Getenv("DD_DATA_FILE")
-	if ddDataFile == "" {
-		ddDataFile = "51Degrees-LiteV4.1.hash"
-	}
+	ipiDataFile := common.DataFile(
+		"DATA_FILE", common.IpIntelligenceFolder, common.IpIntelligenceDataFile)
+	ddDataFile := common.DataFile(
+		"DD_DATA_FILE", common.DeviceDetectionFolder, common.DeviceDetectionDataFile)
 
 	ddConfig := dd.NewConfigHash(dd.InMemory)
 	ddEngine, err := ddOnpremise.New(
@@ -230,6 +252,7 @@ func main() {
 		ipi_onpremise.WithDataFile(ipiDataFile),
 		ipi_onpremise.WithAutoUpdate(false),
 		ipi_onpremise.WithTempDataCopy(false),
+		ipi_onpremise.WithProperties(ipiProperties),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create IP Intelligence engine: %v", err)
@@ -240,7 +263,14 @@ func main() {
 	log.Printf("Device Detection data: %s", ddDataFile)
 	log.Printf("IP Intelligence data:  %s", ipiDataFile)
 
+	available := common.IpProperties(ipiEngine)
+	missing := false
 	for _, tc := range hardcodedCases {
-		processCase(tc, ddEngine, ipiEngine)
+		if processCase(tc, ddEngine, ipiEngine, available) {
+			missing = true
+		}
+	}
+	if missing {
+		fmt.Printf("\n"+common.EnterpriseNote+"\n", contactUs)
 	}
 }

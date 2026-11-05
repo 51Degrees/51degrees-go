@@ -16,6 +16,7 @@ import (
 var dataFolder = filepath.Join("cxx", "data", "ip-intelligence")
 
 // Sent with each download the examples start, so that they can be counted.
+// In GitHub Actions the scripts send their own source.
 const downloadSource = "examples-51degrees-go"
 
 // Returns a full path to a file to be used for examples by path to a file. A
@@ -51,6 +52,16 @@ func GetDataFile(path string) string {
 	return path
 }
 
+// GetDataFolderFile returns the path of a file the data repository holds,
+// such as its example evidence, looked for from the working folder up, or
+// name when there is none, so that the caller reports it missing.
+func GetDataFolderFile(name string) string {
+	if path := findAbove(filepath.Join(dataFolder, name)); path != "" {
+		return path
+	}
+	return name
+}
+
 // getDataFile returns the data repository's copy of the file called name,
 // running the repository's script first to download it when it is missing.
 // It returns false when there is no link file for name in the data folder,
@@ -67,20 +78,30 @@ func getDataFile(name string) (string, bool) {
 
 	// The data repository is the folder above the data folder.
 	data := filepath.Dir(filepath.Dir(link))
-	var cmd *exec.Cmd
+	var args []string
 	var command string
 	if runtime.GOOS == "windows" {
 		script := filepath.Join(data, "get-data-files.ps1")
-		cmd = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy",
-			"Bypass", "-File", script, name, "-Source", downloadSource)
+		args = []string{"powershell", "-NoProfile", "-ExecutionPolicy",
+			"Bypass", "-File", script, name}
 		command = fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass "+
-			"-File \"%s\" \"%s\" -Source %s", script, name, downloadSource)
+			"-File \"%s\" \"%s\"", script, name)
+		if source := exampleSource(); source != "" {
+			args = append(args, "-Source", source)
+			command += " -Source " + source
+		}
 	} else {
 		script := filepath.Join(data, "get-data-files.sh")
-		cmd = exec.Command("sh", script, "-s", downloadSource, name)
-		command = fmt.Sprintf("sh \"%s\" -s %s \"%s\"",
-			script, downloadSource, name)
+		args = []string{"sh", script}
+		command = fmt.Sprintf("sh \"%s\"", script)
+		if source := exampleSource(); source != "" {
+			args = append(args, "-s", source)
+			command += " -s " + source
+		}
+		args = append(args, name)
+		command += fmt.Sprintf(" \"%s\"", name)
 	}
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	log.Printf("%s is missing, so it is being downloaded by running\n%s\n",
@@ -93,6 +114,16 @@ func getDataFile(name string) (string, bool) {
 	log.Fatalf("%s could not be downloaded. Run this command to try again.\n%s\n",
 		name, command)
 	return "", false
+}
+
+// exampleSource returns the source to send with a download, or nothing in
+// GitHub Actions, where the data repository's scripts send their own so that
+// test runs are not counted as people running the examples.
+func exampleSource() string {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		return ""
+	}
+	return downloadSource
 }
 
 // findAbove returns the working folder, or the first folder above it, joined
