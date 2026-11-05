@@ -146,6 +146,10 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-offline_processing-main.go&utm_term=enterprise-data-file"
+
 // PropertiesData represents a structured data type containing various property fields commonly associated with network or location data.
 type PropertiesData struct {
 	IpRangeStart      any `yaml:"ip-range-start"`
@@ -338,6 +342,10 @@ func main() {
 
 			// Run example
 			runOfflineProcessing(engine, params)
+
+			if common.IsFreeDataFile(engine, common.Properties) {
+				common.PrintEnterpriseNote(contactUs)
+			}
 
 			return nil
 		})

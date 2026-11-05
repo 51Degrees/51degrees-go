@@ -1,12 +1,30 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
-	"github.com/51Degrees/51degrees-go/examples/device-detection/onpremise/common"
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
+	"github.com/51Degrees/51degrees-go/examples/device-detection/onpremise/common"
 )
+
+// contactUs is where to ask for a licence key and a copy of the Enterprise
+// data file, which automatic updates download.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-update_polling_interval-update_polling_interval.go&utm_term=licence-key"
+
+// properties are those the example shows. The free data file has the
+// platform and browser ones, and the Enterprise data file has them all.
+var properties = []string{
+	"HardwareVendor",
+	"HardwareName",
+	"HardwareModel",
+	"PlatformName",
+	"PlatformVersion",
+	"BrowserName",
+	"DeviceType",
+}
 
 func processExampleEvidence(engine *onpremise.Engine, evidence []onpremise.Evidence) {
 	//Process evidence. There are no results to free when it fails.
@@ -17,35 +35,52 @@ func processExampleEvidence(engine *onpremise.Engine, evidence []onpremise.Evide
 	}
 	defer resultsHash.Free()
 	//Get values from results
-	vendor, _ := resultsHash.ValuesString("HardwareVendor", ",")
-	name, _ := resultsHash.ValuesString("HardwareName", ",")
-	model, _ := resultsHash.ValuesString("HardwareModel", ",")
-	deviceType, _ := resultsHash.ValuesString("DeviceType", ",")
-	browser, _ := resultsHash.ValuesString("BrowserName", ",")
-	platform, _ := resultsHash.ValuesString("PlatformName", ",")
-	platformVersion, _ := resultsHash.ValuesString("PlatformVersion", ",")
-
-	log.Printf("HardwareVendor: %s", vendor)
-	log.Printf("HardwareName: %s", name)
-	log.Printf("HardwareModel: %s", model)
-	log.Printf("PlatformName: %s", platform)
-	log.Printf("PlatformVersion: %s", platformVersion)
-	log.Printf("BrowserName: %s", browser)
-	log.Printf("DeviceType: %s", deviceType)
+	for _, property := range properties {
+		if !dd_example.HasProperty(resultsHash, property) {
+			log.Printf("%s: %s", property, dd_example.NeedsEnterprise)
+			continue
+		}
+		value, _ := resultsHash.ValuesString(property, ",")
+		log.Printf("%s: %s", property, value)
+	}
 	log.Printf("\n")
+}
 
+// runWithoutUpdates shows the data file the example has, once, when there is
+// no licence key to download updates with.
+func runWithoutUpdates(params common.ExampleParams) {
+	engine, err := onpremise.New(
+		onpremise.WithDataFile(params.DataFile),
+		onpremise.WithAutoUpdate(false),
+	)
+	if err != nil {
+		log.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Stop()
+
+	processExampleEvidence(engine, common.ExampleEvidenceDesktop)
+	processExampleEvidence(engine, common.ExampleEvidenceMobile)
+
+	fmt.Printf("Automatic updates download the Enterprise data file with a "+
+		"licence key, which LICENSE_KEY gives. Contact us for a key and a "+
+		"copy at %s\n", contactUs)
 }
 
 func main() {
 	common.RunExample(
 		func(params common.ExampleParams) error {
+			if params.LicenseKey == "" {
+				runWithoutUpdates(params)
+				return nil
+			}
+
 			//Create on-premise engine
 			engine, err := onpremise.New(
 				// Path to your data file
 				onpremise.WithDataFile(params.DataFile),
 
 				// For automatic updates to work you will need to provide a license key.
-				// A license key can be obtained with a subscription from https://51degrees.com/pricing?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
+				// A licence key comes with the Enterprise data file, from https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
 				onpremise.WithLicenseKey(params.LicenseKey),
 
 				// Enable automatic updates.

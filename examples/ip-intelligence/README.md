@@ -9,8 +9,11 @@ This directory contains usage examples of the [ip-intelligence-go](https://githu
 
 ## Pre-requisites
 
-To run these examples you will need a data file and example evidence. The examples use `51Degrees-EnterpriseIpiV41.ipi`
-and `20000_ipi_evidence_records.yml` unless `DATA_FILE` and `EVIDENCE_YAML` name other files, as shown below.
+The examples run with the free Lite data file, `51Degrees-LiteV41.ipi`, and the example evidence in
+`cxx/data/ip-intelligence/evidence.yml`, unless `DATA_FILE` and `EVIDENCE_YAML` name other files, as shown below. The
+Lite file has RegisteredCountry, RegisteredName and RegisteredOwner. The performance, reload and update examples use
+the free Asn data file, `51Degrees-IPIV4AsnIpiV41.ipi`, which has Asn and AsnName and is far smaller to download. The
+examples also show properties only the Enterprise data file has, as needing it, and say where to ask for a copy.
 
 The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to
 the free Lite and Asn data files and holds example evidence in `cxx/data/ip-intelligence/evidence.yml`. To download the

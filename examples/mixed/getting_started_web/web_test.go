@@ -30,56 +30,20 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
-	ddOnpremise "github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
-	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
-	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
 // testHandler is initialised once by TestMain and reused across all tests.
 var testHandler *mixedHandler
 
-// TestMain initialises both engines from the environment.
-// If either data file is unavailable the entire test binary exits with 0
-// (success), treating the run as "skipped" rather than failed.
+// TestMain creates both engines from the data files the environment variables
+// name, or from the free ones, which are downloaded when they are missing, as
+// the example itself does.
 func TestMain(m *testing.M) {
-	ipiDataFile := os.Getenv("DATA_FILE")
-	if ipiDataFile == "" {
-		ipiDataFile = "../../51Degrees-EnterpriseIpiV41.ipi"
-	}
-	ddDataFile := os.Getenv("DD_DATA_FILE")
-	if ddDataFile == "" {
-		ddDataFile = "../../51Degrees-LiteV4.1.hash"
-	}
-
-	ddConfig := dd.NewConfigHash(dd.InMemory)
-	ddEngine, err := ddOnpremise.New(
-		ddOnpremise.WithConfigHash(ddConfig),
-		ddOnpremise.WithDataFile(ddDataFile),
-		ddOnpremise.WithAutoUpdate(false),
-		ddOnpremise.WithTempDataCopy(false),
-		ddOnpremise.WithProperties(ddResponseProperties),
-	)
+	ddEngine, ipiEngine, err := newEngines()
 	if err != nil {
-		log.Printf("Skipping web handler tests: Device Detection engine init failed: %v", err)
-		os.Exit(0)
+		log.Fatalf("Failed to create the engines: %v", err)
 	}
-
-	ipiConfig := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
-	ipiEngine, err := ipi_onpremise.New(
-		ipi_onpremise.WithConfigIpi(ipiConfig),
-		ipi_onpremise.WithDataFile(ipiDataFile),
-		ipi_onpremise.WithAutoUpdate(false),
-		ipi_onpremise.WithTempDataCopy(false),
-	)
-	if err != nil {
-		ddEngine.Stop()
-		log.Printf("Skipping web handler tests: IP Intelligence engine init failed: %v", err)
-		os.Exit(0)
-	}
-
-	testHandler = &mixedHandler{ddEngine: ddEngine, ipiEngine: ipiEngine}
+	testHandler = newMixedHandler(ddEngine, ipiEngine)
 
 	code := m.Run()
 
@@ -94,10 +58,6 @@ func TestMain(m *testing.M) {
 // Structural assertions only are made (status, content-type, and key presence)
 // so the test remains valid across different data file tiers.
 func TestHandler_MixedEngines(t *testing.T) {
-	if testHandler == nil {
-		t.Skip("engines not initialised; set DD_DATA_FILE and DATA_FILE")
-	}
-
 	r, err := http.NewRequest("GET", "/", nil)
 	if err != nil {
 		t.Fatalf("Failed to create HTTP request: %v", err)
@@ -132,5 +92,22 @@ func TestHandler_MixedEngines(t *testing.T) {
 
 	if len(resp.IpIntelligence) == 0 {
 		t.Error("Expected ipIntelligence map to be non-empty")
+	}
+
+	// Each property is either in the data file or given as needing the
+	// Enterprise data file, and the response says where to ask for one when
+	// any needs it.
+	missing := false
+	for _, properties := range []map[string]string{
+		resp.DeviceDetection, resp.IpIntelligence} {
+		for _, value := range properties {
+			if value == "needs the Enterprise data file" {
+				missing = true
+			}
+		}
+	}
+	if missing != (resp.EnterpriseDataFile != "") {
+		t.Errorf("Expected enterpriseDataFile exactly when a property needs "+
+			"the Enterprise data file, got %q", resp.EnterpriseDataFile)
 	}
 }

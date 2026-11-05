@@ -64,7 +64,7 @@ engine, err := ipi_onpremise.New(
 	// File System Watcher is by default enabled
 	ipi_onpremise.WithFileWatch(true),
 	// Optional properties configuration
-	ipi_onpremise.WithProperties(common.Properties),
+	ipi_onpremise.WithProperties(common.NetworkProperties),
 )
 ```
 <br/>
@@ -95,7 +95,7 @@ ipi_onpremise.WithFileWatch(true),
 <b>WithProperties</b> (Optional) Configures the list of properties to be returned. If not configured - all properties will be returned.
 
 ```
-ipi_onpremise.WithProperties(common.Properties),
+ipi_onpremise.WithProperties(common.NetworkProperties),
 ```
 <br/>
 ### Expected output:
@@ -137,6 +137,10 @@ type detection struct {
 	iteration uint32
 }
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-reload_from_file-main.go&utm_term=enterprise-data-file"
+
 // executeTest runs a test by processing an IP address through the engine and updating the report.
 func executeTest(engine *ipi_onpremise.Engine, report *common.Report, ipAddress string, iteration uint32) {
 	res, err := engine.Process(ipAddress)
@@ -145,7 +149,7 @@ func executeTest(engine *ipi_onpremise.Engine, report *common.Report, ipAddress 
 	}
 
 	var actual bytes.Buffer
-	for _, property := range common.Properties {
+	for _, property := range common.NetworkProperties {
 		if property == "Mcc" {
 			// Only Mcc property has weight
 			value, weight, found := res.GetValueWeightByProperty(property)
@@ -330,7 +334,7 @@ func runReloadFromFile(engine *ipi_onpremise.Engine, params *common.ExampleParam
 
 // main is the entry point of the program, managing configuration, initializing the engine, and executing processing logic.
 func main() {
-	common.RunExample(
+	common.RunExampleWithDataFile(common.AsnDataFile,
 		func(params *common.ExampleParams) error {
 			//Create config
 			config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
@@ -348,7 +352,7 @@ func main() {
 				// File System Watcher is by default enabled
 				ipi_onpremise.WithFileWatch(true),
 				// Defined list of properties
-				ipi_onpremise.WithProperties(common.Properties),
+				ipi_onpremise.WithProperties(common.NetworkProperties),
 			)
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
@@ -359,6 +363,10 @@ func main() {
 
 			// Run example
 			runReloadFromFile(engine, params)
+
+			if common.IsFreeDataFile(engine, common.NetworkProperties) {
+				common.PrintEnterpriseOffer(contactUs)
+			}
 
 			return nil
 		})

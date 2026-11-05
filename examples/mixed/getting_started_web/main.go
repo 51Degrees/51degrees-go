@@ -25,22 +25,24 @@
 //
 // The server listens on port 8080 and responds to every request with a JSON
 // document containing:
-//   - clientIp         — the detected client IP address
-//   - deviceDetection  — device properties detected from the request headers
-//   - ipIntelligence   — IP intelligence properties for the client IP
+//   - clientIp           — the detected client IP address
+//   - deviceDetection    — device properties detected from the request headers
+//   - ipIntelligence     — IP intelligence properties for the client IP
+//   - enterpriseDataFile — where to ask for a copy of the Enterprise data
+//     files, given when a property needs them
 //
 // Both engines are queried concurrently for each request.
 //
-// Required environment variables:
+// It runs with the free Lite data files, downloading one that is missing, and
+// gives the properties that need the Enterprise data files as needing them.
+// These environment variables give other data files:
 //
-//	DATA_FILE    Path to the IP Intelligence .ipi data file
-//	DD_DATA_FILE Path to the Device Detection .hash data file
+//	DATA_FILE    Path to an IP Intelligence .ipi data file
+//	DD_DATA_FILE Path to a Device Detection .hash data file
 //
 // Run (from the examples/mixed directory — the mixed examples are a separate
 // Go module, so they cannot be run from the repository root):
 //
-//	DATA_FILE=../../51Degrees-EnterpriseIpiV41.ipi \
-//	DD_DATA_FILE=../../51Degrees-LiteV4.1.hash \
 //	go run ./getting_started_web
 //
 // Then in another terminal:
@@ -54,17 +56,23 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	ddOnpremise "github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
+	"github.com/51Degrees/51degrees-go/examples/mixed/common"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
-// ddResponseProperties lists device detection properties included in the JSON response.
+// contactUs is where to ask for a copy of the Enterprise data files, which
+// have the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-mixed-getting_started_web-main.go&utm_term=enterprise-data-file"
+
+// ddResponseProperties lists device detection properties included in the JSON
+// response. The free data file has the platform and browser ones, and the
+// hardware ones need the Enterprise data file.
 var ddResponseProperties = []string{
 	"HardwareName",
 	"HardwareModel",
@@ -74,17 +82,44 @@ var ddResponseProperties = []string{
 	"BrowserVersion",
 }
 
+// ipiResponseProperties lists IP intelligence properties included in the JSON
+// response. The free data file has the registered ones, and the location ones
+// need the Enterprise data file.
+var ipiResponseProperties = []string{
+	"RegisteredCountry",
+	"RegisteredName",
+	"RegisteredOwner",
+	"Country",
+	"Town",
+	"Latitude",
+	"Longitude",
+}
+
 // MixedResponse is the JSON structure returned by the HTTP handler.
 type MixedResponse struct {
-	ClientIP        string            `json:"clientIp"`
-	DeviceDetection map[string]string `json:"deviceDetection"`
-	IpIntelligence  map[string]string `json:"ipIntelligence"`
+	ClientIP           string            `json:"clientIp"`
+	DeviceDetection    map[string]string `json:"deviceDetection"`
+	IpIntelligence     map[string]string `json:"ipIntelligence"`
+	EnterpriseDataFile string            `json:"enterpriseDataFile,omitempty"`
 }
 
 // mixedHandler holds references to both engines and implements http.Handler.
 type mixedHandler struct {
 	ddEngine  *ddOnpremise.Engine
 	ipiEngine *ipi_onpremise.Engine
+	// ipiFree is whether the IP intelligence data file is a free one.
+	ipiFree bool
+}
+
+// newMixedHandler returns a handler for both engines.
+func newMixedHandler(
+	ddEngine *ddOnpremise.Engine,
+	ipiEngine *ipi_onpremise.Engine) *mixedHandler {
+	return &mixedHandler{
+		ddEngine:  ddEngine,
+		ipiEngine: ipiEngine,
+		ipiFree:   common.IsFreeIpData(ipiEngine, ipiResponseProperties),
+	}
 }
 
 // ServeHTTP extracts evidence from the request, queries both engines concurrently,
@@ -113,6 +148,7 @@ func (h *mixedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if ddErr != nil {
 		log.Printf("Device Detection error: %v", ddErr)
+		ddResults = nil
 	} else {
 		defer ddResults.Free()
 	}
@@ -120,7 +156,8 @@ func (h *mixedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("IP Intelligence error: %v", ipiErr)
 	}
 
-	resp := buildResponse(clientIP, ddResults, ipiValues)
+	resp := buildResponse(clientIP, ddResults, ipiValues, h.ipiFree)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Failed to encode response: %v", err)
@@ -158,11 +195,24 @@ func extractClientIP(r *http.Request) string {
 	return host
 }
 
-// buildResponse assembles the MixedResponse from both engines' results.
-func buildResponse(clientIP string, results *dd.ResultsHash, values ipi_interop.Values) MixedResponse {
+// buildResponse assembles the MixedResponse from both engines' results. A
+// property the data file does not have is given as needing the Enterprise
+// data file, and the response then says where to ask for a copy.
+func buildResponse(
+	clientIP string,
+	results *dd.ResultsHash,
+	values ipi_interop.Values,
+	ipiFree bool) MixedResponse {
+	missing := false
+
 	ddMap := make(map[string]string)
 	if results != nil {
 		for _, prop := range ddResponseProperties {
+			if !common.HasDeviceProperty(results, prop) {
+				ddMap[prop] = common.NeedsEnterprise
+				missing = true
+				continue
+			}
 			hasValues, err := results.HasValues(prop)
 			if err != nil || !hasValues {
 				continue
@@ -176,34 +226,35 @@ func buildResponse(clientIP string, results *dd.ResultsHash, values ipi_interop.
 	}
 
 	ipiMap := make(map[string]string)
-	for prop := range values {
-		if prop == "Mcc" {
-			// Only Mcc property has weight
-			val, weight, found := values.GetValueWeightByProperty(prop)
-			if !found {
-				continue
-			}
+	for _, prop := range ipiResponseProperties {
+		val, weight, found := values.GetValueWeightByProperty(prop)
+		switch {
+		case found:
 			ipiMap[prop] = fmt.Sprintf("%v (weight: %.2f)", val, weight)
-		} else {
-			// All other properties are non-weighted
-			val, found := values.GetValueByProperty(prop)
-			if !found {
-				continue
-			}
-			ipiMap[prop] = fmt.Sprintf("%v", val)
+		case ipiFree && !common.FreeIpProperties[prop]:
+			ipiMap[prop] = common.NeedsEnterprise
+			missing = true
 		}
 	}
 
-	return MixedResponse{
+	resp := MixedResponse{
 		ClientIP:        clientIP,
 		DeviceDetection: ddMap,
 		IpIntelligence:  ipiMap,
 	}
+	if missing {
+		resp.EnterpriseDataFile = contactUs
+	}
+	return resp
 }
 
-func main() {
-	ipiDataFile := os.Getenv("DATA_FILE")
-	ddDataFile := os.Getenv("DD_DATA_FILE")
+// newEngines creates both engines from the data files the environment
+// variables name, or from the free ones.
+func newEngines() (*ddOnpremise.Engine, *ipi_onpremise.Engine, error) {
+	ipiDataFile := common.DataFile(
+		"DATA_FILE", common.IpIntelligenceFolder, common.IpIntelligenceDataFile)
+	ddDataFile := common.DataFile(
+		"DD_DATA_FILE", common.DeviceDetectionFolder, common.DeviceDetectionDataFile)
 
 	ddConfig := dd.NewConfigHash(dd.LowMemory)
 	ddEngine, err := ddOnpremise.New(
@@ -214,9 +265,8 @@ func main() {
 		ddOnpremise.WithProperties(ddResponseProperties),
 	)
 	if err != nil {
-		log.Fatalf("Failed to create Device Detection engine: %v", err)
+		return nil, nil, fmt.Errorf("failed to create Device Detection engine: %w", err)
 	}
-	defer ddEngine.Stop()
 
 	ipiConfig := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 	ipiEngine, err := ipi_onpremise.New(
@@ -224,18 +274,29 @@ func main() {
 		ipi_onpremise.WithDataFile(ipiDataFile),
 		ipi_onpremise.WithAutoUpdate(false),
 		ipi_onpremise.WithTempDataCopy(false),
+		ipi_onpremise.WithProperties(ipiResponseProperties),
 	)
 	if err != nil {
-		log.Fatalf("Failed to create IP Intelligence engine: %v", err)
+		ddEngine.Stop()
+		return nil, nil, fmt.Errorf("failed to create IP Intelligence engine: %w", err)
 	}
+
+	log.Printf("Device Detection data: %s", ddDataFile)
+	log.Printf("IP Intelligence data:  %s", ipiDataFile)
+	return ddEngine, ipiEngine, nil
+}
+
+func main() {
+	ddEngine, ipiEngine, err := newEngines()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer ddEngine.Stop()
 	defer ipiEngine.Stop()
 
-	h := &mixedHandler{ddEngine: ddEngine, ipiEngine: ipiEngine}
-	http.Handle("/", h)
+	http.Handle("/", newMixedHandler(ddEngine, ipiEngine))
 
 	const addr = ":8080"
 	log.Printf("Mixed Getting Started Web Example — listening on %s", addr)
-	log.Printf("Device Detection data: %s", ddDataFile)
-	log.Printf("IP Intelligence data:  %s", ipiDataFile)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }

@@ -24,7 +24,8 @@ package main
 
 /*
  This example illustrates how to perform simple device detections on given
- Evidence.
+ Evidence. It runs with the free Lite data file, and shows the properties
+ that only the Enterprise data file has as needing it.
 */
 
 import (
@@ -35,13 +36,29 @@ import (
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-// function match performs a match on an input Evidence and determine
-// if the device is a mobile device. Returns output string.
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-getting_started-getting_started.go&utm_term=enterprise-data-file"
+
+// properties are those the example shows. The free data file has the first
+// five, and the Enterprise data file has them all.
+var properties = append([]string{
+	"IsMobile",
+	"PlatformName",
+	"PlatformVersion",
+	"BrowserName",
+	"BrowserVersion",
+}, dd_example.EnterpriseProperties...)
+
+// match performs a detection on the Evidence and returns each property's
+// value, or that it needs the Enterprise data file when the data file does
+// not have it, and whether any property needs it.
 func match(
 	engine *onpremise.Engine,
-	evidence []onpremise.Evidence) string {
+	evidence []onpremise.Evidence) (string, bool) {
 	// Perform detection. There are no results to free when it fails.
 	results, err := engine.Process(evidence)
 	if err != nil {
@@ -51,63 +68,59 @@ func match(
 	// Make sure results object is freed after function execution.
 	defer results.Free()
 
-	propertyName := "IsMobile"
+	output := ""
+	missing := false
+	for _, property := range properties {
+		if !dd_example.HasProperty(results, property) {
+			output += fmt.Sprintf("\t%s: %s\n", property, dd_example.NeedsEnterprise)
+			missing = true
+			continue
+		}
 
-	// If results has values for required property
-	hasValues, err := results.HasValues(propertyName)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	returnStr := ""
-	if !hasValues {
-		returnStr = fmt.Sprintf("Property %s does not have a matched value.\n", propertyName)
-	} else {
-		// Get the values in string
-		value, err := results.ValuesString(
-			propertyName,
-			",")
+		// If results has values for the property
+		hasValues, err := results.HasValues(property)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		returnStr = fmt.Sprintf("\tIsMobile: %s\n", value)
-	}
+		if !hasValues {
+			output += fmt.Sprintf("\t%s: no value for this device\n", property)
+			continue
+		}
 
-	return returnStr
+		// Get the values in string
+		value, err := results.ValuesString(property, ",")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		output += fmt.Sprintf("\t%s: %s\n", property, value)
+	}
+	return output, missing
 }
 
 func runGettingStarted(engine *onpremise.Engine) {
-	// Perform detection on mobile Evidence
-	actual := fmt.Sprintf("Mobile User-Agent: %s\n", common.GetEvidenceUserAgent(common.ExampleEvidenceMobile))
-	actual += match(engine, common.ExampleEvidenceMobile)
-
-	// Perform detection on desktop Evidence
-	actual += fmt.Sprintf("\nDesktop User-Agent: %v\n", common.GetEvidenceUserAgent(common.ExampleEvidenceDesktop))
-	actual += match(engine, common.ExampleEvidenceDesktop)
-
-	// Perform detection on MediaHub Evidence
-	actual += fmt.Sprintf("\nMediaHub User-Agent: %v\n", common.GetEvidenceUserAgent(common.ExampleEvidenceMediaHub))
-	actual += match(engine, common.ExampleEvidenceMediaHub)
-
-	// Expected output
-	expected := "Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1.2 Mobile/15E148 Safari/604.1\n"
-	expected += "\tIsMobile: True\n"
-	expected += "\n"
-	expected += "Desktop User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\n"
-	expected += "\tIsMobile: False\n"
-	expected += "\n"
-	expected += "MediaHub User-Agent: Mozilla/5.0 (Linux; U; Android 4.4.2; en-us; A464BG Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Mobile Safari/537.36\n"
-	expected += "\tIsMobile: True\n"
-	if actual != expected {
-		log.Println("Expected:")
-		log.Println(expected)
-		log.Println("")
-		log.Println("Actual:")
-		log.Println(actual)
-		log.Fatalln("Output does not match expected.")
+	devices := []struct {
+		name     string
+		evidence []onpremise.Evidence
+	}{
+		{"Mobile", common.ExampleEvidenceMobile},
+		{"Desktop", common.ExampleEvidenceDesktop},
+		{"MediaHub", common.ExampleEvidenceMediaHub},
 	}
 
-	log.Println(actual)
+	output := ""
+	missing := false
+	for _, device := range devices {
+		values, needs := match(engine, device.evidence)
+		output += fmt.Sprintf("%s User-Agent: %s\n%s\n",
+			device.name, common.GetEvidenceUserAgent(device.evidence), values)
+		if needs {
+			missing = true
+		}
+	}
+	if missing {
+		output += dd_example.EnterpriseNote(contactUs)
+	}
+	fmt.Print(output)
 }
 
 func main() {
@@ -141,13 +154,3 @@ func main() {
 		},
 	)
 }
-
-// Output:
-// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
-// 	IsMobile: True
-//
-// Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0
-// 	IsMobile: False
-//
-// MediaHub User-Agent: Mozilla/5.0 (Linux; Android 4.4.2; X7 Quad Core Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Safari/537.36
-// 	IsMobile: False
