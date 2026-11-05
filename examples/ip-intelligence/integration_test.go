@@ -3,16 +3,10 @@ package main
 import (
 	"os"
 	"os/exec"
-	"runtime"
 	"testing"
 )
 
 func test(t *testing.T, name string) {
-	if runtime.GOOS == "windows" {
-		// TODO: Windows CI runner can't handle the InMemory profile, and LowMemory is
-		// unstable in CI on any OS, so the integration tests are disabled on Windows.
-		t.Skip(name + " currently fails on Windows, skipping")
-	}
 	cmd := exec.Command("go", "run", "./"+name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -35,6 +29,21 @@ func TestReloadFromFile(t *testing.T) {
 
 func TestUpdatePollingInterval(t *testing.T) {
 	test(t, "update_polling_interval")
+}
+
+// The cloud example needs a Resource Key that includes IP Intelligence
+// properties, so it is always built but run only when one is given.
+func TestGettingStartedCloud(t *testing.T) {
+	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
+	build.Stdout = os.Stdout
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("_51DEGREES_RESOURCE_KEY") == "" {
+		t.Skip("_51DEGREES_RESOURCE_KEY is not set, so the cloud example is not run")
+	}
+	test(t, "getting_started_cloud")
 }
 
 // The mixed examples are a separate Go module; their integration test lives

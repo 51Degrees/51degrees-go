@@ -94,6 +94,7 @@ func processedFlowData(t *testing.T) (core.Pipeline, core.FlowData) {
 		t.Fatalf("build: %v", err)
 	}
 	p, _ := core.NewPipelineBuilder().AddFlowElement(re).Build()
+	t.Cleanup(func() { p.Close() })
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "ua")
 	if err := fd.Process(); err != nil {

@@ -206,11 +206,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			//Process evidence
 			runReloadFromFileSub(engine, params.EvidenceYaml, params.DataFile)
-
-			engine.Stop()
 
 			return nil
 		},

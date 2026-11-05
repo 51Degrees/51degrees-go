@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/getting_started.go
+@example getting_started/main.go
 # Getting started example of using 51Degrees IP intelligence.
 
 The example shows how to use 51Degrees on-premise IP intelligence to determine the IP parameters
@@ -250,11 +250,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Run example
 			runGettingStarted(engine)
-
-			engine.Stop()
 
 			return nil
 		})

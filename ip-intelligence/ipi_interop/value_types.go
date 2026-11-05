@@ -27,7 +27,7 @@ import "C"
 
 type PropertyValueType int
 
-// https://github.com/51Degrees/common-cxx/blob/version/4.5/propertyValueType.h#L53
+// https://github.com/51Degrees/51degrees-cxx/blob/main/src/common/propertyValueType.h#L35
 const (
 	StringValueType      PropertyValueType = iota // FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_STRING
 	IntegerValueType                              //FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_INTEGER

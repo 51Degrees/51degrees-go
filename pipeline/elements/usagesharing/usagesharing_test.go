@@ -180,6 +180,8 @@ func TestUsageSharingCleanupFlush(t *testing.T) {
 		SetTakeTimeout(time.Hour). // avoid periodic flush during the test
 		Build()
 	p, _ := core.NewPipelineBuilder().AddFlowElement(sequence.New(nil)).AddFlowElement(e).Build()
+	// Closes the pipeline if the test stops before the Close below.
+	defer p.Close()
 
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "agent")

@@ -90,7 +90,8 @@ func (r *BuilderRegistry) lookup(builderName string) (ElementFactory, bool) {
 }
 
 // BuildFromConfiguration constructs a Pipeline from the given options using the
-// registered factories.
+// registered factories. If an element or the Pipeline cannot be built, the
+// elements already built are closed and the error is returned.
 func (r *BuilderRegistry) BuildFromConfiguration(opts PipelineOptions, logger *slog.Logger) (Pipeline, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -104,14 +105,23 @@ func (r *BuilderRegistry) BuildFromConfiguration(opts PipelineOptions, logger *s
 		builder.SetConcurrent(v)
 	}
 
+	var built []FlowElement
+	fail := func(err error) (Pipeline, error) {
+		for i := len(built) - 1; i >= 0; i-- {
+			built[i].Close()
+		}
+		return nil, err
+	}
+
 	for _, eo := range opts.Elements {
 		if len(eo.SubElements) > 0 {
 			children := make([]FlowElement, 0, len(eo.SubElements))
 			for _, se := range eo.SubElements {
 				child, err := r.buildElement(se, logger)
 				if err != nil {
-					return nil, err
+					return fail(err)
 				}
+				built = append(built, child)
 				children = append(children, child)
 			}
 			builder.AddParallel(children...)
@@ -119,11 +129,16 @@ func (r *BuilderRegistry) BuildFromConfiguration(opts PipelineOptions, logger *s
 		}
 		el, err := r.buildElement(eo, logger)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
+		built = append(built, el)
 		builder.AddFlowElement(el)
 	}
-	return builder.Build()
+	p, err := builder.Build()
+	if err != nil {
+		return fail(err)
+	}
+	return p, nil
 }
 
 func (r *BuilderRegistry) buildElement(eo ElementOptions, logger *slog.Logger) (FlowElement, error) {

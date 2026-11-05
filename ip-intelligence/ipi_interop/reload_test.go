@@ -33,8 +33,8 @@ import (
 )
 
 const (
-	// reloadTestDataFile is the small data file from the ip-intelligence-data
-	// repository, which CI places in the repository root.
+	// reloadTestDataFile is the small Asn data file, which CI downloads with
+	// the data repository's script and links into the module folder.
 	reloadTestDataFile = "51Degrees-IPIV4AsnIpiV41.ipi"
 	reloadTestReloads  = 5
 	// reloadTestFileMargin allows for files the test opens for itself, and is
@@ -49,8 +49,10 @@ func readReloadTestFile(t *testing.T) []byte {
 		if os.Getenv("CI") != "" {
 			t.Fatal(err)
 		}
-		t.Skipf("copy %s from the ip-intelligence-data repository into "+
-			"the repository root to run this test: %v", reloadTestDataFile, err)
+		t.Skipf("download %[1]s with cxx/data/get-data-files.sh %[1]s "+
+			"(get-data-files.ps1 on Windows) and copy it from "+
+			"cxx/data/ip-intelligence into the ip-intelligence folder to run "+
+			"this test: %[2]v", reloadTestDataFile, err)
 	}
 	return good
 }
