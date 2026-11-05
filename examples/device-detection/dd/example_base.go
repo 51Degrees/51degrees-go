@@ -189,10 +189,10 @@ func getDataFile(name string) (string, bool) {
 	var command string
 	if runtime.GOOS == "windows" {
 		script := filepath.Join(data, "get-data-files.ps1")
-		args = []string{"powershell", "-NoProfile", "-ExecutionPolicy",
+		args = []string{powerShell(), "-NoProfile", "-ExecutionPolicy",
 			"Bypass", "-File", script, name}
-		command = fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass "+
-			"-File \"%s\" \"%s\"", script, name)
+		command = fmt.Sprintf("%s -NoProfile -ExecutionPolicy Bypass "+
+			"-File \"%s\" \"%s\"", args[0], script, name)
 		if source := exampleSource(); source != "" {
 			args = append(args, "-Source", source)
 			command += " -Source " + source
@@ -209,6 +209,9 @@ func getDataFile(name string) (string, bool) {
 		command += fmt.Sprintf(" \"%s\"", name)
 	}
 	cmd := exec.Command(args[0], args[1:]...)
+	if args[0] == "powershell" {
+		cmd.Env = withoutModulePath(os.Environ())
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	log.Printf("%s is missing, so it is being downloaded by running\n%s\n",
@@ -221,6 +224,28 @@ func getDataFile(name string) (string, bool) {
 	log.Fatalf("%s could not be downloaded. Run this command to try again.\n%s\n",
 		name, command)
 	return "", false
+}
+
+// powerShell returns the PowerShell to run the data repository's script with,
+// which is PowerShell 7 when it is installed and Windows PowerShell otherwise.
+func powerShell() string {
+	if _, err := exec.LookPath("pwsh"); err == nil {
+		return "pwsh"
+	}
+	return "powershell"
+}
+
+// withoutModulePath returns the environment without PSModulePath. Windows
+// PowerShell started from PowerShell 7 inherits its module path, which leaves
+// it unable to load its own commands, and without one it uses its own.
+func withoutModulePath(environment []string) []string {
+	kept := make([]string, 0, len(environment))
+	for _, variable := range environment {
+		if !strings.EqualFold(strings.SplitN(variable, "=", 2)[0], "PSModulePath") {
+			kept = append(kept, variable)
+		}
+	}
+	return kept
 }
 
 // exampleSource returns the source to send with a download, or nothing in
