@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/reload_from_file.go
+@example reload_from_file/main.go
 # Reload from file example of using 51Degrees IP intelligence.
 
 This example illustrates how to use a single reference to the resource manager
@@ -353,11 +353,12 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Run example
 			runReloadFromFile(engine, params)
-
-			engine.Stop()
 
 			return nil
 		})

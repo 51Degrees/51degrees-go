@@ -21,7 +21,7 @@
  * ********************************************************************* */
 
 /**
-@example examples/onpremise/performance.go
+@example performance/main.go
 # The example illustrates a "clock-time" benchmark for assessing detection speed.
 
 It's important to understand the trade-offs between performance, memory usage and accuracy, that
@@ -390,6 +390,9 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Run example
 			report, err := runPerformance(engine, params, numThreads)
@@ -419,8 +422,6 @@ func main() {
 					log.Fatalf("Failed to write the performance results: %v", err)
 				}
 			}
-
-			engine.Stop()
 
 			return nil
 		})

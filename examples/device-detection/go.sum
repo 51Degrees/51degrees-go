@@ -1,7 +1,7 @@
-github.com/51Degrees/51degrees-go/common/v4 v4.5.166 h1:XWuMUqCqefg/y1dlpTfxsARV+dff5I3TTMKQXBZud98=
-github.com/51Degrees/51degrees-go/common/v4 v4.5.166/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
-github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.166 h1:EE44XQtl/p80p7O5g19g0s1kycXT3hyjkBmiFbIj4TU=
-github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.166/go.mod h1:yNZKYuCiEqKYel+qnOdEaYNA6iSBjsxzWgf5owt1hxU=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.171 h1:+Q5CbdcfAu12febaOnoorOae4wSZUo9elFuA21G/4dI=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.171/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
+github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.171 h1:LogIA/fsA0OS7rGrhfu6kSMKGDkT1k03nFTtAxczJVo=
+github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.171/go.mod h1:/p1iZmnkYtaM2VHMtaPxdywO7eDtXXaQeduUNJ0WrXw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=

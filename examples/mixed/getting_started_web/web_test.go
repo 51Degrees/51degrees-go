@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -45,11 +44,6 @@ var testHandler *mixedHandler
 // If either data file is unavailable the entire test binary exits with 0
 // (success), treating the run as "skipped" rather than failed.
 func TestMain(m *testing.M) {
-	if runtime.GOOS == "windows" {
-		log.Println("InMemory profile currently fails on Windows, skipping")
-		os.Exit(0)
-	}
-
 	ipiDataFile := os.Getenv("DATA_FILE")
 	if ipiDataFile == "" {
 		ipiDataFile = "../../51Degrees-EnterpriseIpiV41.ipi"

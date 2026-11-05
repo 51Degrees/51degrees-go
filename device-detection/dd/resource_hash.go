@@ -27,7 +27,6 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 import (
-	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -130,14 +129,10 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 // are checked.
 func reloadError(s C.StatusCode, exp *Exception, fileName *C.char) error {
 	if !exp.IsOkay() {
-		cMessage := C.ExceptionGetMessage(exp.CPtr)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return errors.New(C.GoString(cMessage))
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
 	}
 	if s != C.SUCCESS {
-		cMessage := C.StatusGetMessage(s, fileName)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return errors.New(C.GoString(cMessage))
+		return messageError(C.StatusGetMessage(s, fileName))
 	}
 	return nil
 }
