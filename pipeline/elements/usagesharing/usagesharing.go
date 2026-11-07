@@ -167,14 +167,55 @@ func (e *Element) sample() bool {
 	return e.rng.Float64() < e.cfg.sharePercentage
 }
 
-// shareableEvidence returns the Evidence values that pass the share-usage
-// filter, keyed by their full Evidence key.
+// shareableEvidence returns the values the element finds that isShared lets
+// through, keyed by their Evidence key. It finds every Evidence value, and,
+// when the Evidence holds the web request as core.EvidenceHTTPRequest, the
+// request's headers, cookies and query string parameters too. A key found in
+// both keeps the Evidence value, and the request itself is never shared.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
 func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
-	filter := e.EvidenceKeyFilter()
-	for key, val := range fd.Evidence().AsMap() {
-		if filter.Include(key) {
+	all := fd.Evidence().AsMap()
+	for key, val := range all {
+		if key != core.EvidenceHTTPRequest && e.isShared(key) {
 			out[key] = fmt.Sprintf("%v", val)
+		}
+	}
+	if r, ok := all[core.EvidenceHTTPRequest].(*http.Request); ok && r != nil {
+		for key, val := range requestEvidence(r) {
+			if _, found := all[key]; !found && e.isShared(key) {
+				out[key] = val
+			}
+		}
+	}
+	return out
+}
+
+// requestEvidence returns the request's values under the keys the web
+// integration gives them as Evidence: the first value of each header but
+// Cookie, the Host, each cookie, and the first value of each query string or
+// form parameter. The form is read only when the request was already parsed,
+// so the body is never consumed here.
+func requestEvidence(r *http.Request) map[string]string {
+	out := map[string]string{}
+	for name, values := range r.Header {
+		if !strings.EqualFold(name, "Cookie") && len(values) > 0 {
+			out[strings.ToLower(core.PrefixHeader+"."+name)] = values[0]
+		}
+	}
+	if r.Host != "" {
+		out[core.PrefixHeader+".host"] = r.Host
+	}
+	for _, c := range r.Cookies() {
+		out[strings.ToLower(core.PrefixCookie+"."+c.Name)] = c.Value
+	}
+	params := r.Form
+	if params == nil && r.URL != nil {
+		params = r.URL.Query()
+	}
+	for name, values := range params {
+		if len(values) > 0 {
+			out[strings.ToLower(core.PrefixQuery+"."+name)] = values[0]
 		}
 	}
 	return out

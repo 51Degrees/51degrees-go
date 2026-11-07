@@ -70,13 +70,12 @@ func (c *capture) waitFor(t *testing.T, n int) {
 	t.Fatalf("timed out waiting for %d payloads (got %d)", n, c.count())
 }
 
-func TestIncludeEvidenceFilter(t *testing.T) {
+func TestShareRules(t *testing.T) {
 	e := NewBuilder().
 		SetBlockedHTTPHeaders("cookies").
 		SetIncludedQueryStringParameters("myparam").
 		Build()
 	defer e.Close()
-	f := e.EvidenceKeyFilter()
 
 	cases := map[string]bool{
 		"header.user-agent": true,
@@ -89,8 +88,8 @@ func TestIncludeEvidenceFilter(t *testing.T) {
 		"server.client-ip":  true,
 	}
 	for key, want := range cases {
-		if got := f.Include(key); got != want {
-			t.Errorf("Include(%q) = %v, want %v", key, got, want)
+		if got := e.isShared(key); got != want {
+			t.Errorf("isShared(%q) = %v, want %v", key, got, want)
 		}
 	}
 }

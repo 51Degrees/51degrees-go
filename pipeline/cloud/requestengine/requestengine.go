@@ -259,10 +259,10 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 }
 
 // resolveEvidence removes prefixes from all Evidence and resolves conflicts
-// between prefixes using the defined precedence. Every Evidence value is
-// forwarded (prefix-stripped) and the server ignores any it
-// does not need; the evidence-keys metadata is used to advertise accepted keys,
-// not to filter the request body.
+// between prefixes using the defined precedence. Every Evidence value but the
+// web request itself (core.EvidenceHTTPRequest) is forwarded (prefix-stripped)
+// and the server ignores any it does not need; the evidence-keys metadata is
+// used to advertise accepted keys, not to filter the request body.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
 	type choice struct {
 		prefix string
@@ -270,6 +270,9 @@ func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string
 	}
 	best := map[string]choice{}
 	for key, raw := range fd.Evidence().AsMap() {
+		if key == core.EvidenceHTTPRequest {
+			continue
+		}
 		prefix, field := core.SplitEvidenceKey(key)
 		val := valueToString(raw)
 		if cur, ok := best[field]; ok {

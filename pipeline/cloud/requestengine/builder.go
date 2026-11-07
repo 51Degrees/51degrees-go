@@ -157,8 +157,11 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 
 	// The Cloud Request Engine forwards all evidence whose keys the server might
 	// accept; until the evidence-keys metadata loads it accepts everything, so a
-	// permissive filter is used at the element level.
-	filter := core.NewFuncFilter(func(string) bool { return true })
+	// permissive filter is used at the element level. The web request itself is
+	// never sent, so it is not accepted either.
+	filter := core.NewFuncFilter(func(key string) bool {
+		return key != core.EvidenceHTTPRequest
+	})
 
 	e := &CloudRequestEngine{
 		BaseAspectEngine:        engines.NewBaseAspectEngine(DataKey, filter, b.logger),

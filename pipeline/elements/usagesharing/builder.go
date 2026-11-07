@@ -146,13 +146,14 @@ func (b *Builder) Build() *Element {
 		tracker:     newTracker(cfg.repeatInterval),
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
-	e.SetEvidenceKeyFilter(core.NewFuncFilter(e.includeEvidence))
 	return e
 }
 
-// includeEvidence implements the share-usage accepted-Evidence filter.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
-func (e *Element) includeEvidence(key string) bool {
+// isShared implements the rules for which of the keys the element finds are
+// shared. The element accepts no Evidence (its filter is empty), so these
+// rules never widen a Pipeline's cache keys or ETag.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
+func (e *Element) isShared(key string) bool {
 	if e.cfg.shareAllEvidence {
 		return true
 	}

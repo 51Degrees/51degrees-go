@@ -79,6 +79,13 @@ const (
 	PrefixLocation = "location"
 )
 
+// EvidenceHTTPRequest is the Evidence key under which the web integration
+// adds the *http.Request itself. No element accepts it, so it never takes part
+// in a cache key or an ETag, and the Usage Sharing Element reads the request's
+// headers, cookies and query string from it.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/web-integration.md#populating-evidence
+const EvidenceHTTPRequest = PrefixServer + ".http-request"
+
 // prefixPrecedence maps known prefixes to their precedence rank (lower wins).
 var prefixPrecedence = map[string]int{
 	PrefixQuery:    0,
