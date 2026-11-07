@@ -211,14 +211,32 @@ the service that the example starts itself, with the placeholder key
 Each module's path is the repository path plus its folder, such as
 `github.com/51Degrees/51degrees-go/device-detection/v4`. Go finds a version
 of a module in a folder by a tag named after the folder, such as
-`device-detection/v4.5.166`, so a release is those tags
-(`ci/publish-package.ps1`), and the repository is also tagged with the plain
-version. Never move or delete a released tag: sum.golang.org keeps the
-checksum of the first version it sees, so a changed version breaks every build
-that uses it.
+`device-detection/v4.5.172`, so a release is those tags
+(`ci/publish-package.ps1`), and each tag gets a GitHub release.
+Never move or delete a released tag, because sum.golang.org keeps the checksum
+of the first version it sees, and a changed version breaks every build that
+uses it.
 
-The repository has one version, and only the patch number moves
-(`ci/get-next-package-version.ps1`).
+Each module has its own version, and only the patch number moves. A publish
+releases a module when a file in its folder has changed since its last tag,
+and every module that requires it is released with it. `ci/packages.json`
+lists the modules and which of them each requires, which has to match the
+`go.mod` files, and common-ci's `steps/release-plan.ps1` works out the plan
+from it (`ci/packages.ps1`). A change to the examples, to CI or to the
+documentation outside the module folders releases nothing, and neither does a
+change inside them only to tests (`*_test.go`), their data (`mock_hash.gz`),
+Markdown files, `docs` folders or licences. Run the tests of the plan with
+`Invoke-Pester ci/packages.Tests.ps1`, with `COMMON_CI` naming a checkout of
+common-ci.
+
+A module that requires one released in the same publish is tagged on a commit
+that raises its `go.mod` to the new version, because Go reads the requirement
+at the tag. Only the tag reaches that commit, and the nightly package update
+makes the same change on `rc`.
+
+common-ci's release plan reads tags named `<package>/<version>`, without Go's
+`v`, so `ci/packages.ps1` gives each module's newest tag a local tag of that
+form before planning. Those local tags are never pushed.
 
 ## The workspace
 
@@ -230,15 +248,14 @@ script also adds a `replace` for each requirement between these modules.
 `go.work` is never committed, and nothing else may add a `replace` to a
 `go.mod`, as it would be published with the module.
 
-CI makes the workspace only when a folder of a published module (`common`,
-`device-detection`, `ip-intelligence`, `pipeline`) has changed since the
-latest release, that is when it tests the next release
+CI makes the workspace only when the release plan has a module in it, that is
+when a published module (`common`, `device-detection`, `ip-intelligence`,
+`pipeline`) has changed since its last release and CI tests the next release
 (`ci/setup-environment.ps1`). The examples then run against that code, as the
-.NET repository's CI does with its projects. Otherwise they run against the published modules their go.mod files
-name. The same check decides whether there is a release at all
-(`ci/get-next-package-version.ps1`), so a change to the examples, the
-documentation or CI alone releases nothing. The nightly package update moves
-the examples to the latest release.
+.NET repository's CI does with its projects. Otherwise they run against the
+published modules their go.mod files name. The same plan decides what a
+publish releases (`ci/package-update-required.ps1`). The nightly package
+update moves the examples to the latest release.
 
 CI also builds each published module without the workspace (`GOWORK=off`), to
 check the module as it is published.
