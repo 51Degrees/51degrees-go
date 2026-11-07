@@ -76,22 +76,3 @@ function Invoke-GoTests {
         Pop-Location
     }
 }
-
-# The folders of the published modules. A release is needed only when one of
-# them has changed.
-$LibraryPaths = @('common', 'device-detection', 'ip-intelligence', 'pipeline')
-
-# Returns the latest release, the highest plain version tag, or nothing.
-function Get-LatestRelease([string]$RepoPath) {
-    git -C $RepoPath tag --list | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } |
-        Sort-Object { [version]$_ } | Select-Object -Last 1
-}
-
-# Returns whether a published module has changed since the latest release,
-# which is what a new release would publish.
-function Test-UnreleasedLibraryChange([string]$RepoPath) {
-    $release = Get-LatestRelease $RepoPath
-    if (!$release) { return $true }
-    $changed = git -C $RepoPath diff --name-only $release HEAD -- @LibraryPaths
-    return [bool]$changed
-}

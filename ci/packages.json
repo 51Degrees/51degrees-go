@@ -1,0 +1,26 @@
+[
+  {
+    "Name": "common",
+    "Path": "common",
+    "DependsOn": [],
+    "Publish": true
+  },
+  {
+    "Name": "pipeline",
+    "Path": "pipeline",
+    "DependsOn": [],
+    "Publish": true
+  },
+  {
+    "Name": "device-detection",
+    "Path": "device-detection",
+    "DependsOn": ["common"],
+    "Publish": true
+  },
+  {
+    "Name": "ip-intelligence",
+    "Path": "ip-intelligence",
+    "DependsOn": ["common", "pipeline"],
+    "Publish": true
+  }
+]
