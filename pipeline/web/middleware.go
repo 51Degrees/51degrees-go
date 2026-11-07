@@ -265,14 +265,28 @@ func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
 const failedCacheControl = "private, no-cache"
 
 // serveCacheable writes the body with the cache-control, Vary, ETag,
-// Content-Type and Content-Length headers required by the specification, and
-// returns 304 Not Modified when the request's If-None-Match matches. When
-// processing failed the response has failedCacheControl and no ETag, while a
-// matching If-None-Match still gets its 304, so a browser that holds a good
-// response keeps it.
+// Content-Type and Content-Length headers required by the specification.
+// When the request's If-None-Match matches, a GET or HEAD gets 304 Not
+// Modified with the cache-control, Vary, ETag and CORS headers the 200 would
+// carry, and any other method gets 412 Precondition Failed with only the CORS
+// header (RFC 9110 sections 13.1.2 and 15.4.5). When processing failed the
+// response has failedCacheControl and no ETag, while a matching If-None-Match
+// still gets its 304, so a browser that holds a good response keeps it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#cache-header-detail
 func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, failed bool, contentType string, body []byte) {
 	etag := m.etag(fd)
+	matched := r.Header.Get("If-None-Match") == etag
+	// Reflect the request Origin so a cross-origin client-side callback to these
+	// endpoints is permitted, and can read a 304 or 412. The literal "null"
+	// origin is not reflected.
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+	if matched && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	}
+
 	if failed {
 		w.Header().Set("Cache-Control", failedCacheControl)
 	} else {
@@ -282,17 +296,11 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 	if vary := m.varyHeader(); vary != "" {
 		w.Header().Set("Vary", vary)
 	}
-	w.Header().Set("Content-Type", contentType)
-	// Reflect the request Origin so a cross-origin client-side callback to these
-	// endpoints is permitted. The literal "null" origin is not reflected.
-	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	}
-
-	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+	if matched {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
