@@ -32,8 +32,11 @@ foreach ($module in 'common', 'device-detection', 'ip-intelligence', 'pipeline',
     try {
         $env:GOWORK = 'off'
         if ($module -like 'examples/*') {
+            # tidy, not go list, which also fails when go.sum only lacks the
+            # lines for a release, as it does when an example is first moved
+            # from the workspace to a published module.
             $PSNativeCommandUseErrorActionPreference = $false
-            go list -m all *> $null
+            go mod tidy *> $null
             $resolved = $LASTEXITCODE -eq 0
             $PSNativeCommandUseErrorActionPreference = $true
             if (!$resolved) {
