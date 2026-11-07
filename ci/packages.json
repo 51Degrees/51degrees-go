@@ -3,24 +3,28 @@
     "Name": "common",
     "Path": "common",
     "DependsOn": [],
+    "Ignore": ["**/*_test.go", "**/mock_hash.gz"],
     "Publish": true
   },
   {
     "Name": "pipeline",
     "Path": "pipeline",
     "DependsOn": [],
+    "Ignore": ["**/*_test.go", "**/mock_hash.gz"],
     "Publish": true
   },
   {
     "Name": "device-detection",
     "Path": "device-detection",
     "DependsOn": ["common"],
+    "Ignore": ["**/*_test.go", "**/mock_hash.gz"],
     "Publish": true
   },
   {
     "Name": "ip-intelligence",
     "Path": "ip-intelligence",
     "DependsOn": ["common", "pipeline"],
+    "Ignore": ["**/*_test.go", "**/mock_hash.gz"],
     "Publish": true
   }
 ]

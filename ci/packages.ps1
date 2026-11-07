@@ -1,8 +1,10 @@
 # Dot-sourced by the scripts in this folder. Works out which Go modules a
 # publish releases, and at which version, with common-ci's release plan, which
 # reads the modules from packages.json. Each module has its own version, and a
-# module is released when a file in its folder changed since its last tag, or
-# when a module it requires is released.
+# module is released when a file that counts in its folder changed since its
+# last tag, or when a module it requires is released. Tests, their data,
+# Markdown files, documentation and licences do not count (the Ignore lists in
+# packages.json and the release plan's defaults).
 #
 # common-ci runs these scripts from its own root, with this repository checked
 # out inside it, which is where the release plan is looked for first. A
@@ -87,12 +89,12 @@ function Assert-ModuleRequirements([string]$RepoPath, $Packages) {
 # A module that requires one released with it is tagged on a commit that
 # raises its go.mod (see publish-package.ps1), which the branch only gets later
 # from the nightly package update. So the local tag goes on the tagged commit
-# when the module's folder is the same there as at HEAD, and otherwise on the
+# when no file that counts differs there from HEAD, and otherwise on the
 # commit the release was made from, so that the raise alone is not a change.
 function Sync-PlanTags([string]$RepoPath, $Packages) {
     Remove-PlanTags $RepoPath $Packages
-    # 'git diff --quiet' exits 1 to say the folder differs, which is an answer
-    # rather than a failure. Set for this function only.
+    # A failing merge-base is an answer, checked below. Set for this function
+    # only.
     $PSNativeCommandUseErrorActionPreference = $false
     foreach ($package in @($Packages | Where-Object { $_.Publish -eq $true })) {
         $prefix = "$($package.Path)/v"
@@ -110,8 +112,9 @@ function Sync-PlanTags([string]$RepoPath, $Packages) {
         $last = $versions[-1]
         $tagged = git -C $RepoPath rev-parse "$(Get-GoTag $package $last)^{commit}"
         $at = $tagged
-        git -C $RepoPath diff --quiet $tagged HEAD -- (Get-PackagePaths $package)
-        if ($LASTEXITCODE -ne 0) {
+        $changed = @(Get-ChangedFiles $RepoPath $package $tagged)
+        $counted = @(Select-CountedFiles $RepoPath $package $tagged $changed)
+        if ($counted.Count -gt 0) {
             $base = git -C $RepoPath merge-base $tagged HEAD
             if ($LASTEXITCODE -eq 0 -and $base) {
                 $at = $base

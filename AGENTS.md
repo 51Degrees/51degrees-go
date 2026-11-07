@@ -223,7 +223,11 @@ and every module that requires it is released with it. `ci/packages.json`
 lists the modules and which of them each requires, which has to match the
 `go.mod` files, and common-ci's `steps/release-plan.ps1` works out the plan
 from it (`ci/packages.ps1`). A change to the examples, to CI or to the
-documentation outside the module folders releases nothing.
+documentation outside the module folders releases nothing, and neither does a
+change inside them only to tests (`*_test.go`), their data (`mock_hash.gz`),
+Markdown files, `docs` folders or licences. Run the tests of the plan with
+`Invoke-Pester ci/packages.Tests.ps1`, with `COMMON_CI` naming a checkout of
+common-ci.
 
 A module that requires one released in the same publish is tagged on a commit
 that raises its `go.mod` to the new version, because Go reads the requirement
