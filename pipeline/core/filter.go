@@ -67,7 +67,7 @@ func (f *WhitelistFilter) Keys() []string {
 
 // FuncFilter accepts Evidence keys using an arbitrary predicate. This is used
 // where listing accepted keys is impractical, for example the Cloud Request
-// Engine, which accepts any key but EvidenceHTTPRequest.
+// Engine, whose keys are known only once the cloud service has listed them.
 type FuncFilter struct {
 	fn func(key string) bool
 }

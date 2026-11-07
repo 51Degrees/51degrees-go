@@ -37,6 +37,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -136,7 +137,8 @@ type CloudRequestEngine struct {
 	metaMu           sync.Mutex
 	metaLoaded       bool
 	publicProperties map[string]ProductMeta
-	evidenceKeys     []string
+	// acceptedKeys is the evidencekeys list, lower-cased, once it has loaded.
+	acceptedKeys atomic.Pointer[map[string]struct{}]
 
 	// Recovery mode state.
 	failuresToEnterRecovery int
@@ -347,11 +349,37 @@ func (e *CloudRequestEngine) ensureMetadata() error {
 	e.metaMu.Lock()
 	if !e.metaLoaded {
 		e.publicProperties = props
-		e.evidenceKeys = keys
+		accepted := make(map[string]struct{}, len(keys))
+		for _, key := range keys {
+			accepted[strings.ToLower(key)] = struct{}{}
+		}
+		e.acceptedKeys.Store(&accepted)
 		e.metaLoaded = true
 	}
 	e.metaMu.Unlock()
 	return nil
+}
+
+// ifNoneMatchKey is the Evidence key of the If-None-Match header, which a
+// browser's revalidation adds and which changes no result.
+const ifNoneMatchKey = core.PrefixHeader + ".if-none-match"
+
+// acceptsEvidence reports whether key is one the cloud service's evidencekeys
+// list names, compared without regard to case. It accepts nothing until the
+// list has loaded, and never the web request or If-None-Match, so that the
+// Pipeline's cache keys and ETag cover only Evidence that changes a result.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-evidence
+func (e *CloudRequestEngine) acceptsEvidence(key string) bool {
+	key = strings.ToLower(key)
+	if key == core.EvidenceHTTPRequest || key == ifNoneMatchKey {
+		return false
+	}
+	accepted := e.acceptedKeys.Load()
+	if accepted == nil {
+		return false
+	}
+	_, ok := (*accepted)[key]
+	return ok
 }
 
 func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta, error) {

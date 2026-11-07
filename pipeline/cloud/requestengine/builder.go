@@ -155,16 +155,8 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 		now = time.Now
 	}
 
-	// The Cloud Request Engine forwards all evidence whose keys the server might
-	// accept; until the evidence-keys metadata loads it accepts everything, so a
-	// permissive filter is used at the element level. The web request itself is
-	// never sent, so it is not accepted either.
-	filter := core.NewFuncFilter(func(key string) bool {
-		return key != core.EvidenceHTTPRequest
-	})
-
 	e := &CloudRequestEngine{
-		BaseAspectEngine:        engines.NewBaseAspectEngine(DataKey, filter, b.logger),
+		BaseAspectEngine:        engines.NewBaseAspectEngine(DataKey, nil, b.logger),
 		httpClient:              client,
 		resourceKey:             b.resourceKey,
 		origin:                  b.origin,
@@ -179,6 +171,10 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 		now:                     now,
 	}
 	e.SetDataSourceTier("cloud")
+	// The engine accepts only the keys the cloud service's evidencekeys list
+	// names (see acceptsEvidence), so a header the service does not use stays
+	// out of the Pipeline's cache keys and ETag.
+	e.SetEvidenceKeyFilter(core.NewFuncFilter(e.acceptsEvidence))
 	return e, nil
 }
 
