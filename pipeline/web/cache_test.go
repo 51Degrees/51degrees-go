@@ -96,10 +96,27 @@ var clientSideEndpoints = []struct{ method, path string }{
 	{http.MethodPost, DefaultJSONURL},
 }
 
+// clientSidePaths are the two intercepted endpoints, for the tests that
+// revalidate with GET.
+var clientSidePaths = []string{DefaultJavaScriptURL, DefaultJSONURL}
+
+// testOrigin is the Origin of a page on another site that calls the
+// endpoints.
+const testOrigin = "https://example.com"
+
 // fetch sends one request with a fixed User-Agent, as one browser does, and
 // with If-None-Match when etag is not empty.
 func fetch(t *testing.T, srv *httptest.Server, method, path,
 	etag string) *http.Response {
+	t.Helper()
+	resp, _ := fetchFrom(t, srv, method, path, etag, "")
+	return resp
+}
+
+// fetchFrom is fetch with an Origin header when origin is not empty. It
+// returns the body too.
+func fetchFrom(t *testing.T, srv *httptest.Server, method, path, etag,
+	origin string) (*http.Response, string) {
 	t.Helper()
 	req, err := http.NewRequest(method, srv.URL+path, nil)
 	if err != nil {
@@ -109,13 +126,16 @@ func fetch(t *testing.T, srv *httptest.Server, method, path,
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
 	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	return resp
+	return resp, string(body)
 }
 
 // A response to a request whose processing recorded errors carries no ETag,
@@ -166,11 +186,11 @@ func TestFailedResponseIsNotKeptOnceProcessingRecovers(t *testing.T) {
 // Cache-Control and ETag a 200 to the same request would carry (RFC 9110
 // section 15.4.5), so it has no ETag and the browser asks again next time.
 func TestGoodResponseIsKeptWhileProcessingFails(t *testing.T) {
-	for _, ep := range clientSideEndpoints {
-		t.Run(ep.path, func(t *testing.T) {
+	for _, path := range clientSidePaths {
+		t.Run(path, func(t *testing.T) {
 			srv, engine := newFailingServer(t)
 
-			good := fetch(t, srv, ep.method, ep.path, "")
+			good := fetch(t, srv, http.MethodGet, path, "")
 			etag := good.Header.Get("ETag")
 			if good.StatusCode != http.StatusOK || etag == "" {
 				t.Fatalf("good request status = %d, ETag = %q",
@@ -178,7 +198,7 @@ func TestGoodResponseIsKeptWhileProcessingFails(t *testing.T) {
 			}
 
 			engine.fail.Store(true)
-			during := fetch(t, srv, ep.method, ep.path, etag)
+			during := fetch(t, srv, http.MethodGet, path, etag)
 			if during.StatusCode != http.StatusNotModified {
 				t.Fatalf("status while processing fails = %d, want 304",
 					during.StatusCode)
@@ -190,6 +210,91 @@ func TestGoodResponseIsKeptWhileProcessingFails(t *testing.T) {
 				t.Errorf("304 carries the ETag %s, want none", got)
 			}
 		})
+	}
+}
+
+// A GET or HEAD whose If-None-Match matches gets a 304 with no content,
+// carrying the Cache-Control, Vary and ETag headers the 200 carried (RFC 9110
+// section 15.4.5) and the CORS header, so a page on another site can read it.
+// It carries no Content-Type, as a 304 sends no representation metadata other
+// than those.
+func TestNotModifiedCarriesTheHeadersOfThe200(t *testing.T) {
+	for _, path := range clientSidePaths {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method+path, func(t *testing.T) {
+				srv, _ := newFailingServer(t)
+
+				good, _ := fetchFrom(t, srv, http.MethodGet, path, "",
+					testOrigin)
+				etag := good.Header.Get("ETag")
+				if good.StatusCode != http.StatusOK || etag == "" {
+					t.Fatalf("good request status = %d, ETag = %q",
+						good.StatusCode, etag)
+				}
+
+				resp, body := fetchFrom(t, srv, method, path, etag, testOrigin)
+				if resp.StatusCode != http.StatusNotModified {
+					t.Fatalf("status = %d, want 304", resp.StatusCode)
+				}
+				if body != "" {
+					t.Errorf("304 has the content %q, want none", body)
+				}
+				for _, name := range []string{"Cache-Control", "Vary", "ETag",
+					"Access-Control-Allow-Origin"} {
+					got, want := resp.Header.Get(name), good.Header.Get(name)
+					if got != want || got == "" {
+						t.Errorf("304 %s = %q, want the 200's %q",
+							name, got, want)
+					}
+				}
+				if got := resp.Header.Get("Content-Type"); got != "" {
+					t.Errorf("304 Content-Type = %q, want none", got)
+				}
+			})
+		}
+	}
+}
+
+// Any method other than GET or HEAD whose If-None-Match matches gets 412
+// Precondition Failed, never a 304 (RFC 9110 sections 13.1.2 and 9.3.3),
+// whether processing works or fails. The 412 has no content and carries only
+// the CORS header, so a page on another site can read the status.
+func TestMatchingETagOnPostGetsPreconditionFailed(t *testing.T) {
+	for _, path := range clientSidePaths {
+		for _, fails := range []bool{false, true} {
+			name := fmt.Sprintf("%s/fails=%v", path, fails)
+			t.Run(name, func(t *testing.T) {
+				srv, engine := newFailingServer(t)
+
+				good := fetch(t, srv, http.MethodPost, path, "")
+				etag := good.Header.Get("ETag")
+				if good.StatusCode != http.StatusOK || etag == "" {
+					t.Fatalf("good request status = %d, ETag = %q",
+						good.StatusCode, etag)
+				}
+
+				engine.fail.Store(fails)
+				resp, body := fetchFrom(t, srv, http.MethodPost, path, etag,
+					testOrigin)
+				if resp.StatusCode != http.StatusPreconditionFailed {
+					t.Fatalf("status = %d, want 412", resp.StatusCode)
+				}
+				if body != "" {
+					t.Errorf("412 has the content %q, want none", body)
+				}
+				got := resp.Header.Get("Access-Control-Allow-Origin")
+				if got != testOrigin {
+					t.Errorf("412 Access-Control-Allow-Origin = %q, want %q",
+						got, testOrigin)
+				}
+				for _, name := range []string{"Cache-Control", "Vary", "ETag",
+					"Content-Type"} {
+					if got := resp.Header.Get(name); got != "" {
+						t.Errorf("412 %s = %q, want none", name, got)
+					}
+				}
+			})
+		}
 	}
 }
 
