@@ -212,7 +212,7 @@ Each module's path is the repository path plus its folder, such as
 `github.com/51Degrees/51degrees-go/device-detection/v4`. Go finds a version
 of a module in a folder by a tag named after the folder, such as
 `device-detection/v4.5.172`, so a release is those tags
-(`ci/publish-package.ps1`), each with a GitHub release of the same name.
+(`ci/publish-package.ps1`), and each tag gets a GitHub release.
 Never move or delete a released tag, because sum.golang.org keeps the checksum
 of the first version it sees, and a changed version breaks every build that
 uses it.
