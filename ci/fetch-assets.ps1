@@ -2,13 +2,16 @@ param (
     [string]$DeviceDetection,
     [string]$DeviceDetectionUrl,
     [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl
+    [string]$IpIntelligenceUrl,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
 . $PSScriptRoot/products.ps1
 $RepoPath = Join-Path $PSScriptRoot ".."
-$Products = Get-AffectedProducts $RepoPath
+$Products = Get-AffectedProducts $RepoPath $Branch
 
 # Device Detection: the Lite data file and the evidence the tests and examples
 # use. IP Intelligence: the Enterprise data file and its evidence, and the

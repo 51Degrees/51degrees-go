@@ -1,5 +1,8 @@
 param (
-    [Parameter(Mandatory)][string]$RepoName
+    [Parameter(Mandatory)][string]$RepoName,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
@@ -11,7 +14,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 # The tests build the packages too. Building first makes a compile error show
 # as its own failure. Each module is also built on its own, without the
 # workspace, as the published module is.
-foreach ($product in Get-AffectedProducts $RepoName) {
+foreach ($product in Get-AffectedProducts $RepoName $Branch) {
     Push-Location (Get-ProductPath $RepoName $product)
     try {
         Write-Host "Building $product"

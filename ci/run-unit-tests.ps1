@@ -1,6 +1,9 @@
 param (
     [Parameter(Mandatory)][string]$RepoName,
-    [Parameter(Mandatory)][string]$Name
+    [Parameter(Mandatory)][string]$Name,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
@@ -15,7 +18,7 @@ $Packages = @{
 }
 $failed = 0
 
-foreach ($product in Get-AffectedProducts $RepoName) {
+foreach ($product in Get-AffectedProducts $RepoName $Branch) {
     $env:DATA_FILE = $product -eq 'ip-intelligence' ? "$PWD/assets/51Degrees-EnterpriseIpiV41.ipi" : $null
     $code = Invoke-GoTests -ModulePath (Get-ProductPath $RepoName $product) `
         -Packages $Packages[$product] -JUnitPath "$Results/$Name-$product.xml"
