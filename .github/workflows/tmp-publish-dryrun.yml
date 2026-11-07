@@ -1,0 +1,23 @@
+name: Temporary dry-run publish with common-ci at rc
+
+on:
+  push:
+    branches:
+      - 'tmp/go-module-versions-publish'
+
+jobs:
+  Publish:
+    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@rc
+    with:
+      repo-name: 51degrees-go
+      org-name: 51Degrees
+      dryrun: true
+      common-ci-ref: rc
+      cache-assets: true
+      skip-compare-performance: true
+    secrets:
+      token: ${{ secrets.ACCESS_TOKEN }}
+      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
+      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
+      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
+      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
