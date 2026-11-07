@@ -16,6 +16,9 @@ if ($plan.Count -eq 0) {
     Write-Output "No module is to be published, so there is no release to check."
     exit 0
 }
+# The shared step names the newest tag it finds, so the local tags of the
+# plan's form are removed for it to name the Go tag.
+Remove-PlanTags $RepoName (Get-Packages $RepoName)
 
 $arguments = @{ RepoName = $RepoName }
 if ($Repository) {

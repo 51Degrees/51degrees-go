@@ -90,19 +90,11 @@ function Assert-ModuleRequirements([string]$RepoPath, $Packages) {
 # when the module's folder is the same there as at HEAD, and otherwise on the
 # commit the release was made from, so that the raise alone is not a change.
 function Sync-PlanTags([string]$RepoPath, $Packages) {
+    Remove-PlanTags $RepoPath $Packages
     # 'git diff --quiet' exits 1 to say the folder differs, which is an answer
     # rather than a failure. Set for this function only.
     $PSNativeCommandUseErrorActionPreference = $false
     foreach ($package in @($Packages | Where-Object { $_.Publish -eq $true })) {
-        $planTags = @(git -C $RepoPath for-each-ref '--format=%(refname:strip=2)' `
-            "refs/tags/$($package.Name)/")
-        foreach ($tag in $planTags) {
-            $version = $tag.Substring($package.Name.Length + 1)
-            if ($null -ne (ConvertTo-VersionParts $version)) {
-                git -C $RepoPath tag -d $tag | Out-Null
-            }
-        }
-
         $prefix = "$($package.Path)/v"
         $goTags = @(git -C $RepoPath for-each-ref '--format=%(refname:strip=2)' `
             "refs/tags/$($package.Path)/")
@@ -127,6 +119,22 @@ function Sync-PlanTags([string]$RepoPath, $Packages) {
         }
         git -C $RepoPath tag "$($package.Name)/$last" $at
         $global:LASTEXITCODE = 0
+    }
+}
+
+# Deletes the local tags Sync-PlanTags makes, so that a step reading every tag
+# of a module sees only its Go tags.
+function Remove-PlanTags([string]$RepoPath, $Packages) {
+    $PSNativeCommandUseErrorActionPreference = $false
+    foreach ($package in @($Packages | Where-Object { $_.Publish -eq $true })) {
+        $tags = @(git -C $RepoPath for-each-ref '--format=%(refname:strip=2)' `
+            "refs/tags/$($package.Name)/")
+        foreach ($tag in $tags) {
+            $version = $tag.Substring($package.Name.Length + 1)
+            if ($null -ne (ConvertTo-VersionParts $version)) {
+                git -C $RepoPath tag -d $tag | Out-Null
+            }
+        }
     }
 }
 
