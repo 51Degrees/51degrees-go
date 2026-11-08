@@ -143,7 +143,7 @@ func (config *ConfigHash) SetUseUpperPrefixHeaders(use bool) {
 }
 
 // SetUpdateMatchedUserAgent set whether or not tracking the matched
-// User-Agent should be enabled.
+// User-Agent should be enabled. It is on by default.
 func (config *ConfigHash) SetUpdateMatchedUserAgent(update bool) {
 	if update {
 		config.CPtr.b.updateMatchedUserAgent = C.IntToBool(1)
