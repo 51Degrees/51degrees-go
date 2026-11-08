@@ -22,7 +22,11 @@
 
 package core
 
-import "strings"
+import (
+	"fmt"
+	"net/http"
+	"strings"
+)
 
 // Evidence is the set of input values added to a Flow Data instance, stored as
 // case-insensitive key-value pairs. Evidence is immutable once Flow Data
@@ -80,11 +84,37 @@ const (
 )
 
 // EvidenceHTTPRequest is the Evidence key under which the web integration
-// adds the *http.Request itself. No element accepts it, so it never takes part
-// in a cache key or an ETag, and the Usage Sharing Element reads the request's
-// headers, cookies and query string from it.
+// adds the request, as a WebRequest. No element accepts it, so it never takes
+// part in a cache key or an ETag, and the Usage Sharing Element reads the
+// request's headers, cookies and query string from it.
 // See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/web-integration.md#populating-evidence
 const EvidenceHTTPRequest = PrefixServer + ".http-request"
+
+// webRequestPlaceholder is what formatting a WebRequest prints.
+const webRequestPlaceholder = "[web request]"
+
+// WebRequest holds the *http.Request added as EvidenceHTTPRequest. Formatting
+// it with any fmt verb, or calling String, gives a fixed placeholder, so
+// printing or logging the Evidence never writes out the request's headers and
+// cookies. Request returns the request itself.
+type WebRequest struct {
+	request *http.Request
+}
+
+// NewWebRequest returns a WebRequest holding r.
+func NewWebRequest(r *http.Request) WebRequest { return WebRequest{request: r} }
+
+// Request returns the request held, which is nil for a zero WebRequest.
+func (w WebRequest) Request() *http.Request { return w.request }
+
+// String returns a fixed placeholder.
+func (w WebRequest) String() string { return webRequestPlaceholder }
+
+// Format writes the fixed placeholder whatever the verb, so %v, %+v, %#v and
+// %s all print the same.
+func (w WebRequest) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(webRequestPlaceholder))
+}
 
 // prefixPrecedence maps known prefixes to their precedence rank (lower wins).
 var prefixPrecedence = map[string]int{

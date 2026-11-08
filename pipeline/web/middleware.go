@@ -212,7 +212,7 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 
 	// The request itself, whether or not an element accepts it, so that the
 	// Usage Sharing Element can share headers no element accepts.
-	fd.AddEvidence(core.EvidenceHTTPRequest, r)
+	fd.AddEvidence(core.EvidenceHTTPRequest, core.NewWebRequest(r))
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers

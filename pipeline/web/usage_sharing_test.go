@@ -23,11 +23,14 @@
 package web
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/usagesharing"
 )
 
@@ -112,12 +115,59 @@ func TestMiddlewareAddsTheWebRequest(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	r, ok := got.(*http.Request)
+	w, ok := got.(core.WebRequest)
 	if !ok {
-		t.Fatalf("server.http-request = %T, want *http.Request", got)
+		t.Fatalf("server.http-request = %T, want core.WebRequest", got)
 	}
+	r := w.Request()
 	if r.Header.Get("X-Test") != "seen" || r.URL.Path != "/page" {
 		t.Fatalf("server.http-request is not this request: %s %v",
 			r.URL.Path, r.Header)
+	}
+}
+
+// Printing the Evidence the middleware builds must not write out the
+// request's headers or cookies, whichever verb prints it.
+func TestPrintedEvidenceHoldsNoRequestValues(t *testing.T) {
+	p := buildWebPipeline(t)
+	defer p.Close()
+
+	var printed []string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fd, ok := FromContext(r.Context()); ok {
+			if v, found := fd.Evidence().Get("server.http-request"); found {
+				printed = append(printed,
+					fmt.Sprintf("%v", v), fmt.Sprintf("%+v", v),
+					fmt.Sprintf("%#v", v), fmt.Sprintf("%s", v))
+			}
+			all := fd.Evidence().AsMap()
+			delete(all, "header.x-secret")
+			delete(all, "cookie.session")
+			printed = append(printed,
+				fmt.Sprintf("%v", all["server.http-request"]),
+				fmt.Sprintf("%+v", all))
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(NewMiddleware(p).Handler(next))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/page", nil)
+	req.Header.Set("X-Secret", "header-secret-value")
+	req.Header.Set("Cookie", "session=cookie-secret-value")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if len(printed) == 0 {
+		t.Fatal("the handler printed nothing")
+	}
+	for _, text := range printed {
+		if strings.Contains(text, "header-secret-value") ||
+			strings.Contains(text, "cookie-secret-value") {
+			t.Errorf("printed Evidence holds a request value: %.200s", text)
+		}
 	}
 }

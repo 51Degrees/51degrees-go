@@ -181,7 +181,8 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
-	if r, ok := all[core.EvidenceHTTPRequest].(*http.Request); ok && r != nil {
+	w, _ := all[core.EvidenceHTTPRequest].(core.WebRequest)
+	if r := w.Request(); r != nil {
 		for key, val := range requestEvidence(r) {
 			if _, found := all[key]; !found && e.isShared(key) {
 				out[key] = val

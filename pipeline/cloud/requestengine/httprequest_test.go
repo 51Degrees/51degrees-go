@@ -50,7 +50,8 @@ func TestTheWebRequestIsNotSentToTheCloud(t *testing.T) {
 
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "ua-header")
-	fd.AddEvidence("server.http-request", httptest.NewRequest("GET", "/", nil))
+	fd.AddEvidence("server.http-request",
+		core.NewWebRequest(httptest.NewRequest("GET", "/", nil)))
 	if err := fd.Process(); err != nil {
 		t.Fatalf("process: %v", err)
 	}

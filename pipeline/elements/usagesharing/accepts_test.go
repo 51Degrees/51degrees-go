@@ -91,7 +91,7 @@ func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "from-evidence")
-	fd.AddEvidence(httpRequestKey, r)
+	fd.AddEvidence(httpRequestKey, core.NewWebRequest(r))
 
 	want := map[string]string{
 		"header.host":       "example.com",
