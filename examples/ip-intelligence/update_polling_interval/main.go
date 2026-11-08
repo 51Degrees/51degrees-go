@@ -68,10 +68,12 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// WithAutoUpdate enables or disables auto update
 		ipi_onpremise.WithAutoUpdate(true),
 
-		// Set the frequency in minutes that the pipeline should
-		// check for updates to data files. A recommended
-		// polling interval in a production environment is
-		// around 30 minutes.
+		// Set the frequency in seconds that the pipeline should
+		// check for updates to data files. The example checks every
+		// few seconds so that an update can arrive while it waits
+		// between its two sets of lookups. A recommended polling
+		// interval in a production environment is around 30
+		// minutes, which is 1800 seconds.
 		ipi_onpremise.WithPollingInterval(3),
 
 		// Set the max amount of time in seconds that should be
@@ -214,10 +216,12 @@ func main() {
 				// Enable automatic updates.
 				ipi_onpremise.WithAutoUpdate(true),
 
-				// Set the frequency in minutes that the pipeline should
-				// check for updates to data files. A recommended
-				// polling interval in a production environment is
-				// around 30 minutes.
+				// Set the frequency in seconds that the pipeline should
+				// check for updates to data files. The example checks every
+				// few seconds so that an update can arrive while it waits
+				// between its two sets of lookups. A recommended polling
+				// interval in a production environment is around 30
+				// minutes, which is 1800 seconds.
 				ipi_onpremise.WithPollingInterval(3),
 
 				// Set the max amount of time in seconds that should be
