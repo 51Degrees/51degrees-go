@@ -91,8 +91,9 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// Optionally provide your own file URL
 		ipi_onpremise.WithDataUpdateUrl("<custom URL>"),
 
-		// By default a temp copy should be created, unless you are using InMemory performance profile
-		// ipi_onpremise.WithTempDataCopy(false),
+		// LowMemory keeps the data file open, so the engine reads a
+		// temp copy and an update can replace the original.
+		ipi_onpremise.WithTempDataCopy(true),
 
 		// File System Watcher is by default enabled
 		// ipi_onpremise.WithFileWatch(false),
