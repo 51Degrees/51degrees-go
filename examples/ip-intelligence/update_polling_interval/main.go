@@ -72,11 +72,11 @@ config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
 		// around 30 minutes.
 		ipi_onpremise.WithPollingInterval(3),
 
-		// Set the max amount of time in seconds that should be
-		// added to the polling interval. This is useful in datacenter
-		// applications where multiple instances may be polling for
-		// updates at the same time. A recommended amount in production
-		// environments is 600 seconds.
+		// Set the maximum random time in seconds added to each polling
+		// interval. A new time from 0 up to this maximum is drawn for
+		// each interval, so that multiple instances in a datacenter do
+		// not poll for updates at the same time. A recommended amount
+		// in production environments is 600 seconds.
 		ipi_onpremise.WithRandomization(1),
 
 		// Enable update on startup, the auto update system
@@ -215,11 +215,11 @@ func main() {
 				// around 30 minutes.
 				ipi_onpremise.WithPollingInterval(3),
 
-				// Set the max amount of time in seconds that should be
-				// added to the polling interval. This is useful in datacenter
-				// applications where multiple instances may be polling for
-				// updates at the same time. A recommended amount in production
-				// environments is 600 seconds.
+				// Set the maximum random time in seconds added to each polling
+				// interval. A new time from 0 up to this maximum is drawn for
+				// each interval, so that multiple instances in a datacenter do
+				// not poll for updates at the same time. A recommended amount
+				// in production environments is 600 seconds.
 				ipi_onpremise.WithRandomization(1),
 
 				// Enable update on startup, the auto update system
