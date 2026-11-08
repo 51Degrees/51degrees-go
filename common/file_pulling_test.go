@@ -587,7 +587,13 @@ func TestScheduleFilePulling_CopiesWhilePulling(t *testing.T) {
 		os.Remove(path)
 	}
 
-	// The puller may be announcing another pull when it is asked to stop.
+	stopPuller(stopCh, reload)
+}
+
+// stopPuller stops a puller started with ScheduleFilePulling. The puller may
+// be announcing another pull when it is asked to stop, so reload events are
+// read until it has stopped.
+func stopPuller(stopCh chan *sync.WaitGroup, reload chan struct{}) {
 	stopped := make(chan struct{})
 	go func() {
 		for {
@@ -642,6 +648,73 @@ func TestRandomizationMs(t *testing.T) {
 			if got := randomizationMs(limit); got != 0 {
 				t.Fatalf("randomizationMs(%d) = %d, want 0", limit, got)
 			}
+		}
+	}
+}
+
+// Test that two seeds differ, because with a fixed seed every server would
+// draw the same times and poll in step.
+func TestRandomSeed(t *testing.T) {
+	if a, b := randomSeed(), randomSeed(); a == b {
+		t.Fatalf("randomSeed() gave %d twice", a)
+	}
+}
+
+// Test that the scheduler gives the randomization to the draw as the maximum
+// and waits only for the time drawn. The stub draws 0, so with a maximum of an
+// hour the first pull still comes after the few milliseconds of the interval.
+func TestScheduleFilePulling_DrawsRandomization(t *testing.T) {
+	const pullEveryMs = 5
+	const maxRandomizationMs = 3600000
+	const pullTimeoutSeconds = 3
+
+	var mu sync.Mutex
+	var given []int
+	drawRandomizationMs = func(maxMs int) int {
+		mu.Lock()
+		defer mu.Unlock()
+		given = append(given, maxMs)
+		return 0
+	}
+	t.Cleanup(func() { drawRandomizationMs = randomizationMs })
+
+	dataFile := filepath.Join(t.TempDir(), "data.hash")
+	if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := createMockServer(http.StatusOK, nil, []byte("new"))
+	defer server.Close()
+
+	updater := NewFileUpdater(server.URL)
+	updater.SetDataFile(dataFile)
+	updater.SetIsFileWatcherEnabled(false)
+	updater.SetUpdateOnStartEnabled(false)
+	updater.SetDataFilePullEveryMs(pullEveryMs)
+	updater.SetRandomization(maxRandomizationMs)
+	updater.SetLoggerEnabled(false)
+
+	stopCh := make(chan *sync.WaitGroup)
+	reload := make(chan struct{})
+	go updater.ScheduleFilePulling(stopCh, reload)
+	defer stopPuller(stopCh, reload)
+
+	select {
+	case <-reload:
+	case <-time.After(pullTimeoutSeconds * time.Second):
+		t.Fatalf("no pull within %d seconds with a %d ms interval",
+			pullTimeoutSeconds, pullEveryMs)
+	}
+
+	mu.Lock()
+	got := append([]int(nil), given...)
+	mu.Unlock()
+	if len(got) == 0 {
+		t.Fatal("the scheduler did not draw a random time")
+	}
+	for _, maxMs := range got {
+		if maxMs != maxRandomizationMs {
+			t.Fatalf("the draw was given a maximum of %d, want %d",
+				maxMs, maxRandomizationMs)
 		}
 	}
 }

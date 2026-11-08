@@ -55,6 +55,10 @@ func randomizationMs(maxMs int) int {
 	return int(pullRandom.Int63n(int64(maxMs) + 1))
 }
 
+// drawRandomizationMs is the draw the scheduler uses. It is a variable so that
+// a test can see the maximum the scheduler passes to it.
+var drawRandomizationMs = randomizationMs
+
 // ScheduleFilePulling schedules periodic file pulling based on specified intervals and handles stop signals gracefully.
 // It optionally performs an immediate pull on startup if the update-on-start feature is enabled.
 func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFileEvents chan struct{}) {
@@ -73,7 +77,7 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 			return
 		// interval to perform the pull of updated data, plus a random time
 		// up to the randomization maximum
-		case <-time.After(time.Duration(nextIterationInMs+randomizationMs(e.randomization)) * time.Millisecond):
+		case <-time.After(time.Duration(nextIterationInMs+drawRandomizationMs(e.randomization)) * time.Millisecond):
 			nextIterationInMs = e.doFilePulling(reloadFileEvents)
 		}
 	}
