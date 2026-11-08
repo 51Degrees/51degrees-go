@@ -119,7 +119,7 @@ this option can only be used when using the default data file url from 51Degrees
     WithProduct(product string) EngineOptions
 ```
 
-#### WithLicenceKey sets the license key to use when pulling the data file
+#### WithLicenseKey sets the license key to use when pulling the data file
 this option can only be used when using the default data file url from 51Degrees, it will be appended as a query parameter
 ```go
     WithLicenseKey(key string) EngineOptions
@@ -137,7 +137,7 @@ default is true
 default is true
 if enabled, engine will automatically pull the data file from the distributor
 if disabled, engine will not pull the data file from the distributor
-options like WithDataUpdateUrl, WithLicenceKey will be ignored since auto update is disabled
+options like WithDataUpdateUrl, WithLicenseKey will be ignored since auto update is disabled
 
 ```go
     WithAutoUpdate(enabled bool) EngineOptions
