@@ -39,9 +39,11 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 ### 1. Specify config for engine:
 
 This setting specifies the performance profile that will be used when initializing the C library.
+LowMemory reads the data file as it is needed, because updates download the
+Enterprise data file, which is several gigabytes.
 
 ```
-config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
+config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 ```
 <br/>
 ### 2. Initialization of the engine with the following parameters:
@@ -188,7 +190,10 @@ func main() {
 				return nil
 			}
 
-			config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
+			// LowMemory reads the data file as it is needed rather than
+			// loading it all, because updates download the Enterprise data
+			// file, which is several gigabytes.
+			config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 
 			//Create on-premise engine
 			engine, err := ipi_onpremise.New(
@@ -230,8 +235,9 @@ func main() {
 				// Optionally provide your own file URL
 				ipi_onpremise.WithDataUpdateUrl(params.DataFileUrl),
 
-				// By default a temp copy should be created, unless you are using InMemory performance profile
-				ipi_onpremise.WithTempDataCopy(false),
+				// LowMemory keeps the data file open, so the engine reads a
+				// temp copy and an update can replace the original.
+				ipi_onpremise.WithTempDataCopy(true),
 
 				// File System Watcher is by default enabled
 				// ipi_onpremise.WithFileWatch(false),
