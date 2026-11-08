@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -602,4 +603,45 @@ func TestScheduleFilePulling_CopiesWhilePulling(t *testing.T) {
 	stopCh <- &wg
 	wg.Wait()
 	close(stopped)
+}
+
+// Test that the random time added to a polling interval stays from 0 up to
+// and including the maximum, differs between draws, and is 0 when the
+// maximum is 0 or less.
+func TestRandomizationMs(t *testing.T) {
+	const maxMs = 600000
+	const draws = 1000
+	seen := map[int]bool{}
+	for i := 0; i < draws; i++ {
+		got := randomizationMs(maxMs)
+		if got < 0 || got > maxMs {
+			t.Fatalf("randomizationMs(%d) = %d, want 0 to %d",
+				maxMs, got, maxMs)
+		}
+		seen[got] = true
+	}
+	if len(seen) < draws/2 {
+		t.Fatalf("%d draws gave only %d different times", draws, len(seen))
+	}
+
+	// With a maximum of 1 both 0 and 1 come up, so the maximum is included.
+	ends := map[int]bool{}
+	for i := 0; i < draws; i++ {
+		ends[randomizationMs(1)] = true
+	}
+	if !ends[0] || !ends[1] || len(ends) != 2 {
+		t.Fatalf("randomizationMs(1) gave %v, want 0 and 1", ends)
+	}
+
+	if got := randomizationMs(math.MaxInt); got < 0 {
+		t.Fatalf("randomizationMs(math.MaxInt) = %d, want 0 or more", got)
+	}
+
+	for _, limit := range []int{0, -1} {
+		for i := 0; i < draws; i++ {
+			if got := randomizationMs(limit); got != 0 {
+				t.Fatalf("randomizationMs(%d) = %d, want 0", limit, got)
+			}
+		}
+	}
 }

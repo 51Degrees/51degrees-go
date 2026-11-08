@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"compress/gzip"
 	"crypto/md5"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +21,39 @@ import (
 )
 
 const retryMs = 1000
+
+// pullRandom draws the random time added to each polling interval. It has
+// its own source, seeded from crypto/rand, because the global source is not
+// seeded by every Go version this module supports, and unseeded servers
+// would draw the same times and poll in step.
+var (
+	pullRandomMu sync.Mutex
+	pullRandom   = rand.New(rand.NewSource(randomSeed()))
+)
+
+// randomSeed returns a seed read from crypto/rand, or the time if that fails.
+func randomSeed() int64 {
+	var b [8]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		return time.Now().UnixNano()
+	}
+	return int64(binary.LittleEndian.Uint64(b[:]))
+}
+
+// randomizationMs returns a random number of milliseconds from 0 up to and
+// including maxMs, or 0 when maxMs is 0 or less. A new time is drawn for each
+// interval so that servers with the same setting do not poll in step.
+func randomizationMs(maxMs int) int {
+	if maxMs <= 0 {
+		return 0
+	}
+	pullRandomMu.Lock()
+	defer pullRandomMu.Unlock()
+	if int64(maxMs) == math.MaxInt64 {
+		return int(pullRandom.Int63())
+	}
+	return int(pullRandom.Int63n(int64(maxMs) + 1))
+}
 
 // ScheduleFilePulling schedules periodic file pulling based on specified intervals and handles stop signals gracefully.
 // It optionally performs an immediate pull on startup if the update-on-start feature is enabled.
@@ -34,8 +71,9 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 		case wg := <-stopCh:
 			wg.Done()
 			return
-		// interval to perform the pull of updated data
-		case <-time.After(time.Duration(nextIterationInMs+e.randomization) * time.Millisecond):
+		// interval to perform the pull of updated data, plus a random time
+		// up to the randomization maximum
+		case <-time.After(time.Duration(nextIterationInMs+randomizationMs(e.randomization)) * time.Millisecond):
 			nextIterationInMs = e.doFilePulling(reloadFileEvents)
 		}
 	}

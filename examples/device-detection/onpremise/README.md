@@ -91,10 +91,13 @@ default is Balanced profile
    WithPollingInterval(seconds int) EngineOptions
 ```
 
-#### WithRandomizationSeed Provides randomization of seconds for data file fetching
-* seed - randomization seed
+#### WithRandomization Provides the maximum random time added to each polling interval
+* seconds - maximum random time in seconds, default 600 (10 minutes). A new
+  time from 0 up to this maximum is drawn for each interval, so that several
+  servers with the same setting do not fetch the data file at the same time.
+  0 adds nothing.
 ```go
-    WithRandomizationSeed(seconds int) EngineOptions
+    WithRandomization(seconds int) EngineOptions
 ```
 
 #### WithLogging Enables or disables logger
