@@ -150,8 +150,8 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 		b.SetFixedLanguage(v)
 	}
 	// The specification spells the option MissingTranslationBehavior, and that
-	// spelling wins. MissingTranslationBehaviour is also read so that files
-	// using it still work.
+	// spelling wins. MissingTranslationBehaviour is a deprecated alias, still
+	// read so that existing files work.
 	key := "MissingTranslationBehavior"
 	v, ok := core.StringParam(params, key)
 	if !ok {
