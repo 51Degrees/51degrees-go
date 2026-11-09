@@ -331,10 +331,11 @@ func buildError(name string) (factoryErr, pipelineErr error) {
 
 // A configured object name that is not valid, including an empty one, is
 // refused when the element is built. A valid name matches
-// ^[A-Za-z_$][A-Za-z0-9_$]*$ and is not a reserved word, including those
-// reserved in strict mode, nor eval, arguments, Infinity, NaN, undefined,
-// window, document, top, name, status, history, navigator, closed,
-// location or fiftyoneDegreesManager.
+// ^[A-Za-z_$][A-Za-z0-9_$]*$ and is none of the names the object name
+// section refuses, being the reserved words, including those reserved in
+// strict mode, eval, arguments, Infinity, NaN, undefined, the browser's
+// Window properties that a top level var cannot replace, location and
+// fiftyoneDegreesManager.
 func TestObjectNameConfiguredNotValid(t *testing.T) {
 	for _, name := range []string{
 		"x y", "", " ", " fod", "fod ", "fod\n", "1fod", "a.b", "a-b",
@@ -350,6 +351,10 @@ func TestObjectNameConfiguredNotValid(t *testing.T) {
 		"Infinity", "NaN", "undefined", "fiftyoneDegreesManager",
 		"eval", "arguments", "window", "document", "top", "name", "status",
 		"history", "navigator", "closed", "location",
+		"frameElement", "isSecureContext", "crossOriginIsolated",
+		"trustedTypes", "crypto", "indexedDB", "localStorage",
+		"sessionStorage", "caches", "cookieStore", "speechSynthesis",
+		"styleMedia",
 	} {
 		t.Run(name, func(t *testing.T) {
 			var ce *core.ConfigurationError
@@ -402,7 +407,10 @@ func TestObjectNameRequestedNotValid(t *testing.T) {
 		"x y", "class", "let", "null", "NaN", "Infinity", "undefined",
 		"fiftyoneDegreesManager", "eval", "arguments", "window", "document",
 		"top", "name", "status", "history", "navigator", "closed",
-		"location",
+		"location", "frameElement", "isSecureContext", "crossOriginIsolated",
+		"trustedTypes", "crypto", "indexedDB", "localStorage",
+		"sessionStorage", "caches", "cookieStore", "speechSynthesis",
+		"styleMedia",
 	} {
 		t.Run(name, func(t *testing.T) {
 			js := renderElement(t, NewBuilder().SetObjectName("configured").Build(),
