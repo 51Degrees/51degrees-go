@@ -243,65 +243,104 @@ func buildWithLogger(t *testing.T, cloud http.Handler, aspectKey string,
 	return p, engine
 }
 
-// A Resource Key that includes no product for a Cloud Aspect Engine fails
-// neither the Pipeline build nor any request. The engine has no Property
-// metadata and logs the missing product once, with nothing logged on each
-// request. Its Element Data is empty, so reading a Property gives the error
-// that reading any Property the response does not carry gives. Each case
-// builds a new engine, which logs once of its own.
+// emptyProductCloud is fakeCloud with "location" listed as a product that
+// has no Properties, and no "location" section in the response.
+func emptyProductCloud() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"Products":{"device":{"DataTier":"CloudV4","Properties":[{"Name":"ismobile","Type":"Bool","Category":"Device"}]},"location":{"DataTier":"CloudV4","Properties":[]}}}`))
+	})
+	mux.Handle("/evidencekeys", fakeCloud())
+	mux.Handle("/json", fakeCloud())
+	return mux
+}
+
+// A Resource Key that includes no product for a Cloud Aspect Engine, or
+// lists the product with no Properties, fails neither the Pipeline build
+// nor any request. The engine has no Property metadata and logs the missing
+// product once, at error level with a link to the Configurator, with
+// nothing logged on each request. Its Element Data is empty, so reading a
+// Property gives the error that reading any Property the response does not
+// carry gives. Each case builds a new engine, which logs once of its own.
 func TestMissingProductBuildsAndLogsOnce(t *testing.T) {
-	const missing = "location" // fakeCloud's key includes only "device"
-	for _, suppress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("suppress=%v", suppress), func(t *testing.T) {
-			log := &recordingHandler{}
-			p, engine := buildWithLogger(t, fakeCloud(), missing, suppress,
-				slog.New(log))
-			if n := len(engine.Properties()); n != 0 {
-				t.Errorf("the engine has %d Properties, want none", n)
-			}
-			_, absent := engines.NewBaseAspectData().Get("town")
-			for i := 1; i <= 3; i++ {
-				fd := p.CreateFlowData()
-				fd.AddEvidence("header.user-agent", "ua")
-				if err := fd.Process(); err != nil {
-					t.Fatalf("request %d: %v", i, err)
-				}
-				if errs := fd.Errors(); len(errs) != 0 {
-					t.Fatalf("request %d recorded errors: %v", i, errs)
-				}
-				data, err := fd.Get(missing)
-				if err != nil {
-					t.Fatalf("request %d has no Element Data: %v", i, err)
-				}
-				if values := data.AsMap(); len(values) != 0 {
-					t.Errorf("request %d has the values %v, want none", i,
-						values)
-				}
-				_, err = data.Get("town")
-				if err == nil || err.Error() != absent.Error() {
-					t.Errorf("reading town gives %v, want %v", err, absent)
-				}
-			}
-			records := log.all()
-			if len(records) != 1 {
-				for _, r := range records {
-					t.Logf("%s %s", r.Level, r.Message)
-				}
-				t.Fatalf("logged %d times over 3 requests, want once",
-					len(records))
-			}
-			product := ""
-			records[0].Attrs(func(a slog.Attr) bool {
-				if a.Key == "product" {
-					product = a.Value.String()
-				}
-				return true
+	clouds := []struct {
+		name  string
+		cloud func() http.Handler
+	}{
+		{"not listed", fakeCloud}, // fakeCloud's key includes only "device"
+		{"listed with no Properties", emptyProductCloud},
+	}
+	for _, c := range clouds {
+		for _, suppress := range []bool{false, true} {
+			name := fmt.Sprintf("%s/suppress=%v", c.name, suppress)
+			t.Run(name, func(t *testing.T) {
+				checkMissingProduct(t, c.cloud(), suppress)
 			})
-			if product != missing {
-				t.Errorf("the log names the product %q, want %q", product,
-					missing)
+		}
+	}
+}
+
+// checkMissingProduct runs three requests through a Pipeline whose key gives
+// the "location" engine no Properties, and checks the results and the log.
+func checkMissingProduct(t *testing.T, cloud http.Handler, suppress bool) {
+	const missing = "location"
+	log := &recordingHandler{}
+	p, engine := buildWithLogger(t, cloud, missing, suppress, slog.New(log))
+	_, absent := engines.NewBaseAspectData().Get("town")
+	for i := 1; i <= 3; i++ {
+		fd := p.CreateFlowData()
+		fd.AddEvidence("header.user-agent", "ua")
+		if err := fd.Process(); err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		if errs := fd.Errors(); len(errs) != 0 {
+			t.Fatalf("request %d recorded errors: %v", i, errs)
+		}
+		if i == 1 {
+			props, err := AspectProperties(fd, engine, missing)
+			if err != nil || len(props) != 0 {
+				t.Errorf("the engine's Properties are %v, %v, want none",
+					props, err)
 			}
-		})
+		}
+		data, err := fd.Get(missing)
+		if err != nil {
+			t.Fatalf("request %d has no Element Data: %v", i, err)
+		}
+		if values := data.AsMap(); len(values) != 0 {
+			t.Errorf("request %d has the values %v, want none", i, values)
+		}
+		_, err = data.Get("town")
+		if err == nil || err.Error() != absent.Error() {
+			t.Errorf("reading town gives %v, want %v", err, absent)
+		}
+	}
+	records := log.all()
+	if len(records) != 1 {
+		for _, r := range records {
+			t.Logf("%s %s", r.Level, r.Message)
+		}
+		t.Fatalf("logged %d times over 3 requests, want once", len(records))
+	}
+	product, configurator := "", ""
+	records[0].Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "product":
+			product = a.Value.String()
+		case "configurator":
+			configurator = a.Value.String()
+		}
+		return true
+	})
+	if records[0].Level != slog.LevelError {
+		t.Errorf("logged at %s, want %s", records[0].Level, slog.LevelError)
+	}
+	if product != missing {
+		t.Errorf("the log names the product %q, want %q", product, missing)
+	}
+	if configurator != configuratorURL {
+		t.Errorf("the log links to %q, want %q", configurator,
+			configuratorURL)
 	}
 }
 
