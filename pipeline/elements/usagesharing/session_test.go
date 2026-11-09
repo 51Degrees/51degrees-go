@@ -134,8 +134,10 @@ func TestTrackSessionSharesRepeatFromNewSession(t *testing.T) {
 	settle(t, c, 2)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Every entry has a SessionId element of its own, so the cookie is
+	// looked for as an Evidence entry with the cookie's name.
 	for _, body := range c.bodies {
-		if strings.Contains(strings.ToLower(string(body)), "sessionid") {
+		if strings.Contains(strings.ToLower(string(body)), `name="sessionid"`) {
 			t.Errorf("the session cookie was shared in %s", body)
 		}
 	}
