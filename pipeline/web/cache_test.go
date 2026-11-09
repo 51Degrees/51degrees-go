@@ -355,3 +355,79 @@ func TestSameEvidenceGivesSameETagInEveryProcess(t *testing.T) {
 	}
 	t.Logf("ETag %s in both processes", want)
 }
+
+// The ETag hashes the Evidence alone, so a data file update can change the
+// content while the ETag stays the same. It is therefore a weak entity tag,
+// W/ then a quoted string (RFC 9110 sections 8.8.1 and 8.8.3).
+func TestETagIsWeak(t *testing.T) {
+	for _, ep := range clientSideEndpoints {
+		t.Run(ep.path, func(t *testing.T) {
+			srv, _ := newFailingServer(t)
+			etag := fetch(t, srv, ep.method, ep.path, "").Header.Get("ETag")
+			opaque, weak := strings.CutPrefix(etag, "W/")
+			if !weak || len(opaque) < 3 || !strings.HasPrefix(opaque, `"`) ||
+				!strings.HasSuffix(opaque, `"`) {
+				t.Fatalf("ETag = %s, want W/ then a quoted string", etag)
+			}
+		})
+	}
+}
+
+// If-None-Match is compared with the weak comparison function (RFC 9110
+// sections 13.1.2 and 8.8.3.2), so the quoted parts are compared whether
+// or not either tag carries W/. The field may list several tags, over one
+// or more header lines, or be "*". A match gets 304 to a GET and 412 to a
+// POST, as for an exact match.
+func TestIfNoneMatchUsesWeakComparison(t *testing.T) {
+	srv, _ := newFailingServer(t)
+	etag := fetch(t, srv, http.MethodGet, DefaultJSONURL, "").Header.Get("ETag")
+	opaque := strings.TrimPrefix(etag, "W/")
+	if opaque == "" {
+		t.Fatal("the response carries no ETag")
+	}
+	cases := []struct {
+		name  string
+		lines []string
+		match bool
+	}{
+		{"weak", []string{"W/" + opaque}, true},
+		{"strong", []string{opaque}, true},
+		{"list", []string{`"other", W/` + opaque}, true},
+		{"list without spaces", []string{`W/"other",` + opaque}, true},
+		{"two header lines", []string{`"other"`, "W/" + opaque}, true},
+		{"any", []string{"*"}, true},
+		{"other tag", []string{`W/"other"`}, false},
+		{"other tags", []string{`"other", W/"another"`}, false},
+		{"lower case weak prefix", []string{"w/" + opaque}, false},
+		{"unquoted", []string{strings.Trim(opaque, `"`)}, false},
+	}
+	for _, tc := range cases {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+"/"+tc.name, func(t *testing.T) {
+				req, err := http.NewRequest(method, srv.URL+DefaultJSONURL, nil)
+				if err != nil {
+					t.Fatalf("request: %v", err)
+				}
+				req.Header.Set("User-Agent", "agent-1")
+				for _, line := range tc.lines {
+					req.Header.Add("If-None-Match", line)
+				}
+				resp, err := srv.Client().Do(req)
+				if err != nil {
+					t.Fatalf("%s: %v", method, err)
+				}
+				_ = resp.Body.Close()
+				want := http.StatusOK
+				if tc.match && method == http.MethodGet {
+					want = http.StatusNotModified
+				} else if tc.match {
+					want = http.StatusPreconditionFailed
+				}
+				if resp.StatusCode != want {
+					t.Errorf("If-None-Match %q gives %d, want %d",
+						tc.lines, resp.StatusCode, want)
+				}
+			})
+		}
+	}
+}
