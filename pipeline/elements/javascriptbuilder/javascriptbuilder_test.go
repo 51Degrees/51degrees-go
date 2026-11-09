@@ -333,8 +333,8 @@ func buildError(name string) (factoryErr, pipelineErr error) {
 // refused when the element is built. A valid name matches
 // ^[A-Za-z_$][A-Za-z0-9_$]*$ and is not a reserved word, including those
 // reserved in strict mode, nor eval, arguments, Infinity, NaN, undefined,
-// window, document, top, name, status, history, navigator, closed or
-// fiftyoneDegreesManager.
+// window, document, top, name, status, history, navigator, closed,
+// location or fiftyoneDegreesManager.
 func TestObjectNameConfiguredNotValid(t *testing.T) {
 	for _, name := range []string{
 		"x y", "", " ", " fod", "fod ", "fod\n", "1fod", "a.b", "a-b",
@@ -349,7 +349,7 @@ func TestObjectNameConfiguredNotValid(t *testing.T) {
 		"protected", "public", "static",
 		"Infinity", "NaN", "undefined", "fiftyoneDegreesManager",
 		"eval", "arguments", "window", "document", "top", "name", "status",
-		"history", "navigator", "closed",
+		"history", "navigator", "closed", "location",
 	} {
 		t.Run(name, func(t *testing.T) {
 			var ce *core.ConfigurationError
@@ -402,6 +402,7 @@ func TestObjectNameRequestedNotValid(t *testing.T) {
 		"x y", "class", "let", "null", "NaN", "Infinity", "undefined",
 		"fiftyoneDegreesManager", "eval", "arguments", "window", "document",
 		"top", "name", "status", "history", "navigator", "closed",
+		"location",
 	} {
 		t.Run(name, func(t *testing.T) {
 			js := renderElement(t, NewBuilder().SetObjectName("configured").Build(),
