@@ -205,6 +205,14 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 	e.logger.Infof("Checking for update")
 
+	// The download is written next to the data file, so without a data file
+	// path there is nowhere to put it.
+	if e.GetDataFile() == "" {
+		e.logger.Errorf("The data file '%s' is checking for updates but does not have a temporary file path "+
+			"configured.", e.engineLabel())
+		return retryMs, false, ErrNoDataFileProvided
+	}
+
 	lastModificationTimestamp, err := e.ifModifiedSince()
 	if err != nil {
 		e.logger.Printf("failed to get file info: %v", err)
@@ -241,8 +249,14 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
 		os.Remove(fileResponse.path)
-		e.logger.Errorf("An error occurred when copying a data file to replace the existing one at '%s'. "+
-			"Error detail: %v", e.GetDataFile(), err)
+		if e.isCreateTempDataCopyEnabled {
+			e.logger.Errorf("An error occurred when copying a data file to replace the existing one at '%s'. "+
+				"Error detail: %v", e.GetDataFile(), err)
+		} else {
+			// The engine reads the data file itself, so the file may be locked.
+			e.logger.Errorf("Unable to update data file. This is probably because the Engine was built with the " +
+				"'use temp file' option disabled.")
+		}
 		// retry after 1 second, since we have unhandled error
 		// this can happen from disk write error or something else
 		return retryMs, false, err

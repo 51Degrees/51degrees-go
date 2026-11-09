@@ -467,3 +467,51 @@ func TestPullError_KeepsTheTextAndTheCause(t *testing.T) {
 		t.Errorf("error %q does not keep the text and cause", err)
 	}
 }
+
+// A data file that cannot be replaced is reported in the words of the
+// specification, which say more when the Engine reads the file itself.
+func TestPull_LogsAFileThatCannotBeReplaced(t *testing.T) {
+	cases := map[string]struct {
+		tempCopy bool
+		want     string
+	}{
+		"use temp file on": {true,
+			"ERROR An error occurred when copying a data file to replace the existing one at '"},
+		"use temp file off": {false,
+			"ERROR Unable to update data file. This is probably because the Engine was built with the " +
+				"'use temp file' option disabled."},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			server, _ := headerServer(http.StatusOK, "new data")
+			defer server.Close()
+			updater, log, dataFile := newRecordingUpdater(t, server.URL)
+			updater.SetIsCreateTempDataCopyEnabled(c.tempCopy)
+			// A directory with a file in it cannot be replaced by a rename.
+			if err := os.MkdirAll(dataFile, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dataFile, "child"), []byte("x"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			updater.doFilePulling(make(chan struct{}, 1))
+			if !log.hasPrefix(c.want) {
+				t.Errorf("missing log entry starting %q in:\n%s", c.want, log)
+			}
+		})
+	}
+}
+
+func TestPull_LogsAMissingTemporaryFilePath(t *testing.T) {
+	updater := NewFileUpdater("http://localhost")
+	updater.SetEngineName("TestEngine")
+	log := &recordedLog{}
+	updater.SetCustomLogger(log)
+	if next := updater.doFilePulling(make(chan struct{}, 1)); next != retryMs {
+		t.Errorf("next pull in %d ms, want %d", next, retryMs)
+	}
+	want := "ERROR The data file 'TestEngine' is checking for updates but does not have a temporary file path configured."
+	if !log.has(want) {
+		t.Errorf("missing log entry %q in:\n%s", want, log)
+	}
+}
