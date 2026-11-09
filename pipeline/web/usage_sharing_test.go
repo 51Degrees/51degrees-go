@@ -23,12 +23,14 @@
 package web
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/usagesharing"
@@ -119,10 +121,11 @@ func TestMiddlewareAddsTheWebRequest(t *testing.T) {
 	if !ok {
 		t.Fatalf("server.http-request = %T, want core.WebRequest", got)
 	}
-	r := w.Request()
-	if r.Header.Get("X-Test") != "seen" || r.URL.Path != "/page" {
-		t.Fatalf("server.http-request is not this request: %s %v",
-			r.URL.Path, r.Header)
+	if w.Headers().Get("X-Test") != "seen" || w.Path() != "/page" ||
+		w.Method() != http.MethodGet || w.ClientIP() != "127.0.0.1" ||
+		w.Protocol() != "http" {
+		t.Fatalf("server.http-request is not this request: %s %s %s %s %v",
+			w.Method(), w.Path(), w.ClientIP(), w.Protocol(), w.Headers())
 	}
 }
 
@@ -168,6 +171,62 @@ func TestPrintedEvidenceHoldsNoRequestValues(t *testing.T) {
 		if strings.Contains(text, "header-secret-value") ||
 			strings.Contains(text, "cookie-secret-value") {
 			t.Errorf("printed Evidence holds a request value: %.200s", text)
+		}
+	}
+}
+
+// The payload sent for a request holds the parts of the request the
+// specification shares. With all Evidence shared it still holds no Cookie
+// header and no request path, and it holds the request method.
+func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
+	bodies := make(chan string, 4)
+	collector := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			zr, err := gzip.NewReader(r.Body)
+			if err == nil {
+				b, _ := io.ReadAll(zr)
+				bodies <- string(b)
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer collector.Close()
+
+	sharing := usagesharing.NewBuilder().SetShareAllEvidence(true).
+		SetMinimumEntriesPerMessage(1).
+		SetShareUsageURL(collector.URL).Build()
+	p, err := AssemblePipeline(PipelineConfig{}, newHeaderEngine(), sharing)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	srv := httptest.NewServer(NewMiddleware(p).Handler(http.NotFoundHandler()))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/a-page?q=1", nil)
+	req.Header.Set("X-Test", "shared-header")
+	req.Header.Set("Cookie", "51D_c=shared-cookie")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	_ = resp.Body.Close()
+	p.Close()
+
+	var payload string
+	select {
+	case payload = <-bodies:
+	case <-time.After(5 * time.Second):
+		t.Fatal("nothing was shared")
+	}
+	for _, want := range []string{"shared-header", "shared-cookie",
+		`Name="request-method"`} {
+		if !strings.Contains(payload, want) {
+			t.Errorf("the payload lacks %s: %.600s", want, payload)
+		}
+	}
+	for _, unwanted := range []string{"a-page",
+		`Name="cookie"`} {
+		if strings.Contains(payload, unwanted) {
+			t.Errorf("the payload holds %s: %.600s", unwanted, payload)
 		}
 	}
 }

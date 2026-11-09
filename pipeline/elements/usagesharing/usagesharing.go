@@ -168,10 +168,10 @@ func (e *Element) sample() bool {
 }
 
 // shareableEvidence returns the values the element finds that isShared lets
-// through, keyed by their Evidence key. It finds every Evidence value, and,
+// through, keyed by their Evidence key. It finds every Evidence value and,
 // when the Evidence holds the web request as core.EvidenceHTTPRequest, the
-// request's headers, cookies and query string parameters too. A key found in
-// both keeps the Evidence value, and the request itself is never shared.
+// request's parts too. A key found in both keeps the Evidence value, and the
+// request itself is never shared.
 // See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
 func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
@@ -181,9 +181,8 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
-	w, _ := all[core.EvidenceHTTPRequest].(core.WebRequest)
-	if r := w.Request(); r != nil {
-		for key, val := range requestEvidence(r) {
+	if w, ok := all[core.EvidenceHTTPRequest].(core.WebRequest); ok {
+		for key, val := range requestEvidence(w) {
 			if _, found := all[key]; !found && e.isShared(key) {
 				out[key] = val
 			}
@@ -192,33 +191,36 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	return out
 }
 
-// requestEvidence returns the request's values under the keys the web
-// integration gives them as Evidence: the first value of each header but
-// Cookie, the Host, each cookie, and the first value of each query string or
-// form parameter. The form is read only when the request was already parsed,
-// so the body is never consumed here.
-func requestEvidence(r *http.Request) map[string]string {
+// requestEvidence returns the web request's parts under the keys the web
+// integration gives them as Evidence. A header or query parameter with several
+// values gives the first.
+func requestEvidence(w core.WebRequest) map[string]string {
 	out := map[string]string{}
-	for name, values := range r.Header {
-		if !strings.EqualFold(name, "Cookie") && len(values) > 0 {
+	for name, values := range w.Headers() {
+		if len(values) > 0 {
 			out[strings.ToLower(core.PrefixHeader+"."+name)] = values[0]
 		}
 	}
-	if r.Host != "" {
-		out[core.PrefixHeader+".host"] = r.Host
-	}
-	for _, c := range r.Cookies() {
+	for _, c := range w.Cookies() {
 		out[strings.ToLower(core.PrefixCookie+"."+c.Name)] = c.Value
 	}
-	params := r.Form
-	if params == nil && r.URL != nil {
-		params = r.URL.Query()
-	}
-	for name, values := range params {
+	for name, values := range w.Query() {
 		if len(values) > 0 {
 			out[strings.ToLower(core.PrefixQuery+"."+name)] = values[0]
 		}
 	}
+	for name, value := range w.Session() {
+		out[strings.ToLower(prefixSession+"."+name)] = value
+	}
+	setIfNotEmpty := func(key, value string) {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	setIfNotEmpty("server.client-ip", w.ClientIP())
+	setIfNotEmpty("header.protocol", w.Protocol())
+	setIfNotEmpty("server.request-method", w.Method())
+	setIfNotEmpty("server.request-path", w.Path())
 	return out
 }
 

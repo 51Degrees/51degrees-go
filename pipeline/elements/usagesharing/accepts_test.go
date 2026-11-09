@@ -77,9 +77,10 @@ func TestUsageSharingAcceptsNoEvidence(t *testing.T) {
 
 // With the web request in the Evidence, usage sharing shares the request's
 // headers, cookies and query string parameters that the sharing rules let
-// through, a header no element accepts among them. It leaves out the Cookie
-// header, a blocked header and the request itself, and a key also in the
-// Evidence keeps the Evidence value.
+// through, a header no element accepts among them, with its client IP address,
+// protocol and method. It leaves out the Cookie header, a blocked header, the
+// path and the request itself, and a key also in the Evidence keeps the
+// Evidence value.
 func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 	p, e := newSharingPipeline(t, NewBuilder().SetBlockedHTTPHeaders("x-blocked"))
 
@@ -91,14 +92,18 @@ func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "from-evidence")
-	fd.AddEvidence(httpRequestKey, core.NewWebRequest(r))
+	fd.AddEvidence(httpRequestKey, core.NewWebRequest(r).
+		WithClientIP("203.0.113.5").WithProtocol("https"))
 
 	want := map[string]string{
-		"header.host":       "example.com",
-		"header.user-agent": "from-evidence",
-		"header.x-test":     "shared",
-		"cookie.51d_c":      "3",
-		"query.51d_q":       "1",
+		"header.host":           "example.com",
+		"header.user-agent":     "from-evidence",
+		"header.x-test":         "shared",
+		"header.protocol":       "https",
+		"cookie.51d_c":          "3",
+		"query.51d_q":           "1",
+		"server.client-ip":      "203.0.113.5",
+		"server.request-method": "GET",
 	}
 	if got := e.shareableEvidence(fd); !reflect.DeepEqual(got, want) {
 		t.Errorf("shared %v, want %v", got, want)
@@ -134,5 +139,84 @@ func TestUsageSharingSharesEvidenceWithoutAWebRequest(t *testing.T) {
 	}
 	if got := e.shareableEvidence(fd); !reflect.DeepEqual(got, want) {
 		t.Errorf("shared %v, want %v", got, want)
+	}
+}
+
+// Whatever the configuration, and even when all Evidence is shared, these
+// keys are never shared, matched as the whole key or after a ".".
+func TestUsageSharingNeverSharesTheNeverSharedKeys(t *testing.T) {
+	configs := map[string]*Builder{
+		"default":   NewBuilder(),
+		"share all": NewBuilder().SetShareAllEvidence(true),
+		"no blocks": NewBuilder().SetBlockedHTTPHeaders(),
+		"share all and no blocks": NewBuilder().SetShareAllEvidence(true).
+			SetBlockedHTTPHeaders().SetShareAllQueryStringParameters(true),
+	}
+	never := []string{"id.email", "id.salt", "server.request-query",
+		"server.request-path", "header.cookie", "header.Cookie",
+		"query.id.email", "query.request-path"}
+	for name, b := range configs {
+		e := b.Build()
+		for _, key := range never {
+			if e.isShared(key) {
+				t.Errorf("%s: isShared(%q) = true, want false", name, key)
+			}
+		}
+		if e.cfg.shareAllEvidence && !e.isShared("query.valid.email") {
+			t.Errorf("%s: isShared(query.valid.email) = false, want true", name)
+		}
+		e.Close()
+	}
+}
+
+// With all Evidence shared, the Cookie header is still left out, whether it
+// is in the Evidence or in the request, and the cookies starting 51D_ are
+// shared as their own cookie Evidence.
+func TestUsageSharingNeverSharesTheCookieHeader(t *testing.T) {
+	p, e := newSharingPipeline(t, NewBuilder().SetShareAllEvidence(true))
+
+	r := httptest.NewRequest("GET", "/page", nil)
+	r.Header.Set("Cookie", "a=secret; 51D_c=3")
+
+	fd := p.CreateFlowData()
+	fd.AddEvidenceMap(map[string]any{
+		"header.cookie":        "a=secret; 51D_c=3",
+		"id.email":             "a@example.com",
+		"server.request-query": "x=1",
+		"server.request-path":  "/page",
+	})
+	fd.AddEvidence(httpRequestKey, core.NewWebRequest(r))
+
+	got := e.shareableEvidence(fd)
+	for _, key := range []string{"header.cookie", "id.email",
+		"server.request-query", "server.request-path"} {
+		if _, found := got[key]; found {
+			t.Errorf("shared %s", key)
+		}
+	}
+	if got["cookie.51d_c"] != "3" {
+		t.Errorf("cookie.51d_c = %q, want 3, shared %v", got["cookie.51d_c"], got)
+	}
+}
+
+// A session value is shared only when its name starts 51D_.
+func TestUsageSharingSharesOnlyTheSessionValuesStarting51D(t *testing.T) {
+	e := NewBuilder().Build()
+	defer e.Close()
+	for key, want := range map[string]bool{
+		"session.51D_x": true, "session.51d_x": true, "session.other": false,
+	} {
+		if got := e.isShared(key); got != want {
+			t.Errorf("isShared(%q) = %v, want %v", key, got, want)
+		}
+	}
+}
+
+// The Cookie header is blocked by default, as the specification names it.
+func TestUsageSharingBlocksTheCookieHeaderByDefault(t *testing.T) {
+	e := NewBuilder().Build()
+	defer e.Close()
+	if _, ok := e.cfg.blockedHeaders["cookie"]; !ok {
+		t.Errorf("default blocked headers = %v, want cookie", e.cfg.blockedHeaders)
 	}
 }
