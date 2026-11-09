@@ -22,9 +22,6 @@
 
 package javascriptbuilder
 
-// Tests of the callback URL rules in the JavaScript builder specification.
-// https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/javascript-builder.md#callback-url
-
 import (
 	"context"
 	"errors"
@@ -88,7 +85,6 @@ func TestCallbackURLAcceptedHosts(t *testing.T) {
 	cases := []struct{ host, want string }{
 		{"EXAMPLE.com", "https://example.com" + tail},
 		{"example.com:8080", "https://example.com:8080" + tail},
-		{"example.com:", "https://example.com:" + tail},
 		{"example.com:65535", "https://example.com:65535" + tail},
 		{"example.com:00080", "https://example.com:00080" + tail},
 		{"example.com:0065535", "https://example.com:0065535" + tail},
@@ -186,6 +182,9 @@ func TestCallbackURLRefusedHosts(t *testing.T) {
 		"example.com:65536", "example.com:99999", "example.com:abc",
 		"example.com:0065536", "example.com:123456",
 		"example.com:4294967296", "example.com:99999999999999999999",
+		// Rule 5, a port that is present but empty. A host value holding a
+		// scheme is read as the host "https" with an empty port.
+		"example.com:", "[::1]:", "https://example.com",
 	}
 	for _, host := range hosts {
 		t.Run(host, func(t *testing.T) {
@@ -240,6 +239,7 @@ func TestCallbackURLConfigured(t *testing.T) {
 		{"example.com/\"^`{|}", "/j\"^`{|}",
 			"https://example.com/%22%5E%60%7B%7C%7D/j%22%5E%60%7B%7C%7D"},
 		{"user:12/ss@example.com", "/json", ""},
+		{"https://example.com", "/json", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.host+" "+c.endpoint, func(t *testing.T) {
