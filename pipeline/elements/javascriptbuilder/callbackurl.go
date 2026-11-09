@@ -22,25 +22,22 @@
 
 package javascriptbuilder
 
-// The callback URL the script posts to for updated JSON. The protocol and
-// host usually come from the request, and the URL is written inside a
-// single-quoted JavaScript string, so it is checked and encoded first.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/javascript-builder.md#callback-url
-
 import (
 	"net/netip"
 	"strconv"
 	"strings"
 )
 
-// maxPort is the largest port number.
-const maxPort = 65535
-
 // userInfoMarker is what the log shows in place of anything in a refused
 // host value before its last "@".
 const userInfoMarker = "***"
 
-// buildCallbackURL builds the callback URL from its parts and checks it.
+// buildCallbackURL builds the callback URL the script posts to for updated
+// JSON from its parts and checks it. The protocol and host usually come
+// from the request, and the URL is written inside a single-quoted
+// JavaScript string, so it is checked and encoded first.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/javascript-builder.md#callback-url
+//
 // valid is the URL for the script, or "" when there is none. refused is set
 // when the URL fails the rules, being the URL as built for the log, with
 // anything in the host value before its last "@" shown as "***".
@@ -160,30 +157,32 @@ func isIPv4(s string) bool {
 		return false
 	}
 	for _, part := range parts {
-		n, err := strconv.Atoi(part)
-		if err != nil || !allBytes(part, isDigit) || n > 255 ||
-			(part[0] == '0' && len(part) > 1) {
+		// Base 10 takes no sign and no "_", and a value above 255 is a
+		// range error.
+		_, err := strconv.ParseUint(part, 10, 8)
+		if err != nil || (part[0] == '0' && len(part) > 1) {
 			return false
 		}
 	}
 	return true
 }
 
-// isPort reports whether s is ":" followed by nothing or by digits whose
-// value is no more than 65535.
+// isPort reports whether s is ":" followed by one or more digits whose
+// value is no more than 65535. Leading zeros do not change the value.
 func isPort(s string) bool {
 	digits, ok := strings.CutPrefix(s, ":")
-	if !ok || !allBytes(digits, isDigit) {
+	if !ok {
 		return false
 	}
-	digits = strings.TrimLeft(digits, "0")
-	n, _ := strconv.Atoi(digits)
-	return len(digits) <= 5 && n <= maxPort
+	// Base 10 takes no sign and no "_", an empty string is a syntax error
+	// and a value above 65535 is a range error.
+	_, err := strconv.ParseUint(digits, 10, 16)
+	return err == nil
 }
 
 // encoded percent-encodes each byte that is a control character, is outside
-// ASCII, is a space or could end the string or the script the URL is
-// written into, and a "%" that does not start an escape.
+// ASCII, is a space, or is one of the characters rule 8 of the callback URL
+// lists, and a "%" that does not start an escape.
 func encoded(s string) string {
 	const hex = "0123456789ABCDEF"
 	var b strings.Builder
