@@ -227,9 +227,9 @@ func TestBuildDiscoversPropertiesAndEvidenceKeys(t *testing.T) {
 	}
 }
 
-// A 4xx answer to either discovery request, such as an invalid Resource Key,
-// fails the build with a configuration error that carries the cloud's
-// status, after both requests have been made.
+// A 4xx answer other than 408 or 429 to either discovery request, such as
+// for an invalid Resource Key, fails the build with a configuration error
+// that carries the cloud's status, after both requests have been made.
 func TestBuildFailsOnDefinitiveDiscoveryError(t *testing.T) {
 	cases := []struct {
 		name                 string
@@ -240,7 +240,6 @@ func TestBuildFailsOnDefinitiveDiscoveryError(t *testing.T) {
 		{"accessibleproperties 401", 401, 0, 401},
 		{"accessibleproperties 403", 403, 0, 403},
 		{"evidencekeys 404", 0, 404, 404},
-		{"evidencekeys 429", 0, 429, 429},
 		{"accessibleproperties 401, evidencekeys 503", 401, 503, 401},
 		{"accessibleproperties 503, evidencekeys 403", 503, 403, 403},
 	}
@@ -288,8 +287,8 @@ func deadEndpoint() string {
 	return srv.URL + "/"
 }
 
-// A transient failure, being the service unreachable, a timeout, a 5xx
-// answer or a body that cannot be read, does not fail the build. The build
+// A transient failure, being the service unreachable, a timeout, a 5xx,
+// 408 or 429 answer or a body that cannot be read, does not fail the build. The build
 // logs one warning and completes, and the engine advertises no Evidence
 // keys that it could not fetch.
 func TestBuildToleratesTransientDiscoveryFailure(t *testing.T) {
@@ -309,6 +308,16 @@ func TestBuildToleratesTransientDiscoveryFailure(t *testing.T) {
 		{"evidencekeys 503", func(t *testing.T, log *logRecorder) (*Builder, *discoveryCloud) {
 			cloud := &discoveryCloud{}
 			cloud.evidenceStatus.Store(503)
+			return discoveryBuilder(cloud.serve(t), log), cloud
+		}, nil},
+		{"accessibleproperties 408", func(t *testing.T, log *logRecorder) (*Builder, *discoveryCloud) {
+			cloud := &discoveryCloud{}
+			cloud.propertiesStatus.Store(408)
+			return discoveryBuilder(cloud.serve(t), log), cloud
+		}, discoveryKeys},
+		{"evidencekeys 429", func(t *testing.T, log *logRecorder) (*Builder, *discoveryCloud) {
+			cloud := &discoveryCloud{}
+			cloud.evidenceStatus.Store(429)
 			return discoveryBuilder(cloud.serve(t), log), cloud
 		}, nil},
 		{"both 502", func(t *testing.T, log *logRecorder) (*Builder, *discoveryCloud) {
