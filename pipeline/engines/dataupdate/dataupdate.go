@@ -198,8 +198,8 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 	}
 
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
-		s.logger.Info("Updating on start-up", "engine", engineName)
-		if err := reg.httpUpdate(); err != nil {
+		s.logger.Info("Updating on start-up")
+		if err := reg.httpUpdate(false); err != nil {
 			// A failed start-up update falls back to the local data file, and
 			// fails when there is none.
 			if cfg.DataFilePath != "" {
@@ -275,7 +275,7 @@ func (s *Service) CheckForUpdate(identifier string) error {
 		return fmt.Errorf("data update: no registration for identifier %q", identifier)
 	}
 	if reg.cfg.DataUpdateURL != "" {
-		return reg.httpUpdate()
+		return reg.httpUpdate(false)
 	}
 	return reg.refreshFromFile()
 }
@@ -339,10 +339,8 @@ func (r *registration) startPolling() {
 				return
 			case <-timer.C:
 			}
-			if err := r.httpUpdate(); err != nil {
-				// Background errors are logged, never fatal.
-				r.svc.logger.Warn("automatic update failed; will retry later",
-					"engine", r.engineName, "error", err)
+			if err := r.httpUpdate(true); err != nil {
+				// Background errors are logged by httpUpdate, never fatal.
 				var rle *RateLimitError
 				if errors.As(err, &rle) && rle.RetryAfter > 0 {
 					// Reset polling to respect the server's rate limit.
@@ -405,7 +403,7 @@ func (r *registration) startWatcher() error {
 	if err != nil {
 		return err
 	}
-	r.svc.logger.Info("Creating file system watcher", "engine", r.engineName)
+	r.svc.logger.Info("Creating file system watcher")
 	dir := filepath.Dir(r.cfg.DataFilePath)
 	if err := w.Add(dir); err != nil {
 		_ = w.Close()
@@ -449,10 +447,8 @@ func (r *registration) startWatcher() error {
 				}
 			case <-timerC:
 				timerC = nil
-				if err := r.refreshFromFile(); err != nil {
-					r.svc.logger.Warn("refresh from watched file failed",
-						"engine", r.engineName, "error", err)
-				}
+				// refreshFromFile logs a failure.
+				_ = r.refreshFromFile()
 			case err, ok := <-w.Errors:
 				if !ok {
 					return
@@ -470,9 +466,9 @@ func (r *registration) startWatcher() error {
 func (r *registration) refreshFromFile() error {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
-	r.svc.logger.Info("Attempting to refresh Engine with new data", "engine", r.engineName)
+	r.svc.logger.Info(fmt.Sprintf("Attempting to refresh Engine '%s' with new data", r.engineName))
 	if err := r.engine.RefreshFromFile(r.cfg.DataFilePath); err != nil {
-		r.svc.logger.Error("error applying data file update", "engine", r.engineName, "error", err)
+		r.logApplyError(err)
 		return err
 	}
 	r.fireCallbacks()
@@ -487,7 +483,10 @@ func (r *registration) refreshFromFile() error {
 // The whole operation (download, replace, refresh) is serialized per
 // registration so a programmatic CheckForUpdate cannot race the background
 // poller and load an older of two concurrent downloads.
-func (r *registration) httpUpdate() error {
+//
+// automatic is true for a check the poller starts, whose error messages say
+// that the update will be attempted again.
+func (r *registration) httpUpdate(automatic bool) error {
 	r.updateMu.Lock()
 	defer r.updateMu.Unlock()
 
@@ -495,7 +494,8 @@ func (r *registration) httpUpdate() error {
 	if r.cfg.URLFormatter != nil {
 		url = r.cfg.URLFormatter(r.cfg)
 	}
-	r.svc.logger.Info("Checking for update", "engine", r.engineName, "url", url)
+	r.svc.logger.Info("Checking for update")
+	r.svc.logger.Info(fmt.Sprintf("Checking for update from '%s' for Engine '%s'", url, r.engineName))
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -514,45 +514,52 @@ func (r *registration) httpUpdate() error {
 
 	resp, err := r.svc.httpClient.Do(req)
 	if err != nil {
-		r.svc.logger.Warn("error connecting to update server", "engine", r.engineName, "url", url, "error", err)
+		r.svc.logger.Warn(fmt.Sprintf("An error occurred when connecting to %s in order to check for data "+
+			"file updates for %s.%s Error detail: %v", url, r.engineName, againLater(automatic), err))
 		return err
 	}
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusNotModified:
-		r.svc.logger.Info("No newer data found", "engine", r.engineName, "url", url)
+		r.svc.logger.Info(fmt.Sprintf("No data newer than %s found at '%s' for Engine '%s'",
+			r.sinceText(), url, r.engineName))
 		return nil
 	case http.StatusTooManyRequests:
 		retry := resp.Header.Get("Retry-After")
-		return &RateLimitError{URL: url, RetryAfter: parseRetryAfter(retry)}
+		err := &RateLimitError{URL: url, RetryAfter: parseRetryAfter(retry)}
+		r.logDownloadError(url, automatic, err)
+		return err
 	case http.StatusOK:
 		// proceed
 	default:
-		return fmt.Errorf("data update: unexpected status %d from %s", resp.StatusCode, url)
+		err := fmt.Errorf("data update: unexpected status %d from %s", resp.StatusCode, url)
+		r.logDownloadError(url, automatic, err)
+		return err
 	}
 
 	raw, err := readBody(resp)
 	if err != nil {
-		r.svc.logger.Warn("error downloading data file", "engine", r.engineName, "url", url, "error", err)
+		r.logDownloadError(url, automatic, err)
 		return err
 	}
 	// Validate integrity against the server's Content-MD5 (the 51Degrees
 	// Distributor sends it) before the bytes are written or loaded, so a corrupt
 	// or truncated download is rejected rather than handed to the Engine.
 	if err := verifyContentMD5(resp, raw); err != nil {
-		r.svc.logger.Warn("data file integrity check failed", "engine", r.engineName, "url", url, "error", err)
+		r.svc.logger.Warn(fmt.Sprintf("An error occurred during the integrity check of new data file for "+
+			"%s.%s Error detail: %v", r.engineName, againLater(automatic), err))
 		return err
 	}
 	body, err := maybeDecompress(raw)
 	if err != nil {
-		r.svc.logger.Warn("error decompressing data file", "engine", r.engineName, "url", url, "error", err)
+		r.logDownloadError(url, automatic, err)
 		return err
 	}
 
 	if r.cfg.DataFilePath != "" {
 		if err := r.writeDataFile(body); err != nil {
-			r.svc.logger.Error("error writing data file", "engine", r.engineName, "path", r.cfg.DataFilePath, "error", err)
+			r.logWriteError(err)
 			return err
 		}
 		if err := r.refreshFromFile(); err != nil {
@@ -569,7 +576,7 @@ func (r *registration) httpUpdate() error {
 			r.lastModified = t
 		}
 	}
-	r.svc.logger.Info("Downloaded new data", "engine", r.engineName, "url", url)
+	r.svc.logger.Info(fmt.Sprintf("Downloaded new data from '%s' for Engine '%s'", url, r.engineName))
 	return nil
 }
 
@@ -594,9 +601,9 @@ func (r *registration) conditionalSince() (time.Time, bool) {
 func (r *registration) refreshFromBytes(body []byte) error {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
-	r.svc.logger.Info("Attempting to refresh Engine with new data", "engine", r.engineName)
+	r.svc.logger.Info(fmt.Sprintf("Attempting to refresh Engine '%s' with new data", r.engineName))
 	if err := r.engine.RefreshFromBytes(body); err != nil {
-		r.svc.logger.Error("error applying in-memory data update", "engine", r.engineName, "error", err)
+		r.logApplyError(err)
 		return err
 	}
 	r.fireCallbacks()
@@ -626,9 +633,57 @@ func (r *registration) writeDataFile(body []byte) error {
 	}
 	if err := os.Rename(tmpName, r.cfg.DataFilePath); err != nil {
 		os.Remove(tmpName)
-		return err
+		return &replaceError{err}
 	}
 	return nil
+}
+
+// replaceError is a failure to move the new data file over the existing one.
+type replaceError struct{ err error }
+
+func (e *replaceError) Error() string { return e.err.Error() }
+func (e *replaceError) Unwrap() error { return e.err }
+
+// againLater is the part of an error message that says the update will be
+// tried again, which only an automatic update can promise.
+func againLater(automatic bool) string {
+	if automatic {
+		return " Update will be attempted again later."
+	}
+	return ""
+}
+
+// sinceText writes the date a check asked for newer data than.
+func (r *registration) sinceText() string {
+	if since, ok := r.conditionalSince(); ok && r.cfg.UseIfModifiedSince {
+		return since.UTC().Format(time.RFC3339)
+	}
+	return "the current data"
+}
+
+// logDownloadError writes the message for a failed download.
+func (r *registration) logDownloadError(url string, automatic bool, err error) {
+	r.svc.logger.Warn(fmt.Sprintf("An error occurred while downloading a data file update for %s from %s.%s "+
+		"Error detail: %v", r.engineName, url, againLater(automatic), err))
+}
+
+// logWriteError writes the message for a data file that could not be written
+// or moved into place.
+func (r *registration) logWriteError(err error) {
+	var re *replaceError
+	if errors.As(err, &re) {
+		r.svc.logger.Error(fmt.Sprintf("An error occurred when copying a data file to replace the existing "+
+			"one at '%s'. Error detail: %v", r.cfg.DataFilePath, err))
+		return
+	}
+	r.svc.logger.Error(fmt.Sprintf("An error occurred when writing to %s. Error detail: %v",
+		r.cfg.DataFilePath, err))
+}
+
+// logApplyError writes the message for a failed refresh of the Engine.
+func (r *registration) logApplyError(err error) {
+	r.svc.logger.Error(fmt.Sprintf("An error occurred while applying a data file update to %s. "+
+		"Error detail: %v", r.engineName, err))
 }
 
 func (r *registration) currentDataTime() (time.Time, bool) {

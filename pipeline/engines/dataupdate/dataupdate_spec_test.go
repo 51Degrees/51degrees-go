@@ -5,38 +5,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
-
-// requestRecorder answers every request with the status and records the
-// If-Modified-Since header of each.
-type requestRecorder struct {
-	mu     sync.Mutex
-	since  []string
-	status int
-	header http.Header
-	body   string
-}
-
-func (r *requestRecorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.mu.Lock()
-	r.since = append(r.since, req.Header.Get("If-Modified-Since"))
-	r.mu.Unlock()
-	for k, v := range r.header {
-		w.Header()[k] = v
-	}
-	w.WriteHeader(r.status)
-	w.Write([]byte(r.body))
-}
-
-func (r *requestRecorder) requests() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]string(nil), r.since...)
-}
 
 // The specification asks for If-Modified-Since to be the publication date of
 // the data file, then the file system date as the fall back.
