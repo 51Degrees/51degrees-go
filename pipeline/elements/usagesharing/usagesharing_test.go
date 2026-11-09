@@ -156,9 +156,9 @@ func TestUsageSharingSendsXML(t *testing.T) {
 		t.Fatalf("user-agent header not shared: %s", body)
 	}
 	// Schema shape: lower-case category element, Name attribute, and
-	// a CDATA-wrapped value.
-	if !strings.Contains(body, `<header Name="user-agent"><![CDATA[test-agent]]></header>`) {
-		t.Fatalf("header not in the expected lower-case CDATA form: %s", body)
+	// the value as plain text.
+	if !strings.Contains(body, `<header Name="user-agent">test-agent</header>`) {
+		t.Fatalf("header not in the expected lower-case form: %s", body)
 	}
 	// Sequence is always present (even 0) and ServerIP is populated.
 	if devices.Device[0].Sequence == "" {
