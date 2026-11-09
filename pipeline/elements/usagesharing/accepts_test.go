@@ -220,3 +220,25 @@ func TestUsageSharingBlocksTheCookieHeaderByDefault(t *testing.T) {
 		t.Errorf("default blocked headers = %v, want cookie", e.cfg.blockedHeaders)
 	}
 }
+
+// A session value in the web request is shared only when its name starts
+// 51D_, unless all Evidence is shared, when every session value is.
+func TestUsageSharingSharesTheSessionValuesOfTheWebRequest(t *testing.T) {
+	for _, shareAll := range []bool{false, true} {
+		p, e := newSharingPipeline(t,
+			NewBuilder().SetShareAllEvidence(shareAll))
+		r := httptest.NewRequest("GET", "/page", nil)
+		fd := p.CreateFlowData()
+		fd.AddEvidence(httpRequestKey, core.NewWebRequest(r).WithSession(
+			map[string]string{"51D_s": "1", "other": "2"}))
+
+		got := e.shareableEvidence(fd)
+		if got["session.51d_s"] != "1" {
+			t.Errorf("share all %v: session.51d_s = %q, shared %v",
+				shareAll, got["session.51d_s"], got)
+		}
+		if _, found := got["session.other"]; found != shareAll {
+			t.Errorf("share all %v: session.other shared = %v", shareAll, found)
+		}
+	}
+}
