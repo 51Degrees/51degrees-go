@@ -36,9 +36,10 @@ import (
 
 // The request carries only the Evidence the cloud service accepts, with each
 // prefix removed and the query value winning a conflict. Evidence that strips
-// to resource, license or values is left out even though the service lists
-// those keys, because the engine writes those fields itself and a second one
-// would leave which applied undecided.
+// to resource, license, licence or values is left out even when the service
+// lists those keys, because the engine writes those fields itself, the
+// service reads licence as the license key, and a second field would leave
+// which applied undecided.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 	var mu sync.Mutex
@@ -49,7 +50,8 @@ func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 	})
 	mux.HandleFunc("/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `["header.user-agent","query.user-agent",`+
-			`"query.resource","header.resource","query.license","query.values"]`)
+			`"query.resource","header.resource","query.license",`+
+			`"query.licence","query.values"]`)
 	})
 	mux.HandleFunc("/json", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -81,7 +83,8 @@ func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 		"header.accept-language": "en-GB",
 		"query.resource":         "evidence-resource",
 		"header.resource":        "header-resource",
-		"query.license":          "evidence-licence",
+		"query.license":          "evidence-license",
+		"query.licence":          "evidence-licence",
 		"query.values":           "device.ismobile",
 	} {
 		fd.AddEvidence(key, value)
