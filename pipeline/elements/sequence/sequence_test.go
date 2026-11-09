@@ -94,3 +94,57 @@ func TestSequenceFromInt(t *testing.T) {
 		t.Fatalf("expected 3, got %v", seq)
 	}
 }
+
+// The specification asks for both outputs in Evidence as well as in Element
+// Data, so that later Flow Elements and the caller read them from Evidence.
+func TestOutputsWrittenToEvidence(t *testing.T) {
+	const guid = "12345678-1234-4234-8234-1234567890ab"
+	p, err := core.NewPipelineBuilder().AddFlowElement(New(nil)).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence(EvidenceSessionID, guid)
+	fd.AddEvidence(EvidenceSequence, "4")
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	if v, _ := fd.Evidence().Get(EvidenceSessionID); v != guid {
+		t.Errorf("Evidence %s = %v, want %s", EvidenceSessionID, v, guid)
+	}
+	if v, _ := fd.Evidence().Get(EvidenceSequence); v != 5 {
+		t.Errorf("Evidence %s = %v, want 5", EvidenceSequence, v)
+	}
+	data, err := fd.Get(DataKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if v, _ := data.Get(SequenceProperty); v != 5 {
+		t.Errorf("Element Data sequence = %v, want 5", v)
+	}
+}
+
+func TestNewSessionWrittenToEvidence(t *testing.T) {
+	p, err := core.NewPipelineBuilder().AddFlowElement(New(nil)).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, err := fd.Get(DataKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	sid, _ := data.Get(SessionIDProperty)
+	if v, ok := fd.Evidence().Get(EvidenceSessionID); !ok || v != sid {
+		t.Errorf("Evidence session id = %v (present %v), want %v", v, ok, sid)
+	}
+	if v, ok := fd.Evidence().Get(EvidenceSequence); !ok || v != 1 {
+		t.Errorf("Evidence sequence = %v (present %v), want 1", v, ok)
+	}
+}

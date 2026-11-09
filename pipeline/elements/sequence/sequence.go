@@ -73,7 +73,8 @@ func New(logger *slog.Logger) *Element {
 	return e
 }
 
-// Process generates or increments the session id and sequence counter.
+// Process generates or increments the session id and sequence counter, and
+// writes both to Element Data and to Evidence.
 func (e *Element) Process(fd core.FlowData) error {
 	data := fd.GetOrAdd(DataKey, func(core.FlowData) core.ElementData { return core.NewBaseElementData() })
 
@@ -100,6 +101,10 @@ func (e *Element) Process(fd core.FlowData) error {
 		}
 	}
 	data.Set(SequenceProperty, seq)
+
+	// Later Flow Elements and the caller read the values from Evidence too.
+	fd.AddEvidence(EvidenceSessionID, sessionID)
+	fd.AddEvidence(EvidenceSequence, seq)
 	return nil
 }
 

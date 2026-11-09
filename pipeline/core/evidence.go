@@ -22,11 +22,16 @@
 
 package core
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // Evidence is the set of input values added to a Flow Data instance, stored as
-// case-insensitive key-value pairs. Evidence is immutable once Flow Data
-// processing has begun.
+// case-insensitive key-value pairs. The caller adds values before processing,
+// and a Flow Element outside a parallel group may add values while it
+// processes. Later Flow Elements, and the caller once processing is complete,
+// read them.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md
 type Evidence interface {
 	// Get returns the value for a key (case-insensitive) and whether it was present.
@@ -37,22 +42,33 @@ type Evidence interface {
 	Keys() []string
 }
 
-// evidence is the default immutable implementation. It is populated by Flow Data
-// before processing and is then only read.
+// evidence is the default implementation. Flow Data writes to it, and the
+// lock lets Flow Elements in a parallel group read it at the same time.
 type evidence struct {
+	mu   sync.RWMutex
 	data map[string]any
 }
 
 func newEvidence() *evidence { return &evidence{data: make(map[string]any)} }
 
-func (e *evidence) put(key string, value any) { e.data[lower(key)] = value }
+// put stores value under key, replacing any value held under the same key
+// when the case is ignored.
+func (e *evidence) put(key string, value any) {
+	e.mu.Lock()
+	e.data[lower(key)] = value
+	e.mu.Unlock()
+}
 
 func (e *evidence) Get(key string) (any, bool) {
+	e.mu.RLock()
 	v, ok := e.data[lower(key)]
+	e.mu.RUnlock()
 	return v, ok
 }
 
 func (e *evidence) AsMap() map[string]any {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	out := make(map[string]any, len(e.data))
 	for k, v := range e.data {
 		out[k] = v
@@ -61,6 +77,8 @@ func (e *evidence) AsMap() map[string]any {
 }
 
 func (e *evidence) Keys() []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	keys := make([]string, 0, len(e.data))
 	for k := range e.data {
 		keys = append(keys, k)

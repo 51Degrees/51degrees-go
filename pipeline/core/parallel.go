@@ -72,6 +72,12 @@ func (pe *ParallelElements) Children() []FlowElement {
 // Errors and panics from children are recorded against the Flow Data rather
 // than aborting the others.
 func (pe *ParallelElements) Process(data FlowData) error {
+	// The children read Evidence at the same time, so none of them may add to
+	// it.
+	if fd, ok := data.(*flowData); ok {
+		fd.enterParallel()
+		defer fd.leaveParallel()
+	}
 	var wg sync.WaitGroup
 	for _, c := range pe.children {
 		wg.Add(1)

@@ -34,9 +34,13 @@ import (
 // once.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#flow-data
 type FlowData interface {
-	// AddEvidence adds a single Evidence key-value pair. It must be called before
-	// processing; calls after processing has started are ignored (and logged), as
-	// Evidence is immutable once created. Returns the Flow Data for chaining.
+	// AddEvidence adds a single Evidence key-value pair, replacing any value held
+	// under the same key when the case is ignored. The caller adds Evidence
+	// before processing, and a Flow Element may add Evidence while it processes,
+	// for the Flow Elements after it and the caller to read. A call while a
+	// parallel group runs, or after processing has finished, is ignored and
+	// logged. Returns the Flow Data for chaining.
+	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md#adding-evidence-values
 	AddEvidence(key string, value any) FlowData
 	// AddEvidenceMap adds multiple Evidence values.
 	AddEvidenceMap(values map[string]any) FlowData
@@ -76,9 +80,12 @@ type flowData struct {
 	evidence *evidence
 	data     typedmap.Map
 
-	mu      sync.Mutex
-	errs    []FlowError
-	started bool
+	mu       sync.Mutex
+	errs     []FlowError
+	started  bool
+	finished bool
+	// parallel counts the parallel groups running, which take no Evidence.
+	parallel int
 
 	goaMu sync.Mutex // serializes GetOrAdd so it is atomic under parallel processing
 }
@@ -94,13 +101,16 @@ func newFlowData(p *pipeline) *flowData {
 }
 
 func (fd *flowData) AddEvidence(key string, value any) FlowData {
-	// Hold the lock across the started-check and the write so the
-	// "evidence is immutable once processing starts" guarantee actually holds
-	// and concurrent adds do not race the underlying map.
+	// Hold the lock across the state checks and the write so a group starting
+	// or processing finishing cannot slip between them.
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	if fd.started {
-		fd.pipeline.logger.Warn("evidence added after processing started; ignoring", "key", key)
+	if fd.finished {
+		fd.pipeline.logger.Warn("evidence added after processing finished; ignoring", "key", key)
+		return fd
+	}
+	if fd.parallel > 0 {
+		fd.pipeline.logger.Warn("evidence added while a parallel group is running; ignoring", "key", key)
 		return fd
 	}
 	fd.evidence.put(key, value)
@@ -125,6 +135,7 @@ func (fd *flowData) Process() error {
 	if !fd.markStarted() {
 		return ErrAlreadyProcessed
 	}
+	defer fd.markFinished()
 	return fd.pipeline.process(fd)
 }
 
@@ -193,6 +204,28 @@ func (fd *flowData) markStarted() bool {
 	}
 	fd.started = true
 	return true
+}
+
+// markFinished records that processing is complete, after which Evidence takes
+// no more values.
+func (fd *flowData) markFinished() {
+	fd.mu.Lock()
+	fd.finished = true
+	fd.mu.Unlock()
+}
+
+// enterParallel and leaveParallel bracket a parallel group, during which
+// Evidence takes no values.
+func (fd *flowData) enterParallel() {
+	fd.mu.Lock()
+	fd.parallel++
+	fd.mu.Unlock()
+}
+
+func (fd *flowData) leaveParallel() {
+	fd.mu.Lock()
+	fd.parallel--
+	fd.mu.Unlock()
 }
 
 func (fd *flowData) isStarted() bool {
