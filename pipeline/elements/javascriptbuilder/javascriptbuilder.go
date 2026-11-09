@@ -58,8 +58,9 @@ var (
 	// and of which eval would replace the page's own eval function, the
 	// globals Infinity, NaN and undefined and the browser's window, document,
 	// top, name, status, history, navigator and closed, none of which a top
-	// level var can replace, and the constructor the script defines.
-	// See https://github.com/51Degrees/specifications/blob/1ff0fd4382e44fc11d8098cde9f5f726e26e9d36/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
+	// level var can replace, the browser's location, where a top level var
+	// navigates the page away, and the constructor the script defines.
+	// See https://github.com/51Degrees/specifications/blob/a77a17a92bad6ea7b10d327dddf8a2cb7277b006/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
 	reservedObjectNames = map[string]bool{
 		"await": true, "break": true, "case": true, "catch": true,
 		"class": true, "const": true, "continue": true, "debugger": true,
@@ -77,7 +78,7 @@ var (
 		"Infinity": true, "NaN": true, "undefined": true,
 		"window": true, "document": true, "top": true, "name": true,
 		"status": true, "history": true, "navigator": true, "closed": true,
-		"fiftyoneDegreesManager": true,
+		"location": true, "fiftyoneDegreesManager": true,
 	}
 
 	// sessionIDRe is the form a session id must have to be written into the
@@ -179,9 +180,10 @@ func (b *Builder) SetEndpoint(e string) *Builder { b.endpoint = e; return b }
 // SetObjectName sets the global JavaScript object name (default "fod"). It
 // must match ^[A-Za-z_$][A-Za-z0-9_$]*$ and not be a JavaScript reserved
 // word, eval, arguments, Infinity, NaN, undefined, window, document, top,
-// name, status, history, navigator, closed or fiftyoneDegreesManager. Any
-// other value, an empty one included, makes Factory return a configuration
-// error and the built element refuse every pipeline.
+// name, status, history, navigator, closed, location or
+// fiftyoneDegreesManager. Any other value, an empty one included, makes
+// Factory return a configuration error and the built element refuse every
+// pipeline.
 func (b *Builder) SetObjectName(n string) *Builder { b.objectName = n; return b }
 
 // SetMinify enables or disables minification (default true).
@@ -214,7 +216,7 @@ func (b *Builder) Build() *Element {
 			strconv.Quote(b.objectName)+" does not match "+
 			"^[A-Za-z_$][A-Za-z0-9_$]*$, or is a reserved word, eval, "+
 			"arguments, Infinity, NaN, undefined, window, document, top, "+
-			"name, status, history, navigator, closed or "+
+			"name, status, history, navigator, closed, location or "+
 			"fiftyoneDegreesManager")
 	}
 	if len(problems) > 0 {
