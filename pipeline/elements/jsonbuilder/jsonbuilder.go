@@ -93,8 +93,16 @@ func (d *Data) JSON() string {
 	return ""
 }
 
-// Process builds the JSON representation of the Flow Data.
+// Process builds the JSON representation of the Flow Data. It fails and sets
+// no JSON when no Sequence Element has given a sequence number.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
 func (e *Element) Process(fd core.FlowData) error {
+	seq, ok := sequenceNumber(fd)
+	if !ok {
+		return core.NewConfigurationError("the JSON Builder Element found no "+
+			"sequence number, so a Sequence Element needs to be placed before "+
+			"it in the Pipeline", nil)
+	}
 	meta := buildMetaIndex(fd.Pipeline().Properties())
 	result := map[string]any{}
 	var jsProperties []string
@@ -147,7 +155,7 @@ func (e *Element) Process(fd core.FlowData) error {
 		result[elementKey] = obj
 	}
 
-	if sequenceNumber(fd) < MaxJavaScriptIterations {
+	if seq < MaxJavaScriptIterations {
 		if jsProperties == nil {
 			jsProperties = []string{}
 		}
@@ -264,15 +272,17 @@ func delayedEvidenceProperties(pm core.PropertyMetadata, elementKey string, meta
 	return out
 }
 
-func sequenceNumber(fd core.FlowData) int {
+// sequenceNumber returns the sequence number in the Sequence Element's data,
+// and false when no Sequence Element has given one.
+func sequenceNumber(fd core.FlowData) (int, bool) {
 	data, err := fd.Get("sequence")
 	if err != nil {
-		return 1
+		return 0, false
 	}
-	if v, err := data.Get("sequence"); err == nil {
-		if n, ok := v.(int); ok {
-			return n
-		}
+	v, err := data.Get("sequence")
+	if err != nil {
+		return 0, false
 	}
-	return 1
+	n, ok := v.(int)
+	return n, ok
 }
