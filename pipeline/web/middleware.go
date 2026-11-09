@@ -338,27 +338,34 @@ func (m *Middleware) etag(fd core.FlowData) string {
 // etag, with the weak comparison RFC 9110 section 13.1.2 requires. The field
 // is "*", which matches because the endpoints always have content, or a list
 // of entity tags, one of which matches when its quoted part equals etag's,
-// with or without W/ on either (section 8.8.3.2). Reading stops at the first
-// value that is not an entity tag.
+// with or without W/ on either (section 8.8.3.2). A field that is neither "*"
+// nor a comma separated list of entity tags does not match (section 13.1.2,
+// step 3).
 func ifNoneMatchMatches(lines []string, etag string) bool {
 	field := strings.TrimSpace(strings.Join(lines, ","))
 	if field == "*" {
 		return true
 	}
 	want := strings.TrimPrefix(etag, "W/")
+	matched, needComma := false, false
 	for {
-		field = strings.TrimLeft(field, " \t,")
+		field = strings.TrimLeft(field, " \t")
 		if field == "" {
+			return matched
+		}
+		if field[0] == ',' {
+			field, needComma = field[1:], false
+			continue
+		}
+		if needComma {
 			return false
 		}
 		opaque, rest, ok := scanEntityTag(field)
 		if !ok {
 			return false
 		}
-		if opaque == want {
-			return true
-		}
-		field = rest
+		matched = matched || opaque == want
+		field, needComma = rest, true
 	}
 }
 
