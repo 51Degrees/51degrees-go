@@ -54,6 +54,9 @@ type Builder struct {
 	// recovery holds the back-off options once one is set, and is nil while
 	// all are at their defaults.
 	recovery *recoveryConfig
+
+	trackSession      bool
+	sessionCookieName string
 }
 
 // NewBuilder creates a Usage Sharing Element builder with specification defaults.
@@ -176,6 +179,21 @@ func (b *Builder) SetRecoveryMultiplier(m float64) *Builder {
 	return b
 }
 
+// SetTrackSession compares the session cookie along with the Evidence when
+// true, so identical Evidence from a new session is shared while a repeat
+// within the same session is not. It has no effect when all Evidence is
+// shared, because every cookie is then both shared and compared.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
+func (b *Builder) SetTrackSession(track bool) *Builder { b.trackSession = track; return b }
+
+// SetSessionCookieName sets the name of the cookie that holds the session
+// id. It has no effect unless track session is on, and there is no default,
+// because Go has no standard session cookie.
+func (b *Builder) SetSessionCookieName(name string) *Builder {
+	b.sessionCookieName = name
+	return b
+}
+
 // queueSize returns the queue size that was set, or the default.
 func (b *Builder) queueSize() int {
 	if b.maxQueueSizeSet {
@@ -205,7 +223,14 @@ func (b *Builder) Build() *Element {
 		shareURL:            b.shareURL,
 		repeatInterval:      b.repeatInterval,
 		recovery:            recovery,
-		err:                 recovery.validate(),
+		trackSession:        b.trackSession,
+		sessionCookieName:   strings.TrimSpace(b.sessionCookieName),
+	}
+	cfg.err = recovery.validate()
+	if cfg.err == nil && cfg.trackSession && cfg.sessionCookieName == "" {
+		cfg.err = core.NewConfigurationError("usage sharing: track session "+
+			"is on but no session cookie name is set, so there is no session "+
+			"to compare", nil)
 	}
 
 	client := b.httpClient
@@ -250,6 +275,11 @@ func isNeverShared(key string) bool {
 // See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
 func (e *Element) isShared(key string) bool {
 	if isNeverShared(key) {
+		return false
+	}
+	// The session cookie is compared rather than shared, unless all Evidence
+	// is shared.
+	if e.cfg.trackSession && !e.cfg.shareAllEvidence && e.isSessionCookie(key) {
 		return false
 	}
 	if e.cfg.shareAllEvidence {
@@ -318,6 +348,12 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	}
 	if v, ok := core.FloatParam(params, "RecoveryMultiplier"); ok {
 		b.SetRecoveryMultiplier(v)
+	}
+	if v, ok := core.BoolParam(params, "TrackSession"); ok {
+		b.SetTrackSession(v)
+	}
+	if v, ok := core.StringParam(params, "SessionCookieName"); ok {
+		b.SetSessionCookieName(v)
 	}
 	e := b.Build()
 	if e.cfg.err != nil {
