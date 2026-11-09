@@ -60,23 +60,26 @@ func (w WeightedValue[T]) Weighting() float64 {
 	return float64(w.rawWeighting) / float64(MaxRawWeighting)
 }
 
-// MarshalJSON serializes the weighted value in the form expected throughout the
-// API: {"RawWeighting": <uint16>, "Value": <value>}.
+// MarshalJSON serializes the weighted value with the lower case keys the
+// JSON Builder and the cloud service use, as
+// {"rawweighting": <uint16>, "value": <value>}.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/weighted-values.md#serializing
 func (w WeightedValue[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		RawWeighting uint16 `json:"RawWeighting"`
-		Value        T      `json:"Value"`
+		RawWeighting uint16 `json:"rawweighting"`
+		Value        T      `json:"value"`
 	}{RawWeighting: w.rawWeighting, Value: w.value})
 }
 
 // UnmarshalJSON reconstructs a weighted value from the form produced by
 // MarshalJSON, so a value serialized on one side of the API can be rebuilt on
-// the other. Without it the unexported fields could not be repopulated.
+// the other. Without it the unexported fields could not be repopulated. The
+// keys match without regard to case, so the form with capitals that earlier
+// versions wrote is read too.
 func (w *WeightedValue[T]) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		RawWeighting uint16 `json:"RawWeighting"`
-		Value        T      `json:"Value"`
+		RawWeighting uint16 `json:"rawweighting"`
+		Value        T      `json:"value"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
