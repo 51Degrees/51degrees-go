@@ -4,7 +4,7 @@
 
 **Go modules for Device Detection and IP Intelligence**
 
-Our User-Agent parser for Go supports Device Detection, browser detection, mobile detection, and crawler detection on-premise. IP Intelligence adds IP geolocation, including IP to country data.
+Our User-Agent parser for Go supports Device Detection, browser detection, mobile detection, and crawler detection on-premise, as an alternative to UAParser.js, DeviceAtlas, and WURFL. IP Intelligence adds IP geolocation, including IP to country data, as an alternative to MaxMind and IPinfo.
 
 It reads User-Agent and User-Agent Client Hints, HTTP request headers that carry browser and device information.
 

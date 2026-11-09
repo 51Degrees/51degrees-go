@@ -1,3 +1,8 @@
+// Package onpremise is the on-premise Device Detection engine and User-Agent
+// parser for Go. It reads a 51Degrees Hash data file on your server to detect
+// the device type and model, browser, operating system, and crawlers from the
+// User-Agent and User-Agent Client Hints. An alternative to UAParser.js,
+// DeviceAtlas, and WURFL.
 package onpremise
 
 import (

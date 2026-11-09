@@ -33,7 +33,9 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/jsonbuilder"
@@ -48,13 +50,9 @@ var (
 	// rejected because the name renders at a declaration position
 	// ("var <name> = ..."), where a dot is a SyntaxError.
 	jsObjectNameRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
-	// hostRe matches a bare host or host:port (including bracketed IPv6); it
-	// excludes any character that could break out of a JS string literal.
-	hostRe = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]+$`)
 )
 
 func validObjectName(s string) bool { return jsObjectNameRe.MatchString(s) }
-func validHost(s string) bool       { return s != "" && hostRe.MatchString(s) }
 
 //go:embed template.mustache
 var templateSource string
@@ -87,6 +85,11 @@ type Element struct {
 	objectName    string
 	minify        bool
 	enableCookies bool
+
+	// configErr, when set, is returned by Factory and OnPipelineAdded.
+	configErr error
+	// refusedURLLogged is set once a refused callback URL has been logged.
+	refusedURLLogged atomic.Bool
 }
 
 // Builder constructs a JavaScript Builder Element.
@@ -117,7 +120,10 @@ func NewBuilder() *Builder {
 // SetLogger sets the logger.
 func (b *Builder) SetLogger(l *slog.Logger) *Builder { b.logger = l; return b }
 
-// SetProtocol sets the callback protocol (otherwise taken from Evidence).
+// SetProtocol sets the callback protocol (otherwise taken from Evidence). It
+// must be empty, or http or https ignoring ASCII case. Any other value makes
+// Factory return a configuration error and the built element refuse every
+// pipeline.
 func (b *Builder) SetProtocol(p string) *Builder { b.protocol = p; return b }
 
 // SetHost sets the callback host (otherwise taken from Evidence).
@@ -149,6 +155,10 @@ func (b *Builder) Build() *Element {
 		minify:        b.minify,
 		enableCookies: b.enableCookies,
 	}
+	if b.protocol != "" && !isScheme(b.protocol) {
+		e.configErr = core.NewConfigurationError("the JavaScript builder's "+
+			"protocol "+strconv.Quote(b.protocol)+" is not http or https", nil)
+	}
 	e.SetProperties([]core.PropertyMetadata{
 		{Name: JavaScriptProperty, Element: e, Category: "JavaScript", Type: nil, Available: true},
 	})
@@ -179,7 +189,7 @@ func (e *Element) Process(fd core.FlowData) error {
 	sessionID, seq := e.sessionInfo(fd)
 
 	protocol := firstNonEmpty(e.protocol, evidenceString(fd, EvidenceProtocol), "https")
-	host := strings.TrimRight(firstNonEmpty(e.host, evidenceString(fd, EvidenceHost)), "/")
+	host := firstNonEmpty(e.host, evidenceString(fd, EvidenceHost))
 
 	// The object name reaches a bare code position in the template. Honor the
 	// client-supplied evidence value only if it is a valid JS identifier;
@@ -189,13 +199,18 @@ func (e *Element) Process(fd core.FlowData) error {
 		objectName = ev
 	}
 
-	// The callback URL reaches a JS string literal. Assemble it, then validate
-	// the whole URL so that no client-influenced component - protocol or host -
-	// can break out of the literal.
-	callbackURL := ""
-	if protocol != "" && host != "" && e.endpoint != "" {
-		callbackURL = validCallbackURL(
-			protocol+"://"+host+ensureLeadingSlash(e.endpoint), host)
+	// The callback URL reaches a JS string literal, and its protocol and host
+	// can come from the request, so a URL that is not valid is left out. It
+	// is logged once, with line breaks and other control characters escaped
+	// by strconv.Quote, whose outer quotes are left to the log handler.
+	callbackURL, refused := buildCallbackURL(protocol, host, e.endpoint)
+	if refused != "" && !e.refusedURLLogged.Swap(true) {
+		quoted := strconv.Quote(refused)
+		e.Logger().Error("javascript builder: the callback URL is not valid, "+
+			"so the script has no callback. Check the configured protocol, "+
+			"host and endpoint, and the header.protocol and header.host "+
+			"evidence. This is reported once.",
+			"url", quoted[1:len(quoted)-1])
 	}
 
 	ctx := map[string]any{
@@ -245,7 +260,20 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.BoolParam(params, "EnableCookies"); ok {
 		b.SetEnableCookies(v)
 	}
-	return b.Build(), nil
+	e := b.Build()
+	if e.configErr != nil {
+		return nil, e.configErr
+	}
+	return e, nil
+}
+
+// OnPipelineAdded refuses a pipeline when the element's configuration is not
+// valid, because Build returns no error.
+func (e *Element) OnPipelineAdded(p core.Pipeline) error {
+	if e.configErr != nil {
+		return e.configErr
+	}
+	return e.BaseElement.OnPipelineAdded(p)
 }
 
 // --- helpers -------------------------------------------------------------
@@ -347,30 +375,6 @@ func (e *Element) supportsFetch(fd core.FlowData) bool {
 	return false
 }
 
-// validCallbackURL parses the assembled callback URL and returns it only when
-// it survives a round trip: http/https scheme, the expected (already
-// hostRe-validated) host, and no characters that could break out of a JS
-// string literal. Anything else returns "" and the callback is disabled.
-func validCallbackURL(raw, host string) string {
-	if !validHost(host) {
-		return ""
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return ""
-	}
-	if u.Host != host {
-		return ""
-	}
-	if strings.ContainsAny(raw, `'"\<>`) {
-		return ""
-	}
-	return raw
-}
-
 func evidenceString(fd core.FlowData, key string) string {
 	if v, ok := fd.Evidence().Get(key); ok {
 		return anyToString(v)
@@ -392,13 +396,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func ensureLeadingSlash(s string) string {
-	if s == "" || strings.HasPrefix(s, "/") {
-		return s
-	}
-	return "/" + s
 }
 
 // lightMinify performs a conservative reduction of the generated script: it

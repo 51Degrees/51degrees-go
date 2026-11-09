@@ -232,9 +232,8 @@ func TestObjectNameDottedRejected(t *testing.T) {
 }
 
 // TestProtocolInjectionRejected verifies a hostile protocol evidence value
-// cannot reach the callback URL literal: the assembled URL is parsed and only
-// http/https survive, so any other scheme disables the callback instead of
-// being emitted.
+// cannot reach the callback URL literal: only http and https are accepted, so
+// any other scheme disables the callback instead of being emitted.
 func TestProtocolInjectionRejected(t *testing.T) {
 	js := renderWith(t, map[string]string{
 		"header.host":     "example.com",

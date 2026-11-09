@@ -20,7 +20,8 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
-// Package ipi_cloud is the IP Intelligence Cloud Aspect Engine. It reads the
+// Package ipi_cloud is the IP Intelligence and IP geolocation Cloud Aspect
+// Engine for Go, an alternative to MaxMind and IPinfo. It reads the
 // IP Intelligence section of the response a Cloud Request Engine gets from
 // the 51Degrees cloud service, so a Pipeline gives IP Intelligence values
 // from the cloud as ipi_onpremise gives them from a data file.

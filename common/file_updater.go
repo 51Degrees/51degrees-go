@@ -55,7 +55,7 @@ func NewFileUpdater(dataFileUrl string) *FileUpdater {
 		fileSynced:                  false,
 
 		dataFilePullEveryMs: 30 * 60 * 1000, // default 30 minutes
-		randomization:       10 * 60 * 1000, // default 10 minutes
+		randomization:       10 * 60 * 1000, // default up to 10 minutes
 
 		logger: &LogWrapper{
 			logger:  DefaultLogger,
@@ -114,7 +114,9 @@ func (e *FileUpdater) SetUpdateOnStartEnabled(isUpdateOnStartEnabled bool) {
 	e.isUpdateOnStartEnabled = isUpdateOnStartEnabled
 }
 
-// SetRandomization sets the randomization interval in milliseconds to be added to the file pull schedule.
+// SetRandomization sets the maximum random time in milliseconds added to each
+// interval between pulls. A new time from 0 up to this maximum is drawn for
+// each interval, and 0 adds nothing.
 func (e *FileUpdater) SetRandomization(randomization int) {
 	e.randomization = randomization
 }

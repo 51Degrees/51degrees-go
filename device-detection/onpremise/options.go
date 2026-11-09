@@ -175,10 +175,11 @@ func WithTempDataDir(dir string) EngineOptions {
 	}
 }
 
-// WithRandomization sets the randomization time in seconds
-// default is 10 minutes
-// if set, when scheduling the file pulling, it will add randomization time to the interval
-// this is useful to avoid multiple engines pulling the data file at the same time in case of multiple engines/instances
+// WithRandomization sets the maximum random time in seconds added to each
+// interval between data file pulls. A new time from 0 up to this maximum is
+// drawn for each interval, so that several servers with the same setting do
+// not pull the data file at the same time. The default is 10 minutes, and 0
+// adds nothing.
 func WithRandomization(seconds int) EngineOptions {
 	return func(cfg *Engine) error {
 		cfg.SetRandomization(seconds * 1000)

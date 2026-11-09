@@ -196,10 +196,10 @@ func TestUsageSharingCleanupFlush(t *testing.T) {
 func TestTrackerDedup(t *testing.T) {
 	tr := newTracker(time.Hour)
 	h := uint64(12345)
-	if tr.seenRecently(h) {
-		t.Fatal("first sighting should not be 'recently seen'")
+	if shared, _ := tr.share(h); !shared {
+		t.Fatal("first sighting should be shared")
 	}
-	if !tr.seenRecently(h) {
-		t.Fatal("second sighting within window should be 'recently seen'")
+	if shared, _ := tr.share(h); shared {
+		t.Fatal("second sighting within the interval should not be shared")
 	}
 }

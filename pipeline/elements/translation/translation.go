@@ -61,14 +61,25 @@ const (
 )
 
 // ParseMissingBehavior converts a configuration string to a MissingBehavior.
+// An unrecognized value gives Original.
 func ParseMissingBehavior(s string) MissingBehavior {
+	mb, _ := lookupMissingBehavior(s)
+	return mb
+}
+
+// lookupMissingBehavior converts a configuration string to a MissingBehavior,
+// ignoring case and surrounding space, and reports whether the value is one of
+// Original, EmptyString or FlowError.
+func lookupMissingBehavior(s string) (MissingBehavior, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "original":
+		return Original, true
 	case "emptystring":
-		return EmptyString
+		return EmptyString, true
 	case "flowerror":
-		return FlowError
+		return FlowError, true
 	default:
-		return Original
+		return Original, false
 	}
 }
 
