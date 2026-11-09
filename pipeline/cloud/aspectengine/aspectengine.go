@@ -132,10 +132,10 @@ func isJSONNull(raw json.RawMessage) bool {
 }
 
 // AspectProperties derives Property metadata for the given Aspect from the Cloud
-// Request Engine that precedes this engine in the Pipeline. Per the
-// specification this is treated as lazily initialized, failable data and is NOT
-// cached, so it is re-derived (and the cloud metadata re-initialized if needed)
-// on each call.
+// Request Engine that precedes this engine in the Pipeline. That engine
+// normally fetched the Properties when it was built, but after a transient
+// failure then it fetches them on first use, so the result is not cached and
+// is derived again on each call.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func AspectProperties(fd core.FlowData, element core.FlowElement, aspectKey string) ([]core.PropertyMetadata, error) {
 	re := fd.Pipeline().GetElement(requestengine.DataKey)
