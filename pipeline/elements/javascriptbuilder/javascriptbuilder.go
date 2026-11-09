@@ -60,7 +60,7 @@ var (
 	// from window to originAgentCluster below, none of which a top level var
 	// can replace, the browser's location, where a top level var navigates
 	// the page away, and the constructor the script defines.
-	// See https://github.com/51Degrees/specifications/blob/e637d3660a5e781f4494a9b42c8e8349bb117669/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
+	// See https://github.com/51Degrees/specifications/blob/a7ea4f07ade93162406263ad495df17631704670/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
 	reservedObjectNames = map[string]bool{
 		"await": true, "break": true, "case": true, "catch": true,
 		"class": true, "const": true, "continue": true, "debugger": true,
