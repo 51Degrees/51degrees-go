@@ -257,11 +257,12 @@ func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
 	return string(raw), nil
 }
 
-// engineFields are the form fields the engine writes itself. Evidence that
-// strips to one of them is left out, although the cloud service lists them
-// among its accepted Evidence keys, because a second field of the same name
-// would leave which one applied undecided.
-var engineFields = map[string]bool{"resource": true, "license": true, "values": true}
+// engineFields are the form fields that carry what the engine writes itself,
+// licence being the service's other name for license. Evidence that strips to
+// one of them is left out, whichever keys the cloud service lists, because a
+// second field for the same value would leave which one applied undecided.
+var engineFields = map[string]bool{
+	"resource": true, "license": true, "licence": true, "values": true}
 
 // buildForm constructs the URL-encoded form, being the resource key and the
 // Evidence the cloud service needs, as resolveEvidence gives it.
