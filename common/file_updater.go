@@ -38,6 +38,16 @@ type fileUpdater struct {
 
 	lastModificationTimestamp *time.Time
 
+	// engineName names the engine in log messages.
+	engineName string
+	// publishedDate and nextUpdate read the dates held in the data file the
+	// engine has loaded. They are nil when the engine offers neither.
+	publishedDate func() time.Time
+	nextUpdate    func() time.Time
+	// startUpPullDone is set once PullOnStart has run, so that the polling
+	// does not repeat the start-up pull.
+	startUpPullDone bool
+
 	fileWatcher fileWatcher
 	logger      *LogWrapper
 }
@@ -119,6 +129,27 @@ func (e *FileUpdater) SetUpdateOnStartEnabled(isUpdateOnStartEnabled bool) {
 // each interval, and 0 adds nothing.
 func (e *FileUpdater) SetRandomization(randomization int) {
 	e.randomization = randomization
+}
+
+// SetEngineName sets the engine type name used in the data update log
+// messages.
+func (e *FileUpdater) SetEngineName(engineName string) {
+	e.engineName = engineName
+}
+
+// SetPublishedDateFunc sets the function that returns the publication date of
+// the data file the engine has loaded. The date is sent as If-Modified-Since,
+// and the file system modification time is used only when the function is
+// not set or returns no date.
+func (e *FileUpdater) SetPublishedDateFunc(publishedDate func() time.Time) {
+	e.publishedDate = publishedDate
+}
+
+// SetNextUpdateFunc sets the function that returns the date after which the
+// engine's data file expects an update to be available. Polling does not
+// start before that date.
+func (e *FileUpdater) SetNextUpdateFunc(nextUpdate func() time.Time) {
+	e.nextUpdate = nextUpdate
 }
 
 // SetLoggerEnabled enables or disables the logger for the FileUpdater instance and returns the updated LogWrapper.
@@ -252,6 +283,7 @@ func (e *FileUpdater) copyToTempFile() (string, string, error) {
 
 // InitFileWatcher initializes the file watcher to monitor changes in the data file and set up a callback for file updates.
 func (e *FileUpdater) InitFileWatcher(logger *LogWrapper, stopCh chan *sync.WaitGroup) error {
+	logger.Infof("Creating file system watcher")
 	watcher, err := newWatcher(e.dataFile, time.Second, time.Second)
 	if err != nil {
 		return err

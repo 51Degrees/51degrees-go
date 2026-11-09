@@ -60,15 +60,18 @@ func randomizationMs(maxMs int) int {
 var drawRandomizationMs = randomizationMs
 
 // ScheduleFilePulling schedules periodic file pulling based on specified intervals and handles stop signals gracefully.
-// It optionally performs an immediate pull on startup if the update-on-start feature is enabled.
+// It performs an immediate pull on startup if the update-on-start feature is enabled and PullOnStart has not
+// already done so. When the loaded data file expects an update after a later date, the first pull waits until then.
 func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFileEvents chan struct{}) {
 	nextIterationInMs := e.dataFilePullEveryMs
 
-	// if update on start is enabled, perform the pull immediately
-	if e.isUpdateOnStartEnabled {
-		e.logger.Printf("Doing pull on start")
+	// if update on start is enabled and has not run yet, perform the pull immediately
+	if e.isUpdateOnStartEnabled && !e.startUpPullDone {
+		e.logger.Infof("Updating on start-up")
 		nextIterationInMs = e.doFilePulling(reloadFileEvents)
 	}
+
+	nextIterationInMs = e.delayBeforeFirstPull(nextIterationInMs)
 
 	for {
 		select {
@@ -83,59 +86,170 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 	}
 }
 
+// PullOnStart runs the start-up update, which blocks until the pull has finished and does not announce the new
+// file, as the caller loads the data file afterwards. It returns true when a new data file replaced the old one.
+// A data file that is already current is not an error, and a failed pull falls back to the local data file. It
+// returns an error only when the pull failed and there is no local data file to fall back to.
+func (e *FileUpdater) PullOnStart() (bool, error) {
+	e.startUpPullDone = true
+	e.logger.Infof("Updating on start-up")
+	_, downloaded, err := e.pull(nil)
+	if err == nil || errors.Is(err, ErrFileNotModified) || e.HasLocalDataFile() {
+		return downloaded, nil
+	}
+	return false, fmt.Errorf("the update on start-up failed and there is no local data file: %w", err)
+}
+
+// CheckDataFile checks that the data file exists. A missing data file is allowed when update on start-up is on,
+// as the start-up update downloads it.
+func (e *FileUpdater) CheckDataFile() error {
+	_, err := os.Stat(e.GetDataFile())
+	if err != nil && !(e.isUpdateOnStartEnabled && os.IsNotExist(err)) {
+		return fmt.Errorf("failed to get file path: %w", err)
+	}
+	return nil
+}
+
+// HasLocalDataFile reports whether the data file exists.
+func (e *FileUpdater) HasLocalDataFile() bool {
+	if e.GetDataFile() == "" {
+		return false
+	}
+	_, err := os.Stat(e.GetDataFile())
+	return err == nil
+}
+
+// earliestDate is the first year taken as a real date. A data file that carries no date reads as year 0.
+const earliestDate = 1970
+
+// validDate reports whether a date read from a data file is set.
+func validDate(t time.Time) bool {
+	return !t.IsZero() && t.Year() >= earliestDate
+}
+
+// delayBeforeFirstPull returns the wait before the first scheduled pull. Polling does not start before the date
+// the data file expects an update, so that date replaces the regular interval. A longer wait that the server asked
+// for is kept.
+func (e *FileUpdater) delayBeforeFirstPull(delayMs int) int {
+	untilMs, ok := e.msUntilNextUpdate()
+	if ok && (delayMs == e.dataFilePullEveryMs || untilMs > delayMs) {
+		return untilMs
+	}
+	return delayMs
+}
+
+// msUntilNextUpdate returns the milliseconds until the date the data file expects an update, and false when the
+// data file gives no date or the date has passed.
+func (e *FileUpdater) msUntilNextUpdate() (int, bool) {
+	if e.nextUpdate == nil {
+		return 0, false
+	}
+	next := e.nextUpdate()
+	if !validDate(next) {
+		return 0, false
+	}
+	until := time.Until(next)
+	if until <= 0 {
+		return 0, false
+	}
+	ms := until / time.Millisecond
+	if ms > math.MaxInt32 {
+		return math.MaxInt32, true
+	}
+	return int(ms), true
+}
+
+// ifModifiedSince returns the date sent as If-Modified-Since. It is the publication date of the loaded data file,
+// or the file system modification time when the data file has no publication date. It returns nil when there is no
+// data file yet, and an error when the file cannot be read.
+func (e *FileUpdater) ifModifiedSince() (*time.Time, error) {
+	if e.publishedDate != nil {
+		if published := e.publishedDate(); validDate(published) {
+			published = published.UTC()
+			return &published, nil
+		}
+	}
+	if len(e.GetDataFile()) == 0 {
+		return nil, nil
+	}
+	file, err := os.Stat(e.GetDataFile())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	modTime := file.ModTime().UTC()
+	return &modTime, nil
+}
+
+// engineLabel names the engine in log messages.
+func (e *FileUpdater) engineLabel() string {
+	if e.engineName == "" {
+		return "Engine"
+	}
+	return e.engineName
+}
+
 // doFilePulling handles the process of pulling a data file, saving it locally, and triggering reload events if necessary.
 // It checks for file modifications, makes an HTTP request to fetch the file, and handles retry logic for failures.
 // The method returns the time in milliseconds before the next pull attempt.
 func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
-	e.logger.Printf("Pulling data from %s", e.GetDataFileUrl())
+	next, _, _ := e.pull(reloadFileEvents)
+	return next
+}
 
-	var lastModificationTimestamp *time.Time
+// pull does one pull and returns the time in milliseconds before the next one, whether a new data file replaced
+// the old one, and the error that stopped it. The new file is announced on reloadFileEvents, unless the file
+// watcher does that or the channel is nil.
+func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
+	e.logger.Infof("Checking for update")
 
-	if len(e.GetDataFile()) > 0 {
-		file, err := os.Stat(e.GetDataFile())
-		if err != nil {
-			e.logger.Printf("failed to get file info: %v", err)
-			// retry after 1 second, since we have unhandled error
-			// this can happen from file info error or something else
-			return retryMs
-		}
-		modTime := file.ModTime().UTC()
-		lastModificationTimestamp = &modTime
+	lastModificationTimestamp, err := e.ifModifiedSince()
+	if err != nil {
+		e.logger.Printf("failed to get file info: %v", err)
+		// retry after 1 second, since we have unhandled error
+		// this can happen from file info error or something else
+		return retryMs, false, err
 	}
+
+	e.logger.Infof("Checking for update from '%s' for Engine '%s'", e.GetDataFileUrl(), e.engineLabel())
 
 	// The download goes to a temp file next to the data file and is renamed over it, so the
 	// engine only ever sees the complete old file or the complete new one.
 	fileResponse, err := doDataFileRequest(e.dataFileUrl, e.logger, lastModificationTimestamp, e.GetDataFile())
 	if err != nil {
-		e.logger.Printf("failed to pull data file: %v", err)
 		if errors.Is(err, ErrFileNotModified) {
-			e.logger.Printf("skipping pull, file not modified")
-			return e.GetDataFilePullEveryMs()
-		} else if fileResponse != nil && fileResponse.retryAfter > 0 {
+			e.logger.Infof("No data newer than %s found at '%s' for Engine '%s'",
+				formatSince(lastModificationTimestamp), e.GetDataFileUrl(), e.engineLabel())
+			return e.GetDataFilePullEveryMs(), false, err
+		}
+		e.logPullError(err)
+		if fileResponse != nil && fileResponse.retryAfter > 0 {
 			e.logger.Printf("received retry-after, retrying after %d seconds", fileResponse.retryAfter)
 			// retry after the specified time
-			return fileResponse.retryAfter * 1000
-		} else {
-			e.logger.Printf("retrying after 1 second")
-			// retry after 1 second, since we have unhandled error
-			// this can happen from network stutter or something else
-			return retryMs
+			return fileResponse.retryAfter * 1000, false, err
 		}
+		e.logger.Printf("retrying after 1 second")
+		// retry after 1 second, since we have unhandled error
+		// this can happen from network stutter or something else
+		return retryMs, false, err
 	}
 
-	e.logger.Printf("data file pulled successfully: %d bytes", fileResponse.size)
+	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", e.GetDataFileUrl(), e.engineLabel())
 
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
 		os.Remove(fileResponse.path)
-		e.logger.Printf("failed to write data file: %v", err)
+		e.logger.Errorf("An error occurred when copying a data file to replace the existing one at '%s'. "+
+			"Error detail: %v", e.GetDataFile(), err)
 		// retry after 1 second, since we have unhandled error
 		// this can happen from disk write error or something else
-		return retryMs
+		return retryMs, false, err
 	}
 	e.logger.Printf("data file written successfully: %d bytes", fileResponse.size)
 
-	if !e.isFileWatcherEnabled {
+	if reloadFileEvents != nil && !e.isFileWatcherEnabled {
 		// use the chan for reload the file and reload manager
 		reloadFileEvents <- struct{}{}
 	}
@@ -149,7 +263,61 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 	e.totalFilePulls++
 
 	// reset nextIterationInMs
-	return e.dataFilePullEveryMs
+	return e.dataFilePullEveryMs, true, nil
+}
+
+// formatSince writes the date a pull asked for newer data than, for the log.
+func formatSince(since *time.Time) string {
+	if since == nil {
+		return "the current data"
+	}
+	return since.UTC().Format(time.RFC3339)
+}
+
+// logPullError writes a failed pull at the level and in the words of the specification's error table.
+func (e *FileUpdater) logPullError(err error) {
+	var pe *pullError
+	if !errors.As(err, &pe) {
+		e.logger.Warnf("An error occurred while downloading a data file update for %s from %s. "+
+			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.GetDataFileUrl(), err)
+		return
+	}
+	switch pe.kind {
+	case pullConnect:
+		e.logger.Warnf("An error occurred when connecting to %s in order to check for data file updates for %s. "+
+			"Update will be attempted again later. Error detail: %v", e.GetDataFileUrl(), e.engineLabel(), pe.err)
+	case pullIntegrity:
+		e.logger.Warnf("An error occurred during the integrity check of new data file for %s. "+
+			"Update will be attempted again later. Error detail: %v", e.engineLabel(), pe.err)
+	case pullWrite:
+		e.logger.Errorf("An error occurred when writing to %s. Error detail: %v", e.GetDataFile(), pe.err)
+	default:
+		e.logger.Warnf("An error occurred while downloading a data file update for %s from %s. "+
+			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.GetDataFileUrl(), pe.err)
+	}
+}
+
+// pullErrorKind says which step of a pull failed, which decides the log message.
+type pullErrorKind int
+
+const (
+	pullConnect pullErrorKind = iota
+	pullDownload
+	pullIntegrity
+	pullWrite
+)
+
+// pullError is an error from a pull tagged with the step that failed. Its text is the text of the error it wraps.
+type pullError struct {
+	kind pullErrorKind
+	err  error
+}
+
+func (p *pullError) Error() string { return p.err.Error() }
+func (p *pullError) Unwrap() error { return p.err }
+
+func newPullError(kind pullErrorKind, err error) error {
+	return &pullError{kind: kind, err: err}
 }
 
 // FileResponse represents the response obtained from a file request: the path of the temp file
@@ -177,16 +345,16 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, newPullError(pullConnect, err)
 	}
 
 	if timestamp != nil {
-		req.Header.Set("If-Modified-Since", timestamp.Format(http.TimeFormat))
+		req.Header.Set("If-Modified-Since", timestamp.UTC().Format(http.TimeFormat))
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, newPullError(pullConnect, err)
 	}
 	defer resp.Body.Close()
 
@@ -199,16 +367,16 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 		retryAfter := resp.Header.Get("Retry-After")
 		retryAfterSeconds, err := strconv.Atoi(retryAfter)
 		if err != nil || len(retryAfter) == 0 {
-			return nil, fmt.Errorf("failed to parse Retry-After header: %v", err)
+			return nil, newPullError(pullDownload, fmt.Errorf("failed to parse Retry-After header: %v", err))
 		}
 
 		return &FileResponse{
 			retryAfter: retryAfterSeconds,
-		}, fmt.Errorf("received 429, retrying after %d seconds", retryAfterSeconds)
+		}, newPullError(pullDownload, fmt.Errorf("received 429, retrying after %d seconds", retryAfterSeconds))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to pull data file: %s", resp.Status)
+		return nil, newPullError(pullDownload, fmt.Errorf("failed to pull data file: %s", resp.Status))
 	}
 
 	// the MD5 header covers the raw body, compressed or not, so hash everything read from it
@@ -222,20 +390,20 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 	if isGzip(http.DetectContentType(head)) {
 		fileBytes, err = gzip.NewReader(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decompress file: %v", err)
+			return nil, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
 		}
 	}
 
 	tempFile, err := os.CreateTemp(filepath.Dir(dataFile), tempFilePattern(dataFile))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %v", err)
+		return nil, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
 	}
 	size, err := writeDataFile(tempFile, fileBytes, body, dataFile)
 	if err == nil {
 		contentMD5 := resp.Header.Get("Content-MD5")
 		if len(contentMD5) > 0 {
 			if hex.EncodeToString(hash.Sum(nil)) != contentMD5 {
-				err = errors.New("MD5 validation failed")
+				err = newPullError(pullIntegrity, errors.New("MD5 validation failed"))
 			}
 		} else {
 			logger.Printf("MD5 header not found in response, skipping validation")
@@ -259,27 +427,27 @@ func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, dataFile s
 	size, err := io.Copy(tempFile, data)
 	if err != nil {
 		tempFile.Close()
-		return 0, fmt.Errorf("failed to write temp file: %v", err)
+		return 0, newPullError(pullWrite, fmt.Errorf("failed to write temp file: %v", err))
 	}
 	// the gzip reader stops before any trailing bytes
 	if _, err = io.Copy(io.Discard, body); err != nil {
 		tempFile.Close()
-		return 0, fmt.Errorf("failed to read response: %v", err)
+		return 0, newPullError(pullDownload, fmt.Errorf("failed to read response: %v", err))
 	}
 	// a rename after a power loss must not leave an empty data file behind
 	if err = tempFile.Sync(); err != nil {
 		tempFile.Close()
-		return 0, fmt.Errorf("failed to flush temp file: %v", err)
+		return 0, newPullError(pullWrite, fmt.Errorf("failed to flush temp file: %v", err))
 	}
 	if err = tempFile.Close(); err != nil {
-		return 0, fmt.Errorf("failed to close temp file: %v", err)
+		return 0, newPullError(pullWrite, fmt.Errorf("failed to close temp file: %v", err))
 	}
 	mode := os.FileMode(0644)
 	if info, statErr := os.Stat(dataFile); statErr == nil {
 		mode = info.Mode().Perm()
 	}
 	if err = os.Chmod(tempFile.Name(), mode); err != nil {
-		return 0, fmt.Errorf("failed to set temp file permissions: %v", err)
+		return 0, newPullError(pullWrite, fmt.Errorf("failed to set temp file permissions: %v", err))
 	}
 	return size, nil
 }

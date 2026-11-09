@@ -82,11 +82,19 @@ type Config struct {
 	// the query-string parameters required by the 51Degrees Distributor).
 	URLFormatter URLFormatter
 	// UseIfModifiedSince controls whether the update request sends an
-	// If-Modified-Since header (based on the server's last reported
-	// Last-Modified, falling back to the operational file's modification time)
-	// so an unchanged file returns 304 rather than being re-downloaded. Disable
-	// it for a server that mishandles conditional requests.
+	// If-Modified-Since header so an unchanged file returns 304 rather than
+	// being re-downloaded. The date is the publication date from PublishedDate,
+	// then the Last-Modified the server last reported, and only then the
+	// operational file's modification time. Disable it for a server that
+	// mishandles conditional requests.
 	UseIfModifiedSince bool
+	// PublishedDate, if set, returns the publication date of the data the
+	// Engine has loaded, or the zero time when the data has none.
+	PublishedDate func() time.Time
+	// NextUpdate, if set, returns the date after which the loaded data expects
+	// an update to be available, or the zero time when the data gives none.
+	// Polling does not start before that date.
+	NextUpdate func() time.Time
 
 	// Update behavior.
 
@@ -174,7 +182,9 @@ func (r *registration) recoverGoroutine(what string) {
 //
 // When UpdateOnStartup is set, Register performs the start-up update check
 // synchronously and so blocks for up to the HTTP client's timeout; the default
-// client sets a bounded timeout, and a custom client should do the same.
+// client sets a bounded timeout, and a custom client should do the same. If
+// that update fails, Register falls back to the local data file, and returns
+// an error when there is no local data file.
 func (s *Service) Register(engine Refreshable, engineName string, cfg Config) error {
 	if cfg.Identifier == "" {
 		cfg.Identifier = engineName
@@ -190,7 +200,14 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
 		s.logger.Info("Updating on start-up", "engine", engineName)
 		if err := reg.httpUpdate(); err != nil {
-			// Start-up update failures fall back to existing local data.
+			// A failed start-up update falls back to the local data file, and
+			// fails when there is none.
+			if cfg.DataFilePath != "" {
+				if _, statErr := os.Stat(cfg.DataFilePath); statErr != nil {
+					return fmt.Errorf("data update: start-up update failed and there is no local "+
+						"data file at %q: %w", cfg.DataFilePath, err)
+				}
+			}
 			s.logger.Warn("start-up update failed; using existing data if available",
 				"engine", engineName, "error", err)
 		}
@@ -263,6 +280,23 @@ func (s *Service) CheckForUpdate(identifier string) error {
 	return reg.refreshFromFile()
 }
 
+// UpdateFromMemory refreshes the named data source's Engine from data held in
+// memory, with no download. It is the programmatic update for a memory data
+// source.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#programmatic-update
+func (s *Service) UpdateFromMemory(identifier string, data []byte) error {
+	s.mu.Lock()
+	reg, ok := s.registrations[identifier]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("data update: no registration for identifier %q", identifier)
+	}
+	if len(data) == 0 {
+		return errors.New("data update: empty in-memory data")
+	}
+	return reg.refreshFromBytes(data)
+}
+
 // Close stops all background activity (watchers and polling).
 func (s *Service) Close() error {
 	s.mu.Lock()
@@ -287,8 +321,13 @@ func (r *registration) startPolling() {
 		// override, when non-zero, forces the next poll delay (used to honor a
 		// server's Retry-After after a 429 response).
 		var override time.Duration
+		first := true
 		for {
 			delay := r.nextInterval()
+			if first {
+				delay = r.firstDelay(delay)
+				first = false
+			}
 			if override > 0 {
 				delay = override
 				override = 0
@@ -319,13 +358,46 @@ func (r *registration) nextInterval() time.Duration {
 	if d <= 0 {
 		d = 30 * time.Minute
 	}
-	if r.cfg.MaxRandomization > 0 {
-		r.svc.mu.Lock()
-		extra := time.Duration(r.svc.rand.Int63n(int64(r.cfg.MaxRandomization)))
-		r.svc.mu.Unlock()
-		d += extra
+	return d + r.randomExtra()
+}
+
+// randomExtra returns a random time below the configured maximum, or zero when
+// there is no maximum.
+func (r *registration) randomExtra() time.Duration {
+	if r.cfg.MaxRandomization <= 0 {
+		return 0
 	}
-	return d
+	r.svc.mu.Lock()
+	defer r.svc.mu.Unlock()
+	return time.Duration(r.svc.rand.Int63n(int64(r.cfg.MaxRandomization)))
+}
+
+// firstDelay returns the wait before the first poll. When the loaded data
+// expects an update after a later date, polling does not start until then, and
+// the random time is added to the wait.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#automatic-update-via-http
+func (r *registration) firstDelay(regular time.Duration) time.Duration {
+	if r.cfg.NextUpdate == nil {
+		return regular
+	}
+	next := r.cfg.NextUpdate()
+	if !validDate(next) {
+		return regular
+	}
+	until := time.Until(next)
+	if until <= 0 {
+		return regular
+	}
+	return until + r.randomExtra()
+}
+
+// earliestDate is the first year taken as a real date. Data that carries no
+// date reads as year 0.
+const earliestDate = 1970
+
+// validDate reports whether a date read from a data file is set.
+func validDate(t time.Time) bool {
+	return !t.IsZero() && t.Year() >= earliestDate
 }
 
 func (r *registration) startWatcher() error {
@@ -502,9 +574,15 @@ func (r *registration) httpUpdate() error {
 }
 
 // conditionalSince returns the timestamp to use for If-Modified-Since: the
-// server's last reported Last-Modified if known, otherwise the operational
-// file's modification time.
+// publication date of the loaded data if it has one, then the server's last
+// reported Last-Modified if known, and only then the operational file's
+// modification time.
 func (r *registration) conditionalSince() (time.Time, bool) {
+	if r.cfg.PublishedDate != nil {
+		if published := r.cfg.PublishedDate(); validDate(published) {
+			return published, true
+		}
+	}
 	if !r.lastModified.IsZero() {
 		return r.lastModified, true
 	}
@@ -516,6 +594,7 @@ func (r *registration) conditionalSince() (time.Time, bool) {
 func (r *registration) refreshFromBytes(body []byte) error {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
+	r.svc.logger.Info("Attempting to refresh Engine with new data", "engine", r.engineName)
 	if err := r.engine.RefreshFromBytes(body); err != nil {
 		r.svc.logger.Error("error applying in-memory data update", "engine", r.engineName, "error", err)
 		return err
