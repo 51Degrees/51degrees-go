@@ -57,10 +57,10 @@ var (
 	// mode code, eval and arguments, which strict mode code cannot declare
 	// and of which eval would replace the page's own eval function, the
 	// globals Infinity, NaN and undefined and the browser's Window properties
-	// from window to styleMedia below, none of which a top level var can
-	// replace, the browser's location, where a top level var navigates the
-	// page away, and the constructor the script defines.
-	// See https://github.com/51Degrees/specifications/blob/88dda87fbd5a5842c664991cdeaed970193a90f6/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
+	// from window to originAgentCluster below, none of which a top level var
+	// can replace, the browser's location, where a top level var navigates
+	// the page away, and the constructor the script defines.
+	// See https://github.com/51Degrees/specifications/blob/e637d3660a5e781f4494a9b42c8e8349bb117669/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
 	reservedObjectNames = map[string]bool{
 		"await": true, "break": true, "case": true, "catch": true,
 		"class": true, "const": true, "continue": true, "debugger": true,
@@ -82,7 +82,10 @@ var (
 		"crossOriginIsolated": true, "trustedTypes": true, "crypto": true,
 		"indexedDB": true, "localStorage": true, "sessionStorage": true,
 		"caches": true, "cookieStore": true, "speechSynthesis": true,
-		"styleMedia": true, "location": true, "fiftyoneDegreesManager": true,
+		"styleMedia": true, "crashReport": true, "credentialless": true,
+		"customElements": true, "documentPictureInPicture": true,
+		"fence": true, "launchQueue": true, "originAgentCluster": true,
+		"location": true, "fiftyoneDegreesManager": true,
 	}
 
 	// sessionIDRe is the form a session id must have to be written into the
@@ -187,9 +190,11 @@ func (b *Builder) SetEndpoint(e string) *Builder { b.endpoint = e; return b }
 // name, status, history, navigator, closed, frameElement, isSecureContext,
 // crossOriginIsolated, trustedTypes, crypto, indexedDB, localStorage,
 // sessionStorage, caches, cookieStore, speechSynthesis, styleMedia,
-// location or fiftyoneDegreesManager. Any other value, an empty one
-// included, makes Factory return a configuration error and the built
-// element refuse every pipeline.
+// crashReport, credentialless, customElements, documentPictureInPicture,
+// fence, launchQueue, originAgentCluster, location or
+// fiftyoneDegreesManager. Any other value, an empty one included, makes
+// Factory return a configuration error and the built element refuse every
+// pipeline.
 func (b *Builder) SetObjectName(n string) *Builder { b.objectName = n; return b }
 
 // SetMinify enables or disables minification (default true).
