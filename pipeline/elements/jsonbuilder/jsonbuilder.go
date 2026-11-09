@@ -99,20 +99,26 @@ func (e *Element) Process(fd core.FlowData) error {
 	result := map[string]any{}
 	var jsProperties []string
 
-	for elementKey, data := range fd.ElementDataAsMap() {
+	// Keys are written in lower case, and so are the names that
+	// javascriptProperties and evidenceproperties list, so that each name finds
+	// its key.
+	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+	for dataKey, data := range fd.ElementDataAsMap() {
+		elementKey := strings.ToLower(dataKey)
 		if _, excluded := excludedDataKeys[elementKey]; excluded {
 			continue
 		}
 		obj := map[string]any{}
-		for propName, raw := range data.AsMap() {
+		for name, raw := range data.AsMap() {
+			propName := strings.ToLower(name)
 			fullName := elementKey + "." + propName
-			pm, hasMeta := meta[strings.ToLower(fullName)]
+			pm, hasMeta := meta[fullName]
 			isJS := isJavaScript(raw)
 
 			// Apply the SetProperties include-list, always keeping JavaScript
 			// Properties (meta Properties are emitted alongside their base).
 			if e.includeProperties != nil && !isJS {
-				if _, ok := e.includeProperties[strings.ToLower(fullName)]; !ok {
+				if _, ok := e.includeProperties[fullName]; !ok {
 					continue
 				}
 			}
@@ -257,7 +263,8 @@ func delayedEvidenceProperties(pm core.PropertyMetadata, elementKey string, meta
 		if !strings.Contains(ep, ".") {
 			full = elementKey + "." + ep
 		}
-		if m, ok := meta[strings.ToLower(full)]; ok && m.DelayExecution {
+		full = strings.ToLower(full)
+		if m, ok := meta[full]; ok && m.DelayExecution {
 			out = append(out, full)
 		}
 	}
