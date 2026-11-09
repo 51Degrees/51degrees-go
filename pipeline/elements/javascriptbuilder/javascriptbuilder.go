@@ -50,9 +50,35 @@ var (
 	// rejected because the name renders at a declaration position
 	// ("var <name> = ..."), where a dot is a SyntaxError.
 	jsObjectNameRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
+
+	// reservedObjectNames are the identifiers the object cannot have. They
+	// are the reserved words of ECMA-262 section 12.7.2 and those reserved
+	// in strict mode, none of which a var can declare, the globals Infinity,
+	// NaN and undefined, which a top level var cannot replace, and the
+	// constructor the script defines.
+	reservedObjectNames = map[string]bool{
+		"await": true, "break": true, "case": true, "catch": true,
+		"class": true, "const": true, "continue": true, "debugger": true,
+		"default": true, "delete": true, "do": true, "else": true,
+		"enum": true, "export": true, "extends": true, "false": true,
+		"finally": true, "for": true, "function": true, "if": true,
+		"import": true, "in": true, "instanceof": true, "new": true,
+		"null": true, "return": true, "super": true, "switch": true,
+		"this": true, "throw": true, "true": true, "try": true,
+		"typeof": true, "var": true, "void": true, "while": true,
+		"with": true, "yield": true,
+		"implements": true, "interface": true, "let": true, "package": true,
+		"private": true, "protected": true, "public": true, "static": true,
+		"Infinity": true, "NaN": true, "undefined": true,
+		"fiftyoneDegreesManager": true,
+	}
 )
 
-func validObjectName(s string) bool { return jsObjectNameRe.MatchString(s) }
+// validObjectName reports whether s is a valid object name, as the object
+// name section of the specification defines one.
+func validObjectName(s string) bool {
+	return jsObjectNameRe.MatchString(s) && !reservedObjectNames[s]
+}
 
 //go:embed template.mustache
 var templateSource string
@@ -103,15 +129,17 @@ type Builder struct {
 	enableCookies bool
 }
 
-// DefaultEndpoint is the callback endpoint used when one is not configured, so
-// the client-side update round-trip is enabled by default.
+// DefaultEndpoint is the path the web integration serves the JSON endpoint
+// on unless told otherwise. The builder's endpoint is empty until
+// SetEndpoint is called, which gives a script with no callback, so pass
+// DefaultEndpoint to SetEndpoint for a callback to that path.
 const DefaultEndpoint = "/51dpipeline/json"
 
-// NewBuilder creates a Builder with default options.
+// NewBuilder creates a Builder with default options. The endpoint is empty,
+// so the script has no callback until SetEndpoint is called.
 func NewBuilder() *Builder {
 	return &Builder{
 		objectName:    DefaultObjectName,
-		endpoint:      DefaultEndpoint,
 		minify:        true,
 		enableCookies: true,
 	}
@@ -129,10 +157,15 @@ func (b *Builder) SetProtocol(p string) *Builder { b.protocol = p; return b }
 // SetHost sets the callback host (otherwise taken from Evidence).
 func (b *Builder) SetHost(h string) *Builder { b.host = h; return b }
 
-// SetEndpoint sets the callback endpoint path.
+// SetEndpoint sets the callback endpoint path (default empty, which gives no
+// callback). DefaultEndpoint is the path the web integration serves.
 func (b *Builder) SetEndpoint(e string) *Builder { b.endpoint = e; return b }
 
-// SetObjectName sets the global JavaScript object name (default "fod").
+// SetObjectName sets the global JavaScript object name (default "fod"). It
+// must match ^[A-Za-z_$][A-Za-z0-9_$]*$ and not be a JavaScript reserved
+// word, Infinity, NaN, undefined or fiftyoneDegreesManager. Any other value,
+// an empty one included, makes Factory return a configuration error and the
+// built element refuse every pipeline.
 func (b *Builder) SetObjectName(n string) *Builder { b.objectName = n; return b }
 
 // SetMinify enables or disables minification (default true).
@@ -155,9 +188,20 @@ func (b *Builder) Build() *Element {
 		minify:        b.minify,
 		enableCookies: b.enableCookies,
 	}
+	var problems []string
 	if b.protocol != "" && !isScheme(b.protocol) {
+		problems = append(problems, "protocol "+strconv.Quote(b.protocol)+
+			" is not http or https")
+	}
+	if !validObjectName(b.objectName) {
+		problems = append(problems, "object name "+
+			strconv.Quote(b.objectName)+" is not a JavaScript identifier, or "+
+			"is a reserved word, Infinity, NaN, undefined or "+
+			"fiftyoneDegreesManager")
+	}
+	if len(problems) > 0 {
 		e.configErr = core.NewConfigurationError("the JavaScript builder's "+
-			"protocol "+strconv.Quote(b.protocol)+" is not http or https", nil)
+			strings.Join(problems, ", and its "), nil)
 	}
 	e.SetProperties([]core.PropertyMetadata{
 		{Name: JavaScriptProperty, Element: e, Category: "JavaScript", Type: nil, Available: true},
@@ -165,7 +209,8 @@ func (b *Builder) Build() *Element {
 	return e
 }
 
-// New creates a JavaScript Builder Element with default options.
+// New creates a JavaScript Builder Element with default options, which give
+// a script with no callback because the endpoint is empty.
 func New(logger *slog.Logger) *Element { return NewBuilder().SetLogger(logger).Build() }
 
 // Data is the Element Data produced by the JavaScript Builder.
@@ -192,9 +237,9 @@ func (e *Element) Process(fd core.FlowData) error {
 	host := firstNonEmpty(e.host, evidenceString(fd, EvidenceHost))
 
 	// The object name reaches a bare code position in the template. Honor the
-	// client-supplied evidence value only if it is a valid JS identifier;
-	// otherwise fall back to the configured/default name.
-	objectName := firstNonEmpty(e.objectName, DefaultObjectName)
+	// client-supplied evidence value only if it is a valid object name, and
+	// otherwise use the configured name, which Build has checked.
+	objectName := e.objectName
 	if ev := evidenceString(fd, EvidenceObjectName); ev != "" && validObjectName(ev) {
 		objectName = ev
 	}
@@ -291,10 +336,16 @@ func (e *Element) jsonObject(fd core.FlowData) string {
 	return "{}"
 }
 
+// noSequence is the sequence written when no Sequence Element ran, being
+// the number the Sequence Element gives a session's first request.
+const noSequence = 1
+
+// sessionInfo returns the session id and sequence from the Sequence
+// Element's data, or an empty session id and noSequence without it.
 func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 	data, err := fd.Get(sequence.DataKey)
 	if err != nil {
-		return "", 0
+		return "", noSequence
 	}
 	sessionID := ""
 	if v, err := data.Get(sequence.SessionIDProperty); err == nil {
@@ -302,7 +353,7 @@ func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 			sessionID = s
 		}
 	}
-	seq := 0
+	seq := noSequence
 	if v, err := data.Get(sequence.SequenceProperty); err == nil {
 		if n, ok := v.(int); ok {
 			seq = n
