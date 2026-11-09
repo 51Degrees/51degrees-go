@@ -332,7 +332,8 @@ func buildError(name string) (factoryErr, pipelineErr error) {
 // A configured object name that is not valid, including an empty one, is
 // refused when the element is built. A valid name matches
 // ^[A-Za-z_$][A-Za-z0-9_$]*$ and is not a reserved word, including those
-// reserved in strict mode, nor Infinity, NaN, undefined or
+// reserved in strict mode, nor eval, arguments, Infinity, NaN, undefined,
+// window, document, top, name, status, history, navigator, closed or
 // fiftyoneDegreesManager.
 func TestObjectNameConfiguredNotValid(t *testing.T) {
 	for _, name := range []string{
@@ -347,6 +348,8 @@ func TestObjectNameConfiguredNotValid(t *testing.T) {
 		"implements", "interface", "let", "package", "private",
 		"protected", "public", "static",
 		"Infinity", "NaN", "undefined", "fiftyoneDegreesManager",
+		"eval", "arguments", "window", "document", "top", "name", "status",
+		"history", "navigator", "closed",
 	} {
 		t.Run(name, func(t *testing.T) {
 			var ce *core.ConfigurationError
@@ -397,7 +400,8 @@ func TestObjectNameConfiguredValid(t *testing.T) {
 func TestObjectNameRequestedNotValid(t *testing.T) {
 	for _, name := range []string{
 		"x y", "class", "let", "null", "NaN", "Infinity", "undefined",
-		"fiftyoneDegreesManager",
+		"fiftyoneDegreesManager", "eval", "arguments", "window", "document",
+		"top", "name", "status", "history", "navigator", "closed",
 	} {
 		t.Run(name, func(t *testing.T) {
 			js := renderElement(t, NewBuilder().SetObjectName("configured").Build(),
@@ -408,6 +412,60 @@ func TestObjectNameRequestedNotValid(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The configuration error names the pattern a valid name must match, as
+// café is a JavaScript identifier that the pattern refuses.
+func TestObjectNameConfiguredErrorText(t *testing.T) {
+	const want = "does not match ^[A-Za-z_$][A-Za-z0-9_$]*$"
+	factoryErr, pipelineErr := buildError("café")
+	for _, err := range []error{factoryErr, pipelineErr} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("gave %v, want it to say it %s", err, want)
+		}
+	}
+}
+
+// Step 3, a requested object name that is not valid is reported with a
+// warning once per element, and the warning does not repeat the requested
+// text. A blank or valid request is not reported.
+func TestObjectNameRequestedNotValidLogged(t *testing.T) {
+	const requested = "s3cr3t v4lue"
+	t.Run("once per element", func(t *testing.T) {
+		h := &recordingHandler{}
+		logger := slog.New(h)
+		first := NewBuilder().SetLogger(logger).SetObjectName("configured").Build()
+		second := NewBuilder().SetLogger(logger).SetObjectName("configured").Build()
+		for _, name := range []string{requested, "class", "eval"} {
+			for _, e := range []*Element{first, second} {
+				renderElement(t, e,
+					map[string]string{EvidenceObjectName: name})
+			}
+		}
+		records := h.records()
+		if len(records) != 2 {
+			t.Fatalf("logged %d records, want 2: %q", len(records), records)
+		}
+		for _, r := range records {
+			if !strings.HasPrefix(r, "WARN ") {
+				t.Errorf("logged %q, want a warning", r)
+			}
+			if strings.Contains(r, requested) {
+				t.Errorf("logged %q, which repeats the requested name", r)
+			}
+		}
+	})
+	t.Run("not when blank or valid", func(t *testing.T) {
+		for _, name := range []string{"", " ", "\t", "myFod"} {
+			h := &recordingHandler{}
+			renderElement(t, NewBuilder().SetLogger(slog.New(h)).Build(),
+				map[string]string{EvidenceObjectName: name})
+			if n := len(h.records()); n != 0 {
+				t.Errorf("%q logged %d records, want none: %q",
+					name, n, h.records())
+			}
+		}
+	})
 }
 
 // Step 5, with no Sequence Element the script carries the sequence 1 and an
@@ -435,6 +493,76 @@ func TestSequenceWithoutSequenceElement(t *testing.T) {
 	}
 	if line := grepLine(js, "var sessionId ="); !strings.Contains(line, `var sessionId = "";`) {
 		t.Errorf("session id line %q, want an empty session id", line)
+	}
+}
+
+// sessionElement stands in for the Sequence Element under its data key,
+// giving every request the same session id.
+type sessionElement struct {
+	*core.BaseElement
+	sessionID string
+}
+
+func newSessionElement(sessionID string) *sessionElement {
+	return &sessionElement{
+		BaseElement: core.NewBaseElement(sequence.DataKey, nil, nil),
+		sessionID:   sessionID,
+	}
+}
+
+func (s *sessionElement) Process(fd core.FlowData) error {
+	data := fd.GetOrAdd(sequence.DataKey,
+		func(core.FlowData) core.ElementData { return core.NewBaseElementData() })
+	data.Set(sequence.SessionIDProperty, s.sessionID)
+	data.Set(sequence.SequenceProperty, 1)
+	return nil
+}
+
+// Step 5, a session id that does not match ^[A-Za-z0-9-]{1,64}$ is written
+// as an empty string, whichever element gave it, because the script holds
+// it inside quotes.
+func TestSessionID(t *testing.T) {
+	longest := strings.Repeat("a", 64)
+	for _, c := range []struct{ id, want string }{
+		{"12345678-1234-4234-8234-1234567890ab",
+			"12345678-1234-4234-8234-1234567890ab"},
+		{"a", "a"},
+		{"Session-1", "Session-1"},
+		{longest, longest},
+		{"", ""},
+		{longest + "a", ""},
+		{`"; alert(1); var z="`, ""},
+		{"abc\n", ""},
+		{"abc def", ""},
+		{"abc_def", ""},
+		{"a.b", ""},
+		{`a\`, ""},
+		{"é", ""},
+		{"abc\u2028", ""},
+	} {
+		t.Run(c.id, func(t *testing.T) {
+			p, err := core.NewPipelineBuilder().
+				AddFlowElement(newSessionElement(c.id)).
+				AddFlowElement(NewBuilder().Build()).
+				Build()
+			if err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			defer p.Close()
+			fd := p.CreateFlowData()
+			if err := fd.Process(); err != nil {
+				t.Fatalf("process: %v", err)
+			}
+			data, err := fd.Get(DataKey)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			want := `var sessionId = "` + c.want + `";`
+			line := grepLine(data.(*Data).JavaScript(), "var sessionId =")
+			if strings.TrimSpace(line) != want {
+				t.Errorf("session id line %q, want %q", line, want)
+			}
+		})
 	}
 }
 

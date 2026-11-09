@@ -410,8 +410,8 @@ func TestCallbackURLLogged(t *testing.T) {
 	})
 }
 
-// recordingHandler keeps the text of each error record as the handler
-// receives it, with no escaping of its own.
+// recordingHandler keeps the text of each warning and error record as the
+// handler receives it, after its level, with no escaping of its own.
 type recordingHandler struct {
 	mu   sync.Mutex
 	text []string
@@ -420,11 +420,11 @@ type recordingHandler struct {
 func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
-	if r.Level < slog.LevelError {
+	if r.Level < slog.LevelWarn {
 		return nil
 	}
 	var b strings.Builder
-	b.WriteString(r.Message)
+	b.WriteString(r.Level.String() + " " + r.Message)
 	r.Attrs(func(a slog.Attr) bool {
 		b.WriteString(" " + a.Key + "=" + a.Value.String())
 		return true
