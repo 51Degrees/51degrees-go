@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strconv"
 	"unsafe"
 )
 
@@ -137,6 +138,46 @@ func (r *ResultsIpi) getPropertyNameSafe(dataSet *C.DataSetIpi, requiredIndex C.
 	return ""
 }
 
+// coordinateDecimalPlaces is how many decimal places a value converted from an
+// Azimuth or Declination, such as Latitude and Longitude, is given to.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/value-types.md#rounding-of-azimuth-and-declination-values
+const coordinateDecimalPlaces = 3
+
+// isCoordinate reports whether the property at the given required index stores
+// its values as Azimuth or Declination, which the C library converts to a
+// double without rounding. On any failure it returns false.
+func (r *ResultsIpi) isCoordinate(dataSet *C.DataSetIpi, requiredIndex C.int, exception *Exception) bool {
+	propertyIndex := C.fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex(
+		dataSet.b.b.available, requiredIndex)
+	if propertyIndex < 0 {
+		return false
+	}
+
+	storedType := C.fiftyoneDegreesPropertyGetStoredTypeByIndex(
+		dataSet.propertyTypes, C.uint32_t(propertyIndex), exception.CPtr)
+	if !exception.IsOkay() {
+		return false
+	}
+
+	switch PropertyValueType(storedType) {
+	case AzimuthValueType, DeclinationValueType:
+		return true
+	default:
+		return false
+	}
+}
+
+// roundCoordinate gives v to coordinateDecimalPlaces decimal places, as the
+// float64 nearest the rounded decimal.
+func roundCoordinate(v float64) float64 {
+	rounded, err := strconv.ParseFloat(
+		strconv.FormatFloat(v, 'f', coordinateDecimalPlaces, 64), 64)
+	if err != nil {
+		return v
+	}
+	return rounded
+}
+
 // isPropertyWeighted reports whether the property at the given required index has
 // a weighted value type - i.e. its values carry an intrinsic per-value confidence
 // weight (Mcc and the multi-value location lists). It resolves the required index
@@ -219,6 +260,11 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 	// Cache the weighted/unweighted decision per required-property index so the
 	// value-type lookup runs once per property rather than once per value.
 	weightedByReqIndex := make(map[C.int]bool)
+	// The same for whether a property's values are converted from Azimuth or
+	// Declination, and so rounded.
+	coordinateByReqIndex := make(map[C.int]bool)
+	coordinateException := NewException()
+	defer coordinateException.Free()
 	typeException := NewException()
 	defer typeException.Free()
 	// Names read from the data set, once for each property rather than for
@@ -259,11 +305,19 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 			weightedInt := (*C.fiftyoneDegreesWeightedInt)(unsafe.Pointer(nextHeader))
 			val = int(weightedInt.value)
 
-		case FloatValueType:
-		case DoubleValueType:
+		case FloatValueType, DoubleValueType:
 			// Cast to weighted double and get value
 			weightedDouble := (*C.fiftyoneDegreesWeightedDouble)(unsafe.Pointer(nextHeader))
-			val = float64(weightedDouble.value)
+			number := float64(weightedDouble.value)
+			coordinate, seen := coordinateByReqIndex[requiredPropertyIndex]
+			if !seen {
+				coordinate = r.isCoordinate(dataSet, requiredPropertyIndex, coordinateException)
+				coordinateByReqIndex[requiredPropertyIndex] = coordinate
+			}
+			if coordinate {
+				number = roundCoordinate(number)
+			}
+			val = number
 
 		case BooleanValueType:
 			// Cast to weighted boolean and get value
