@@ -86,6 +86,8 @@ type flowData struct {
 	finished bool
 	// parallel counts the parallel groups running, which take no Evidence.
 	parallel int
+	// supplied is the Evidence as it was when processing started.
+	supplied map[string]any
 
 	goaMu sync.Mutex // serializes GetOrAdd so it is atomic under parallel processing
 }
@@ -135,8 +137,20 @@ func (fd *flowData) Process() error {
 	if !fd.markStarted() {
 		return ErrAlreadyProcessed
 	}
+	fd.supplied = fd.evidence.AsMap()
 	defer fd.markFinished()
 	return fd.pipeline.process(fd)
+}
+
+// SuppliedEvidence returns the Evidence as it was when processing of the Flow
+// Data started, without the values that Flow Elements added while processing.
+// Before processing starts it returns the Evidence held now. It is for work
+// that depends on the request alone, such as a cache validator.
+func SuppliedEvidence(fd FlowData) map[string]any {
+	if f, ok := fd.(*flowData); ok && f.supplied != nil {
+		return f.supplied
+	}
+	return fd.Evidence().AsMap()
 }
 
 func (fd *flowData) Pipeline() Pipeline { return fd.pipeline }

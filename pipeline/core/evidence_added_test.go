@@ -159,3 +159,35 @@ func TestCallerAddsNoEvidenceAfterProcessing(t *testing.T) {
 		t.Error("a key was added after processing")
 	}
 }
+
+// SuppliedEvidence holds what the caller supplied, without the values that
+// Flow Elements added or replaced while processing.
+func TestSuppliedEvidenceLeavesOutAddedValues(t *testing.T) {
+	adder := newFuncElement("adder", nil, func(fd FlowData) error {
+		fd.AddEvidence("query.added", "by the element")
+		fd.AddEvidence("query.month", "april")
+		return nil
+	})
+	p, err := NewPipelineBuilder().SetLogger(quietLogger()).AddFlowElement(adder).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	fd := p.CreateFlowData()
+	fd.AddEvidence("query.month", "march")
+	if got := SuppliedEvidence(fd); len(got) != 1 || got["query.month"] != "march" {
+		t.Errorf("before processing, supplied = %v", got)
+	}
+	if err := fd.Process(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := SuppliedEvidence(fd)
+	if len(got) != 1 || got["query.month"] != "march" {
+		t.Errorf("supplied = %v, want only query.month=march", got)
+	}
+	if v, _ := fd.Evidence().Get("query.month"); v != "april" {
+		t.Errorf("Evidence query.month = %v, want april", v)
+	}
+}
