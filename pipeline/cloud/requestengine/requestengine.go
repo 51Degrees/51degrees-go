@@ -167,7 +167,7 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 		return nil, &TemporarilyUnavailableError{RecoveryUntil: until}
 	}
 	if err := e.ensureMetadata(); err != nil {
-		e.recordFailure()
+		e.recordFailure(err)
 		return nil, err
 	}
 	e.recordSuccess()
@@ -187,14 +187,14 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 	// SuppressProcessExceptions rather than crashing at construction time. A
 	// metadata-fetch failure counts toward recovery, just like a data request.
 	if err := e.ensureMetadata(); err != nil {
-		e.recordFailure()
+		e.recordFailure(err)
 		e.storeFailed(fd)
 		return err
 	}
 
 	body, err := e.makeDataRequest(fd)
 	if err != nil {
-		e.recordFailure()
+		e.recordFailure(err)
 		e.storeFailed(fd)
 		return err
 	}
@@ -436,8 +436,10 @@ func (e *CloudRequestEngine) inRecovery() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func (e *CloudRequestEngine) recordFailure() {
-	if e.recoveryDuration <= 0 {
+// recordFailure counts a failed request toward the recovery period when it
+// says the cloud service is in trouble.
+func (e *CloudRequestEngine) recordFailure(err error) {
+	if e.recoveryDuration <= 0 || !signalsServiceTrouble(err) {
 		return
 	}
 	now := e.now()
@@ -456,6 +458,27 @@ func (e *CloudRequestEngine) recordFailure() {
 		e.consecutiveRecoveries++
 		e.recoveryUntil = now.Add(e.recoveryDurationFor(e.consecutiveRecoveries))
 		e.failureTimes = e.failureTimes[:0]
+	}
+}
+
+// signalsServiceTrouble reports whether a failed request says the cloud
+// service is in trouble, being a request that did not complete, a status of
+// 500 or more, a 429, or a success status whose body could not be used. Only
+// those count toward the recovery period, because the period stops every
+// visitor's requests, and any other status from 400 to 499 answers the
+// content of that one request.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+func signalsServiceTrouble(err error) bool {
+	var cloudErr *CloudRequestError
+	if !errors.As(err, &cloudErr) {
+		return true
+	}
+	status := cloudErr.StatusCode
+	switch {
+	case status == 0, status >= 500, status == http.StatusTooManyRequests:
+		return true
+	default:
+		return status >= 200 && status < 300
 	}
 }
 

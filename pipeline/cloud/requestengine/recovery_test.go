@@ -129,3 +129,32 @@ func TestServiceTroubleCountsTowardRecovery(t *testing.T) {
 		})
 	}
 }
+
+// The rule for which failures count, being every status the rule names and
+// the edges of the 400 to 499 range.
+func TestSignalsServiceTrouble(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"no response", NewCloudRequestError("refused", errors.New("dial")), true},
+		{"request not made", errors.New("bad endpoint"), true},
+		{"200 body not usable", NewCloudResponseError("not JSON", 200, nil), true},
+		{"204", NewCloudResponseError("no data", 204, nil), true},
+		{"304", NewCloudResponseError("not modified", 304, nil), false},
+		{"400", NewCloudResponseError("bad request", 400, nil), false},
+		{"401", NewCloudResponseError("unknown key", 401, nil), false},
+		{"403", NewCloudResponseError("forbidden", 403, nil), false},
+		{"408", NewCloudResponseError("request timeout", 408, nil), false},
+		{"429", NewCloudResponseError("slow down", 429, nil), true},
+		{"499", NewCloudResponseError("closed", 499, nil), false},
+		{"500", NewCloudResponseError("failed", 500, nil), true},
+		{"503", NewCloudResponseError("unavailable", 503, nil), true},
+	}
+	for _, c := range cases {
+		if got := signalsServiceTrouble(c.err); got != c.want {
+			t.Errorf("%s: signalsServiceTrouble = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
