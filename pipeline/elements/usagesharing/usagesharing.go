@@ -38,6 +38,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -316,9 +317,9 @@ func (e *Element) consume() {
 }
 
 // takeMessage takes the entries for one message, waiting up to the take
-// timeout for each one, until a wait ends with no entry or the message holds
-// twice the minimum entries per message. With a take timeout of zero it
-// takes only the entries already queued.
+// timeout for each one, until a wait ends with no entry, the message holds
+// twice the minimum entries per message or the element is closed. With a take
+// timeout of zero it takes only the entries already queued.
 func (e *Element) takeMessage() []*record {
 	limit := 2 * e.minimum()
 	batch := make([]*record, 0, limit)
@@ -338,6 +339,11 @@ func (e *Element) takeMessage() []*record {
 			timer.Stop()
 			batch = append(batch, rec)
 		case <-timer.C:
+			return batch
+		case <-e.stop:
+			// The element is closing, so the entries taken are sent now
+			// rather than after a take timeout.
+			timer.Stop()
 			return batch
 		}
 	}
@@ -371,7 +377,9 @@ func (e *Element) finish(b *backOff) {
 
 // send sends one message and reports whether it succeeded. It fails when the
 // request cannot be made, has no answer within the HTTP client's timeout or
-// is answered with anything other than 200.
+// is answered with anything other than 200, whose status code and content are
+// logged.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#request-detail
 func (e *Element) send(batch []*record) bool {
 	xmlBytes, err := e.buildXML(batch)
 	if err != nil {
@@ -402,11 +410,17 @@ func (e *Element) send(batch []*record) bool {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		e.Logger().Warn("usage sharing: unexpected response", "status", resp.StatusCode)
+		content, _ := io.ReadAll(io.LimitReader(resp.Body, maxLoggedResponseBytes))
+		e.Logger().Warn("usage sharing: the service refused the message",
+			"status", resp.StatusCode, "content", string(content))
 		return false
 	}
 	return true
 }
+
+// maxLoggedResponseBytes limits how much of a refused message's response is
+// read for the log.
+const maxLoggedResponseBytes = 64 << 10
 
 // Close sends any remaining data, unless sending is paused, then stops the
 // background goroutine.
