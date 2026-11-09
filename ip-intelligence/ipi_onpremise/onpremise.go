@@ -1,3 +1,8 @@
+// Package ipi_onpremise is the on-premise IP Intelligence and IP geolocation
+// engine for Go. It reads a 51Degrees IP Intelligence data file on your server
+// to find an IP address's likely location (country, region, town, and
+// coordinates), connection type, and network. An alternative to MaxMind and
+// IPinfo.
 package ipi_onpremise
 
 import (

@@ -4,6 +4,8 @@
 
 ## Introduction
 
+IP Intelligence and IP geolocation for Go. It finds an IP address's likely location (country, region, town, and coordinates), connection type, and network, by reading a data file on your server or using the 51Degrees cloud service. An alternative to MaxMind and IPinfo.
+
 This repository contains a Go implementation of the IP Intelligence engine.
 This module allows you to call functions for determining to set up with an IP Intelligence engine and begin using it to process IP addresses.
 

@@ -4,6 +4,8 @@
 
 ## Introduction
 
+Device Detection and User-Agent parser for Go. It detects the device type and model, browser, operating system, and crawlers from the User-Agent and User-Agent Client Hints, by reading a data file on your server. An alternative to UAParser.js, DeviceAtlas, and WURFL.
+
 This repository contains Go Lite implementation of device detection engine. This provides a light set of device detection features that allow Go users to try and evaluate the capability of 51Degrees device detection solution in Go.
 
 ## Supported platforms and architectures
