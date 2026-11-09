@@ -275,7 +275,7 @@ const failedCacheControl = "private, no-cache"
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#cache-header-detail
 func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, failed bool, contentType string, body []byte) {
 	etag := m.etag(fd)
-	matched := r.Header.Get("If-None-Match") == etag
+	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
 	// endpoints is permitted, and can read a 304 or 412. The literal "null"
 	// origin is not reflected.
@@ -311,6 +311,9 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 // changes. FNV-1a over the sorted keys and their values has no per-process
 // seed, so the same Evidence gives the same ETag in every process, as a
 // browser revalidating after a restart or against another server needs.
+// The ETag is weak, W/"...", because a data file update can change the
+// content for the same Evidence without changing the hash (RFC 9110 sections
+// 8.8.1 and 8.8.3).
 func (m *Middleware) etag(fd core.FlowData) string {
 	filter := m.pipeline.EvidenceKeyFilter()
 	all := fd.Evidence().AsMap()
@@ -328,7 +331,56 @@ func (m *Middleware) etag(fd core.FlowData) string {
 		h.Write([]byte(fmt.Sprintf("%v", all[k])))
 		h.Write([]byte{0x1e})
 	}
-	return fmt.Sprintf(`"%x"`, h.Sum64())
+	return fmt.Sprintf(`W/"%x"`, h.Sum64())
+}
+
+// ifNoneMatchMatches reports whether the If-None-Match field lines match
+// etag, with the weak comparison RFC 9110 section 13.1.2 requires. The field
+// is "*", which matches because the endpoints always have content, or a list
+// of entity tags, one of which matches when its quoted part equals etag's,
+// with or without W/ on either (section 8.8.3.2). Reading stops at the first
+// value that is not an entity tag.
+func ifNoneMatchMatches(lines []string, etag string) bool {
+	field := strings.TrimSpace(strings.Join(lines, ","))
+	if field == "*" {
+		return true
+	}
+	want := strings.TrimPrefix(etag, "W/")
+	for {
+		field = strings.TrimLeft(field, " \t,")
+		if field == "" {
+			return false
+		}
+		opaque, rest, ok := scanEntityTag(field)
+		if !ok {
+			return false
+		}
+		if opaque == want {
+			return true
+		}
+		field = rest
+	}
+}
+
+// scanEntityTag reads the entity tag at the start of s, as RFC 9110 section
+// 8.8.3 defines it, and returns its quoted part without W/ and the text after
+// it. ok is false when s does not start with an entity tag.
+func scanEntityTag(s string) (opaque, rest string, ok bool) {
+	s = strings.TrimPrefix(s, "W/")
+	if !strings.HasPrefix(s, `"`) {
+		return "", "", false
+	}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return s[:i+1], s[i+1:], true
+		case c == 0x21 || c >= 0x23 && c != 0x7f:
+			// etagc, a visible character other than '"', or obs-text.
+		default:
+			return "", "", false
+		}
+	}
+	return "", "", false
 }
 
 // varyHeader lists the HTTP headers in the Pipeline's Evidence key filter that
