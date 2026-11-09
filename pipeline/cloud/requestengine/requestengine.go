@@ -344,11 +344,10 @@ func (e *CloudRequestEngine) logWarnings(raw []byte) {
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#start-up-activity
 
 // discoverAtBuild makes both discovery requests in parallel, so the build
-// waits for one timeout at most. A 4xx answer to either, other than 408 or
-// 429, is a configuration error that no retry can fix, so it fails the build.
-// Any other failure, being the service unreachable, a timeout, a 5xx, 408 or
-// 429 answer or a body that cannot be read, is logged as a warning, and the
-// first use retries what is missing.
+// waits for one timeout at most. A 4xx answer to either is a configuration
+// error that no retry can fix, so it fails the build. Any other failure, being
+// the service unreachable, a timeout, a 5xx answer or a body that cannot be
+// read, is logged as a warning, and the first use retries what is missing.
 func (e *CloudRequestEngine) discoverAtBuild() error {
 	errs := make([]error, 2)
 	var wg sync.WaitGroup
@@ -371,19 +370,10 @@ func (e *CloudRequestEngine) discoverAtBuild() error {
 	return nil
 }
 
-// isDefinitive reports whether err is a 4xx answer from the cloud service
-// that a later retry cannot change. A 408 or 429 can succeed later, as RFC
-// 9110 section 15.5.9 and RFC 6585 section 4 say.
+// isDefinitive reports whether err is a 4xx answer from the cloud service.
 func isDefinitive(err error) bool {
 	var cre *CloudRequestError
-	if !errors.As(err, &cre) {
-		return false
-	}
-	switch cre.StatusCode {
-	case http.StatusRequestTimeout, http.StatusTooManyRequests:
-		return false
-	}
-	return cre.StatusCode >= 400 && cre.StatusCode < 500
+	return errors.As(err, &cre) && cre.StatusCode >= 400 && cre.StatusCode < 500
 }
 
 // retryDiscovery fetches whichever discovery result the build could not, and

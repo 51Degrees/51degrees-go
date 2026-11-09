@@ -156,10 +156,10 @@ func (b *Builder) DiscoveryState() *DiscoveryState { return b.discovered }
 
 // Build creates the CloudRequestEngine and fetches its accessible Properties
 // and accepted Evidence keys from the cloud service. A 4xx answer to either,
-// other than 408 or 429, such as for an invalid Resource Key, fails the build
-// with a *core.ConfigurationError wrapping the *CloudRequestError. Any other
-// failure is logged as a warning and the build completes, and the engine
-// fetches what is missing on first use.
+// such as for an invalid Resource Key, fails the build with a
+// *core.ConfigurationError wrapping the *CloudRequestError. Any other failure
+// is logged as a warning and the build completes, and the engine fetches what
+// is missing on first use.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (b *Builder) Build() (*CloudRequestEngine, error) {
 	b.discovered = nil
