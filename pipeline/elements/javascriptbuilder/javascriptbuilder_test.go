@@ -23,6 +23,8 @@
 package javascriptbuilder
 
 import (
+	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -312,4 +314,197 @@ func TestMustacheUnbalancedSection(t *testing.T) {
 	if got := tmpl.render(map[string]any{"on": true}); got != "a" {
 		t.Fatalf("unbalanced section: %q", got)
 	}
+}
+
+// buildError returns the error from Factory and from building a pipeline that
+// holds an element built with the given object name.
+func buildError(name string) (factoryErr, pipelineErr error) {
+	_, factoryErr = Factory(map[string]any{"ObjectName": name}, nil)
+	p, pipelineErr := core.NewPipelineBuilder().
+		AddFlowElement(NewBuilder().SetObjectName(name).Build()).
+		Build()
+	if p != nil {
+		p.Close()
+	}
+	return factoryErr, pipelineErr
+}
+
+// A configured object name that is not valid, including an empty one, is
+// refused when the element is built. A valid name matches
+// ^[A-Za-z_$][A-Za-z0-9_$]*$ and is not a reserved word, including those
+// reserved in strict mode, nor Infinity, NaN, undefined or
+// fiftyoneDegreesManager.
+func TestObjectNameConfiguredNotValid(t *testing.T) {
+	for _, name := range []string{
+		"x y", "", " ", " fod", "fod ", "fod\n", "1fod", "a.b", "a-b",
+		"a'b", "é", "fod;alert(1)",
+		"await", "break", "case", "catch", "class", "const", "continue",
+		"debugger", "default", "delete", "do", "else", "enum", "export",
+		"extends", "false", "finally", "for", "function", "if", "import",
+		"in", "instanceof", "new", "null", "return", "super", "switch",
+		"this", "throw", "true", "try", "typeof", "var", "void", "while",
+		"with", "yield",
+		"implements", "interface", "let", "package", "private",
+		"protected", "public", "static",
+		"Infinity", "NaN", "undefined", "fiftyoneDegreesManager",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var ce *core.ConfigurationError
+			factoryErr, pipelineErr := buildError(name)
+			if !errors.As(factoryErr, &ce) {
+				t.Errorf("Factory gave %v, want a configuration error", factoryErr)
+			}
+			if !errors.As(pipelineErr, &ce) {
+				t.Errorf("pipeline build gave %v, want a configuration error",
+					pipelineErr)
+			}
+		})
+	}
+}
+
+// A valid configured object name is accepted and written into the script,
+// and fod is used when no name is configured.
+func TestObjectNameConfiguredValid(t *testing.T) {
+	for _, c := range []struct {
+		params map[string]any
+		want   string
+	}{
+		{map[string]any{}, "fod"},
+		{map[string]any{"ObjectName": "myObj"}, "myObj"},
+		{map[string]any{"ObjectName": "_"}, "_"},
+		{map[string]any{"ObjectName": "$"}, "$"},
+		{map[string]any{"ObjectName": "$fod_1"}, "$fod_1"},
+		{map[string]any{"ObjectName": "Let"}, "Let"},
+		{map[string]any{"ObjectName": "async"}, "async"},
+		{map[string]any{"ObjectName": "nan"}, "nan"},
+	} {
+		t.Run(c.want, func(t *testing.T) {
+			el, err := Factory(c.params, nil)
+			if err != nil {
+				t.Fatalf("Factory: %v", err)
+			}
+			js := renderElement(t, el.(*Element), nil)
+			line := grepLine(js, "new fiftyoneDegreesManager()")
+			if !strings.Contains(line, "var "+c.want+" = new") {
+				t.Errorf("object declaration %q, want the name %q", line, c.want)
+			}
+		})
+	}
+}
+
+// Step 3, a requested object name that is not a valid object name is
+// ignored in favour of the configured name.
+func TestObjectNameRequestedNotValid(t *testing.T) {
+	for _, name := range []string{
+		"x y", "class", "let", "null", "NaN", "Infinity", "undefined",
+		"fiftyoneDegreesManager",
+	} {
+		t.Run(name, func(t *testing.T) {
+			js := renderElement(t, NewBuilder().SetObjectName("configured").Build(),
+				map[string]string{"query.fod-js-object-name": name})
+			line := grepLine(js, "new fiftyoneDegreesManager()")
+			if !strings.Contains(line, "var configured = new") {
+				t.Errorf("object declaration %q, want the configured name", line)
+			}
+		})
+	}
+}
+
+// Step 5, with no Sequence Element the script carries the sequence 1 and an
+// empty session id.
+func TestSequenceWithoutSequenceElement(t *testing.T) {
+	p, err := core.NewPipelineBuilder().
+		AddFlowElement(NewBuilder().SetEndpoint(DefaultEndpoint).Build()).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence("header.host", "example.com")
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, err := fd.Get(DataKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	js := data.(*Data).JavaScript()
+	if line := grepLine(js, "var sequence ="); !strings.Contains(line, "var sequence = 1;") {
+		t.Errorf("sequence line %q, want var sequence = 1;", line)
+	}
+	if line := grepLine(js, "var sessionId ="); !strings.Contains(line, `var sessionId = "";`) {
+		t.Errorf("session id line %q, want an empty session id", line)
+	}
+}
+
+// The endpoint is empty unless one is set, as the configuration options say,
+// so the script has no callback and nothing is logged. DefaultEndpoint can
+// be passed to SetEndpoint.
+func TestEndpointDefault(t *testing.T) {
+	evidence := map[string]string{
+		"header.protocol": "https",
+		"header.host":     "example.com",
+	}
+	if DefaultEndpoint != "/51dpipeline/json" {
+		t.Errorf("DefaultEndpoint is %q", DefaultEndpoint)
+	}
+	t.Run("NewBuilder", func(t *testing.T) {
+		h := &recordingHandler{}
+		e := NewBuilder().SetLogger(slog.New(h)).Build()
+		if got := scriptURL(t, e, evidence); got != "" {
+			t.Errorf("gave %q, want no callback", got)
+		}
+		if n := len(h.records()); n != 0 {
+			t.Errorf("logged %d records, want none: %q", n, h.records())
+		}
+	})
+	t.Run("New", func(t *testing.T) {
+		if got := scriptURL(t, New(nil), evidence); got != "" {
+			t.Errorf("gave %q, want no callback", got)
+		}
+	})
+	t.Run("Factory", func(t *testing.T) {
+		el, err := Factory(map[string]any{}, nil)
+		if err != nil {
+			t.Fatalf("Factory: %v", err)
+		}
+		if got := scriptURL(t, el.(*Element), evidence); got != "" {
+			t.Errorf("gave %q, want no callback", got)
+		}
+	})
+	t.Run("SetEndpoint(DefaultEndpoint)", func(t *testing.T) {
+		e := NewBuilder().SetEndpoint(DefaultEndpoint).Build()
+		want := "https://example.com/51dpipeline/json"
+		if got := scriptURL(t, e, evidence); got != want {
+			t.Errorf("gave %q, want %q", got, want)
+		}
+	})
+}
+
+// renderElement processes the evidence in a pipeline holding the sequence
+// element, the JSON builder and the element, and returns the script.
+func renderElement(t *testing.T, e *Element, evidence map[string]string) string {
+	t.Helper()
+	p, err := core.NewPipelineBuilder().
+		AddFlowElement(sequence.New(nil)).
+		AddFlowElement(jsonbuilder.New(nil, nil)).
+		AddFlowElement(e).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	for k, v := range evidence {
+		fd.AddEvidence(k, v)
+	}
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, err := fd.Get(DataKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	return data.(*Data).JavaScript()
 }

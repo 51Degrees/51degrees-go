@@ -367,8 +367,8 @@ func TestCallbackURLLogged(t *testing.T) {
 	t.Run("once per element", func(t *testing.T) {
 		h := &recordingHandler{}
 		logger := slog.New(h)
-		first := NewBuilder().SetLogger(logger).Build()
-		second := NewBuilder().SetLogger(logger).Build()
+		first := NewBuilder().SetLogger(logger).SetEndpoint(testEndpoint).Build()
+		second := NewBuilder().SetLogger(logger).SetEndpoint(testEndpoint).Build()
 		for _, host := range []string{"a b", "example.123", "u@example.com"} {
 			for _, e := range []*Element{first, second} {
 				scriptURL(t, e, map[string]string{
@@ -386,7 +386,8 @@ func TestCallbackURLLogged(t *testing.T) {
 			"exa\u2029mple.com", "exa\u0085mple.com",
 		} {
 			h := &recordingHandler{}
-			scriptURL(t, NewBuilder().SetLogger(slog.New(h)).Build(),
+			scriptURL(t, NewBuilder().SetLogger(slog.New(h)).
+				SetEndpoint(testEndpoint).Build(),
 				map[string]string{"header.protocol": "https", "header.host": host})
 			records := h.records()
 			if len(records) != 1 {
@@ -400,7 +401,8 @@ func TestCallbackURLLogged(t *testing.T) {
 
 	t.Run("not when valid", func(t *testing.T) {
 		h := &recordingHandler{}
-		scriptURL(t, NewBuilder().SetLogger(slog.New(h)).Build(),
+		scriptURL(t, NewBuilder().SetLogger(slog.New(h)).
+			SetEndpoint(testEndpoint).Build(),
 			map[string]string{"header.protocol": "https", "header.host": "example.com"})
 		if n := len(h.records()); n != 0 {
 			t.Errorf("logged %d records, want none: %q", n, h.records())
