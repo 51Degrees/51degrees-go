@@ -30,9 +30,11 @@ package jsonbuilder
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
@@ -94,7 +96,8 @@ func (d *Data) JSON() string {
 }
 
 // Process builds the JSON representation of the Flow Data. It fails and sets
-// no JSON when no Sequence Element has given a sequence number.
+// no JSON when the query.sequence Evidence holds no integer, which means no
+// Sequence Element has run before it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
 func (e *Element) Process(fd core.FlowData) error {
 	seq, ok := sequenceNumber(fd)
@@ -272,17 +275,37 @@ func delayedEvidenceProperties(pm core.PropertyMetadata, elementKey string, meta
 	return out
 }
 
-// sequenceNumber returns the sequence number in the Sequence Element's data,
-// and false when no Sequence Element has given one.
+// sequenceNumber returns the integer in the query.sequence Evidence, which
+// the Sequence Element writes, and false when that holds no integer. Text,
+// such as a query string gives, is the Sequence Element's input rather than
+// a sequence number, so it does not count.
 func sequenceNumber(fd core.FlowData) (int, bool) {
-	data, err := fd.Get("sequence")
-	if err != nil {
+	raw, ok := fd.Evidence().Get(sequence.EvidenceSequence)
+	if !ok {
 		return 0, false
 	}
-	v, err := data.Get("sequence")
-	if err != nil {
+	switch n := raw.(type) {
+	case int:
+		return n, true
+	case int8:
+		return int(n), true
+	case int16:
+		return int(n), true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), int64(int(n)) == n
+	case uint8:
+		return int(n), true
+	case uint16:
+		return int(n), true
+	case uint32:
+		return int(n), int64(int(n)) == int64(n)
+	case uint:
+		return int(n), n <= math.MaxInt
+	case uint64:
+		return int(n), n <= math.MaxInt
+	default:
 		return 0, false
 	}
-	n, ok := v.(int)
-	return n, ok
 }
