@@ -23,13 +23,19 @@
 package aspectengine
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // TestResponseJSONDistinguishesFailure verifies that when the cloud request ran
@@ -158,5 +164,165 @@ func TestMissingCloudResponse(t *testing.T) {
 	_ = fd.Process()
 	if _, err := ParseAspect(fd, "device"); err == nil {
 		t.Fatal("expected error when cloud response is missing")
+	}
+}
+
+// recordingHandler keeps every log record made through it.
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+func (h *recordingHandler) all() []slog.Record {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]slog.Record(nil), h.records...)
+}
+
+// sectionEngine is a Cloud Aspect Engine that copies its section of the
+// cloud response into its Element Data, as the IP Intelligence cloud engine
+// does.
+type sectionEngine struct {
+	*BaseCloudAspectEngine
+}
+
+func (e *sectionEngine) Process(fd core.FlowData) error {
+	aspect, err := ParseAspect(fd, e.DataKey())
+	if err != nil {
+		return err
+	}
+	data := engines.NewBaseAspectData()
+	for name := range aspect {
+		data.Set(name, PropertyValue[json.RawMessage](aspect, name))
+	}
+	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData {
+		return data
+	})
+	return nil
+}
+
+// buildWithLogger builds a Pipeline of a Cloud Request Engine against the
+// stand-in cloud and a sectionEngine for aspectKey, all logging to log.
+func buildWithLogger(t *testing.T, cloud http.Handler, aspectKey string,
+	suppress bool, log *slog.Logger) (core.Pipeline, *sectionEngine) {
+	t.Helper()
+	srv := httptest.NewServer(cloud)
+	t.Cleanup(srv.Close)
+	re, err := requestengine.NewBuilder().
+		SetResourceKey("k").
+		SetEndpoint(srv.URL + "/").
+		SetHTTPClient(srv.Client()).
+		SetLogger(log).
+		Build()
+	if err != nil {
+		t.Fatalf("build the request engine: %v", err)
+	}
+	engine := &sectionEngine{NewBaseCloudAspectEngine(aspectKey, log)}
+	p, err := core.NewPipelineBuilder().
+		SetLogger(log).
+		SetSuppressProcessExceptions(suppress).
+		AddFlowElement(re).
+		AddFlowElement(engine).
+		Build()
+	if err != nil {
+		t.Fatalf("build the Pipeline: %v", err)
+	}
+	t.Cleanup(func() { p.Close() })
+	return p, engine
+}
+
+// A Resource Key that includes no product for a Cloud Aspect Engine fails
+// neither the Pipeline build nor any request. The engine has no Property
+// metadata and logs the missing product once, with nothing logged on each
+// request. Its Element Data is empty, so reading a Property gives the error
+// that reading any Property the response does not carry gives. Each case
+// builds a new engine, which logs once of its own.
+func TestMissingProductBuildsAndLogsOnce(t *testing.T) {
+	const missing = "location" // fakeCloud's key includes only "device"
+	for _, suppress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("suppress=%v", suppress), func(t *testing.T) {
+			log := &recordingHandler{}
+			p, engine := buildWithLogger(t, fakeCloud(), missing, suppress,
+				slog.New(log))
+			if n := len(engine.Properties()); n != 0 {
+				t.Errorf("the engine has %d Properties, want none", n)
+			}
+			_, absent := engines.NewBaseAspectData().Get("town")
+			for i := 1; i <= 3; i++ {
+				fd := p.CreateFlowData()
+				fd.AddEvidence("header.user-agent", "ua")
+				if err := fd.Process(); err != nil {
+					t.Fatalf("request %d: %v", i, err)
+				}
+				if errs := fd.Errors(); len(errs) != 0 {
+					t.Fatalf("request %d recorded errors: %v", i, errs)
+				}
+				data, err := fd.Get(missing)
+				if err != nil {
+					t.Fatalf("request %d has no Element Data: %v", i, err)
+				}
+				if values := data.AsMap(); len(values) != 0 {
+					t.Errorf("request %d has the values %v, want none", i,
+						values)
+				}
+				_, err = data.Get("town")
+				if err == nil || err.Error() != absent.Error() {
+					t.Errorf("reading town gives %v, want %v", err, absent)
+				}
+			}
+			records := log.all()
+			if len(records) != 1 {
+				for _, r := range records {
+					t.Logf("%s %s", r.Level, r.Message)
+				}
+				t.Fatalf("logged %d times over 3 requests, want once",
+					len(records))
+			}
+			product := ""
+			records[0].Attrs(func(a slog.Attr) bool {
+				if a.Key == "product" {
+					product = a.Value.String()
+				}
+				return true
+			})
+			if product != missing {
+				t.Errorf("the log names the product %q, want %q", product,
+					missing)
+			}
+		})
+	}
+}
+
+// A response with no section for a product the Resource Key includes is
+// still an error, and is not logged as a missing product.
+func TestAbsentSectionOfIncludedProductIsAnError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/accessibleproperties", fakeCloud())
+	mux.Handle("/evidencekeys", fakeCloud())
+	mux.HandleFunc("/json", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"other":{}}`))
+	})
+	log := &recordingHandler{}
+	p, _ := buildWithLogger(t, mux, "device", false, slog.New(log))
+	fd := p.CreateFlowData()
+	fd.AddEvidence("header.user-agent", "ua")
+	if err := fd.Process(); err == nil {
+		t.Fatal("a response with no section for an included product " +
+			"gives no error")
+	}
+	if records := log.all(); len(records) != 0 {
+		t.Errorf("logged %q, want nothing", records[0].Message)
 	}
 }
