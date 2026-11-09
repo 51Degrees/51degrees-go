@@ -30,11 +30,15 @@ package aspectengine
 import (
 	"encoding/json"
 	"log/slog"
+	"sync"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
+
+// configuratorURL is where a Resource Key with the products needed is made.
+const configuratorURL = "https://configure.51degrees.com/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-aspectengine-aspectengine.go&utm_term=missing-product"
 
 // BaseCloudAspectEngine supplies the shared behavior for Cloud Aspect Engines.
 // Concrete engines embed it, set their data key and properties, and implement
@@ -45,6 +49,23 @@ import (
 // Request Engine instead.
 type BaseCloudAspectEngine struct {
 	*engines.BaseAspectEngine
+	missingProductLogged sync.Once
+}
+
+// productLogger is a Cloud Aspect Engine built on BaseCloudAspectEngine, so
+// ParseAspect can find the engine in the Pipeline and log through it.
+type productLogger interface {
+	logMissingProduct()
+}
+
+// logMissingProduct logs, once for this engine, that the Resource Key
+// includes no product for it.
+func (e *BaseCloudAspectEngine) logMissingProduct() {
+	e.missingProductLogged.Do(func() {
+		e.Logger().Error("the Resource Key includes no product for this "+
+			"Cloud Aspect Engine, so it gives no Properties",
+			"product", e.DataKey(), "configurator", configuratorURL)
+	})
 }
 
 // NewBaseCloudAspectEngine creates a Cloud Aspect Engine base with the given
@@ -83,6 +104,12 @@ func ResponseJSON(fd core.FlowData) (string, error) {
 // ParseAspect parses the cloud response and returns the JSON object for the
 // given Aspect (for example "device"), as a map of raw JSON values keyed by
 // Property name.
+//
+// When the Resource Key includes no product for the Aspect, the response has
+// no section for it. That is not an error, so ParseAspect returns an empty
+// map, and the engine built on BaseCloudAspectEngine whose data key is
+// aspectKey logs the missing product once.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage, error) {
 	raw, err := ResponseJSON(fd)
 	if err != nil {
@@ -94,6 +121,12 @@ func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage
 	}
 	section, ok := doc[aspectKey]
 	if !ok {
+		if productMissing(fd, aspectKey) {
+			if e, ok := fd.Pipeline().GetElement(aspectKey).(productLogger); ok {
+				e.logMissingProduct()
+			}
+			return map[string]json.RawMessage{}, nil
+		}
 		return nil, core.NewDataError("cloud response does not contain aspect '" + aspectKey + "'")
 	}
 	var aspect map[string]json.RawMessage
@@ -101,6 +134,22 @@ func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage
 		return nil, requestengine.NewCloudRequestError("could not parse aspect '"+aspectKey+"' from cloud response", err)
 	}
 	return aspect, nil
+}
+
+// productMissing reports whether the Resource Key includes no product for
+// aspectKey, from the product list the Cloud Request Engine has fetched. It
+// is false when the list cannot be read.
+func productMissing(fd core.FlowData, aspectKey string) bool {
+	cre, ok := fd.Pipeline().GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
+	if !ok {
+		return false
+	}
+	products, err := cre.PublicProperties()
+	if err != nil {
+		return false
+	}
+	_, ok = products[aspectKey]
+	return !ok
 }
 
 // PropertyValue extracts a single Property from a parsed Aspect object as an
