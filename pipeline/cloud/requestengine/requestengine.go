@@ -171,6 +171,16 @@ type CloudRequestEngine struct {
 	now func() time.Time // injectable clock for testing
 }
 
+// KnownPublicProperties returns the accessible Properties, keyed by product,
+// and true once they are known, making no request. It returns false after a
+// transient failure at build time until a use has fetched them.
+func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bool) {
+	if p := e.products.Load(); p != nil {
+		return *p, true
+	}
+	return nil, false
+}
+
 // PublicProperties returns the accessible Properties, keyed by product, which
 // are normally fetched when the engine is built. After a transient failure
 // then, a call fetches them unless the engine is in its recovery period, so
