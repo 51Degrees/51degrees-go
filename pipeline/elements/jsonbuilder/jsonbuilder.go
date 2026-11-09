@@ -30,6 +30,7 @@ package jsonbuilder
 import (
 	"encoding/json"
 	"log/slog"
+	"reflect"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -123,14 +124,12 @@ func (e *Element) Process(fd core.FlowData) error {
 				}
 			}
 
-			// A raw (non-AspectPropertyValue) nil is omitted entirely. A
-			// no-value AspectPropertyValue still emits the name plus its
-			// nullreason below.
-			if raw == nil {
+			// A value that is nil has no entry, while one assigned no value
+			// is written as null with its nullreason below.
+			value, isNull, nullReason, ok := normalizeValue(raw)
+			if !ok {
 				continue
 			}
-
-			value, isNull, nullReason := normalizeValue(raw)
 			if isNull {
 				obj[propName] = nil
 				obj[propName+"nullreason"] = nullReason
@@ -199,44 +198,62 @@ func buildMetaIndex(props []core.PropertyMetadata) map[string]core.PropertyMetad
 	return index
 }
 
-// normalizeValue unwraps AspectPropertyValue values, returning the underlying
-// value, whether it is a "no value", and the no-value message.
-func normalizeValue(raw any) (value any, isNull bool, nullReason string) {
-	if raw == nil {
-		return nil, true, "This property has no value."
-	}
-	if apv, ok := raw.(engines.PropertyValueAccessor); ok {
+// normalizeValue unwraps AspectPropertyValue values. It returns the value to
+// write, or isNull and the message for a Property assigned no value, and ok
+// false for a value that is nil, which has no entry and no nullreason.
+func normalizeValue(raw any) (value any, isNull bool, nullReason string, ok bool) {
+	if apv, isAPV := raw.(engines.PropertyValueAccessor); isAPV {
 		if !apv.HasValue() {
-			return nil, true, apv.NoValueMessage()
+			return nil, true, apv.NoValueMessage(), true
 		}
 		raw = apv.AsInterface()
 	}
+	if isNil(raw) {
+		return nil, false, "", false
+	}
 	// A list of sub-element data (e.g. multiple device profiles) is recursed so
 	// each nested object carries its own properties and no-value reasons.
-	if list, ok := raw.([]core.ElementData); ok {
+	if list, isList := raw.([]core.ElementData); isList {
 		out := make([]map[string]any, len(list))
 		for i, d := range list {
 			out[i] = normalizeElementData(d)
 		}
-		return out, false, ""
+		return out, false, "", true
 	}
-	return raw, false, ""
+	return raw, false, "", true
 }
 
-// normalizeElementData builds the JSON object for a nested Element Data,
-// emitting a nullreason for any no-value property and recursing further.
+// isNil reports whether v is nil, or a nil pointer, slice, map, channel,
+// function or interface, which JSON would write as null.
+func isNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch r := reflect.ValueOf(v); r.Kind() {
+	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Chan,
+		reflect.Func, reflect.Interface:
+		return r.IsNil()
+	default:
+		return false
+	}
+}
+
+// normalizeElementData builds the JSON object for a record, being a nested
+// Element Data, by the same rules as a top-level entry, its keys in lower
+// case.
 func normalizeElementData(d core.ElementData) map[string]any {
 	obj := map[string]any{}
 	for name, raw := range d.AsMap() {
-		if raw == nil {
+		value, isNull, nullReason, ok := normalizeValue(raw)
+		if !ok {
 			continue
 		}
-		value, isNull, nullReason := normalizeValue(raw)
+		key := strings.ToLower(name)
 		if isNull {
-			obj[name] = nil
-			obj[name+"nullreason"] = nullReason
+			obj[key] = nil
+			obj[key+"nullreason"] = nullReason
 		} else {
-			obj[name] = value
+			obj[key] = value
 		}
 	}
 	return obj
