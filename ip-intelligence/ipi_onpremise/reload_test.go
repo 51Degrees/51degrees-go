@@ -32,9 +32,6 @@ const (
 	reloadTestAddress    = "1.1.1.1"
 )
 
-// applyErrorLogged starts the message logged when a data file cannot be loaded.
-const applyErrorLogged = "An error occurred while applying a data file update to IpIntelligenceEngine"
-
 // unusableFile is a data file that a load must refuse, with part of the
 // message the refusal gives.
 type unusableFile struct {
@@ -303,7 +300,7 @@ func TestReloadFailureWhilePulling(t *testing.T) {
 				WithRandomization(0),
 				WithFileWatch(false),
 				WithCustomLogger(logs))
-			checkReloadFailure(t, e, logs, applyErrorLogged,
+			checkReloadFailure(t, e, logs, "failed to reload pulled data file",
 				bad, server.publish, good, before)
 		})
 	}
@@ -329,7 +326,7 @@ func TestReloadFailureWhileWatching(t *testing.T) {
 						WithCustomLogger(logs))
 					drop := func(content []byte) { replaceFile(t, data, content) }
 					checkReloadFailure(t, e, logs,
-						applyErrorLogged,
+						"failed to handle file externally changed",
 						bad, drop, good, before)
 				})
 		}

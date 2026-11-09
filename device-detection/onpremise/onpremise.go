@@ -47,9 +47,6 @@ type Engine struct {
 
 const (
 	defaultDataFileUrl = "https://distributor.51degrees.com/api/v2/download?Type=HashV41&Download=True&Product=V4TAC"
-
-	// engineTypeName names the engine in the data update log messages.
-	engineTypeName = "DeviceDetectionHashEngine"
 )
 
 // New creates an instance of the on-premise device detection engine.  WithDataFile must be provided
@@ -68,10 +65,6 @@ func New(opts ...EngineOptions) (*Engine, error) {
 		managerProperties: "",
 	}
 
-	fileUpdater.SetEngineName(engineTypeName)
-	fileUpdater.SetPublishedDateFunc(engine.publishedDate)
-	fileUpdater.SetNextUpdateFunc(engine.nextUpdateDate)
-
 	for _, opt := range opts {
 		err := opt(engine)
 		if err != nil {
@@ -82,10 +75,6 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 	if !engine.IsDataFileProvided() {
 		return nil, common_go.ErrNoDataFileProvided
-	}
-
-	if err := engine.CheckDataFile(); err != nil {
-		return nil, err
 	}
 
 	if err := engine.InitCreateTempDataCopy(); err != nil {
@@ -120,8 +109,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 // handleFileExternallyChanged handles events where a file has been externally modified, ensuring proper processing and logging.
 func (e *Engine) handleFileExternallyChanged() {
 	if err := e.processFileExternallyChanged(); err != nil {
-		e.logger.Errorf("An error occurred while applying a data file update to %s. "+
-			"Error detail: %v", engineTypeName, err)
+		e.logger.Printf("failed to handle file externally changed: %v", err)
 	}
 
 	e.IncreaseFileExternallyChangedCount()
@@ -134,36 +122,12 @@ func (e *Engine) run() error {
 	e.reloadLoop.Add(1)
 	go e.reloadFileEvent()
 
-	// The update URL is completed first, as the update on start-up uses it
-	// and runs before the data file is loaded.
-	if err := e.validateAndAppendUrlParams(); err != nil {
+	if err := e.processFileExternallyChanged(); err != nil {
 		return err
 	}
 
-	// A data file that is already there is loaded first, so that the update
-	// asks for data newer than its published date, and is loaded again only if
-	// the update replaced it.
-	loaded := false
-	if e.IsUpdateOnStartEnabled() {
-		if e.HasLocalDataFile() {
-			if err := e.processFileExternallyChanged(); err != nil {
-				return err
-			}
-			loaded = true
-		}
-		downloaded, err := e.PullOnStart()
-		if err != nil {
-			return err
-		}
-		if downloaded {
-			loaded = false
-		}
-	}
-
-	if !loaded {
-		if err := e.processFileExternallyChanged(); err != nil {
-			return err
-		}
+	if err := e.validateAndAppendUrlParams(); err != nil {
+		return err
 	}
 
 	if e.IsAutoUpdateEnabled() {
@@ -236,20 +200,18 @@ func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
 		if err := e.processFileExternallyChanged(); err != nil {
-			e.logger.Errorf("An error occurred while applying a data file update to %s. "+
-				"Error detail: %v", engineTypeName, err)
+			e.logger.Printf("failed to reload pulled data file: %v", err)
 		}
 	}
 }
 
 // validateAndAppendUrlParams validates and appends necessary URL parameters based on the engine's configuration and state.
 func (e *Engine) validateAndAppendUrlParams() error {
-	downloads := e.IsAutoUpdateEnabled() || e.IsUpdateOnStartEnabled()
-	if e.isDefaultDataFileUrl() && !e.hasDefaultDistributorParams() && downloads {
+	if e.isDefaultDataFileUrl() && !e.hasDefaultDistributorParams() && e.IsAutoUpdateEnabled() {
 		return common_go.ErrLicenseKeyRequired
 	}
 
-	if e.isDefaultDataFileUrl() && downloads {
+	if e.isDefaultDataFileUrl() && e.IsAutoUpdateEnabled() {
 		if err := e.appendLicenceKey(); err != nil {
 			return err
 		}
@@ -335,7 +297,6 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		// return nil is created for the first time
 		return nil
 	} else if !e.IsCreateTempDataCopyEnabled() {
-		e.logger.Infof("Attempting to refresh Engine '%s' with new data", engineTypeName)
 		err = e.manager.ReloadFromOriginalFile()
 		if err != nil {
 			return fmt.Errorf("failed to reload manager from original file: %w", err)
@@ -343,7 +304,6 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		return nil
 	}
 
-	e.logger.Infof("Attempting to refresh Engine '%s' with new data", engineTypeName)
 	err = e.manager.ReloadFromFile(filePath)
 	if err != nil {
 		// The data set in use is kept, so the copy made for this reload is
@@ -370,24 +330,6 @@ func (e *Engine) removeCopy(path string) {
 // getPublishedDate retrieves the published date of the data file used by the engine.
 func (e *Engine) getPublishedDate() time.Time {
 	return dd.GetPublishedDate(e.manager)
-}
-
-// publishedDate is the published date of the loaded data file, or the zero
-// time before a data file is loaded.
-func (e *Engine) publishedDate() time.Time {
-	if e.manager == nil {
-		return time.Time{}
-	}
-	return e.getPublishedDate()
-}
-
-// nextUpdateDate is the date the loaded data file expects an update after, or
-// the zero time before a data file is loaded.
-func (e *Engine) nextUpdateDate() time.Time {
-	if e.manager == nil {
-		return time.Time{}
-	}
-	return dd.GetNextUpdateDate(e.manager)
 }
 
 // Create a new raw ResultsHash object.

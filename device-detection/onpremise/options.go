@@ -13,11 +13,16 @@ import (
 
 type EngineOptions func(cfg *Engine) error
 
-// WithDataFile sets the path to the local data file, this parameter is required to start the engine.
-// The file must exist unless WithUpdateOnStart is enabled, which downloads it before the engine loads it.
+// WithDataFile sets the path to the local data file, this parameter is required to start the engine
 func WithDataFile(path string) EngineOptions {
 	return func(cfg *Engine) error {
-		cfg.SetDataFile(filepath.Join(path))
+		path := filepath.Join(path)
+		_, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("failed to get file path: %w", err)
+		}
+
+		cfg.SetDataFile(path)
 		return nil
 	}
 }
