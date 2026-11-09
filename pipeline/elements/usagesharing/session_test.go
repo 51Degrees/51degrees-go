@@ -84,13 +84,40 @@ func shareSession(t *testing.T, p core.Pipeline, evidence, request string) {
 	}
 }
 
-// settle waits long enough for any further message to arrive, and checks
-// that the capture holds want messages.
+// entryWaitSeconds is how long waitForEntries waits for entries to be shared.
+const entryWaitSeconds = 2
+
+// sharedEntries returns the number of entries in all the messages captured,
+// because one message can hold several entries.
+func sharedEntries(c *capture) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, body := range c.bodies {
+		n += strings.Count(string(body), "<Device>")
+	}
+	return n
+}
+
+// waitForEntries waits for the capture to hold at least want entries.
+func waitForEntries(t *testing.T, c *capture, want int) {
+	t.Helper()
+	deadline := time.Now().Add(entryWaitSeconds * time.Second)
+	for sharedEntries(c) < want && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := sharedEntries(c); got < want {
+		t.Fatalf("timed out waiting for %d entries (got %d)", want, got)
+	}
+}
+
+// settle waits long enough for any further entry to arrive, and checks that
+// the capture holds want entries.
 func settle(t *testing.T, c *capture, want int) {
 	t.Helper()
 	time.Sleep(400 * time.Millisecond)
-	if got := c.count(); got != want {
-		t.Errorf("shared %d messages, want %d", got, want)
+	if got := sharedEntries(c); got != want {
+		t.Errorf("shared %d entries, want %d", got, want)
 	}
 }
 
@@ -103,7 +130,7 @@ func TestTrackSessionSharesRepeatFromNewSession(t *testing.T) {
 	shareSession(t, p, "A", "")
 	shareSession(t, p, "A", "")
 	shareSession(t, p, "B", "")
-	c.waitFor(t, 2)
+	waitForEntries(t, c, 2)
 	settle(t, c, 2)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -122,7 +149,7 @@ func TestSessionCookieFromEvidenceAndWebRequest(t *testing.T) {
 	shareSession(t, p, "C", "A") // session C, from the Evidence
 	shareSession(t, p, "", "C")  // session C again, from the web request
 	shareSession(t, p, "", "D")  // a new session, from the web request
-	c.waitFor(t, 2)
+	waitForEntries(t, c, 2)
 	settle(t, c, 2)
 }
 
@@ -132,7 +159,7 @@ func TestTrackSessionOffComparesNoCookie(t *testing.T) {
 	p, c := sessionPipeline(t, map[string]any{"SessionCookieName": "sessionid"})
 	shareSession(t, p, "A", "")
 	shareSession(t, p, "B", "")
-	c.waitFor(t, 1)
+	waitForEntries(t, c, 1)
 	settle(t, c, 1)
 }
 
