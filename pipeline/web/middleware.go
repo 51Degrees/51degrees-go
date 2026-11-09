@@ -309,9 +309,10 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 // etag computes a hash over the Evidence values that the Pipeline's filter
 // accepts, as the request supplied them, so that the cached content is
 // revalidated when relevant Evidence changes. Values that Flow Elements add
-// while processing, such as a new session id, are left out. FNV-1a over the sorted keys and their values has no per-process
-// seed, so the same Evidence gives the same ETag in every process, as a
-// browser revalidating after a restart or against another server needs.
+// while processing, such as a new session id, are left out. FNV-1a over the
+// sorted keys and their values has no per-process seed, so the same Evidence
+// gives the same ETag in every process, as a browser revalidating after a
+// restart or against another server needs.
 func (m *Middleware) etag(fd core.FlowData) string {
 	filter := m.pipeline.EvidenceKeyFilter()
 	all := core.SuppliedEvidence(fd)
