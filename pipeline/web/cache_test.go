@@ -376,8 +376,9 @@ func TestETagIsWeak(t *testing.T) {
 // If-None-Match is compared with the weak comparison function (RFC 9110
 // sections 13.1.2 and 8.8.3.2), so the quoted parts are compared whether
 // or not either tag carries W/. The field may list several tags, over one
-// or more header lines, or be "*". A match gets 304 to a GET and 412 to a
-// POST, as for an exact match.
+// or more header lines, or be "*". A field that is neither "*" nor a comma
+// separated list of entity tags does not match (section 13.1.2, step 3). A
+// match gets 304 to a GET and 412 to a POST, as for an exact match.
 func TestIfNoneMatchUsesWeakComparison(t *testing.T) {
 	srv, _ := newFailingServer(t)
 	etag := fetch(t, srv, http.MethodGet, DefaultJSONURL, "").Header.Get("ETag")
@@ -400,6 +401,12 @@ func TestIfNoneMatchUsesWeakComparison(t *testing.T) {
 		{"other tags", []string{`"other", W/"another"`}, false},
 		{"lower case weak prefix", []string{"w/" + opaque}, false},
 		{"unquoted", []string{strings.Trim(opaque, `"`)}, false},
+		{"tag then a value that is not a tag", []string{"W/" + opaque + ", other"}, false},
+		{"two tags with no comma", []string{`"other" W/` + opaque}, false},
+		{"a value that is not a tag, then the tag", []string{"other, W/" + opaque}, false},
+		{"space inside the quotes", []string{`"oth er", W/` + opaque}, false},
+		{"star in a list", []string{`"other", *`}, false},
+		{"list with a tab", []string{"\"other\",\tW/" + opaque}, true},
 	}
 	for _, tc := range cases {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
