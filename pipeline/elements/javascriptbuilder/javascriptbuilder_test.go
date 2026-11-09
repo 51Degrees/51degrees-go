@@ -354,7 +354,9 @@ func TestObjectNameConfiguredNotValid(t *testing.T) {
 		"frameElement", "isSecureContext", "crossOriginIsolated",
 		"trustedTypes", "crypto", "indexedDB", "localStorage",
 		"sessionStorage", "caches", "cookieStore", "speechSynthesis",
-		"styleMedia",
+		"styleMedia", "crashReport", "credentialless", "customElements",
+		"documentPictureInPicture", "fence", "launchQueue",
+		"originAgentCluster",
 	} {
 		t.Run(name, func(t *testing.T) {
 			var ce *core.ConfigurationError
@@ -410,7 +412,9 @@ func TestObjectNameRequestedNotValid(t *testing.T) {
 		"location", "frameElement", "isSecureContext", "crossOriginIsolated",
 		"trustedTypes", "crypto", "indexedDB", "localStorage",
 		"sessionStorage", "caches", "cookieStore", "speechSynthesis",
-		"styleMedia",
+		"styleMedia", "crashReport", "credentialless", "customElements",
+		"documentPictureInPicture", "fence", "launchQueue",
+		"originAgentCluster",
 	} {
 		t.Run(name, func(t *testing.T) {
 			js := renderElement(t, NewBuilder().SetObjectName("configured").Build(),
