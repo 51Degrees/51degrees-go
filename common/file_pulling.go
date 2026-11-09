@@ -183,6 +183,12 @@ func (e *FileUpdater) ifModifiedSince() (*time.Time, error) {
 	return &modTime, nil
 }
 
+// maskedDataFileUrl is the data file URL with its license keys masked, for log
+// messages.
+func (e *FileUpdater) maskedDataFileUrl() string {
+	return MaskLicenseKeysIn(e.GetDataFileUrl(), LicenseKeysInURL(e.GetDataFileUrl()))
+}
+
 // engineLabel names the engine in log messages.
 func (e *FileUpdater) engineLabel() string {
 	if e.engineName == "" {
@@ -221,7 +227,7 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 		return retryMs, false, err
 	}
 
-	e.logger.Infof("Checking for update from '%s' for Engine '%s'", e.GetDataFileUrl(), e.engineLabel())
+	e.logger.Infof("Checking for update from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
 
 	// The download goes to a temp file next to the data file and is renamed over it, so the
 	// engine only ever sees the complete old file or the complete new one.
@@ -229,7 +235,7 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 	if err != nil {
 		if errors.Is(err, ErrFileNotModified) {
 			e.logger.Infof("No data newer than %s found at '%s' for Engine '%s'",
-				formatSince(lastModificationTimestamp), e.GetDataFileUrl(), e.engineLabel())
+				formatSince(lastModificationTimestamp), e.maskedDataFileUrl(), e.engineLabel())
 			return e.GetDataFilePullEveryMs(), false, err
 		}
 		e.logPullError(err)
@@ -244,7 +250,7 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 		return retryMs, false, err
 	}
 
-	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", e.GetDataFileUrl(), e.engineLabel())
+	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
 
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
@@ -293,13 +299,13 @@ func (e *FileUpdater) logPullError(err error) {
 	var pe *pullError
 	if !errors.As(err, &pe) {
 		e.logger.Warnf("An error occurred while downloading a data file update for %s from %s. "+
-			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.GetDataFileUrl(), err)
+			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.maskedDataFileUrl(), err)
 		return
 	}
 	switch pe.kind {
 	case pullConnect:
 		e.logger.Warnf("An error occurred when connecting to %s in order to check for data file updates for %s. "+
-			"Update will be attempted again later. Error detail: %v", e.GetDataFileUrl(), e.engineLabel(), pe.err)
+			"Update will be attempted again later. Error detail: %v", e.maskedDataFileUrl(), e.engineLabel(), pe.err)
 	case pullIntegrity:
 		e.logger.Warnf("An error occurred during the integrity check of new data file for %s. "+
 			"Update will be attempted again later. Error detail: %v", e.engineLabel(), pe.err)
@@ -307,7 +313,7 @@ func (e *FileUpdater) logPullError(err error) {
 		e.logger.Errorf("An error occurred when writing to %s. Error detail: %v", e.GetDataFile(), pe.err)
 	default:
 		e.logger.Warnf("An error occurred while downloading a data file update for %s from %s. "+
-			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.GetDataFileUrl(), pe.err)
+			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.maskedDataFileUrl(), pe.err)
 	}
 }
 
@@ -357,9 +363,11 @@ func tempFilePattern(dataFile string) string {
 func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dataFile string) (*FileResponse, error) {
 	removeStaleTempFiles(dataFile, logger)
 
+	// An error net/http raises names the URL, so its license keys are masked.
+	keys := LicenseKeysInURL(url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, newPullError(pullConnect, err)
+		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
 
 	if timestamp != nil {
@@ -368,7 +376,7 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, newPullError(pullConnect, err)
+		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
 	defer resp.Body.Close()
 
