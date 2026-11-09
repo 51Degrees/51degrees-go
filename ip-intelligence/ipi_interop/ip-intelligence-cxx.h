@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 4.5.103 (e866f6d3cea936587790f87967eff7863778b30e) by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 865cee97432d8b7b047223b82c64fc31a489735f by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -159,6 +159,16 @@
 #define fiftyoneDegreesCollectionGetIsMemoryOnly ipi_fiftyoneDegreesCollectionGetIsMemoryOnly
 #define fiftyoneDegreesCollectionHeaderFromFile ipi_fiftyoneDegreesCollectionHeaderFromFile
 #define fiftyoneDegreesCollectionHeaderFromMemory ipi_fiftyoneDegreesCollectionHeaderFromMemory
+#define fiftyoneDegreesCollectionHeldApply ipi_fiftyoneDegreesCollectionHeldApply
+#define fiftyoneDegreesCollectionHeldCreate ipi_fiftyoneDegreesCollectionHeldCreate
+#define fiftyoneDegreesCollectionHeldRangeAdd ipi_fiftyoneDegreesCollectionHeldRangeAdd
+#define fiftyoneDegreesCollectionHeldRangeAddWithin ipi_fiftyoneDegreesCollectionHeldRangeAddWithin
+#define fiftyoneDegreesCollectionHeldScan ipi_fiftyoneDegreesCollectionHeldScan
+#define fiftyoneDegreesCollectionHeldStringsAdd ipi_fiftyoneDegreesCollectionHeldStringsAdd
+#define fiftyoneDegreesCollectionHeldStringsFree ipi_fiftyoneDegreesCollectionHeldStringsFree
+#define fiftyoneDegreesCollectionHeldStringsFreeOffsets ipi_fiftyoneDegreesCollectionHeldStringsFreeOffsets
+#define fiftyoneDegreesCollectionHeldStringsInit ipi_fiftyoneDegreesCollectionHeldStringsInit
+#define fiftyoneDegreesCollectionHeldStringsPlan ipi_fiftyoneDegreesCollectionHeldStringsPlan
 #define fiftyoneDegreesCollectionReadFileFixed ipi_fiftyoneDegreesCollectionReadFileFixed
 #define fiftyoneDegreesCollectionReadFilePosition ipi_fiftyoneDegreesCollectionReadFilePosition
 #define fiftyoneDegreesCollectionReadFileVariable ipi_fiftyoneDegreesCollectionReadFileVariable
@@ -182,6 +192,7 @@
 #define fiftyoneDegreesDataSetReloadManagerFromFile ipi_fiftyoneDegreesDataSetReloadManagerFromFile
 #define fiftyoneDegreesDataSetReloadManagerFromMemory ipi_fiftyoneDegreesDataSetReloadManagerFromMemory
 #define fiftyoneDegreesDataSetReset ipi_fiftyoneDegreesDataSetReset
+#define fiftyoneDegreesDateIsValid ipi_fiftyoneDegreesDateIsValid
 #define fiftyoneDegreesEvidenceAddPair ipi_fiftyoneDegreesEvidenceAddPair
 #define fiftyoneDegreesEvidenceAddString ipi_fiftyoneDegreesEvidenceAddString
 #define fiftyoneDegreesEvidenceCreate ipi_fiftyoneDegreesEvidenceCreate
@@ -300,6 +311,7 @@
 #define fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex ipi_fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex
 #define fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName ipi_fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName
 #define fiftyoneDegreesPropertiesIsSetHeaderAvailable ipi_fiftyoneDegreesPropertiesIsSetHeaderAvailable
+#define fiftyoneDegreesPropertiesRequiredNamesFewerThan ipi_fiftyoneDegreesPropertiesRequiredNamesFewerThan
 #define fiftyoneDegreesPropertyGet ipi_fiftyoneDegreesPropertyGet
 #define fiftyoneDegreesPropertyGetByName ipi_fiftyoneDegreesPropertyGetByName
 #define fiftyoneDegreesPropertyGetCategory ipi_fiftyoneDegreesPropertyGetCategory
@@ -309,6 +321,7 @@
 #define fiftyoneDegreesPropertyGetStoredTypeByIndex ipi_fiftyoneDegreesPropertyGetStoredTypeByIndex
 #define fiftyoneDegreesPropertyGetUrl ipi_fiftyoneDegreesPropertyGetUrl
 #define fiftyoneDegreesPropertyGetValueType ipi_fiftyoneDegreesPropertyGetValueType
+#define fiftyoneDegreesPropertyValueTypeGetName ipi_fiftyoneDegreesPropertyValueTypeGetName
 #define fiftyoneDegreesPropertyValueTypeGetUnderlyingType ipi_fiftyoneDegreesPropertyValueTypeGetUnderlyingType
 #define fiftyoneDegreesResourceHandleDecUse ipi_fiftyoneDegreesResourceHandleDecUse
 #define fiftyoneDegreesResourceHandleGetUse ipi_fiftyoneDegreesResourceHandleGetUse
@@ -329,6 +342,7 @@
 #define fiftyoneDegreesStoredBinaryValueToBoolOrDefault ipi_fiftyoneDegreesStoredBinaryValueToBoolOrDefault
 #define fiftyoneDegreesStoredBinaryValueToDoubleOrDefault ipi_fiftyoneDegreesStoredBinaryValueToDoubleOrDefault
 #define fiftyoneDegreesStoredBinaryValueToIntOrDefault ipi_fiftyoneDegreesStoredBinaryValueToIntOrDefault
+#define fiftyoneDegreesStoredBinaryValueToText ipi_fiftyoneDegreesStoredBinaryValueToText
 #define fiftyoneDegreesStringBuilderAddChar ipi_fiftyoneDegreesStringBuilderAddChar
 #define fiftyoneDegreesStringBuilderAddChars ipi_fiftyoneDegreesStringBuilderAddChars
 #define fiftyoneDegreesStringBuilderAddDouble ipi_fiftyoneDegreesStringBuilderAddDouble
@@ -345,6 +359,7 @@
 #define fiftyoneDegreesTextFileIterate ipi_fiftyoneDegreesTextFileIterate
 #define fiftyoneDegreesTextFileIterateWithLimit ipi_fiftyoneDegreesTextFileIterateWithLimit
 #define fiftyoneDegreesThreadingGetIsThreadSafe ipi_fiftyoneDegreesThreadingGetIsThreadSafe
+#define fiftyoneDegreesThreadingGetProcessorCount ipi_fiftyoneDegreesThreadingGetProcessorCount
 #define fiftyoneDegreesTreeCount ipi_fiftyoneDegreesTreeCount
 #define fiftyoneDegreesTreeDelete ipi_fiftyoneDegreesTreeDelete
 #define fiftyoneDegreesTreeEmpty ipi_fiftyoneDegreesTreeEmpty
@@ -359,10 +374,13 @@
 #define fiftyoneDegreesValueGetByName ipi_fiftyoneDegreesValueGetByName
 #define fiftyoneDegreesValueGetByNameAndType ipi_fiftyoneDegreesValueGetByNameAndType
 #define fiftyoneDegreesValueGetContent ipi_fiftyoneDegreesValueGetContent
+#define fiftyoneDegreesValueGetDefaultIndex ipi_fiftyoneDegreesValueGetDefaultIndex
+#define fiftyoneDegreesValueGetDefaultText ipi_fiftyoneDegreesValueGetDefaultText
 #define fiftyoneDegreesValueGetDescription ipi_fiftyoneDegreesValueGetDescription
 #define fiftyoneDegreesValueGetIndexByName ipi_fiftyoneDegreesValueGetIndexByName
 #define fiftyoneDegreesValueGetIndexByNameAndType ipi_fiftyoneDegreesValueGetIndexByNameAndType
 #define fiftyoneDegreesValueGetName ipi_fiftyoneDegreesValueGetName
+#define fiftyoneDegreesValueGetText ipi_fiftyoneDegreesValueGetText
 #define fiftyoneDegreesValueGetUrl ipi_fiftyoneDegreesValueGetUrl
 #define fiftyoneDegreesValueGetWeight ipi_fiftyoneDegreesValueGetWeight
 #define fiftyoneDegreesValueIsWeighted ipi_fiftyoneDegreesValueIsWeighted
@@ -1015,6 +1033,20 @@ EXTERNAL void fiftyoneDegreesExceptionCheckAndExit(
 EXTERNAL bool fiftyoneDegreesThreadingGetIsThreadSafe();
 
 /**
+ * The most processors #fiftyoneDegreesThreadingGetProcessorCount returns,
+ * which leaves room for the null item a pool adds to its items.
+ */
+#define FIFTYONE_DEGREES_PROCESSOR_COUNT_MAX (UINT16_MAX - 1)
+
+/**
+ * Gets the number of processors the system has online, which is the default
+ * for the number of operations expected to use an engine at the same time.
+ * @return the number of processors, at least 1, and 1 in a single threaded
+ * build.
+ */
+EXTERNAL uint16_t fiftyoneDegreesThreadingGetProcessorCount();
+
+/**
  * A thread method passed to the #FIFTYONE_DEGREES_THREAD_CREATE macro.
  */
 #ifdef _MSC_VER
@@ -1458,13 +1490,12 @@ typedef struct fiftyone_degrees_interlock_dw_type_t {
  *
  * The #fiftyoneDegreesFilePoolInit method is used to initialise a pointer to
  * a #fiftyoneDegreesFilePool. A concurrency value is provided to indicate the
- * maximum number of threads that will be in operation. If this value is lower
- * than the actual number of threads the stack can be exhausted and a null
- * pointer is returned instead of a valid file handle. The concurrency value
- * must always be the same or greater than the number of threads. When compiled
- * in single threaded operation a pool is not strictly required and the
- * implementation maintains a simple stack for consistency of interface and to
- * minimise divergent code.
+ * number of file handles to open, up to
+ * #FIFTYONE_DEGREES_FILE_POOL_MAX_HANDLES, which is the number of threads
+ * that can read the file at the same time. Further threads wait until a
+ * handle is released. When compiled in single threaded operation a pool is
+ * not strictly required and the implementation maintains a simple stack for
+ * consistency of interface and to minimise divergent code.
  *
  * ## Get & Release
  *
@@ -1472,9 +1503,9 @@ typedef struct fiftyone_degrees_interlock_dw_type_t {
  * method. The handle **MUST** be returned with the 
  * #fiftyoneDegreesFileHandleRelease method when it is finished with. The
  * handle will always be open and ready for read only operation. The position
- * of the handle within the source file cannot be assumed. If too many threads
- * are accessing the pool simultaneously, meaning a handle cannot be secured,
- * then a NULL pointer is returned.
+ * of the handle within the source file cannot be assumed. If every handle is
+ * in use, the thread waits until another thread releases one. A single
+ * threaded build cannot wait, so a NULL pointer is returned instead.
  *
  * ## Free
  *
@@ -2105,22 +2136,20 @@ EXTERNAL_VAR void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFreeAligned)(void*
  *
  * The #fiftyoneDegreesPoolInit method is used to initialise a pointer to
  * a #fiftyoneDegreesPool. A concurrency value is provided to indicate the
- * maximum number of threads that will be in operation. If this value is lower
- * than the actual number of threads the stack can be exhausted and a null
- * pointer is returned instead of a valid item. The concurrency value must
- * always be the same or greater than the number of threads. When compiled
- * in single threaded operation a pool is not strictly required and the
- * implementation maintains a simple stack for consistency of interface and to
- * minimise divergent code.
+ * number of items in the pool, which is the number of threads that can use
+ * an item at the same time. Further threads wait until an item is released.
+ * When compiled in single threaded operation a pool is not strictly required
+ * and the implementation maintains a simple stack for consistency of
+ * interface and to minimise divergent code.
  *
  * ## Get & Release
  *
  * Handles are retrieved from the pool via the #fiftyoneDegreesPoolItemGet
  * method. The handle **MUST** be returned with the
  * #fiftyoneDegreesPoolItemRelease method when it is finished with. The
- * handle will always be open and ready for read only operation. If too many
- * threads are accessing the pool simultaneously, meaning a handle cannot be
- * secured, then a NULL pointer is returned.
+ * handle will always be open and ready for read only operation. If every
+ * handle is in use, the thread waits until another thread releases one. A
+ * single threaded build cannot wait, so a NULL pointer is returned instead.
  *
  * ## Free
  *
@@ -2177,8 +2206,13 @@ EXTERNAL_VAR void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFreeAligned)(void*
  * (https://en.wikipedia.org/wiki/ABA_problem). It is for this reason the head 
  * structure is implemented as a union between the values and the exchange
  * integer. Pointers are not used as the address space for the stack is 
- * continuous and always very small compared to the total addressable memory 
+ * continuous and always very small compared to the total addressable memory
  * space.
+ *
+ * A thread that finds every item in use takes the pool's lock, counts itself
+ * as waiting and sleeps on a condition variable. A release that sees a
+ * waiting thread wakes one. The lock is only used when the pool is empty, so
+ * gets and releases with items to spare stay lock free.
  *
  * @{
  */
@@ -2263,6 +2297,16 @@ typedef struct fiftyone_degrees_pool_t {
 	fiftyoneDegreesPoolHead head; /**< Head of the stack */
 	uint16_t count; /**< Number of resource items that stack can hold */
 	fiftyoneDegreesPoolResourceFree resourceFree; /**< Frees a resource */
+#ifndef FIFTYONE_DEGREES_NO_THREADING
+	volatile long waiting; /**< Number of threads waiting for an item */
+	long waits; /**< Counts waits for an item, for the tests */
+	fiftyoneDegreesMutex lock; /**< Guards the count and the wait for an item */
+#ifdef _MSC_VER
+	CONDITION_VARIABLE released; /**< Wakes a waiting thread */
+#else
+	pthread_cond_t released; /**< Wakes a waiting thread */
+#endif
+#endif
 } fiftyoneDegreesPool;
 
 /**
@@ -2272,7 +2316,8 @@ typedef struct fiftyone_degrees_pool_t {
  * pool which will be freed during when the release method is called on the
  * pool using the resourceFree method.
  * @param pool data structure to be initialised.
- * @param concurrency the number of resources the pool should contain.
+ * @param concurrency the number of resources the pool should contain, at most
+ * 65,534 as the items are indexed by 16 bits.
  * @param state passed to the create resource method.
  * @param resourceCreate method used to create the resource to be added to 
  * items in the pool.
@@ -2291,13 +2336,16 @@ EXTERNAL fiftyoneDegreesPool* fiftyoneDegreesPoolInit(
 	fiftyoneDegreesException *exception);
 
 /**
- * Gets the next free item from the pool for exclusive use by the caller. Every 
- * item returned must be released when the caller has finished with it using 
- * the #fiftyoneDegreesPoolItemRelease method.
+ * Gets the next free item from the pool for exclusive use by the caller. Every
+ * item returned must be released when the caller has finished with it using
+ * the #fiftyoneDegreesPoolItemRelease method. When every item is in use the
+ * caller waits until another thread releases one. A single threaded build
+ * cannot wait, so it returns NULL with an INSUFFICIENT_HANDLES exception.
  * @param pool to return items from.
- * @param exception pointer to an exception data structure to be used if an 
+ * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
- * @return the next free item, or NULL if no items are available.
+ * @return the next free item, or NULL in a single threaded build if every
+ * item is in use.
  */
 EXTERNAL fiftyoneDegreesPoolItem* fiftyoneDegreesPoolItemGet(
 	fiftyoneDegreesPool *pool,
@@ -2363,6 +2411,13 @@ EXTERNAL void fiftyoneDegreesPoolReset(fiftyoneDegreesPool *pool);
 #else
 #define FIFTYONE_DEGREES_FILE_MAX_PATH 4096
 #endif
+
+/**
+ * The most file handles a file pool opens, whatever the concurrency. Further
+ * operations wait for a handle, which keeps a process within the limit its
+ * system puts on open files.
+ */
+#define FIFTYONE_DEGREES_FILE_POOL_MAX_HANDLES 64
 
 
 /**
@@ -2585,11 +2640,12 @@ EXTERNAL DEPRECATED fiftyoneDegreesStatusCode fiftyoneDegreesFileCreateTempFile(
 
 /**
  * Initialises the pool with a stack of open read only file handles all 
- * associated with the file name. The concurrency parameter determines the 
- * number of items in the stack.
+ * associated with the file name. The concurrency parameter determines the
+ * number of items in the stack, up to #FIFTYONE_DEGREES_FILE_POOL_MAX_HANDLES.
  * @param filePool to be initialised
  * @param fileName full path to the file to open
- * @param concurrency number of items in the stack
+ * @param concurrency number of operations expected to read the file at the
+ * same time
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  * @return the result of the open operation
@@ -2601,14 +2657,15 @@ EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesFilePoolInit(
 	fiftyoneDegreesException *exception);
 
 /**
- * Retrieves a read only open file handle from the pool. The handle retrieve
- * must be returned to the pool using #fiftyoneDegreesFileHandleGet and must
- * not be freed or closed directly.
+ * Retrieves a read only open file handle from the pool, waiting for one to be
+ * released if every handle is in use. The handle retrieved must be returned
+ * to the pool using #fiftyoneDegreesFileHandleRelease and must not be freed
+ * or closed directly.
  * @param filePool to retrieve the file handle from
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
- * @return a read only open file handle or NULL if no available handles remain
- * in the pool
+ * @return a read only open file handle, or NULL in a single threaded build if
+ * every handle is in use
  */
 EXTERNAL fiftyoneDegreesFileHandle* fiftyoneDegreesFileHandleGet(
 	fiftyoneDegreesFilePool *filePool,
@@ -2796,7 +2853,8 @@ EXTERNAL const char* fiftyoneDegreesFileGetBaseName(const char *path);
  * **capacity** : 0 if a cache should not be used, otherwise the capacity of
  * cache.
 
- * **concurrency** : the expected number of concurrent operations, 1 or greater.
+ * **concurrency** : the expected number of operations at the same time. A
+ * data set takes 0 as one for each processor.
  * 
  * The file create method will work out the different types of Collection(s)
  * needed and how to chain them based on the configuration provided.
@@ -2976,6 +3034,7 @@ EXTERNAL const char* fiftyoneDegreesFileGetBaseName(const char *path);
 #ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
 #endif
 
+#include <stdbool.h>
 
 /**
  * Enum of property types.
@@ -3045,6 +3104,22 @@ typedef enum e_fiftyone_degrees_property_value_type {
 EXTERNAL fiftyoneDegreesPropertyValueType
 fiftyoneDegreesPropertyValueTypeGetUnderlyingType(
     fiftyoneDegreesPropertyValueType type);
+
+/**
+ * Returns the name of a property's value type, which the property metadata
+ * gives as the type of the property, for example "int", "string[]" or
+ * "weightedstring". Each language maps the name to a type of its own.
+ *
+ * The list flag changes only the name of a string, which is "string[]" for a
+ * list. A type with no name of its own, and a number that is not a property
+ * value type, is named "string".
+ * @param type the value type of the property
+ * @param isList true if the property is a list
+ * @return the name, a constant string that is never NULL
+ */
+EXTERNAL const char* fiftyoneDegreesPropertyValueTypeGetName(
+    fiftyoneDegreesPropertyValueType type,
+    bool isList);
 
 #endif
 
@@ -3276,9 +3351,9 @@ typedef int64_t(*fiftyoneDegreesCacheHashCodeMethod)(const void* key);
  * methods used when being used as a loading cache.
  */
 typedef struct fiftyone_degrees_cache_t {
-	fiftyoneDegreesCacheShard *shards; /**< Array of shards / concurrency */
+	fiftyoneDegreesCacheShard *shards; /**< Array of shards / shardCount */
 	fiftyoneDegreesCacheNode *nodes; /**< Array of nodes / capacity */
-	uint16_t concurrency; /**< Expected concurrency and number of shards */
+	uint16_t shardCount; /**< Number of shards, each with its own lock */
 	int32_t capacity; /**< Capacity of the cache */
 	unsigned long hits; /**< The requests served from the cache */
 	unsigned long misses; /**< The requests NOT served from the cache */
@@ -3289,14 +3364,22 @@ typedef struct fiftyone_degrees_cache_t {
 } fiftyoneDegreesCache;
 
 /**
- * Creates a new cache.The cache must be destroyed with the
+ * Creates a new cache. The cache must be destroyed with the
  * #fiftyoneDegreesCacheFree method.
- * @param capacity maximum number of items that the cache should store
- * @param concurrency the expected number of parallel operations
+ *
+ * A node in use cannot be expelled and any operation can need any shard, so
+ * every shard holds at least one node for each operation that can use the
+ * cache at the same time. The cache has as many shards as the concurrency,
+ * or fewer where that is needed, and a capacity below the concurrency is
+ * raised to it.
+ * @param capacity number of items that the cache should store
+ * @param concurrency the expected number of parallel operations, where 0 is
+ * taken as 1
  * @param load pointer to method used to load an entry into the cache
  * @param hash pointer to a method used to hash the key into a int64_t
  * @param state pointer to state information to pass to the load method
- * @return a pointer to the cache created, or NULL if one was not created.
+ * @return a pointer to the cache created, or NULL if the memory could not be
+ * allocated.
  */
 EXTERNAL fiftyoneDegreesCache *fiftyoneDegreesCacheCreate(
 	uint32_t capacity,
@@ -3324,7 +3407,8 @@ EXTERNAL void fiftyoneDegreesCacheFree(fiftyoneDegreesCache *cache);
  * references to them are released. This means that the size of the cache must
  * be carefully chosen to be no smaller than the maximum number of nodes which
  * may be in use at any one time. Attempting to fetch a node when there are no
- * free nodes to load the data into will result in a null being returned.
+ * free nodes to load the data into will result in a null being returned. A
+ * load that fails also returns null, and its node is free to be used again.
  *
  * @param cache to get the entry from
  * @param key for the item to be returned
@@ -3413,8 +3497,9 @@ typedef struct fiftyone_degrees_collection_config_t {
 	bool loaded; /**< Collection is loaded entirely into memory */
 	uint32_t capacity; /**< Number of items the cache should store, 0 for no
 	                       cache */
-	uint16_t concurrency; /**< Expected number of concurrent requests, 1 or
-						      greater */
+	uint16_t concurrency; /**< Expected number of operations at the same
+						      time, which a data set takes as one for each
+						      processor when 0 */
 } fiftyoneDegreesCollectionConfig;
 
 /** @cond FORWARD_DECLARATIONS */
@@ -3831,6 +3916,256 @@ EXTERNAL long fiftyoneDegreesCollectionBinarySearch(
 	void *state,
 	fiftyoneDegreesCollectionItemComparer comparer,
 	fiftyoneDegreesException *exception);
+
+#ifndef FIFTYONE_DEGREES_MEMORY_ONLY
+
+/**
+ * HOLDING PART OF A COLLECTION IN MEMORY
+ *
+ * A held collection keeps stretches of another collection in memory and
+ * passes every other read to that collection, so a caller that knows which
+ * records it will read holds only those. Each stretch is made of whole
+ * records, in the units of the collection's keys, so an item that starts in a
+ * stretch ends in it.
+ */
+
+/**
+ * The fewest bytes between two held strings worth leaving on file, as more
+ * stretches cost time on every string read.
+ */
+#define FIFTYONE_DEGREES_COLLECTION_HELD_STRINGS_GAP_BYTES ((uint32_t)65536)
+
+/** Bytes read from the file at a time when scanning records. */
+#define FIFTYONE_DEGREES_COLLECTION_HELD_SCAN_BUFFER_BYTES ((uint32_t)65536)
+
+/**
+ * A stretch of a collection to hold in memory, in the units of the
+ * collection's keys.
+ */
+typedef struct fiftyone_degrees_collection_held_range_t {
+	uint32_t first; /**< Key of the first unit of the range */
+	uint32_t end; /**< Key after the last unit of the range */
+	byte *memory; /**< The bytes of the range once held */
+} fiftyoneDegreesCollectionHeldRange;
+
+/**
+ * Creates the collection that replaces the one provided when everything in it
+ * is to be held. The method sets the collection, which is NULL when it could
+ * not be created, and returns the status of creating it.
+ * @param state provided to the apply method
+ * @param config to create the collection with
+ * @param header of the collection
+ * @param collection to set to the collection created
+ * @return the status of creating the collection
+ */
+typedef fiftyoneDegreesStatusCode
+(*fiftyoneDegreesCollectionHeldCreateMethod)(
+	void *state,
+	const fiftyoneDegreesCollectionConfig *config,
+	fiftyoneDegreesCollectionHeader header,
+	fiftyoneDegreesCollection **collection);
+
+/**
+ * The lowest and highest string offsets recorded in part of the strings, and
+ * a tag for the highest that tells the end method how it is stored.
+ */
+typedef struct fiftyone_degrees_collection_held_bucket_t {
+	uint32_t first; /**< Lowest offset recorded, or UINT32_MAX for none */
+	uint32_t last; /**< Highest offset recorded */
+	uint32_t lastTag; /**< Tag given with the highest offset */
+} fiftyoneDegreesCollectionHeldBucket;
+
+/**
+ * The strings to hold, worked out from the offsets of the strings needed.
+ */
+typedef struct fiftyone_degrees_collection_held_strings_t {
+	fiftyoneDegreesCollectionHeldBucket *buckets; /**< Offsets recorded */
+	uint32_t bucketCount; /**< Number of buckets */
+	uint32_t bytes; /**< Bytes in the strings collection */
+	fiftyoneDegreesCollectionHeldRange *ranges; /**< The stretches to hold */
+	uint32_t count; /**< Number of stretches */
+} fiftyoneDegreesCollectionHeldStrings;
+
+/**
+ * Gets the offset after the string at the offset provided.
+ * @param state provided to the plan method
+ * @param offset of the string
+ * @param tag given with the offset when it was recorded
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the offset after the string, or the offset provided if it could not
+ * be read
+ */
+typedef uint32_t (*fiftyoneDegreesCollectionHeldStringEnd)(
+	void *state,
+	uint32_t offset,
+	uint32_t tag,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Called for each fixed size record of a stretch of the data file.
+ * @param state provided to the scan method
+ * @param record the bytes of the record
+ */
+typedef void (*fiftyoneDegreesCollectionHeldScanMethod)(
+	void *state,
+	const byte *record);
+
+/**
+ * Adds a stretch to a list with room for it. Nothing is added when the end is
+ * not after the first.
+ * @param ranges the list
+ * @param count number of stretches in the list, which is increased
+ * @param first key of the first unit
+ * @param end key after the last unit
+ */
+EXTERNAL void fiftyoneDegreesCollectionHeldRangeAdd(
+	fiftyoneDegreesCollectionHeldRange *ranges,
+	uint32_t *count,
+	uint32_t first,
+	uint32_t end);
+
+/**
+ * Adds a stretch cut to end at the limit of its collection.
+ * @param ranges the list
+ * @param count number of stretches in the list, which is increased
+ * @param first key of the first unit
+ * @param length number of units
+ * @param limit key after the last unit of the collection
+ */
+EXTERNAL void fiftyoneDegreesCollectionHeldRangeAddWithin(
+	fiftyoneDegreesCollectionHeldRange *ranges,
+	uint32_t *count,
+	uint32_t first,
+	uint32_t length,
+	uint32_t limit);
+
+/**
+ * Replaces the collection with one holding the stretches in memory, which
+ * reads everything else from the collection replaced. Anything allocated is
+ * freed with the collection if this fails. The stretches are put in order and
+ * joined where they meet.
+ * @param collection the collection to replace, which becomes the source of
+ * what is not held
+ * @param file open on the data file
+ * @param startPosition of the collection in the data file
+ * @param unitBytes bytes in each unit of a key
+ * @param ranges the stretches to hold
+ * @param rangeCount number of stretches
+ * @return the status of holding the stretches
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesCollectionHeldCreate(
+	fiftyoneDegreesCollection **collection,
+	FILE *file,
+	uint64_t startPosition,
+	uint32_t unitBytes,
+	fiftyoneDegreesCollectionHeldRange *ranges,
+	uint32_t rangeCount);
+
+/**
+ * Holds the stretches of a collection that reads from the file. A collection
+ * that is needed in full is replaced by one loaded into memory like any other
+ * if it can be replaced, and one with nothing needed stays on file. A
+ * collection cannot be replaced while items read from it are still to be
+ * released through it.
+ * @param collection the collection to hold stretches of
+ * @param file open on the data file
+ * @param header of the collection
+ * @param shift number of bits a stored offset is shifted to give bytes, or
+ * zero
+ * @param replaceable true if the collection can be replaced by one loaded into
+ * memory
+ * @param ranges the stretches to hold
+ * @param rangeCount number of stretches
+ * @param create creates the collection loaded into memory, which is not used
+ * unless replaceable
+ * @param createState provided to the create method
+ * @return the status of holding the stretches
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesCollectionHeldApply(
+	fiftyoneDegreesCollection **collection,
+	FILE *file,
+	fiftyoneDegreesCollectionHeader header,
+	byte shift,
+	bool replaceable,
+	fiftyoneDegreesCollectionHeldRange *ranges,
+	uint32_t rangeCount,
+	fiftyoneDegreesCollectionHeldCreateMethod create,
+	void *createState);
+
+/**
+ * Calls the method for each fixed size record in a stretch of the data file.
+ * @param file open on the data file
+ * @param buffer of at least the scan buffer size
+ * @param position in the data file of the first record
+ * @param count number of records
+ * @param recordBytes size of each record
+ * @param method called for each record
+ * @param state provided to the method
+ * @return the status of reading the records
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesCollectionHeldScan(
+	FILE *file,
+	byte *buffer,
+	uint64_t position,
+	uint32_t count,
+	uint32_t recordBytes,
+	fiftyoneDegreesCollectionHeldScanMethod method,
+	void *state);
+
+/**
+ * Prepares to record the offsets of the strings needed.
+ * @param strings to prepare, which is set to hold nothing if this fails
+ * @param bytes in the strings collection
+ * @return the status of allocating what is needed
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesCollectionHeldStringsInit(
+	fiftyoneDegreesCollectionHeldStrings *strings,
+	uint32_t bytes);
+
+/**
+ * Records the offset of a string that is needed.
+ * @param strings to record in
+ * @param offset of the string
+ * @param tag that the end method is given with the highest offset in a part
+ */
+EXTERNAL void fiftyoneDegreesCollectionHeldStringsAdd(
+	fiftyoneDegreesCollectionHeldStrings *strings,
+	uint32_t offset,
+	uint32_t tag);
+
+/**
+ * Works out the stretches of the strings to hold from the offsets recorded,
+ * which leaves on file any stretch long enough that holds no string needed.
+ * @param strings the offsets recorded, which are set to the stretches to hold
+ * @param end gets the offset after a string
+ * @param state provided to the end method
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the status of working out the stretches
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesCollectionHeldStringsPlan(
+	fiftyoneDegreesCollectionHeldStrings *strings,
+	fiftyoneDegreesCollectionHeldStringEnd end,
+	void *state,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Frees the offsets recorded, which are not needed once the stretches are
+ * worked out.
+ * @param strings to free the offsets of
+ */
+EXTERNAL void fiftyoneDegreesCollectionHeldStringsFreeOffsets(
+	fiftyoneDegreesCollectionHeldStrings *strings);
+
+/**
+ * Frees everything held by the strings plan.
+ * @param strings to free
+ */
+EXTERNAL void fiftyoneDegreesCollectionHeldStringsFree(
+	fiftyoneDegreesCollectionHeldStrings *strings);
+
+#endif
 
 /**
  * Gets the actual number of items in the collection by iterating through to
@@ -6122,6 +6457,17 @@ EXTERNAL bool fiftyoneDegreesPropertiesIsSetHeaderAvailable(
 	fiftyoneDegreesPropertiesAvailable* available);
 
 /**
+ * Checks whether the properties required name some properties, and fewer than
+ * the data file has.
+ * @param properties the caller's required properties, or NULL for all
+ * @param total number of properties in the data file
+ * @return true if some but not all of the properties are required
+ */
+EXTERNAL bool fiftyoneDegreesPropertiesRequiredNamesFewerThan(
+	const fiftyoneDegreesPropertiesRequired *properties,
+	uint32_t total);
+
+/**
  * Frees the memory and resources used by the properties results previously 
  * created using the #fiftyoneDegreesPropertiesCreate method.
  * @param available properties instance to be freed
@@ -6186,6 +6532,57 @@ EXTERNAL void fiftyoneDegreesPropertiesFree(
 #pragma warning (pop)
 #endif
 
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+#ifndef FIFTYONE_DEGREES_BOOL_INCLUDED
+#define FIFTYONE_DEGREES_BOOL_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
+#include <stdbool.h>
+
+#ifdef __cplusplus
+#define EXTERNAL extern "C"
+#else
+#define EXTERNAL
+#endif
+
+/**
+ * Convert integer to bool type. This is mainly to support
+ * language that do not support function to cast to C bool
+ * type
+ */
+EXTERNAL bool fiftyoneDegreesIntToBool(int i);
+
+/**
+ * Convert bool to integer type. This is mainly to support
+ * language that do not suport function to cast between C
+ * bool and integer type.
+ */
+EXTERNAL int fiftyoneDegreesBoolToInt(bool b);
+
+#endif
 
 /**
  * Used to store the date when the dataset was produced and next date 51Degrees
@@ -6199,6 +6596,17 @@ typedef struct fiftyone_degrees_date_t {
 	byte day; /**< Day of the Month */
 } fiftyoneDegreesDate;
 #pragma pack(pop)
+
+/**
+ * Determines whether the date is a day of the Gregorian calendar, meaning a
+ * year above zero, a month from 1 to 12 and a day from 1 to the number of days
+ * in that month, with 29 in February of a leap year. A data file holds
+ * whatever bytes it was written with, so a date read from one is checked with
+ * this before it is used.
+ * @param date pointer to the date to check, or NULL
+ * @return true if the date is valid, otherwise false, including for NULL
+ */
+EXTERNAL bool fiftyoneDegreesDateIsValid(const fiftyoneDegreesDate *date);
 
 /**
  * @}
@@ -6861,6 +7269,42 @@ EXTERNAL int fiftyoneDegreesStoredBinaryValueCompareWithString(
  fiftyoneDegreesPropertyValueType storedValueType,
  const char *target,
  fiftyoneDegreesStringBuilder *tempBuilder,
+ fiftyoneDegreesException *exception);
+
+/**
+ * Writes the binary value as text, as results and metadata give it, with a
+ * number written to at most `decimalPlaces` places after the point. The text
+ * is written into `buffer` when it fits in `bufferLength` bytes, and
+ * otherwise into memory allocated with fiftyoneDegreesMalloc, which the
+ * caller frees with fiftyoneDegreesFree when the pointer returned is not
+ * `buffer`. A string or an area that would not fit `buffer` is written
+ * straight into memory sized from its length or its bytes. A string is
+ * therefore written once. An area is normally written once too, as
+ * #FIFTYONE_DEGREES_TEXT_PER_GEOMETRY_BYTE characters for each byte normally
+ * hold its text. A reduced area written to more than 4 places can need more,
+ * as each point of 4 bytes can then take more than 20 characters, and is
+ * written a second time when it does. A number or an IP address has no size
+ * until it is written, so one whose text does not fit `buffer` is written
+ * twice, as an IPv6 address of 39 characters is with a buffer of less than
+ * 40 bytes.
+ * `buffer` can be NULL with `bufferLength` 0, and the text is then always
+ * allocated.
+ * @param value the binary value to write
+ * @param storedValueType format of byte array representation
+ * @param decimalPlaces the most places to write after the decimal point
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the null terminated text, or NULL when the value cannot be written
+ * or memory cannot be allocated
+ */
+EXTERNAL char* fiftyoneDegreesStoredBinaryValueToText(
+ const fiftyoneDegreesStoredBinaryValue *value,
+ fiftyoneDegreesPropertyValueType storedValueType,
+ uint8_t decimalPlaces,
+ char *buffer,
+ size_t bufferLength,
  fiftyoneDegreesException *exception);
 
 /**
@@ -7713,6 +8157,96 @@ EXTERNAL long fiftyoneDegreesValueGetIndexByName(
 	fiftyoneDegreesCollection *strings,
 	fiftyoneDegreesProperty *property,
 	const char *valueName,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the text of the value's name as the metadata gives it. The name is
+ * read as the type the value's property is stored as, which `propertyTypes`
+ * gives by the value's property index, and a number is written to at most
+ * `decimalPlaces` places after the point. A data set that stores every value
+ * as a string has no property types and passes NULL. The text is written
+ * into `buffer` when it fits, and otherwise into memory the caller frees, as
+ * #fiftyoneDegreesStoredBinaryValueToText describes. A name the strings
+ * collection gives no value for has an empty text. So does a name that is
+ * read but cannot be written, such as an IP address of a length no address
+ * has or an area of an unknown geometry, and no exception is then set.
+ * @param strings collection containing the value names
+ * @param propertyTypes collection of the type each property's values are
+ * stored as, or NULL when every value is stored as a string
+ * @param value the value to get the text of
+ * @param decimalPlaces the most places to write after the decimal point
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated text, or NULL when the type or the name cannot
+ * be read or memory cannot be allocated
+ */
+EXTERNAL char* fiftyoneDegreesValueGetText(
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesValue *value,
+	uint8_t decimalPlaces,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the text the metadata gives as the property's default value. This is
+ * the name of the value at the property's default value index, written as
+ * #fiftyoneDegreesValueGetText writes it with a number written to
+ * #FIFTYONE_DEGREES_MAX_DOUBLE_DECIMAL_PLACES places. Those are the most
+ * places the search in #fiftyoneDegreesValueGetDefaultIndex writes a number
+ * to, so a default stored with more places than the metadata shows for a
+ * value is still found. A property with no default value index has an empty
+ * text. A default that is read but cannot be written gives NULL rather than
+ * an empty text, so it is not taken for a value with an empty name. The text
+ * is written into `buffer` when it fits, and otherwise into memory the caller
+ * frees, as #fiftyoneDegreesStoredBinaryValueToText describes.
+ * @param values collection containing the property's values
+ * @param strings collection containing the value names
+ * @param propertyTypes collection of the type each property's values are
+ * stored as, or NULL when every value is stored as a string
+ * @param property the property to get the default value text of
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated text, or NULL when the default value, its type
+ * or its name cannot be read or written
+ */
+EXTERNAL char* fiftyoneDegreesValueGetDefaultText(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesProperty *property,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the index in the values collection of the value the metadata gives as
+ * the property's default. The text #fiftyoneDegreesValueGetDefaultText gives
+ * is searched for among the property's values, each compared as the type
+ * `propertyTypes` gives the property by its name. So a default that is not
+ * among the property's values has none, and a property with no default value
+ * index has the value with an empty name when it has one.
+ * @param values collection containing the property's values
+ * @param strings collection containing the value names
+ * @param propertyTypes collection of the type each property's values are
+ * stored as, or NULL when every value is stored as a string
+ * @param property the property to find the default value of
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the 0 based index of the value in the values collection, or -1
+ * when the property has no such value or a value, a type or a name cannot be
+ * read
+ */
+EXTERNAL long fiftyoneDegreesValueGetDefaultIndex(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesProperty *property,
 	fiftyoneDegreesException *exception);
 
 /**
@@ -9397,10 +9931,13 @@ EXTERNAL fiftyoneDegreesIpiCgResult fiftyoneDegreesIpiGraphEvaluateTrace(
 
 #endif
 
-/** Default value for the cache concurrency used in the default configuration. */
+/**
+ * Default value for the concurrency used in the default configurations, where
+ * 0 is one operation for each processor the system has.
+ */
 #ifndef FIFTYONE_DEGREES_CACHE_CONCURRENCY
 #ifndef FIFTYONE_DEGREES_NO_THREADING
-#define FIFTYONE_DEGREES_CACHE_CONCURRENCY 10
+#define FIFTYONE_DEGREES_CACHE_CONCURRENCY 0
 #else
 #define FIFTYONE_DEGREES_CACHE_CONCURRENCY 1
 #endif
@@ -9464,10 +10001,12 @@ EXTERNAL fiftyoneDegreesIpiCgResult fiftyoneDegreesIpiGraphEvaluateTrace(
 #endif
 /**
  * Default value for the profile cache size used in the default collection
- * configuration.
+ * configuration. The Balanced preset reads the profile of each result through
+ * this cache, so it holds enough of them that most reads find their profile
+ * there.
  */
 #ifndef FIFTYONE_DEGREES_PROFILE_CACHE_SIZE
-#define FIFTYONE_DEGREES_PROFILE_CACHE_SIZE 10000
+#define FIFTYONE_DEGREES_PROFILE_CACHE_SIZE 20000
 #endif
 /**
  * Default value for the profile cache loaded size used in the default
@@ -9483,7 +10022,7 @@ EXTERNAL fiftyoneDegreesIpiCgResult fiftyoneDegreesIpiGraphEvaluateTrace(
  * their value there.
  */
 #ifndef FIFTYONE_DEGREES_VALUE_CACHE_SIZE
-#define FIFTYONE_DEGREES_VALUE_CACHE_SIZE 50000
+#define FIFTYONE_DEGREES_VALUE_CACHE_SIZE 100000
 #endif
 /**
  * Default value for the value cache loaded size used in the default collection
@@ -9589,6 +10128,31 @@ typedef struct fiftyone_degrees_config_ipi_t {
 	fiftyoneDegreesCollectionConfig propertyTypes; /**< Property types collection
 												   config */
 	fiftyoneDegreesCollectionConfig graph; /**< Config for each graph */
+	/**
+	 * When true, and the required properties are some but not all of the
+	 * properties in the data file, only the data they read is loaded into
+	 * memory. That is the parts of the strings, values, profiles, profile
+	 * groups and profile offsets they reach, in whole records, with the rest
+	 * read from the file when needed with no cache, and the graphs of their
+	 * components, each following the graph setting, with the graphs of other
+	 * components read from the file. Other collections follow their own
+	 * settings. It has no effect when no property or every property is
+	 * required, or when allInMemory is true. True in the HighPerformance
+	 * configuration only.
+	 */
+	bool loadRequiredPropertiesOnly;
+	/**
+	 * When true, the default value of each required property is held in
+	 * memory when the data set is created, with what reading it takes from the
+	 * strings and the property types, so reading a default value reads
+	 * nothing from the file and takes no lock. Nothing is copied from a
+	 * collection already loaded into memory, so it has no effect where the
+	 * values, strings and property types are all loaded, as in HighPerformance
+	 * when no properties are named. It has no effect when allInMemory is true
+	 * or when loadRequiredPropertiesOnly applies, as both already hold the
+	 * default values. True in every configuration.
+	 */
+	bool defaultValuesInMemory;
 } fiftyoneDegreesConfigIpi;
 
 /**
@@ -9756,10 +10320,14 @@ typedef struct fiftyone_degrees_result_profile_index_t {
 EXTERNAL_VAR fiftyoneDegreesConfigIpi fiftyoneDegreesIpiInMemoryConfig;
 
 /**
- * Highest performance configuration. Loads all the data into memory and does
- * not maintain a connection to the source data file used to build the data
- * set. The concurrency setting is ignored as there are no critical sections
- * with this configuration.
+ * Highest performance configuration that reads the data file. Loads all the
+ * data into memory, and sets loadRequiredPropertiesOnly, so when the required
+ * properties name some but not all of the properties in the data file only
+ * what they read is loaded, being the graphs, profile offsets, profile groups
+ * and profiles of their components, their values and the strings of those
+ * values, and anything else reads from the file. A lookup that reads the
+ * named properties reads nothing from the file. A connection to the data file
+ * is kept, with as many readers as the highest concurrency setting.
  */
 EXTERNAL_VAR fiftyoneDegreesConfigIpi fiftyoneDegreesIpiHighPerformanceConfig;
 
@@ -9767,8 +10335,10 @@ EXTERNAL_VAR fiftyoneDegreesConfigIpi fiftyoneDegreesIpiHighPerformanceConfig;
  * Low memory configuration. A connection is maintained to the source data file
  * used to build the data set and used to load data into memory when required.
  * No caching is used resulting in the lowest memory footprint at the expense
- * of performance. The concurrency of each collection must be set to the
- * maximum number of concurrent operations to optimize file reads.
+ * of performance. Only the default value of each required property is held in
+ * memory, as defaultValuesInMemory is set. The concurrency of each collection
+ * must be set to the maximum number of concurrent operations to optimize file
+ * reads.
  */
 EXTERNAL_VAR fiftyoneDegreesConfigIpi fiftyoneDegreesIpiLowMemoryConfig;
 
@@ -9780,16 +10350,12 @@ EXTERNAL_VAR fiftyoneDegreesConfigIpi fiftyoneDegreesIpiLowMemoryConfig;
  * number of concurrent operations to optimize file reads. This is the default
  * configuration.
  *
- * The strings, the graphs, the profile offsets and the property types are held
- * in memory. When the required properties name fewer properties than the data
- * file has, the graphs of components with no required property stay on file, as
- * do long stretches of strings that no required property reads. The memory that
- * frees holds the values of the required properties, smallest first, the profile
- * groups, the profiles of the components with a required property, smallest
- * first, then a larger profile cache and part of the next component's profiles
- * if at least half of them fit. The memory used does not rise above what naming
- * nothing uses and the answers do not change. Anything not held reads from the
- * file, which is slower and allocates memory.
+ * The strings, the graphs, the profile offsets, the property types and, as
+ * defaultValuesInMemory is set, the default value of each required property
+ * are held in memory. The values, profiles and profile groups are read through
+ * caches, and the profile of each result is copied the first time a lookup
+ * reads it, so that each property does not read the cache again. Naming the
+ * required properties does not change what is held.
  */
 EXTERNAL_VAR fiftyoneDegreesConfigIpi fiftyoneDegreesIpiBalancedConfig;
 
@@ -9830,6 +10396,59 @@ EXTERNAL fiftyoneDegreesDataSetIpi* fiftyoneDegreesDataSetIpiGet(
  * @param dataSet pointer to the data set to release
  */
 EXTERNAL void fiftyoneDegreesDataSetIpiRelease(fiftyoneDegreesDataSetIpi* dataset);
+
+/**
+ * Writes the evidence keys the data set accepts, each with its prefix, with
+ * the separator between them. For each header the data set reads the client
+ * IP address from, in the data set's order, there is a key under `query.`
+ * and then one under `server.`, for example `query.client-ip-51d` and
+ * `server.client-ip-51d`. A header named more than once gives its keys once.
+ * The order is the order of the headers. A lookup from evidence tries every
+ * `query.` key before any `server.` key, whatever the order here.
+ *
+ * Call with a NULL buffer to find the length needed, then with a buffer one
+ * longer than that.
+ * @param dataSet the data set to list the keys of
+ * @param buffer to write the keys to, or NULL to only find their length
+ * @param length of the buffer, including room for the null terminator
+ * @param separator written between keys. A comma suits, as no HTTP header
+ * name holds one.
+ * @return the number of characters the keys and separators need, not
+ * counting the null terminator. When the buffer is shorter than that plus
+ * one, it holds as many characters as fit followed by a null terminator.
+ */
+EXTERNAL size_t fiftyoneDegreesIpiGetEvidenceKeys(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	char *buffer,
+	size_t length,
+	const char *separator);
+
+/**
+ * Gets the date the data file in use was published, from its header.
+ * @param manager the resource manager containing an IP Intelligence data set
+ * initialised by one of the IP Intelligence data set init methods
+ * @param date pointer to the date to set, to the header's date when that is
+ * valid (see #fiftyoneDegreesDateIsValid), otherwise to a year, month and day
+ * of zero
+ * @return true if the header holds a valid date, otherwise false
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetPublished(
+	fiftyoneDegreesResourceManager *manager,
+	fiftyoneDegreesDate *date);
+
+/**
+ * Gets the date 51Degrees expect to publish the next data file, from the
+ * header of the data file in use.
+ * @param manager the resource manager containing an IP Intelligence data set
+ * initialised by one of the IP Intelligence data set init methods
+ * @param date pointer to the date to set, to the header's date when that is
+ * valid (see #fiftyoneDegreesDateIsValid), otherwise to a year, month and day
+ * of zero
+ * @return true if the header holds a valid date, otherwise false
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetNextUpdate(
+	fiftyoneDegreesResourceManager *manager,
+	fiftyoneDegreesDate *date);
 
 /**
  * Gets the total size in bytes which will be allocated when intialising a
@@ -10474,57 +11093,6 @@ static const uint8_t fiftyoneDegreesDefaultWktDecimalPlaces = FIFTYONE_DEGREES_W
  * confidence or importance of that value.
  */
 
-/* *********************************************************************
- * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
- * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
- *
- * This Original Work is licensed under the European Union Public Licence
- * (EUPL) v.1.2 and is subject to its terms as set out below.
- *
- * If a copy of the EUPL was not distributed with this file, You can obtain
- * one at https://opensource.org/licenses/EUPL-1.2.
- *
- * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
- * amended by the European Commission) shall be deemed incompatible for
- * the purposes of the Work and the provisions of the compatibility
- * clause in Article 5 of the EUPL shall not apply.
- *
- * If using the Work as, or as part of, a network application, by
- * including the attribution notice(s) required under Article 5 of the EUPL
- * in the end user terms of the application under an appropriate heading,
- * such notice(s) shall fulfill the requirements of that article.
- * ********************************************************************* */
-
-#ifndef FIFTYONE_DEGREES_BOOL_INCLUDED
-#define FIFTYONE_DEGREES_BOOL_INCLUDED
-
-#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
-#endif
-
-#include <stdbool.h>
-
-#ifdef __cplusplus
-#define EXTERNAL extern "C"
-#else
-#define EXTERNAL
-#endif
-
-/**
- * Convert integer to bool type. This is mainly to support
- * language that do not support function to cast to C bool
- * type
- */
-EXTERNAL bool fiftyoneDegreesIntToBool(int i);
-
-/**
- * Convert bool to integer type. This is mainly to support
- * language that do not suport function to cast between C
- * bool and integer type.
- */
-EXTERNAL int fiftyoneDegreesBoolToInt(bool b);
-
-#endif
 
 /**
  * @brief Header structure for all weighted value types.
@@ -11150,6 +11718,13 @@ static const uint8_t fiftyoneDegreesIpAddressStringMaxLength = 50;
 #define FIFTYONE_DEGREES_REASONABLE_WKT_STRING_LENGTH 128
 
 /**
+ * Bytes of text expected for each byte of a stored geometry. More than the
+ * data needs, so a buffer this many times the size of the geometry holds its
+ * text, and a value which needs more only costs another conversion.
+ */
+#define FIFTYONE_DEGREES_TEXT_PER_GEOMETRY_BYTE 5
+
+/**
  * Max. number of decimal places to be printed for a double.
  */
 #define FIFTYONE_DEGREES_MAX_DOUBLE_DECIMAL_PLACES 15
@@ -11186,6 +11761,8 @@ MAP_TYPE(CollectionFile)
 MAP_TYPE(CollectionFileRead)
 MAP_TYPE(CollectionCache)
 MAP_TYPE(CollectionFileRead)
+MAP_TYPE(CollectionHeldRange)
+MAP_TYPE(CollectionHeldStrings)
 #endif
 MAP_TYPE(FileHandle)
 MAP_TYPE(FileOffset)
@@ -11382,6 +11959,7 @@ MAP_TYPE(WeightedItemList)
 #define StoredBinaryValueToIntOrDefault fiftyoneDegreesStoredBinaryValueToIntOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToIntOrDefault function. */
 #define StoredBinaryValueToDoubleOrDefault fiftyoneDegreesStoredBinaryValueToDoubleOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToDoubleOrDefault function. */
 #define StoredBinaryValueToBoolOrDefault fiftyoneDegreesStoredBinaryValueToBoolOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToBoolOrDefault function. */
+#define StoredBinaryValueToText fiftyoneDegreesStoredBinaryValueToText /**< Synonym for #fiftyoneDegreesStoredBinaryValueToText function. */
 #define EvidenceFree fiftyoneDegreesEvidenceFree /**< Synonym for #fiftyoneDegreesEvidenceFree function. */
 #define EvidenceCreate fiftyoneDegreesEvidenceCreate /**< Synonym for #fiftyoneDegreesEvidenceCreate function. */
 #define EvidenceMapPrefix fiftyoneDegreesEvidenceMapPrefix /**< Synonym for #fiftyoneDegreesEvidenceMapPrefix function. */
@@ -11403,8 +11981,20 @@ MAP_TYPE(WeightedItemList)
 #define FileGetPath fiftyoneDegreesFileGetPath /**< Synonym for #fiftyoneDegreesFileGetPath function. */
 #define FileGetFileName fiftyoneDegreesFileGetFileName /**< Synonym for #fiftyoneDegreesFileGetFileName function. */
 #define ThreadingGetIsThreadSafe fiftyoneDegreesThreadingGetIsThreadSafe /**< Synonym for #fiftyoneDegreesThreadingGetIsThreadSafe function. */
+#define ThreadingGetProcessorCount fiftyoneDegreesThreadingGetProcessorCount /**< Synonym for #fiftyoneDegreesThreadingGetProcessorCount function. */
 #define CollectionReadFilePosition fiftyoneDegreesCollectionReadFilePosition /**< Synonym for #fiftyoneDegreesCollectionReadFilePosition function. */
 #define CollectionReadFileFixed fiftyoneDegreesCollectionReadFileFixed /**< Synonym for #fiftyoneDegreesCollectionReadFileFixed function. */
+#define CollectionHeldApply fiftyoneDegreesCollectionHeldApply /**< Synonym for #fiftyoneDegreesCollectionHeldApply function. */
+#define CollectionHeldCreate fiftyoneDegreesCollectionHeldCreate /**< Synonym for #fiftyoneDegreesCollectionHeldCreate function. */
+#define CollectionHeldRangeAdd fiftyoneDegreesCollectionHeldRangeAdd /**< Synonym for #fiftyoneDegreesCollectionHeldRangeAdd function. */
+#define CollectionHeldRangeAddWithin fiftyoneDegreesCollectionHeldRangeAddWithin /**< Synonym for #fiftyoneDegreesCollectionHeldRangeAddWithin function. */
+#define CollectionHeldScan fiftyoneDegreesCollectionHeldScan /**< Synonym for #fiftyoneDegreesCollectionHeldScan function. */
+#define CollectionHeldStringsAdd fiftyoneDegreesCollectionHeldStringsAdd /**< Synonym for #fiftyoneDegreesCollectionHeldStringsAdd function. */
+#define CollectionHeldStringsFree fiftyoneDegreesCollectionHeldStringsFree /**< Synonym for #fiftyoneDegreesCollectionHeldStringsFree function. */
+#define CollectionHeldStringsFreeOffsets fiftyoneDegreesCollectionHeldStringsFreeOffsets /**< Synonym for #fiftyoneDegreesCollectionHeldStringsFreeOffsets function. */
+#define CollectionHeldStringsInit fiftyoneDegreesCollectionHeldStringsInit /**< Synonym for #fiftyoneDegreesCollectionHeldStringsInit function. */
+#define CollectionHeldStringsPlan fiftyoneDegreesCollectionHeldStringsPlan /**< Synonym for #fiftyoneDegreesCollectionHeldStringsPlan function. */
+#define PropertiesRequiredNamesFewerThan fiftyoneDegreesPropertiesRequiredNamesFewerThan /**< Synonym for #fiftyoneDegreesPropertiesRequiredNamesFewerThan function. */
 #define CollectionGetIsMemoryOnly fiftyoneDegreesCollectionGetIsMemoryOnly /**< Synonym for #fiftyoneDegreesCollectionGetIsMemoryOnly function. */
 #define HeaderGetIndex fiftyoneDegreesHeaderGetIndex /**< Synonym for #fiftyoneDegreesHeaderGetIndex function. */
 #define FileWrite fiftyoneDegreesFileWrite /**< Synonym for #fiftyoneDegreesFileWrite function. */
@@ -11441,6 +12031,9 @@ MAP_TYPE(WeightedItemList)
 #define ValueGetIndexByName fiftyoneDegreesValueGetIndexByName /**< Synonym for #fiftyoneDegreesValueGetIndexByName function. */
 #define ValueGetIndexByNameAndType fiftyoneDegreesValueGetIndexByNameAndType /**< Synonym for #fiftyoneDegreesValueGetIndexByNameAndType function. */
 #define ValueGet fiftyoneDegreesValueGet /**< Synonym for #fiftyoneDegreesValueGet function. */
+#define ValueGetText fiftyoneDegreesValueGetText /**< Synonym for #fiftyoneDegreesValueGetText function. */
+#define ValueGetDefaultText fiftyoneDegreesValueGetDefaultText /**< Synonym for #fiftyoneDegreesValueGetDefaultText function. */
+#define ValueGetDefaultIndex fiftyoneDegreesValueGetDefaultIndex /**< Synonym for #fiftyoneDegreesValueGetDefaultIndex function. */
 #define CollectionBinarySearch fiftyoneDegreesCollectionBinarySearch /**< Synonym for #fiftyoneDegreesCollectionBinarySearch function. */
 #define PropertyGetName fiftyoneDegreesPropertyGetName /**< Synonym for #fiftyoneDegreesPropertyGetName function. */
 #define PropertyGetStoredType fiftyoneDegreesPropertyGetStoredType /**< Synonym for #fiftyoneDegreesPropertyGetStoredType function. */
@@ -11457,6 +12050,7 @@ MAP_TYPE(WeightedItemList)
 #define SignalWait fiftyoneDegreesSignalWait /**< Synonym for #fiftyoneDegreesSignalWait function. */
 #define IntToBool fiftyoneDegreesIntToBool /**< Synonym for #fiftyoneDegreesIntToBool function. */
 #define BoolToInt fiftyoneDegreesBoolToInt /**< Synonym for #fiftyoneDegreesBoolToInt function. */
+#define DateIsValid fiftyoneDegreesDateIsValid /**< Synonym for #fiftyoneDegreesDateIsValid function. */
 #define ProcessGetId fiftyoneDegreesProcessGetId /**< Synonym for fiftyoneDegreesProcessGetId */
 #define YamlFileIterate fiftyoneDegreesYamlFileIterate /**< Synonym for fiftyoneDegreesYamlFileIterate */
 #define YamlFileIterateWithLimit fiftyoneDegreesYamlFileIterateWithLimit /**< Synonym for fiftyoneDegreesYamlFileIterateWithLimit */
@@ -11491,6 +12085,7 @@ MAP_TYPE(WeightedItemList)
 #define ValueGetWeight fiftyoneDegreesValueGetWeight /**< Synonym for fiftyoneDegreesValueGetWeight */
 #define ValueIsWeighted fiftyoneDegreesValueIsWeighted /**< Synonym for fiftyoneDegreesValueIsWeighted */
 #define PropertyValueTypeGetUnderlyingType fiftyoneDegreesPropertyValueTypeGetUnderlyingType /**< Synonym for fiftyoneDegreesPropertyValueTypeGetUnderlyingType */
+#define PropertyValueTypeGetName fiftyoneDegreesPropertyValueTypeGetName /**< Synonym for fiftyoneDegreesPropertyValueTypeGetName */
 
 /* <-- only one asterisk to avoid inclusion in documentation
  * Shortened constants.
@@ -11632,6 +12227,9 @@ MAP_TYPE(WeightedValuesCollection)
 #define IpiInitManagerFromMemory fiftyoneDegreesIpiInitManagerFromMemory /**< Synonym for #fiftyoneDegreesIpiInitManagerFromMemory function. */
 #define DataSetIpiGet fiftyoneDegreesDataSetIpiGet /**< Synonym for #fiftyoneDegreesDataSetIpiGet function. */
 #define DataSetIpiRelease fiftyoneDegreesDataSetIpiRelease /**< Synonym for #fiftyoneDegreesDataSetIpiRelease function. */
+#define IpiGetEvidenceKeys fiftyoneDegreesIpiGetEvidenceKeys /**< Synonym for #fiftyoneDegreesIpiGetEvidenceKeys function. */
+#define IpiGetPublished fiftyoneDegreesIpiGetPublished /**< Synonym for #fiftyoneDegreesIpiGetPublished function. */
+#define IpiGetNextUpdate fiftyoneDegreesIpiGetNextUpdate /**< Synonym for #fiftyoneDegreesIpiGetNextUpdate function. */
 #define IpiReloadManagerFromOriginalFile fiftyoneDegreesIpiReloadManagerFromOriginalFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromOriginalFile function. */
 #define IpiReloadManagerFromFile fiftyoneDegreesIpiReloadManagerFromFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromFile function. */
 #define IpiReloadManagerFromMemory fiftyoneDegreesIpiReloadManagerFromMemory /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromMemory function. */
