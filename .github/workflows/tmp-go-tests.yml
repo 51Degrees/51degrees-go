@@ -1,0 +1,31 @@
+name: Temporary targeted Go tests
+
+on:
+  push:
+    branches:
+      - 'tmp/gaps-go-*'
+
+jobs:
+  Test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: common
+        if: always()
+        working-directory: common
+        run: go test -race -count=1 ./...
+      - name: pipeline core
+        if: always()
+        working-directory: pipeline
+        run: go test -race -count=1 ./core/... ./elements/sequence/...
+      - name: pipeline dataupdate
+        if: always()
+        working-directory: pipeline
+        run: go test -race -count=1 ./engines/dataupdate/...
+      - name: pipeline everything
+        if: always()
+        working-directory: pipeline
+        run: go test -race -count=1 ./...
