@@ -51,11 +51,15 @@ var (
 	// ("var <name> = ..."), where a dot is a SyntaxError.
 	jsObjectNameRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
-	// reservedObjectNames are the identifiers the object cannot have. They
-	// are the reserved words of ECMA-262 section 12.7.2 and those reserved
-	// in strict mode, none of which a var can declare, the globals Infinity,
-	// NaN and undefined, which a top level var cannot replace, and the
-	// constructor the script defines.
+	// reservedObjectNames are the names the object cannot have, as the
+	// object name section of the specification lists them. They are the
+	// reserved words of ECMA-262 section 12.7.2 and those reserved in strict
+	// mode code, eval and arguments, which strict mode code cannot declare
+	// and of which eval would replace the page's own eval function, the
+	// globals Infinity, NaN and undefined and the browser's window, document,
+	// top, name, status, history, navigator and closed, none of which a top
+	// level var can replace, and the constructor the script defines.
+	// See https://github.com/51Degrees/specifications/blob/1ff0fd4382e44fc11d8098cde9f5f726e26e9d36/pipeline-specification/pipeline-elements/javascript-builder.md#object-name
 	reservedObjectNames = map[string]bool{
 		"await": true, "break": true, "case": true, "catch": true,
 		"class": true, "const": true, "continue": true, "debugger": true,
@@ -69,7 +73,10 @@ var (
 		"with": true, "yield": true,
 		"implements": true, "interface": true, "let": true, "package": true,
 		"private": true, "protected": true, "public": true, "static": true,
+		"eval": true, "arguments": true,
 		"Infinity": true, "NaN": true, "undefined": true,
+		"window": true, "document": true, "top": true, "name": true,
+		"status": true, "history": true, "navigator": true, "closed": true,
 		"fiftyoneDegreesManager": true,
 	}
 )
@@ -116,6 +123,9 @@ type Element struct {
 	configErr error
 	// refusedURLLogged is set once a refused callback URL has been logged.
 	refusedURLLogged atomic.Bool
+	// refusedNameLogged is set once an ignored requested object name has
+	// been logged.
+	refusedNameLogged atomic.Bool
 }
 
 // Builder constructs a JavaScript Builder Element.
@@ -163,9 +173,10 @@ func (b *Builder) SetEndpoint(e string) *Builder { b.endpoint = e; return b }
 
 // SetObjectName sets the global JavaScript object name (default "fod"). It
 // must match ^[A-Za-z_$][A-Za-z0-9_$]*$ and not be a JavaScript reserved
-// word, Infinity, NaN, undefined or fiftyoneDegreesManager. Any other value,
-// an empty one included, makes Factory return a configuration error and the
-// built element refuse every pipeline.
+// word, eval, arguments, Infinity, NaN, undefined, window, document, top,
+// name, status, history, navigator, closed or fiftyoneDegreesManager. Any
+// other value, an empty one included, makes Factory return a configuration
+// error and the built element refuse every pipeline.
 func (b *Builder) SetObjectName(n string) *Builder { b.objectName = n; return b }
 
 // SetMinify enables or disables minification (default true).
@@ -195,8 +206,10 @@ func (b *Builder) Build() *Element {
 	}
 	if !validObjectName(b.objectName) {
 		problems = append(problems, "object name "+
-			strconv.Quote(b.objectName)+" is not a JavaScript identifier, or "+
-			"is a reserved word, Infinity, NaN, undefined or "+
+			strconv.Quote(b.objectName)+" does not match "+
+			"^[A-Za-z_$][A-Za-z0-9_$]*$, or is a reserved word, eval, "+
+			"arguments, Infinity, NaN, undefined, window, document, top, "+
+			"name, status, history, navigator, closed or "+
 			"fiftyoneDegreesManager")
 	}
 	if len(problems) > 0 {
@@ -238,10 +251,19 @@ func (e *Element) Process(fd core.FlowData) error {
 
 	// The object name reaches a bare code position in the template. Honor the
 	// client-supplied evidence value only if it is a valid object name, and
-	// otherwise use the configured name, which Build has checked.
+	// otherwise use the configured name, which Build has checked. A name that
+	// is not valid is logged once, without its text, so that a visitor can
+	// neither fill the log nor write into it.
 	objectName := e.objectName
-	if ev := evidenceString(fd, EvidenceObjectName); ev != "" && validObjectName(ev) {
-		objectName = ev
+	if ev := evidenceString(fd, EvidenceObjectName); !isBlank(ev) {
+		if validObjectName(ev) {
+			objectName = ev
+		} else if !e.refusedNameLogged.Swap(true) {
+			e.Logger().Warn("javascript builder: the requested object name "+
+				"in the query.fod-js-object-name evidence is not a valid "+
+				"object name, so the configured name is used. This is "+
+				"reported once.", "configured", e.objectName)
+		}
 	}
 
 	// The callback URL reaches a JS string literal, and its protocol and host
