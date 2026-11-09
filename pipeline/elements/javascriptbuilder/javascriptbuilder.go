@@ -79,6 +79,11 @@ var (
 		"status": true, "history": true, "navigator": true, "closed": true,
 		"fiftyoneDegreesManager": true,
 	}
+
+	// sessionIDRe is the form a session id must have to be written into the
+	// script, which holds it inside double quotes. Any other session id is
+	// written as an empty string, as step 5 of the process says.
+	sessionIDRe = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 )
 
 // validObjectName reports whether s is a valid object name, as the object
@@ -363,7 +368,9 @@ func (e *Element) jsonObject(fd core.FlowData) string {
 const noSequence = 1
 
 // sessionInfo returns the session id and sequence from the Sequence
-// Element's data, or an empty session id and noSequence without it.
+// Element's data, or an empty session id and noSequence without it. A
+// session id that does not match sessionIDRe is returned as empty, because
+// whichever element wrote it under that data key may not have checked it.
 func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 	data, err := fd.Get(sequence.DataKey)
 	if err != nil {
@@ -371,7 +378,7 @@ func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 	}
 	sessionID := ""
 	if v, err := data.Get(sequence.SessionIDProperty); err == nil {
-		if s, ok := v.(string); ok {
+		if s, ok := v.(string); ok && sessionIDRe.MatchString(s) {
 			sessionID = s
 		}
 	}
