@@ -257,9 +257,14 @@ func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
 	return string(raw), nil
 }
 
-// buildForm constructs the URL-encoded form: the resource key plus all Evidence
-// values with their prefixes removed. Conflicts between prefixes are resolved
-// using the defined Evidence precedence.
+// engineFields are the form fields the engine writes itself. Evidence that
+// strips to one of them is left out, although the cloud service lists them
+// among its accepted Evidence keys, because a second field of the same name
+// would leave which one applied undecided.
+var engineFields = map[string]bool{"resource": true, "license": true, "values": true}
+
+// buildForm constructs the URL-encoded form, being the resource key and the
+// Evidence the cloud service needs, as resolveEvidence gives it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	form := url.Values{}
@@ -272,19 +277,29 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	return form
 }
 
-// resolveEvidence removes prefixes from all Evidence and resolves conflicts
-// between prefixes using the defined precedence. Every Evidence value is
-// forwarded (prefix-stripped) and the server ignores any it
-// does not need; the evidence-keys metadata is used to advertise accepted keys,
-// not to filter the request body.
+// resolveEvidence returns the Evidence whose keys the cloud service accepts,
+// with each prefix removed, leaving out any that strips to a field the engine
+// writes itself. Conflicts between prefixes are resolved using the defined
+// precedence. It returns nothing while the accepted keys are not known, which
+// Process does not allow, as it fetches them first.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
 	type choice struct {
 		prefix string
 		value  string
 	}
+	accepted := e.evidenceKeys.Load()
+	if accepted == nil {
+		return nil
+	}
 	best := map[string]choice{}
 	for key, raw := range fd.Evidence().AsMap() {
+		if !accepted.Include(key) {
+			continue
+		}
 		prefix, field := core.SplitEvidenceKey(key)
+		if engineFields[strings.ToLower(field)] {
+			continue
+		}
 		val := valueToString(raw)
 		if cur, ok := best[field]; ok {
 			if core.ComparePrefixes(prefix, cur.prefix) < 0 {
