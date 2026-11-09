@@ -105,10 +105,11 @@ func ResponseJSON(fd core.FlowData) (string, error) {
 // given Aspect (for example "device"), as a map of raw JSON values keyed by
 // Property name.
 //
-// When the Resource Key includes no product for the Aspect, the response has
-// no section for it. That is not an error, so ParseAspect returns an empty
-// map, and the engine built on BaseCloudAspectEngine whose data key is
-// aspectKey logs the missing product once.
+// When the Resource Key includes no product, or a product with no
+// Properties, for the Aspect, the response has no section for it. That is
+// not an error, so ParseAspect returns an empty map, and the engine built on
+// BaseCloudAspectEngine whose data key is aspectKey logs the missing product
+// once.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage, error) {
 	raw, err := ResponseJSON(fd)
@@ -136,9 +137,9 @@ func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage
 	return aspect, nil
 }
 
-// productMissing reports whether the Resource Key includes no product for
-// aspectKey, from the product list the Cloud Request Engine has fetched. It
-// is false when the list cannot be read.
+// productMissing reports whether the Resource Key includes no product, or a
+// product with no Properties, for aspectKey, from the product list the Cloud
+// Request Engine has fetched. It is false when the list cannot be read.
 func productMissing(fd core.FlowData, aspectKey string) bool {
 	cre, ok := fd.Pipeline().GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
 	if !ok {
@@ -148,8 +149,8 @@ func productMissing(fd core.FlowData, aspectKey string) bool {
 	if err != nil {
 		return false
 	}
-	_, ok = products[aspectKey]
-	return !ok
+	p, ok := products[aspectKey]
+	return !ok || len(p.Properties) == 0
 }
 
 // PropertyValue extracts a single Property from a parsed Aspect object as an
