@@ -431,7 +431,7 @@ fiftyoneDegreesManager = function() {
 
         // Add the session and sequence to the request
         if (sessionId) {
-            params.push("session-id=" + sessionId);
+            params.push("session-id=" + encodeURIComponent(sessionId));
         }
         if (sequence) {
             params.push("sequence=" + sequence);

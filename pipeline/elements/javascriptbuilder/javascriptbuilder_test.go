@@ -318,3 +318,17 @@ func TestMustacheUnbalancedSection(t *testing.T) {
 		t.Fatalf("unbalanced section: %q", got)
 	}
 }
+
+// TestSessionIDIsEncodedInTheCallbackBody verifies the script encodes the
+// session id before it goes into the callback body, as any text is kept as the
+// session id and an "&" or "=" would add or change a parameter.
+func TestSessionIDIsEncodedInTheCallbackBody(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":      "example.com",
+		"query.session-id": "a&sequence=99",
+	})
+	if !strings.Contains(js, `"session-id=" + encodeURIComponent(sessionId)`) {
+		t.Fatalf("the callback body does not encode the session id:\n%s",
+			grepLine(js, "session-id="))
+	}
+}
