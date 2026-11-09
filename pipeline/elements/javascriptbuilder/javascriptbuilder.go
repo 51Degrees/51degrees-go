@@ -216,7 +216,7 @@ func (e *Element) Process(fd core.FlowData) error {
 	ctx := map[string]any{
 		"_objName":              objectName,
 		"_jsonObject":           jsonStr,
-		"_sessionId":            sessionID,
+		"_sessionId":            jsStringContent(sessionID),
 		"_sequence":             seq,
 		"_parameters":           e.queryParameters(fd),
 		"_url":                  callbackURL,
@@ -289,6 +289,16 @@ func (e *Element) jsonObject(fd core.FlowData) string {
 		}
 	}
 	return "{}"
+}
+
+// jsStringContent escapes s to sit between the quotes of a JavaScript string
+// literal, so that a session id from a request cannot end the literal.
+func jsStringContent(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return ""
+	}
+	return string(b[1 : len(b)-1])
 }
 
 func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
