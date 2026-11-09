@@ -61,13 +61,19 @@ type BaseCloudAspectEngine struct {
 	// cloudProperties is the Property metadata of the engine's product, kept
 	// once the Cloud Request Engine knows it.
 	cloudProperties atomic.Pointer[[]core.PropertyMetadata]
+	// element is the engine that embeds this base, as the Pipeline holds it,
+	// which each of the product's Properties names.
+	element atomic.Pointer[core.FlowElement]
 }
 
-// OnPipelineAdded finds the Cloud Request Engine in the Pipeline, which the
-// engine's Properties come from.
+// OnPipelineAdded finds the engine that embeds this base and the Cloud
+// Request Engine in the Pipeline, which the engine's Properties come from.
 func (e *BaseCloudAspectEngine) OnPipelineAdded(p core.Pipeline) error {
 	if err := e.BaseAspectEngine.OnPipelineAdded(p); err != nil {
 		return err
+	}
+	if el := p.GetElement(e.DataKey()); el != nil {
+		e.element.CompareAndSwap(nil, &el)
 	}
 	cre, ok := p.GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
 	if !ok {
@@ -110,15 +116,15 @@ func (e *BaseCloudAspectEngine) loadCloudProperties() []core.PropertyMetadata {
 	if props := e.cloudProperties.Load(); props != nil {
 		return *props
 	}
-	cre := e.requestEngine.Load()
-	if cre == nil {
+	cre, el := e.requestEngine.Load(), e.element.Load()
+	if cre == nil || el == nil {
 		return nil
 	}
 	products, ok := cre.KnownPublicProperties()
 	if !ok {
 		return nil
 	}
-	props := productMetadata(products, e, e.DataKey())
+	props := productMetadata(products, *el, e.DataKey())
 	e.cloudProperties.CompareAndSwap(nil, &props)
 	return *e.cloudProperties.Load()
 }
