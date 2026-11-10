@@ -242,3 +242,69 @@ func TestUsageSharingSharesTheSessionValuesOfTheWebRequest(t *testing.T) {
 		}
 	}
 }
+
+// No rule removes the Resource Key or the License Key. Under the fiftyone
+// prefix, the names the cloud service gives them, they are shared whatever
+// the configuration. As query string or form parameters they follow the
+// query rule, so they are shared when allow listed, when all query string
+// parameters are shared or when all Evidence is shared.
+func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
+	fiftyone := []string{"fiftyone.resource-key", "fiftyone.license-key"}
+	query := []string{"query.resource", "query.license", "query.licence"}
+	for name, c := range map[string]struct {
+		b     *Builder
+		query bool
+	}{
+		"default":   {NewBuilder(), false},
+		"no blocks": {NewBuilder().SetBlockedHTTPHeaders(), false},
+		"allow listed": {NewBuilder().SetIncludedQueryStringParameters(
+			"Resource", "License", "Licence"), true},
+		"all query": {NewBuilder().SetShareAllQueryStringParameters(true), true},
+		"share all": {NewBuilder().SetShareAllEvidence(true), true},
+	} {
+		e := c.b.Build()
+		for _, key := range fiftyone {
+			if !e.isShared(key) {
+				t.Errorf("%s: isShared(%q) = false, want true", name, key)
+			}
+		}
+		for _, key := range query {
+			if got := e.isShared(key); got != c.query {
+				t.Errorf("%s: isShared(%q) = %v, want %v",
+					name, key, got, c.query)
+			}
+		}
+		e.Close()
+	}
+}
+
+// The keys are found in the web request under the same rules as in the
+// Evidence, so reading the request as well loses neither of them.
+func TestUsageSharingSharesTheKeysOfTheWebRequest(t *testing.T) {
+	for _, allQuery := range []bool{false, true} {
+		p, e := newSharingPipeline(t,
+			NewBuilder().SetShareAllQueryStringParameters(allQuery))
+		r := httptest.NewRequest("GET", "/page?resource=r&license=l", nil)
+		fd := p.CreateFlowData()
+		fd.AddEvidence("fiftyone.resource-key", "r")
+		fd.AddEvidence("fiftyone.license-key", "l")
+		fd.AddEvidence(httpRequestKey, core.NewWebRequest(r))
+
+		got := e.shareableEvidence(fd)
+		for _, key := range []string{"fiftyone.resource-key",
+			"fiftyone.license-key"} {
+			if _, found := got[key]; !found {
+				t.Errorf("all query %v: %s not shared, shared %v",
+					allQuery, key, got)
+			}
+		}
+		for key, want := range map[string]string{
+			"query.resource": "r", "query.license": "l"} {
+			if v, found := got[key]; found != allQuery ||
+				(found && v != want) {
+				t.Errorf("all query %v: %s = %q, found %v, shared %v",
+					allQuery, key, v, found, got)
+			}
+		}
+	}
+}
