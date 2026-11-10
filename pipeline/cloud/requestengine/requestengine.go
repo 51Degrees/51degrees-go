@@ -383,8 +383,8 @@ var engineFields = map[string]bool{
 	"resource": true, "license": true, "licence": true, "values": true}
 
 // buildForm constructs the URL-encoded form, being the credentials, the
-// Requested Properties as values, comma separated, and the Evidence the
-// cloud service needs, as resolveEvidence gives it.
+// Requested Properties as values, comma separated, and the Evidence, as
+// resolveEvidence gives it.
 // See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	form := e.credentials()
@@ -397,23 +397,20 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	return form
 }
 
-// resolveEvidence returns the Evidence whose keys the cloud service accepts,
-// with each prefix removed, leaving out any that strips to a field the engine
-// writes itself. Conflicts between prefixes are resolved using the defined
-// precedence. It returns nothing while the accepted keys are not known, which
-// Process does not allow, as it fetches them first.
+// resolveEvidence returns every Evidence value with its prefix removed,
+// leaving out the web request, which is not a value to send, and any that
+// strips to a field the engine writes itself. The keys the cloud service
+// accepts do not limit it, as what the service uses changes and the other
+// Evidence helps it improve. Conflicts between prefixes are resolved using
+// the defined precedence.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
 	type choice struct {
 		prefix string
 		value  string
 	}
-	accepted := e.evidenceKeys.Load()
-	if accepted == nil {
-		return nil
-	}
 	best := map[string]choice{}
 	for key, raw := range fd.Evidence().AsMap() {
-		if !accepted.Include(key) {
+		if strings.EqualFold(key, core.EvidenceHTTPRequest) {
 			continue
 		}
 		prefix, field := core.SplitEvidenceKey(key)
