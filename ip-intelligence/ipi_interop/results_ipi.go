@@ -200,6 +200,37 @@ func (r *ResultsIpi) isPropertyWeighted(dataSet *C.DataSetIpi, requiredIndex C.i
 	return PropertyValueType(valueType).IsWeighted()
 }
 
+// propertyCheck gives check's answer for each property, by required index,
+// making the lookup into the C library once for each property rather than
+// once for each value.
+type propertyCheck struct {
+	exception *Exception
+	check     func(requiredIndex int, exception *Exception) bool
+	answers   map[int]bool
+}
+
+// newPropertyCheck makes a propertyCheck whose lookups report a failure in
+// exception.
+func newPropertyCheck(
+	exception *Exception,
+	check func(requiredIndex int, exception *Exception) bool) *propertyCheck {
+	return &propertyCheck{
+		exception: exception,
+		check:     check,
+		answers:   make(map[int]bool),
+	}
+}
+
+// answer returns check's answer for the property at requiredIndex.
+func (p *propertyCheck) answer(requiredIndex int) bool {
+	a, seen := p.answers[requiredIndex]
+	if !seen {
+		a = p.check(requiredIndex, p.exception)
+		p.answers[requiredIndex] = a
+	}
+	return a
+}
+
 // header mirrors fiftyoneDegreesWeightedValueHeader from the C library. rawWeighting
 // is uint32_t in C (range 0-65535*65535); declaring it any narrower here truncates the
 // value to its low bytes and produces near-zero weights.
@@ -257,16 +288,20 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 
 	values := make(Values, collection.itemsCount)
 
-	// Cache the weighted/unweighted decision per required-property index so the
-	// value-type lookup runs once per property rather than once per value.
-	weightedByReqIndex := make(map[C.int]bool)
-	// The same for whether a property's values are converted from Azimuth or
-	// Declination, and so rounded.
-	coordinateByReqIndex := make(map[C.int]bool)
-	coordinateException := NewException()
-	defer coordinateException.Free()
+	// Whether each property's values carry a weight, and whether they are
+	// converted from Azimuth or Declination and so rounded.
 	typeException := NewException()
 	defer typeException.Free()
+	weightedCheck := newPropertyCheck(typeException,
+		func(requiredIndex int, exception *Exception) bool {
+			return r.isPropertyWeighted(dataSet, C.int(requiredIndex), exception)
+		})
+	coordinateException := NewException()
+	defer coordinateException.Free()
+	coordinateCheck := newPropertyCheck(coordinateException,
+		func(requiredIndex int, exception *Exception) bool {
+			return r.isCoordinate(dataSet, C.int(requiredIndex), exception)
+		})
 	// Names read from the data set, once for each property rather than for
 	// each of its values.
 	var namesRead map[C.int]string
@@ -309,12 +344,7 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 			// Cast to weighted double and get value
 			weightedDouble := (*C.fiftyoneDegreesWeightedDouble)(unsafe.Pointer(nextHeader))
 			number := float64(weightedDouble.value)
-			coordinate, seen := coordinateByReqIndex[requiredPropertyIndex]
-			if !seen {
-				coordinate = r.isCoordinate(dataSet, requiredPropertyIndex, coordinateException)
-				coordinateByReqIndex[requiredPropertyIndex] = coordinate
-			}
-			if coordinate {
+			if coordinateCheck.answer(int(requiredPropertyIndex)) {
 				number = roundCoordinate(number)
 			}
 			val = number
@@ -341,14 +371,8 @@ func (r *ResultsIpi) GetWeightedValuesByIndexes(indexes []int, propertyNameResol
 		// intrinsic per-value weight, so surface their real confidence. Every other
 		// property is unweighted: report full confidence (1.0) rather than 0.0, which
 		// reads as zero confidence.
-		weighted, seen := weightedByReqIndex[requiredPropertyIndex]
-		if !seen {
-			weighted = r.isPropertyWeighted(dataSet, requiredPropertyIndex, typeException)
-			weightedByReqIndex[requiredPropertyIndex] = weighted
-		}
-
 		weight := 1.0
-		if weighted {
+		if weightedCheck.answer(int(requiredPropertyIndex)) {
 			weight = float64(nextHeader.rawWeighting) / maxWeighting
 		}
 		values.AppendWithWeight(propName, val, weight)
