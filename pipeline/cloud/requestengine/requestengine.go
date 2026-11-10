@@ -172,10 +172,11 @@ type CloudRequestEngine struct {
 
 // KnownPublicProperties returns the accessible Properties, keyed by product,
 // and true once they are known, making no request. It returns false after a
-// transient failure at build time until a use has fetched them.
+// transient failure at build time until a use has fetched them. It returns a
+// copy, so a caller may change it without changing the engine.
 func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bool) {
 	if p := e.products.Load(); p != nil {
-		return *p, true
+		return cloneProducts(*p), true
 	}
 	return nil, false
 }
