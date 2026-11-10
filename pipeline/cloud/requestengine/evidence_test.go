@@ -103,3 +103,66 @@ func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 		t.Errorf("the request carried %v, want %v", form, want)
 	}
 }
+
+// Evidence named in any letter case is matched to the keys the cloud service
+// accepts, also in any letter case, and Evidence that strips to resource,
+// license, licence or values in any letter case is left out.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+func TestRequestLeavesOutEngineFieldsInAnyLetterCase(t *testing.T) {
+	var mu sync.Mutex
+	var form url.Values
+	mux := http.NewServeMux()
+	mux.HandleFunc("/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"Products":{}}`)
+	})
+	mux.HandleFunc("/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `["Header.User-Agent","query.LICENCE",`+
+			`"header.Resource","Query.Values","query.License"]`)
+	})
+	mux.HandleFunc("/json", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		mu.Lock()
+		form = r.PostForm
+		mu.Unlock()
+		io.WriteString(w, `{"device":{}}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	e, err := NewBuilder().
+		SetResourceKey("configured-key").
+		SetEndpoint(srv.URL + "/").
+		SetHTTPClient(srv.Client()).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p, err := core.NewPipelineBuilder().AddFlowElement(e).Build()
+	if err != nil {
+		t.Fatalf("build the Pipeline: %v", err)
+	}
+	defer p.Close()
+
+	fd := p.CreateFlowData()
+	for key, value := range map[string]string{
+		"header.User-Agent": "header agent",
+		"query.LICENCE":     "evidence-licence",
+		"header.Resource":   "header-resource",
+		"QUERY.values":      "device.ismobile",
+		"query.LiCeNsE":     "evidence-license",
+	} {
+		fd.AddEvidence(key, value)
+	}
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := url.Values{
+		"resource":   {"configured-key"},
+		"user-agent": {"header agent"},
+	}
+	if !reflect.DeepEqual(form, want) {
+		t.Errorf("the request carried %v, want %v", form, want)
+	}
+}
