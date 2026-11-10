@@ -124,21 +124,20 @@ func (e *Element) Process(fd core.FlowData) error {
 				}
 			}
 
-			// A value that is nil has no entry, while one assigned no value
-			// is written as null with its nullreason below.
+			// A value that is nil has no entry and no delayexecution, while
+			// one assigned no value is written as null with its nullreason.
+			// Either way evidenceproperties is written, as the .NET and Java
+			// JSON Builders do, so the page can still run the JavaScript.
 			value, isNull, nullReason, ok := normalizeValue(raw)
-			if !ok {
-				continue
-			}
-			if isNull {
+			if ok && isNull {
 				obj[propName] = nil
 				obj[propName+"nullreason"] = nullReason
-			} else {
+			} else if ok {
 				obj[propName] = value
 			}
 
 			if hasMeta {
-				if pm.DelayExecution {
+				if ok && pm.DelayExecution {
 					obj[propName+"delayexecution"] = true
 				}
 				if eps := delayedEvidenceProperties(pm, elementKey, meta); len(eps) > 0 {
