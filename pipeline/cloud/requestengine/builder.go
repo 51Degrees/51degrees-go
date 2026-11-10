@@ -33,11 +33,15 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
-// Builder constructs a CloudRequestEngine. The Resource Key is required.
+// Builder constructs a CloudRequestEngine, which authenticates with a
+// Resource Key, a License Key or both.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
 type Builder struct {
 	logger               *slog.Logger
 	httpClient           *http.Client
 	resourceKey          string
+	licenseKey           string
+	requestedProperties  []string
 	endpoint             string
 	dataEndpoint         string
 	propertiesEndpoint   string
@@ -92,6 +96,23 @@ func (b *Builder) SetHTTPClient(c *http.Client) *Builder { b.httpClient = c; ret
 // the returned Properties.
 func (b *Builder) SetResourceKey(key string) *Builder { b.resourceKey = key; return b }
 
+// SetLicenseKey sets the License Key used to authenticate requests. With no
+// Resource Key, SetRequestedProperties must name the Properties wanted,
+// because a License Key names none of its own. Beside a Resource Key, the
+// answer holds the Resource Key's Properties plus the Requested Properties
+// the License Key grants.
+func (b *Builder) SetLicenseKey(key string) *Builder { b.licenseKey = key; return b }
+
+// SetRequestedProperties sets the Properties to ask the cloud service for, as
+// fully qualified names such as "device.ismobile". They are required with a
+// License Key alone. Beside a Resource Key they are added to the Properties
+// the key carries, and one that no licence grants is answered as null with
+// its nullreason.
+func (b *Builder) SetRequestedProperties(names ...string) *Builder {
+	b.requestedProperties = append([]string(nil), names...)
+	return b
+}
+
 // SetEndpoint sets the base URL; endpoint paths are derived from it unless set
 // explicitly.
 func (b *Builder) SetEndpoint(url string) *Builder { b.endpoint = url; return b }
@@ -143,8 +164,8 @@ func (b *Builder) setClock(now func() time.Time) *Builder { b.now = now; return 
 
 // SetDiscoveryState gives Build the accepted Evidence keys and accessible
 // Properties that an earlier build discovered, read from DiscoveryState, so
-// Build makes no discovery request. They depend only on the Resource Key, so
-// use a state from a build with the same key. Nil, the default, makes Build
+// Build makes no discovery request. They depend only on the credentials, so
+// use a state from a build with the same keys. Nil, the default, makes Build
 // fetch them from the cloud service. Build refuses a state whose
 // EvidenceKeys or Products is nil, such as one read from an empty JSON
 // object, because the engine would never fetch what is missing. An empty
@@ -158,16 +179,22 @@ func (b *Builder) SetDiscoveryState(s *DiscoveryState) *Builder { b.state = s; r
 func (b *Builder) DiscoveryState() *DiscoveryState { return b.discovered }
 
 // Build creates the CloudRequestEngine and fetches its accessible Properties
-// and accepted Evidence keys from the cloud service. A 4xx answer to either,
-// such as for an invalid Resource Key, fails the build with a
-// *core.ConfigurationError wrapping the *CloudRequestError. Any other failure
-// is logged as a warning and the build completes, and the engine fetches what
-// is missing on first use.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
+// and accepted Evidence keys from the cloud service. A combination of Resource
+// Key, License Key and Requested Properties that the specification's table
+// marks invalid fails the build with a *core.ConfigurationError, before any
+// request. A key or name that is empty or only whitespace counts as absent.
+// A 4xx answer to either request, such as for an invalid Resource Key, fails
+// the build with a *core.ConfigurationError wrapping the *CloudRequestError.
+// Any other failure is logged as a warning and the build completes, and the
+// engine fetches what is missing on first use.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (b *Builder) Build() (*CloudRequestEngine, error) {
 	b.discovered = nil
-	if b.resourceKey == "" {
-		return nil, core.NewConfigurationError("a Resource Key is required to build a CloudRequestEngine", nil)
+	resourceKey := strings.TrimSpace(b.resourceKey)
+	licenseKey := strings.TrimSpace(b.licenseKey)
+	requested := trimmedNames(b.requestedProperties)
+	if err := checkCredentials(resourceKey, licenseKey, requested); err != nil {
+		return nil, err
 	}
 	if b.state != nil && (b.state.EvidenceKeys == nil || b.state.Products == nil) {
 		return nil, core.NewConfigurationError("the discovery state given to "+
@@ -190,7 +217,9 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 
 	e := &CloudRequestEngine{
 		httpClient:              client,
-		resourceKey:             b.resourceKey,
+		resourceKey:             resourceKey,
+		licenseKey:              licenseKey,
+		requestedProperties:     requested,
 		origin:                  b.origin,
 		dataEndpoint:            dataEndpoint,
 		propertiesEndpoint:      propertiesEndpoint,
@@ -217,6 +246,51 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 	return e, nil
 }
 
+// The messages for the combinations of credentials Build refuses. Each says
+// why the combination cannot work, because the rule on its own reads as
+// arbitrary.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
+const (
+	messageNoCredential = "CloudRequestEngine needs a Resource Key or a " +
+		"License Key to authenticate with, as the cloud service answers 401 " +
+		"to a request that carries neither. Set one with SetResourceKey or " +
+		"SetLicenseKey. Create a Resource Key for free at " +
+		"https://configure.51degrees.com/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-requestengine-builder.go&utm_term=no-credential"
+	messageLicenseKeyNeedsProperties = "CloudRequestEngine has a License " +
+		"Key and no Requested Properties. A License Key names no Properties " +
+		"of its own, so the cloud service answers 400 to every request made " +
+		"with one that does not list the Properties it wants. Call " +
+		"SetRequestedProperties with the fully qualified names wanted, for " +
+		"example \"device.ismobile\" and \"device.iscrawler\"."
+)
+
+// checkCredentials refuses the combinations the specification's table marks
+// invalid, so a deployment sees one configuration error when the engine is
+// built rather than a failure on every request it serves.
+func checkCredentials(resourceKey, licenseKey string, requested []string) error {
+	switch {
+	case resourceKey == "" && licenseKey == "":
+		return core.NewConfigurationError(messageNoCredential, nil)
+	case resourceKey == "" && len(requested) == 0:
+		return core.NewConfigurationError(messageLicenseKeyNeedsProperties, nil)
+	}
+	return nil
+}
+
+// trimmedNames returns names split at commas, as a list in one argument is
+// the same list, with each trimmed and the empty ones left out.
+func trimmedNames(names []string) []string {
+	var out []string
+	for _, name := range names {
+		for _, part := range strings.Split(name, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
+}
+
 func orDefault(v, def string) string {
 	if v == "" {
 		return def
@@ -230,6 +304,12 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	b := NewBuilder().SetLogger(logger)
 	if v, ok := core.StringParam(params, "ResourceKey"); ok {
 		b.SetResourceKey(v)
+	}
+	if v, ok := core.StringParam(params, "LicenseKey"); ok {
+		b.SetLicenseKey(v)
+	}
+	if v, ok := core.StringListParam(params, "RequestedProperties"); ok {
+		b.SetRequestedProperties(v...)
 	}
 	if v, ok := core.StringParam(params, "EndPoint"); ok {
 		b.SetEndpoint(v)
