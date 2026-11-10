@@ -180,7 +180,7 @@ func engineGoroutines() int {
 	buf := make([]byte, 1<<20)
 	stacks := string(buf[:runtime.Stack(buf, true)])
 	return strings.Count(stacks, "(*Engine).reloadFileEvent") +
-		strings.Count(stacks, "(*FileUpdater).ScheduleFilePulling")
+		strings.Count(stacks, "(*Engine).pullDataFiles")
 }
 
 // stopWithin stops the engine and reports whether Stop returned in time.
