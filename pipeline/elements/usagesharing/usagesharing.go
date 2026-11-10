@@ -378,7 +378,8 @@ func (e *Element) finish(b *backOff) {
 // send sends one message and reports whether it succeeded. It fails when the
 // request cannot be made, has no answer within the HTTP client's timeout or
 // is answered with anything other than 200, whose status code and content are
-// logged.
+// logged. A message or request that cannot be built is a request that cannot
+// be made, so it is a failed send as well.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#request-detail
 func (e *Element) send(batch []*record) bool {
 	xmlBytes, err := e.buildXML(batch)
