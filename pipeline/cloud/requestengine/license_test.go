@@ -628,3 +628,54 @@ func TestFactoryTakesLicenseKeyAndRequestedProperties(t *testing.T) {
 		})
 	}
 }
+
+// A License Key that a failed response's content holds across the point
+// where the logged content is cut is still masked, so no part of it is
+// shown in the error.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/logging.md#license-keys
+func TestLicenseKeyAcrossTheCutIsMasked(t *testing.T) {
+	cloud := newCredentialCloud()
+	cloud.jsonStatus = http.StatusInternalServerError
+	cloud.jsonBody = strings.Repeat("x", 512-6) +
+		testLicenseKey + " and more"
+	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
+		SetLicenseKey(testLicenseKey).
+		SetRequestedProperties("device.ismobile").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	err = processWith(t, pipelineOf(t, e, false), nil)
+	if err == nil {
+		t.Fatal("a failed response gives no error")
+	}
+	if strings.Contains(err.Error(), testLicenseKey[:6]) {
+		t.Errorf("the error %q shows part of the License Key", err)
+	}
+}
+
+// Requested Properties given as one comma separated argument are the same
+// list as separate arguments, so they are sent as values and none of them
+// is reported as not covered when the answer holds them all.
+func TestCommaSeparatedPropertiesAreSplit(t *testing.T) {
+	cloud := newCredentialCloud()
+	log := &logRecorder{}
+	e, err := credentialBuilder(cloud.serve(t), log).
+		SetLicenseKey(testLicenseKey).
+		SetRequestedProperties("device.ismobile, device.iscrawler").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if err := processWith(t, pipelineOf(t, e, false),
+		map[string]string{"header.user-agent": "ua"}); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	req, _ := cloud.last("json")
+	if got := req.form.Get("values"); got != "device.ismobile,device.iscrawler" {
+		t.Errorf("values is %q, want device.ismobile,device.iscrawler", got)
+	}
+	for _, r := range log.all() {
+		t.Errorf("logged %s %s, want nothing", r.Level, recordText(r))
+	}
+}
