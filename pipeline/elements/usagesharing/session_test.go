@@ -87,6 +87,10 @@ func shareSession(t *testing.T, p core.Pipeline, evidence, request string) {
 // entryWaitSeconds is how long waitForEntries waits for entries to be shared.
 const entryWaitSeconds = 2
 
+// settleMilliseconds is how long settle waits for an entry that should not be
+// shared, before checking that none arrived.
+const settleMilliseconds = 400
+
 // sharedEntries returns the number of entries in all the messages captured,
 // because one message can hold several entries.
 func sharedEntries(c *capture) int {
@@ -115,7 +119,7 @@ func waitForEntries(t *testing.T, c *capture, want int) {
 // the capture holds want entries.
 func settle(t *testing.T, c *capture, want int) {
 	t.Helper()
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(settleMilliseconds * time.Millisecond)
 	if got := sharedEntries(c); got != want {
 		t.Errorf("shared %d entries, want %d", got, want)
 	}
