@@ -152,7 +152,7 @@ type CloudRequestEngine struct {
 	origin      string
 
 	// requestedProperties are the fully qualified names of the Properties a
-	// request asks for, sent as values. Only a License Key alone has them.
+	// request asks for, sent as values beside whichever key is set.
 	requestedProperties []string
 	// notReturnedReported is set once the first answer to a request that
 	// asked for Properties has been compared with the request.
@@ -325,9 +325,11 @@ func (e *CloudRequestEngine) maskLicenseKey(text string) string {
 
 // reportPropertiesNotReturned compares the Properties a request asked for
 // with the answer, the first time an answer arrives, and logs a warning
-// naming any the answer left out. The cloud service drops a Property the
-// License Key does not cover without naming it when the request also asked
-// for one it covers. A Property that is present but null counts as answered,
+// naming any the answer left out. With a License Key, the cloud service drops
+// a Property the License Key does not cover without naming it when the
+// request also asked for one it covers. With a Resource Key alone, a Property
+// no licence grants comes back null, so only a name that is not a Property is
+// left out. A Property that is present but null counts as answered,
 // because its nullreason explains it. Names are compared in any letter case,
 // because the answer is in lower case. The answer cannot change while the
 // key and the list stay the same, so the comparison is made once.
@@ -349,11 +351,14 @@ func (e *CloudRequestEngine) reportPropertiesNotReturned(body string) {
 		}
 	}
 	if len(missing) > 0 {
+		reason := "They are not covered by the License Key in use"
+		if e.licenseKey == "" {
+			reason = "The cloud service has no Properties with those names"
+		}
 		e.Logger().Warn(fmt.Sprintf("The cloud service did not return the "+
-			"requested Properties %s in its answer. They are not covered by "+
-			"the License Key in use, so they will be missing from every "+
-			"result. The other requested Properties came back and are usable.",
-			strings.Join(missing, ", ")))
+			"requested Properties %s in its answer. %s, so they will be "+
+			"missing from every result. The other requested Properties came "+
+			"back and are usable.", strings.Join(missing, ", "), reason))
 	}
 }
 
@@ -437,14 +442,14 @@ func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
 	}
 }
 
-// checkResponse implements the error scenarios required of cloud HTTP requests.
-// The License Key is masked in each message, as the cloud service may write
-// it in its answer.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
 // maxLoggedContentBytes is how much of a failed response's content its error
 // shows.
 const maxLoggedContentBytes = 512
 
+// checkResponse implements the error scenarios required of cloud HTTP requests.
+// The License Key is masked in each message, as the cloud service may write
+// it in its answer.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
 func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
 		return NewCloudResponseError(e.maskLicenseKey(strings.Join(msgs, "; ")), status, headers)
