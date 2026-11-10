@@ -35,6 +35,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -481,6 +482,7 @@ func cloneProperties(properties []PropertyMeta) []PropertyMeta {
 	out := make([]PropertyMeta, len(properties))
 	for i, property := range properties {
 		property.ItemProperties = cloneProperties(property.ItemProperties)
+		property.EvidenceProperties = slices.Clone(property.EvidenceProperties)
 		out[i] = property
 	}
 	return out
