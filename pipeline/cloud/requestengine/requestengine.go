@@ -32,7 +32,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -175,10 +174,11 @@ type CloudRequestEngine struct {
 // are normally fetched when the engine is built. After a transient failure
 // then, a call fetches them unless the engine is in its recovery period, so
 // call it while processing, where SuppressProcessExceptions covers a failure.
+// It returns a copy, so a caller may change it without changing the engine.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) {
 	if p := e.products.Load(); p != nil {
-		return *p, nil
+		return cloneProducts(*p), nil
 	}
 	if until, inRecovery := e.inRecovery(); inRecovery {
 		return nil, &TemporarilyUnavailableError{RecoveryUntil: until}
@@ -186,7 +186,7 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 	if err := e.loadProducts(); err != nil {
 		return nil, err
 	}
-	return *e.products.Load(), nil
+	return cloneProducts(*e.products.Load()), nil
 }
 
 // Process makes the cloud request and stores the raw JSON response.
@@ -422,10 +422,10 @@ func (e *CloudRequestEngine) keepProducts(products map[string]ProductMeta) {
 	e.products.CompareAndSwap(nil, &products)
 }
 
-// useState keeps a discovery state given to the builder, in place of making
-// the discovery requests.
+// useState keeps a copy of a discovery state given to the builder, in place
+// of making the discovery requests.
 func (e *CloudRequestEngine) useState(s *DiscoveryState) {
-	e.keepProducts(maps.Clone(s.Products))
+	e.keepProducts(cloneProducts(s.Products))
 	e.evidenceKeys.CompareAndSwap(nil, core.NewWhitelistFilter(s.EvidenceKeys...))
 }
 
@@ -438,8 +438,35 @@ func (e *CloudRequestEngine) discoveryState() *DiscoveryState {
 	}
 	return &DiscoveryState{
 		EvidenceKeys: keys.Keys(),
-		Products:     maps.Clone(*products),
+		Products:     cloneProducts(*products),
 	}
+}
+
+// cloneProducts returns a copy of products that shares no map or slice with
+// it, item Properties included. Nil stays nil and empty stays empty.
+func cloneProducts(products map[string]ProductMeta) map[string]ProductMeta {
+	if products == nil {
+		return nil
+	}
+	out := make(map[string]ProductMeta, len(products))
+	for name, product := range products {
+		product.Properties = cloneProperties(product.Properties)
+		out[name] = product
+	}
+	return out
+}
+
+// cloneProperties returns a copy of properties that shares no slice with it.
+func cloneProperties(properties []PropertyMeta) []PropertyMeta {
+	if properties == nil {
+		return nil
+	}
+	out := make([]PropertyMeta, len(properties))
+	for i, property := range properties {
+		property.ItemProperties = cloneProperties(property.ItemProperties)
+		out[i] = property
+	}
+	return out
 }
 
 // acceptedEvidence is the engine's Evidence key filter, holding the keys from
