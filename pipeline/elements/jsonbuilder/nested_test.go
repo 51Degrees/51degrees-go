@@ -84,3 +84,79 @@ func TestJSONBuilderRecordsAndNilValues(t *testing.T) {
 		t.Errorf("the record is %v, want %v", profiles[0], want)
 	}
 }
+
+// nilEvidenceEngine writes a delayed JavaScript Property and, beside it,
+// Properties that list it as Evidence and whose values are set but nil.
+type nilEvidenceEngine struct{ *core.BaseElement }
+
+// nilEvidenceValues are the values that are set but nil, by Property name.
+var nilEvidenceValues = map[string]any{
+	"plainnil":   nil,
+	"nillist":    []string(nil),
+	"nilmap":     map[string]string(nil),
+	"nilpointer": (*string)(nil),
+	"setbutnil":  engines.NewAspectPropertyValue[any](nil),
+}
+
+func newNilEvidenceEngine() *nilEvidenceEngine {
+	e := &nilEvidenceEngine{BaseElement: core.NewBaseElement("delayed",
+		core.NewWhitelistFilter(), nil)}
+	props := []core.PropertyMetadata{
+		{Name: "javascript", Element: e, Available: true, DelayExecution: true},
+		{Name: "nildelayed", Element: e, Available: true, DelayExecution: true},
+	}
+	for name := range nilEvidenceValues {
+		props = append(props, core.PropertyMetadata{Name: name, Element: e,
+			Available: true, EvidenceProperties: []string{"javascript"}})
+	}
+	e.SetProperties(props)
+	return e
+}
+
+func (e *nilEvidenceEngine) Process(fd core.FlowData) error {
+	d := fd.GetOrAdd("delayed", func(core.FlowData) core.ElementData {
+		return core.NewBaseElementData()
+	})
+	d.Set("javascript", core.JavaScript("navigator.geolocation"))
+	d.Set("nildelayed", nil)
+	for name, value := range nilEvidenceValues {
+		d.Set(name, value)
+	}
+	return nil
+}
+
+// A Property whose value is set but nil has no entry and no nullreason, but
+// still lists the delayed Properties that are its Evidence, so the page can
+// run them. It gets no delayexecution. The .NET and Java JSON Builders do the
+// same.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+func TestJSONBuilderNilValueKeepsEvidenceProperties(t *testing.T) {
+	result := buildJSON(t, newNilEvidenceEngine())
+	delayed, ok := result["delayed"].(map[string]any)
+	if !ok {
+		t.Fatalf("no delayed entry in %v", result)
+	}
+	for name := range nilEvidenceValues {
+		for _, key := range []string{name, name + "nullreason",
+			name + "delayexecution"} {
+			if v, present := delayed[key]; present {
+				t.Errorf("delayed has %q as %v, want no entry", key, v)
+			}
+		}
+		got := delayed[name+"evidenceproperties"]
+		if !reflect.DeepEqual(got, []any{"delayed.javascript"}) {
+			t.Errorf("%sevidenceproperties is %v, want [delayed.javascript]",
+				name, got)
+		}
+	}
+	for _, key := range []string{"nildelayed", "nildelayeddelayexecution",
+		"nildelayednullreason"} {
+		if v, present := delayed[key]; present {
+			t.Errorf("delayed has %q as %v, want no entry", key, v)
+		}
+	}
+	if delayed["javascriptdelayexecution"] != true {
+		t.Errorf("javascriptdelayexecution is %v, want true",
+			delayed["javascriptdelayexecution"])
+	}
+}
