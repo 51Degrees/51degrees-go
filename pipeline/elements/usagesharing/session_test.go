@@ -191,6 +191,34 @@ func TestSessionCookieSharedOnlyWithAllEvidence(t *testing.T) {
 	}
 }
 
+// The same holds for a 51D_ session cookie that comes only in the web
+// request, which the element reads as well as the Evidence.
+func TestSessionCookieInWebRequestSharedOnlyWithAllEvidence(t *testing.T) {
+	for _, shareAll := range []bool{false, true} {
+		p, c := sessionPipeline(t, map[string]any{
+			"TrackSession":      true,
+			"SessionCookieName": "51D_session",
+			"ShareAllEvidence":  shareAll,
+		})
+		fd := p.CreateFlowData()
+		fd.AddEvidence("header.user-agent", "ua")
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.AddCookie(&http.Cookie{Name: "51D_session", Value: "A"})
+		fd.AddEvidence(core.EvidenceHTTPRequest, core.NewWebRequest(r))
+		if err := fd.Process(); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+		c.waitFor(t, 1)
+		c.mu.Lock()
+		body := strings.ToLower(string(c.bodies[0]))
+		c.mu.Unlock()
+		if shared := strings.Contains(body, "51d_session"); shared != shareAll {
+			t.Errorf("with all Evidence shared %v, the session cookie in the "+
+				"web request shared is %v, in %s", shareAll, shared, body)
+		}
+	}
+}
+
 // Track session with no session cookie name has nothing to compare, so the
 // configuration is refused.
 func TestTrackSessionNeedsCookieName(t *testing.T) {
