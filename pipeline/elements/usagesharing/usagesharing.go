@@ -72,7 +72,6 @@ const (
 	apiVersion             = "4.0" // fallback when the build version is unavailable
 	productName            = "Pipeline"
 	maxValueLength         = 10000
-	truncatedMarker        = "[TRUNCATED BY USAGE SHARING] "
 )
 
 type config struct {
@@ -122,6 +121,8 @@ type Element struct {
 	// discarded counts the entries discarded since the queue was last found
 	// full, so the log has one entry for each time it fills.
 	discarded atomic.Int64
+	// clock times the back-off and the waits of the sending goroutine.
+	clock clock
 }
 
 type record struct {
@@ -366,14 +367,14 @@ func (e *Element) consume() {
 			return
 		default:
 		}
-		if wait := b.remaining(time.Now()); wait > 0 {
-			timer := time.NewTimer(wait)
+		if wait := b.remaining(e.clock.now()); wait > 0 {
+			fired, stopTimer := e.clock.newTimer(wait)
 			select {
 			case <-e.stop:
-				timer.Stop()
+				stopTimer()
 				e.finish(b)
 				return
-			case <-timer.C:
+			case <-fired:
 			}
 			continue
 		}
@@ -387,7 +388,7 @@ func (e *Element) consume() {
 			continue
 		}
 		ok := e.send(e.takeMessage())
-		switch b.record(ok, time.Now()) {
+		switch b.record(ok, e.clock.now()) {
 		case backOffPaused:
 			e.Logger().Warn("usage sharing paused sending after failed sends",
 				"delay", b.delay)
@@ -417,17 +418,17 @@ func (e *Element) takeMessage() []*record {
 		if e.cfg.takeTimeout <= 0 {
 			return batch
 		}
-		timer := time.NewTimer(e.cfg.takeTimeout)
+		fired, stopTimer := e.clock.newTimer(e.cfg.takeTimeout)
 		select {
 		case rec := <-e.queue:
-			timer.Stop()
+			stopTimer()
 			batch = append(batch, rec)
-		case <-timer.C:
+		case <-fired:
 			return batch
 		case <-e.stop:
 			// The element is closing, so the entries taken are sent now
 			// rather than after a take timeout.
-			timer.Stop()
+			stopTimer()
 			return batch
 		}
 	}
@@ -451,7 +452,7 @@ func (e *Element) finish(b *backOff) {
 	if len(rest) == 0 {
 		return
 	}
-	if b.remaining(time.Now()) > 0 {
+	if b.remaining(e.clock.now()) > 0 {
 		e.Logger().Warn("usage sharing closed while sending was paused, so "+
 			"the queued entries were discarded", "discarded", len(rest))
 		return
@@ -462,7 +463,8 @@ func (e *Element) finish(b *backOff) {
 // send sends one message and reports whether it succeeded. It fails when the
 // request cannot be made, has no answer within the HTTP client's timeout or
 // is answered with anything other than 200, whose status code and content are
-// logged.
+// logged. A message or request that cannot be built is a request that cannot
+// be made, so it is a failed send as well.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#request-detail
 func (e *Element) send(batch []*record) bool {
 	xmlBytes, err := e.buildXML(batch)
@@ -560,21 +562,14 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []strin
 	writeElement(b, "ServerIP", serverIP())
 	writeElement(b, "Platform", runtime.GOOS)
 
-	// Evidence entries, deterministically ordered. A single BadSchema element is
-	// added at the end if any value contained characters that had to be encoded.
+	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))
 	for k := range rec.evidence {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	badSchema := false
 	for _, key := range keys {
-		if writeEvidence(b, key, rec.evidence[key]) {
-			badSchema = true
-		}
-	}
-	if badSchema {
-		writeElement(b, "BadSchema", "true")
+		writeEvidence(b, key, rec.evidence[key])
 	}
 	b.WriteString("</Device>")
 }
@@ -589,50 +584,47 @@ func writeElement(b *strings.Builder, name, value string) {
 	b.WriteByte('>')
 }
 
-// writeEvidence writes a single Evidence value using the usage-sharing schema:
-// a prefixed key becomes <prefix Name="field"><![CDATA[value]]></prefix> with
-// the prefix (category) lower-case as-is, and a bare key becomes
-// <field>value</field>. Over-long values are truncated with a marker and
-// invalid XML characters are hex-encoded. It returns true when any character
-// was encoded, so the caller can emit a single BadSchema element.
-func writeEvidence(b *strings.Builder, key, value string) bool {
+// writeEvidence writes a single Evidence value as the usage sharing element
+// page describes. A prefixed key becomes <prefix Name="field">value</prefix>
+// with the prefix as it is in the key, and a bare key becomes
+// <field>value</field>. A value or field with characters that XML does not
+// allow has them replaced with \xNNNN escapes and the element gets
+// escaped="true". A value over maxValueLength characters is cut to that
+// length and the element gets truncated="true".
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#processing
+func writeEvidence(b *strings.Builder, key, value string) {
 	prefix, field := core.SplitEvidenceKey(key)
 
+	truncated := false
 	if r := []rune(value); len(r) > maxValueLength {
-		value = truncatedMarker + string(r[:maxValueLength])
+		value = string(r[:maxValueLength])
+		truncated = true
 	}
 	encodedValue, badValue := encodeInvalidXMLChars(value)
 	encodedField, badField := encodeInvalidXMLChars(field)
 
+	name := prefix
 	if prefix == "" {
-		b.WriteByte('<')
-		b.WriteString(encodedField)
-		b.WriteByte('>')
-		xml.EscapeText(b, []byte(encodedValue))
-		b.WriteString("</")
-		b.WriteString(encodedField)
-		b.WriteByte('>')
-		return badValue || badField
+		name = encodedField
 	}
-
 	b.WriteByte('<')
-	b.WriteString(prefix)
-	b.WriteString(` Name="`)
-	xml.EscapeText(b, []byte(encodedField))
-	b.WriteString(`">`)
-	writeCDATA(b, encodedValue)
-	b.WriteString("</")
-	b.WriteString(prefix)
+	b.WriteString(name)
+	if badValue || badField {
+		b.WriteString(` escaped="true"`)
+	}
+	if truncated {
+		b.WriteString(` truncated="true"`)
+	}
+	if prefix != "" {
+		b.WriteString(` Name="`)
+		xml.EscapeText(b, []byte(encodedField))
+		b.WriteByte('"')
+	}
 	b.WriteByte('>')
-	return badValue || badField
-}
-
-// writeCDATA writes value inside a CDATA section, splitting any "]]>" so it
-// cannot close the section early.
-func writeCDATA(b *strings.Builder, value string) {
-	b.WriteString("<![CDATA[")
-	b.WriteString(strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>"))
-	b.WriteString("]]>")
+	xml.EscapeText(b, []byte(encodedValue))
+	b.WriteString("</")
+	b.WriteString(name)
+	b.WriteByte('>')
 }
 
 // encodeInvalidXMLChars replaces characters not valid in XML with a \xNNNN
@@ -783,10 +775,15 @@ type tracker struct {
 	mu       sync.Mutex
 	interval time.Duration
 	seen     map[uint64]time.Time
+	clock    clock
 }
 
 func newTracker(interval time.Duration) *tracker {
-	return &tracker{interval: interval, seen: make(map[uint64]time.Time)}
+	return &tracker{
+		interval: interval,
+		seen:     make(map[uint64]time.Time),
+		clock:    systemClock{},
+	}
 }
 
 // share reports whether Evidence with hash h is to be shared now, being when
@@ -796,7 +793,7 @@ func newTracker(interval time.Duration) *tracker {
 // restores the entry as it was, for Evidence that was then not shared.
 // Entries whose interval has passed are removed once there are many.
 func (t *tracker) share(h uint64) (shared bool, undo func()) {
-	now := time.Now()
+	now := t.clock.now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	last, existed := t.seen[h]

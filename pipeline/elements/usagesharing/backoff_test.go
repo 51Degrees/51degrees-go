@@ -52,27 +52,35 @@ func fastBackOff(threshold int, initial time.Duration) *Builder {
 func TestBackOffTrialLengthensThenResumes(t *testing.T) {
 	u := &usageService{}
 	log := &usageLog{}
-	p := usagePipeline(t, fastBackOff(2, 300*time.Millisecond), u, log)
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(fastBackOff(2, 300*time.Millisecond), clk),
+		u, log)
 	failSends(t, p, u, 2)
+	clk.waitForTimer(t)
 	for i := 3; i <= 5; i++ {
 		share(t, p, i)
 	}
-	time.Sleep(150 * time.Millisecond)
+	clk.advance(299 * time.Millisecond)
 	if got := len(u.messages()); got != 2 {
 		t.Fatalf("received %d messages during the first pause, want 2", got)
 	}
-	// The trial after 300ms takes two of the three queued entries and fails.
-	u.waitForMessages(t, 3, time.Second)
-	time.Sleep(300 * time.Millisecond)
+	// The trial when the 300ms pause ends takes two of the three queued
+	// entries and fails, which doubles the pause.
+	clk.advance(time.Millisecond)
+	u.waitForMessages(t, 3, 2*time.Second)
+	clk.waitForTimer(t)
+	clk.advance(599 * time.Millisecond)
 	if got := len(u.messages()); got != 3 {
 		t.Fatalf("received %d messages during the second pause, want 3", got)
 	}
-	// The trial after 600ms succeeds and sends the entry left.
+	// The trial when the 600ms pause ends succeeds and sends the entry left.
 	u.status.Store(http.StatusOK)
+	clk.advance(time.Millisecond)
 	u.waitForMessages(t, 4, 2*time.Second)
 	if got := u.messages(); !reflect.DeepEqual(got, []int{1, 1, 2, 1}) {
 		t.Errorf("received the messages %v, want [1 1 2 1]", got)
 	}
+	log.waitFor(t, slog.LevelInfo, "resumed")
 	for _, want := range []struct {
 		level slog.Level
 		part  string
@@ -93,18 +101,20 @@ func TestBackOffTrialLengthensThenResumes(t *testing.T) {
 // requests.
 func TestBackOffDrainsQueueWhenPauseEnds(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, fastBackOff(1, 300*time.Millisecond).
-		SetMinimumEntriesPerMessage(2), u, &usageLog{})
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(fastBackOff(1, 300*time.Millisecond).
+		SetMinimumEntriesPerMessage(2), clk), u, &usageLog{})
 	u.status.Store(http.StatusInternalServerError)
 	share(t, p, 1)
 	share(t, p, 2)
 	u.waitForMessages(t, 1, 2*time.Second)
+	clk.waitForTimer(t)
 	u.status.Store(http.StatusOK)
 	for i := 3; i <= 9; i++ {
 		share(t, p, i)
 	}
+	clk.advance(300 * time.Millisecond)
 	u.waitForMessages(t, 3, 2*time.Second)
-	time.Sleep(100 * time.Millisecond)
 	if got := u.messages(); !reflect.DeepEqual(got, []int{2, 4, 3}) {
 		t.Errorf("received the messages %v, want [2 4 3]", got)
 	}
@@ -114,14 +124,16 @@ func TestBackOffDrainsQueueWhenPauseEnds(t *testing.T) {
 // failures pauses sending even when some sends succeed.
 func TestSuccessDoesNotResetFailureCount(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, fastBackOff(2, time.Second), u, &usageLog{})
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(fastBackOff(2, time.Second), clk), u,
+		&usageLog{})
 	for i, status := range []int{500, 200, 500} {
 		u.status.Store(int64(status))
 		share(t, p, i)
 		u.waitForMessages(t, i+1, 2*time.Second)
 	}
+	clk.waitForTimer(t)
 	share(t, p, 3)
-	time.Sleep(300 * time.Millisecond)
 	if got := len(u.messages()); got != 3 {
 		t.Errorf("received %d messages, want 3 while sending is paused", got)
 	}
@@ -130,14 +142,21 @@ func TestSuccessDoesNotResetFailureCount(t *testing.T) {
 // A failure older than the failures window is not counted.
 func TestFailuresOutsideWindowNotCounted(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, fastBackOff(2, 2*time.Second).
-		SetFailuresWindow(time.Second), u, &usageLog{})
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(fastBackOff(2, 2*time.Second).
+		SetFailuresWindow(time.Second), clk), u, &usageLog{})
 	failSends(t, p, u, 1)
-	time.Sleep(1100 * time.Millisecond)
+	// The second message is taken only once the first failure is counted,
+	// so that failure is counted before the clock moves.
+	u.status.Store(http.StatusOK)
 	share(t, p, 2)
 	u.waitForMessages(t, 2, 2*time.Second)
+	clk.advance(1100 * time.Millisecond)
+	u.status.Store(http.StatusInternalServerError)
 	share(t, p, 3)
-	u.waitForMessages(t, 3, time.Second)
+	u.waitForMessages(t, 3, 2*time.Second)
+	share(t, p, 4)
+	u.waitForMessages(t, 4, 2*time.Second)
 }
 
 // A back-off option outside the range the specification gives is refused
@@ -219,9 +238,11 @@ func TestTrackerShareAndUndo(t *testing.T) {
 		t.Error("Evidence undone was not shared as new when next seen")
 	}
 
+	clk := newFakeClock()
 	short := newTracker(50 * time.Millisecond)
+	short.clock = clk
 	short.share(3)
-	time.Sleep(60 * time.Millisecond)
+	clk.advance(60 * time.Millisecond)
 	shared, undo = short.share(3)
 	if !shared {
 		t.Fatal("Evidence was not shared once the interval had passed")

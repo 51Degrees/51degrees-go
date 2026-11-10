@@ -54,6 +54,8 @@ type Builder struct {
 	// recovery holds the back-off options once one is set, and is nil while
 	// all are at their defaults.
 	recovery *recoveryConfig
+	// clock is the time of the machine unless a test sets it.
+	clock clock
 
 	trackSession      bool
 	sessionCookieName string
@@ -244,14 +246,22 @@ func (b *Builder) Build() *Element {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
+	clk := b.clock
+	if clk == nil {
+		clk = systemClock{}
+	}
+	tr := newTracker(cfg.repeatInterval)
+	tr.clock = clk
+
 	e := &Element{
 		BaseElement: core.NewBaseElement(DataKey, nil, b.logger),
 		cfg:         cfg,
 		httpClient:  client,
 		queue:       make(chan *record, cfg.maxQueueSize),
 		stop:        make(chan struct{}),
-		tracker:     newTracker(cfg.repeatInterval),
+		tracker:     tr,
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		clock:       clk,
 	}
 	return e
 }
