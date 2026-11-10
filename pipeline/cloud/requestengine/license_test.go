@@ -591,6 +591,45 @@ func TestPropertiesNotReturnedAreLoggedOnce(t *testing.T) {
 	}
 }
 
+// With a Resource Key and no License Key, a Property no licence grants comes
+// back null, so a name the answer left out is not a Property at all. The
+// warning says so, rather than blaming a License Key that was never set.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
+func TestResourceKeyPropertiesNotReturnedNameNoLicenseKey(t *testing.T) {
+	cloud := newCredentialCloud()
+	cloud.jsonBody = `{"device":{"ismobile":true,"hardwarevendor":null,` +
+		`"hardwarevendornullreason":"paid feature"}}`
+	log := &logRecorder{}
+	e, err := credentialBuilder(cloud.serve(t), log).
+		SetResourceKey(testResourceKey).
+		SetRequestedProperties("device.ismobile", "device.hardwarevendor",
+			"device.notaproperty").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if err := processWith(t, pipelineOf(t, e, false), nil); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	records := log.all()
+	if len(records) != 1 {
+		t.Fatalf("logged %d times, want once", len(records))
+	}
+	text := strings.ToLower(recordText(records[0]))
+	if !strings.Contains(text, "device.notaproperty") {
+		t.Errorf("the log entry %q does not name device.notaproperty", text)
+	}
+	if strings.Contains(text, "hardwarevendor") {
+		t.Errorf("the log entry %q names hardwarevendor, which was answered", text)
+	}
+	if strings.Contains(text, "license key") {
+		t.Errorf("the log entry %q names a License Key, and none is set", text)
+	}
+	if !strings.Contains(text, "no properties with those names") {
+		t.Errorf("the log entry %q does not say the names are not Properties", text)
+	}
+}
+
 // Factory takes the License Key and the Requested Properties from the
 // LicenseKey and RequestedProperties parameters, the list as comma separated
 // text or as a list.
