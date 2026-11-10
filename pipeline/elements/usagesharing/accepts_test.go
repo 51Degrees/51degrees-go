@@ -245,9 +245,11 @@ func TestUsageSharingSharesTheSessionValuesOfTheWebRequest(t *testing.T) {
 
 // No rule removes the Resource Key or the License Key. Under the fiftyone
 // prefix, the names the cloud service gives them, they are shared whatever
-// the configuration. As query string or form parameters they follow the
-// query rule, so they are shared when allow listed, when all query string
-// parameters are shared or when all Evidence is shared.
+// the configuration, even when the blocked headers name them. As query
+// string or form parameters they follow the query rule, so they are shared
+// when allow listed, when all query string parameters are shared or when all
+// Evidence is shared.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
 func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 	fiftyone := []string{"fiftyone.resource-key", "fiftyone.license-key"}
 	query := []string{"query.resource", "query.license", "query.licence"}
@@ -257,6 +259,9 @@ func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 	}{
 		"default":   {NewBuilder(), false},
 		"no blocks": {NewBuilder().SetBlockedHTTPHeaders(), false},
+		"keys blocked": {NewBuilder().SetBlockedHTTPHeaders("resource-key",
+			"license-key", "fiftyone.resource-key", "fiftyone.license-key"),
+			false},
 		"allow listed": {NewBuilder().SetIncludedQueryStringParameters(
 			"Resource", "License", "Licence"), true},
 		"all query": {NewBuilder().SetShareAllQueryStringParameters(true), true},
