@@ -104,6 +104,12 @@ type PropertyMeta struct {
 	// ItemProperties describes the sub-Properties of a list/collection Property,
 	// where each item is itself a set of Properties.
 	ItemProperties []PropertyMeta `json:"ItemProperties,omitempty"`
+	// DelayExecution is true for a JavaScript Property whose code should
+	// run only when the page asks for it.
+	DelayExecution bool `json:"DelayExecution,omitempty"`
+	// EvidenceProperties are the Properties whose JavaScript, when run, gives
+	// Evidence for this Property's value.
+	EvidenceProperties []string `json:"EvidenceProperties,omitempty"`
 }
 
 // ProductMeta describes the Properties available for a single product (Aspect).

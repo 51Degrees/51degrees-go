@@ -136,14 +136,30 @@ func productMetadata(products map[string]requestengine.ProductMeta,
 	product := products[aspectKey]
 	out := make([]core.PropertyMetadata, 0, len(product.Properties))
 	for _, p := range product.Properties {
-		out = append(out, core.PropertyMetadata{
-			Name:      p.Name,
-			Element:   element,
-			Category:  p.Category,
-			Available: true,
-		})
+		out = append(out, propertyMetadata(p, element))
 	}
 	return out
+}
+
+// propertyMetadata returns the metadata of a cloud Property, naming element,
+// with what the cloud service gives for it, as the .NET Cloud Aspect Engine
+// does. Type is left nil, meaning unknown, because the cloud service names
+// its types in its own terms, not as Go types.
+func propertyMetadata(p requestengine.PropertyMeta,
+	element core.FlowElement) core.PropertyMetadata {
+	pm := core.PropertyMetadata{
+		Name:               p.Name,
+		Element:            element,
+		Category:           p.Category,
+		Available:          true,
+		DelayExecution:     p.DelayExecution,
+		EvidenceProperties: p.EvidenceProperties,
+	}
+	for _, item := range p.ItemProperties {
+		pm.ItemProperties = append(pm.ItemProperties,
+			propertyMetadata(item, element))
+	}
+	return pm
 }
 
 // productLogger is a Cloud Aspect Engine built on BaseCloudAspectEngine, so
