@@ -160,7 +160,7 @@ func recordText(r slog.Record) string {
 	return strings.Join(parts, " ")
 }
 
-// Every row of the specification's table of credentials. The three valid
+// Every row of the specification's table of credentials. The four valid
 // rows build, and the three invalid ones fail the build with a
 // configuration error that names the fix, before any request is made. A
 // value that is empty or only whitespace counts as absent.
@@ -182,9 +182,9 @@ func TestCredentialCombinations(t *testing.T) {
 		{"License Key and blank Properties", "", testLicenseKey,
 			[]string{" ", ""}, "SetRequestedProperties"},
 		{"Resource Key and Properties", testResourceKey, "", properties,
-			"License Key alone"},
+			"SetLicenseKey"},
 		{"both keys and Properties", testResourceKey, testLicenseKey,
-			properties, "License Key alone"},
+			properties, ""},
 		{"no credential", "", "", nil, "SetResourceKey or SetLicenseKey"},
 		{"no credential and Properties", "", "", properties,
 			"SetResourceKey or SetLicenseKey"},
@@ -278,6 +278,38 @@ func TestResourceAndLicenseKeysSendBoth(t *testing.T) {
 	want := url.Values{
 		"resource":   {testResourceKey},
 		"license":    {testLicenseKey},
+		"user-agent": {"ua"},
+	}
+	if !reflect.DeepEqual(req.form, want) || len(req.query) != 0 {
+		t.Errorf("the data request had the query %v and the body %v, want "+
+			"no query and the body %v", req.query, req.form, want)
+	}
+}
+
+// With both keys and Requested Properties, the data request carries the
+// Resource Key, the License Key and the Requested Properties as values, all
+// in the body, so the cloud service answers with the Resource Key's
+// Properties plus the requested ones the License Key grants.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#license-key
+func TestBothKeysAndPropertiesSendValues(t *testing.T) {
+	cloud := newCredentialCloud()
+	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
+		SetResourceKey(testResourceKey).
+		SetLicenseKey(testLicenseKey).
+		SetRequestedProperties("ip.registeredname").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if err := processWith(t, pipelineOf(t, e, false),
+		map[string]string{"header.user-agent": "ua"}); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	req, _ := cloud.last("json")
+	want := url.Values{
+		"resource":   {testResourceKey},
+		"license":    {testLicenseKey},
+		"values":     {"ip.registeredname"},
 		"user-agent": {"ua"},
 	}
 	if !reflect.DeepEqual(req.form, want) || len(req.query) != 0 {
