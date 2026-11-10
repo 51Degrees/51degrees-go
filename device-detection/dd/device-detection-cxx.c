@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx b4f769adac0f5c20fc969830064998b0d84e9c49 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx cfad8978827292b97ad08f306891edea09ece304 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -35166,6 +35166,9 @@ const char* fiftyoneDegreesResultsHashGetNoValueReasonMessage(
 	    return "No matching profiles could be found for the supplied evidence. "
 	        "A 'best guess' can be returned by configuring more lenient "
 	        "matching rules. See https://51degrees.com/documentation/_device_detection__features__false_positive_control.html?utm_source=code&utm_medium=comment&utm_campaign=51degrees-cxx&utm_content=hash.c&utm_term=fiftyone_degrees_results_no_value_reason_null_profile";
+	case FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_TOO_MANY_VALUES:
+		return "The property has more than one value, so it cannot be "
+			"given as a single value of this type.";
 	case FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_UNKNOWN:
 	default:
 		return "The reason for missing values is unknown.";

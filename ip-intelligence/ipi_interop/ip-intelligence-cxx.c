@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx b4f769adac0f5c20fc969830064998b0d84e9c49 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx cfad8978827292b97ad08f306891edea09ece304 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -26917,6 +26917,10 @@ EXTERNAL const fiftyoneDegreesProfilePercentage* fiftyoneDegreesResultsIpiGetVal
 /**
  * Adds to builder the values associated in the results for the property name.
  *
+ * Each value is written in double quotes followed by a colon and its weight,
+ * to the decimal places of fiftyoneDegreesDefaultWktDecimalPlaces, as in
+ * `"GB":0.5`.
+ *
  * When no properties were named, the first read of a property of a component
  * walks the component's graph for the results. If the walk fails the exception
  * is set, and the component is not walked again until the results are next
@@ -26938,6 +26942,9 @@ EXTERNAL void fiftyoneDegreesResultsIpiAddValuesString(
 
 /**
  * Sets the buffer the values associated in the results for the property name.
+ *
+ * The values are written as fiftyoneDegreesResultsIpiAddValuesString writes
+ * them.
  *
  * When no properties were named, the first read of a property of a component
  * walks the component's graph for the results. If the walk fails the exception
@@ -26965,6 +26972,9 @@ EXTERNAL size_t fiftyoneDegreesResultsIpiGetValuesString(
 /**
  * Sets the buffer the values associated in the results for the property name.
  *
+ * The values are written as fiftyoneDegreesResultsIpiAddValuesString writes
+ * them.
+ *
  * When no properties were named, the first read of a property of a component
  * walks the component's graph for the results. If the walk fails the exception
  * is set, and the component is not walked again until the results are next
@@ -26989,6 +26999,49 @@ EXTERNAL size_t fiftyoneDegreesResultsIpiGetValuesStringByRequiredPropertyIndex(
 	char* buffer,
 	size_t bufferLength,
 	const char* separator,
+	fiftyoneDegreesException* exception);
+
+/**
+ * Gets the text of each value the results hold for the property, in the form
+ * the C++ results give it to every language built on them. A value's text is
+ * followed by a colon and its weight when the property has more than one
+ * value or the weight is not whole, as in `GB:0.5`, and otherwise is
+ * the value alone. The weight is written to six significant figures, with no
+ * trailing zeros and with an exponent when it rounds to less than 0.0001, as
+ * a C++ stream writes a double. fiftyoneDegreesResultsIpiGetValuesString
+ * instead puts every value in quotes and always adds its weight.
+ *
+ * Each value's text ends with a null, so the text is `count` null terminated
+ * strings one after another. The text is written into `buffer` when it fits
+ * in `bufferLength` bytes, and otherwise into memory allocated with
+ * fiftyoneDegreesMalloc, which the caller frees with fiftyoneDegreesFree when
+ * the pointer returned is not `buffer`. Each value is written by
+ * fiftyoneDegreesStoredBinaryValueToText, which writes a string or an area
+ * that would not fit straight into memory sized for it, and says which
+ * values it writes twice. `buffer` can be NULL with `bufferLength` 0.
+ * @param results pointer to the results to read the values from
+ * @param requiredPropertyIndex index of the property in the names given
+ * when the data set was created, which a reload does not change. With no
+ * names given it is the index in the available properties, which a reload
+ * can change, so look it up from the name for each data set
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param count set to the number of values in the text
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the text, or NULL when the results hold no values for the property,
+ * and NULL with the exception set when a value cannot be written or memory
+ * cannot be allocated. The text can also be returned with `count` set to 0,
+ * when the results have the property's component but none of its values, so
+ * read `count` rather than only testing for NULL. Text with no values is
+ * freed in the same way when it is not `buffer`.
+ */
+EXTERNAL char* fiftyoneDegreesResultsIpiGetValueTexts(
+	fiftyoneDegreesResultsIpi* results,
+	int requiredPropertyIndex,
+	char* buffer,
+	size_t bufferLength,
+	uint32_t* count,
 	fiftyoneDegreesException* exception);
 
 /**
@@ -27271,6 +27324,73 @@ EXTERNAL char* fiftyoneDegreesIpiGetPropertyMapText(
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+#ifndef FIFTYONE_DEGREES_IPI_WEIGHT_TEXT_H_INCLUDED
+#define FIFTYONE_DEGREES_IPI_WEIGHT_TEXT_H_INCLUDED
+
+/**
+ * @file weightText.h
+ * Writes the weight that fiftyoneDegreesResultsIpiGetValueTexts puts after a
+ * value's colon. It is used inside the IP Intelligence library and by its
+ * tests, and is not part of the API that ipi.h gives.
+ */
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * The most characters fiftyoneDegreesIpiGetWeightText writes, as in
+ * `2.32838e-10` for a raw weighting of 1.
+ */
+#define FIFTYONE_DEGREES_IPI_WEIGHT_TEXT_LENGTH 11
+
+/**
+ * Writes a weight as fiftyoneDegreesResultsIpiGetValueTexts writes it after a
+ * value's colon. The weight is the raw weighting over
+ * FIFTYONE_DEGREES_WEIGHTED_ITEM_MAX_WEIGHT, written to six significant
+ * figures with no trailing zeros, and with an exponent when it rounds to less
+ * than 0.0001, as printf's %g and a C++ stream write a double. No null is
+ * written after it.
+ * @param text where the weight is written, with room for
+ * FIFTYONE_DEGREES_IPI_WEIGHT_TEXT_LENGTH characters
+ * @param rawWeighting the weight out of
+ * FIFTYONE_DEGREES_WEIGHTED_ITEM_MAX_WEIGHT
+ * @return the number of characters written
+ */
+size_t fiftyoneDegreesIpiGetWeightText(
+	char* text,
+	uint32_t rawWeighting);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
 #ifndef FIFTYONE_DEGREES_SYNONYM_IPI_INCLUDED
 #define FIFTYONE_DEGREES_SYNONYM_IPI_INCLUDED
 
@@ -27511,6 +27631,7 @@ MAP_TYPE(WeightedValuesCollection)
 #define ResultsIpiAddValuesString fiftyoneDegreesResultsIpiAddValuesString /**< Synonym for #fiftyoneDegreesResultsIpiAddValuesString function. */
 #define ResultsIpiGetValuesString fiftyoneDegreesResultsIpiGetValuesString /**< Synonym for #fiftyoneDegreesResultsIpiGetValuesString function. */
 #define ResultsIpiGetValuesStringByRequiredPropertyIndex fiftyoneDegreesResultsIpiGetValuesStringByRequiredPropertyIndex /**< Synonym for #fiftyoneDegreesResultsIpiGetValuesStringByRequiredPropertyIndex function. */
+#define ResultsIpiGetValueTexts fiftyoneDegreesResultsIpiGetValueTexts /**< Synonym for #fiftyoneDegreesResultsIpiGetValueTexts function. */
 #define ResultsIpiGetHasValues fiftyoneDegreesResultsIpiGetHasValues /**< Synonym for #fiftyoneDegreesResultsIpiGetHasValues function. */
 #define ResultsIpiGetNoValueReason fiftyoneDegreesResultsIpiGetNoValueReason /**< Synonym for #fiftyoneDegreesResultsIpiGetNoValueReason function. */
 #define ResultsIpiGetNoValueReasonMessage fiftyoneDegreesResultsIpiGetNoValueReasonMessage /**< Synonym for #fiftyoneDegreesResultsIpiGetNoValueReasonMessage function. */
@@ -31172,6 +31293,12 @@ const char* fiftyoneDegreesResultsIpiGetNoValueReasonMessage(
 			"the required property belongs to.";
 	case FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_INVALID_PROPERTY:
 		return "The requested property does not exist, or is not a required property";
+	case FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_NO_RESULT_FOR_PROPERTY:
+		return "None of the results contain a value for the requested "
+			"property.";
+	case FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_TOO_MANY_VALUES:
+		return "The property has more than one value, so it cannot be "
+			"given as a single value of this type.";
 	case FIFTYONE_DEGREES_RESULTS_NO_VALUE_REASON_UNKNOWN:
 	default:
 		return "The reason for missing values is unknown.";
@@ -31345,6 +31472,264 @@ size_t fiftyoneDegreesResultsIpiGetValuesStringByRequiredPropertyIndex(
 	StringBuilderComplete(&builder);
 
 	return builder.added;
+}
+
+/**
+ * The significant figures of a weight in a value's text, which is what a C++
+ * stream gives a double by default.
+ */
+#define WEIGHT_FIGURES 6
+
+/**
+ * Ten to the power of one less than WEIGHT_FIGURES, the lowest whole number
+ * with that many figures.
+ */
+#define WEIGHT_FIGURES_LOWEST ((uint64_t)100000)
+
+/**
+ * The most places after the point the first figure of a weight can be and
+ * still be written without an exponent, as printf's %g decides.
+ */
+#define WEIGHT_MOST_LEADING_PLACES 4
+
+/**
+ * Bytes kept after the text of a value for a colon, its weight and the null
+ * that ends it.
+ */
+#define VALUE_TEXT_WEIGHT_BYTES (FIFTYONE_DEGREES_IPI_WEIGHT_TEXT_LENGTH + 2)
+
+/*
+ * The figures are worked out from the raw weighting and the maximum as whole
+ * numbers rather than from the double, which gives the same figures. The
+ * maximum is odd, so the exact weight is never half way between two numbers
+ * of six figures, and it is always further from half way than the double is
+ * from the exact weight. Working from whole numbers also leaves the locale
+ * out, as a C++ stream does.
+ */
+size_t fiftyoneDegreesIpiGetWeightText(
+	char * const text,
+	const uint32_t rawWeighting) {
+	const uint64_t max = FIFTYONE_DEGREES_WEIGHTED_ITEM_MAX_WEIGHT;
+	char figures[WEIGHT_FIGURES];
+	size_t written = 0;
+	if (rawWeighting == 0) {
+		text[written++] = '0';
+		return written;
+	}
+
+	// The first figure is this many places after the point, or is before the
+	// point when there are none.
+	int places = 0;
+	uint64_t scaled = rawWeighting;
+	while (scaled < max) {
+		scaled *= 10;
+		places++;
+	}
+
+	// Rounded half up, which is never needed as half way never occurs. A
+	// weight that rounds up to the next power of ten moves its first figure.
+	uint64_t rounded = (scaled * WEIGHT_FIGURES_LOWEST * 2 + max) / (max * 2);
+	if (rounded == WEIGHT_FIGURES_LOWEST * 10) {
+		rounded = WEIGHT_FIGURES_LOWEST;
+		places--;
+	}
+	for (int i = WEIGHT_FIGURES - 1; i >= 0; i--) {
+		figures[i] = (char)('0' + rounded % 10);
+		rounded /= 10;
+	}
+	int count = WEIGHT_FIGURES;
+	while (count > 1 && figures[count - 1] == '0') {
+		count--;
+	}
+
+	if (places > WEIGHT_MOST_LEADING_PLACES) {
+		text[written++] = figures[0];
+		if (count > 1) {
+			text[written++] = '.';
+			memcpy(text + written, figures + 1, (size_t)count - 1);
+			written += (size_t)count - 1;
+		}
+		text[written++] = 'e';
+		text[written++] = '-';
+		text[written++] = (char)('0' + places / 10);
+		text[written++] = (char)('0' + places % 10);
+	}
+	else if (places == 0) {
+		text[written++] = figures[0];
+		if (count > 1) {
+			text[written++] = '.';
+			memcpy(text + written, figures + 1, (size_t)count - 1);
+			written += (size_t)count - 1;
+		}
+	}
+	else {
+		text[written++] = '0';
+		text[written++] = '.';
+		for (int i = 1; i < places; i++) {
+			text[written++] = '0';
+		}
+		memcpy(text + written, figures, (size_t)count);
+		written += (size_t)count;
+	}
+	return written;
+}
+
+/**
+ * The text of the values fiftyoneDegreesResultsIpiGetValueTexts is writing.
+ */
+typedef struct value_texts_t {
+	char *buffer; /**< The caller's memory, which is never freed */
+	char *text; /**< The memory written into, being buffer or allocated */
+	size_t length; /**< The bytes text holds */
+	size_t used; /**< The bytes of text written so far */
+} ValueTexts;
+
+/**
+ * Makes room in the text for the bytes after what has been written, moving
+ * the text into memory at least twice the size when there is not enough.
+ */
+static bool valueTextsReserve(
+	ValueTexts * const texts,
+	const size_t bytes,
+	Exception * const exception) {
+	if (texts->length - texts->used >= bytes) {
+		return true;
+	}
+	size_t length = texts->length * 2;
+	if (length < texts->used + bytes) {
+		length = texts->used + bytes;
+	}
+	char * const text = (char*)Malloc(length);
+	if (text == NULL) {
+		EXCEPTION_SET(INSUFFICIENT_MEMORY);
+		return false;
+	}
+	if (texts->used > 0) {
+		memcpy(text, texts->text, texts->used);
+	}
+	if (texts->text != texts->buffer) {
+		Free(texts->text);
+	}
+	texts->text = text;
+	texts->length = length;
+	return true;
+}
+
+/**
+ * Adds the text of the value, followed by a colon and its weight when
+ * withWeight is set, and the null that ends it. A value is read as far as its
+ * first null, as a C++ stream reads it.
+ */
+static bool valueTextsAdd(
+	ValueTexts * const texts,
+	const WeightedItem * const item,
+	const PropertyValueType storedValueType,
+	const bool withWeight,
+	Exception * const exception) {
+	// The value is written straight after the text so far when it fits there
+	// with room for its weight, and otherwise into memory sized for it.
+	char * const place = texts->text + texts->used;
+	const size_t spare = texts->length - texts->used;
+	const size_t room = spare > VALUE_TEXT_WEIGHT_BYTES ?
+		spare - VALUE_TEXT_WEIGHT_BYTES : 0;
+	char * const valueText = StoredBinaryValueToText(
+		(const StoredBinaryValue*)item->item.data.ptr,
+		storedValueType,
+		DefaultWktDecimalPlaces,
+		room > 0 ? place : NULL,
+		room,
+		exception);
+	if (valueText == NULL) {
+		return false;
+	}
+	const size_t valueLength = strlen(valueText);
+	if (valueText != place) {
+		const bool reserved = valueTextsReserve(
+			texts,
+			valueLength + VALUE_TEXT_WEIGHT_BYTES,
+			exception);
+		if (reserved) {
+			memcpy(texts->text + texts->used, valueText, valueLength);
+		}
+		Free(valueText);
+		if (reserved == false) {
+			return false;
+		}
+	}
+	texts->used += valueLength;
+	if (withWeight) {
+		texts->text[texts->used++] = ':';
+		texts->used += fiftyoneDegreesIpiGetWeightText(
+			texts->text + texts->used,
+			item->rawWeighting);
+	}
+	texts->text[texts->used++] = '\0';
+	return true;
+}
+
+char* fiftyoneDegreesResultsIpiGetValueTexts(
+	fiftyoneDegreesResultsIpi* results,
+	int requiredPropertyIndex,
+	char* buffer,
+	size_t bufferLength,
+	uint32_t* count,
+	fiftyoneDegreesException* exception) {
+	const DataSetIpi * const dataSet = (DataSetIpi*)results->b.dataSet;
+	*count = 0;
+
+	const int propertyIndex = PropertiesGetPropertyIndexFromRequiredIndex(
+		dataSet->b.b.available,
+		requiredPropertyIndex);
+	if (propertyIndex < 0) {
+		return NULL;
+	}
+	const WeightedItem * const items = ResultsIpiGetValues(
+		results,
+		requiredPropertyIndex,
+		exception);
+	if (items == NULL || EXCEPTION_FAILED) {
+		return NULL;
+	}
+	const PropertyValueType storedValueType = PropertyGetStoredTypeByIndex(
+		dataSet->propertyTypes,
+		(uint32_t)propertyIndex,
+		exception);
+	if (EXCEPTION_FAILED) {
+		return NULL;
+	}
+
+	ValueTexts texts = { buffer, buffer, bufferLength, 0 };
+	if (buffer == NULL || bufferLength == 0) {
+		texts.buffer = NULL;
+		texts.text = NULL;
+		texts.length = 0;
+		if (valueTextsReserve(
+			&texts,
+			REASONABLE_WKT_STRING_LENGTH,
+			exception) == false) {
+			return NULL;
+		}
+	}
+
+	// A value has its weight unless it is the only one and is whole.
+	const uint32_t valuesCount = results->values.count;
+	for (uint32_t i = 0; i < valuesCount; i++) {
+		const bool withWeight = valuesCount > 1 ||
+			items[i].rawWeighting != FIFTYONE_DEGREES_WEIGHTED_ITEM_MAX_WEIGHT;
+		if (valueTextsAdd(
+			&texts,
+			&items[i],
+			storedValueType,
+			withWeight,
+			exception) == false) {
+			if (texts.text != buffer) {
+				Free(texts.text);
+			}
+			return NULL;
+		}
+	}
+	*count = valuesCount;
+	return texts.text;
 }
 
 /*
