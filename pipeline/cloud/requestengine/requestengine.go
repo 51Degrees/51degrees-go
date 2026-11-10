@@ -35,6 +35,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -104,6 +105,12 @@ type PropertyMeta struct {
 	// ItemProperties describes the sub-Properties of a list/collection Property,
 	// where each item is itself a set of Properties.
 	ItemProperties []PropertyMeta `json:"ItemProperties,omitempty"`
+	// DelayExecution is true for a JavaScript Property whose code should
+	// run only when the page asks for it.
+	DelayExecution bool `json:"DelayExecution,omitempty"`
+	// EvidenceProperties are the Properties whose JavaScript, when run, gives
+	// Evidence for this Property's value.
+	EvidenceProperties []string `json:"EvidenceProperties,omitempty"`
 }
 
 // ProductMeta describes the Properties available for a single product (Aspect).
@@ -168,6 +175,17 @@ type CloudRequestEngine struct {
 	consecutiveRecoveries int
 
 	now func() time.Time // injectable clock for testing
+}
+
+// KnownPublicProperties returns the accessible Properties, keyed by product,
+// and true once they are known, making no request. It returns false after a
+// transient failure at build time until a use has fetched them. It returns a
+// copy, so a caller may change it without changing the engine.
+func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bool) {
+	if p := e.products.Load(); p != nil {
+		return cloneProducts(*p), true
+	}
+	return nil, false
 }
 
 // PublicProperties returns the accessible Properties, keyed by product, which
@@ -480,6 +498,7 @@ func cloneProperties(properties []PropertyMeta) []PropertyMeta {
 	out := make([]PropertyMeta, len(properties))
 	for i, property := range properties {
 		property.ItemProperties = cloneProperties(property.ItemProperties)
+		property.EvidenceProperties = slices.Clone(property.EvidenceProperties)
 		out[i] = property
 	}
 	return out
