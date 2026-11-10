@@ -183,6 +183,12 @@ func (b *Builder) SetRecoveryMultiplier(m float64) *Builder {
 // true, so identical Evidence from a new session is shared while a repeat
 // within the same session is not. It has no effect when all Evidence is
 // shared, because every cookie is then both shared and compared.
+//
+// Track session needs the session cookie's name, set with
+// SetSessionCookieName, because Go has no standard session cookie for the
+// name to default to. With track session on and no name, the element is
+// refused with a *core.ConfigurationError when it is added to a Pipeline,
+// and Factory returns that error.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
 func (b *Builder) SetTrackSession(track bool) *Builder { b.trackSession = track; return b }
 
