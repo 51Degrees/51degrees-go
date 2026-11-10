@@ -109,7 +109,7 @@ type PropertyMeta struct {
 // ProductMeta describes the Properties available for a single product (Aspect).
 type ProductMeta struct {
 	// DataTier is the data tier (for example "Lite" or "Premium") that the
-	// supplied Resource Key grants access to for this product.
+	// configured credentials grant access to for this product.
 	DataTier string `json:"DataTier"`
 	// Properties are the Properties available for this product.
 	Properties []PropertyMeta `json:"Properties"`
@@ -123,7 +123,7 @@ type accessiblePropertiesResponse struct {
 
 // DiscoveryState holds what the engine discovers from the cloud service when
 // it is built, being the accepted Evidence keys and the accessible
-// Properties. Both depend only on the Resource Key, so a host that starts
+// Properties. Both depend only on the credentials, so a host that starts
 // often can keep the state from one build, for example as JSON, and give it
 // to the next build with Builder.SetDiscoveryState so that build makes no
 // request.

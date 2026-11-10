@@ -162,8 +162,8 @@ func (b *Builder) setClock(now func() time.Time) *Builder { b.now = now; return 
 
 // SetDiscoveryState gives Build the accepted Evidence keys and accessible
 // Properties that an earlier build discovered, read from DiscoveryState, so
-// Build makes no discovery request. They depend only on the Resource Key, so
-// use a state from a build with the same key. Nil, the default, makes Build
+// Build makes no discovery request. They depend only on the credentials, so
+// use a state from a build with the same keys. Nil, the default, makes Build
 // fetch them from the cloud service. Build refuses a state whose
 // EvidenceKeys or Products is nil, such as one read from an empty JSON
 // object, because the engine would never fetch what is missing. An empty
