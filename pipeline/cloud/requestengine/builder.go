@@ -98,14 +98,17 @@ func (b *Builder) SetResourceKey(key string) *Builder { b.resourceKey = key; ret
 
 // SetLicenseKey sets the License Key used to authenticate requests. With no
 // Resource Key, SetRequestedProperties must name the Properties wanted,
-// because a License Key names none of its own. Beside a Resource Key, it
-// adds the products it grants to those the Resource Key carries.
+// because a License Key names none of its own. Beside a Resource Key, the
+// answer holds the Resource Key's Properties plus the Requested Properties
+// the License Key grants.
 func (b *Builder) SetLicenseKey(key string) *Builder { b.licenseKey = key; return b }
 
 // SetRequestedProperties sets the Properties to ask the cloud service for, as
 // fully qualified names such as "device.ismobile". They are required with a
-// License Key alone and refused with a Resource Key, which the cloud service
-// answers with everything it carries whatever the list says.
+// License Key alone, added to the Resource Key's Properties when both keys
+// are set, and refused with a Resource Key and no License Key, which the
+// cloud service answers with everything the key carries whatever the list
+// says.
 func (b *Builder) SetRequestedProperties(names ...string) *Builder {
 	b.requestedProperties = append([]string(nil), names...)
 	return b
@@ -262,11 +265,12 @@ const (
 		"SetRequestedProperties with the fully qualified names wanted, for " +
 		"example \"device.ismobile\" and \"device.iscrawler\"."
 	messagePropertiesIgnoredWithResourceKey = "CloudRequestEngine has " +
-		"Requested Properties and a Resource Key. The cloud service ignores " +
-		"the list whenever a Resource Key is present and answers with " +
-		"everything the Resource Key carries, so the caller would believe " +
-		"the response had narrowed when it had not. Either leave out " +
-		"SetRequestedProperties, or authenticate with a License Key alone."
+		"Requested Properties and a Resource Key but no License Key. The " +
+		"cloud service ignores the list unless a License Key is sent, and " +
+		"answers with everything the Resource Key carries, so the caller " +
+		"would believe the response had changed when it had not. Either " +
+		"leave out SetRequestedProperties, or call SetLicenseKey with a " +
+		"License Key that grants the Properties."
 )
 
 // checkCredentials refuses the combinations the specification's table marks
@@ -278,7 +282,7 @@ func checkCredentials(resourceKey, licenseKey string, requested []string) error 
 		return core.NewConfigurationError(messageNoCredential, nil)
 	case resourceKey == "" && len(requested) == 0:
 		return core.NewConfigurationError(messageLicenseKeyNeedsProperties, nil)
-	case resourceKey != "" && len(requested) > 0:
+	case resourceKey != "" && licenseKey == "" && len(requested) > 0:
 		return core.NewConfigurationError(messagePropertiesIgnoredWithResourceKey, nil)
 	}
 	return nil
