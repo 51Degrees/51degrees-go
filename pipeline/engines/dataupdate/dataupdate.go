@@ -48,6 +48,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -419,15 +420,19 @@ func (r *registration) httpUpdate() error {
 	r.updateMu.Lock()
 	defer r.updateMu.Unlock()
 
-	url := r.cfg.DataUpdateURL
+	target := r.cfg.DataUpdateURL
 	if r.cfg.URLFormatter != nil {
-		url = r.cfg.URLFormatter(r.cfg)
+		target = r.cfg.URLFormatter(r.cfg)
 	}
+	// url names the request in log entries and errors, with each license key
+	// in it masked.
+	keys := core.LicenseKeysInURL(target)
+	url := core.MaskLicenseKeysIn(target, keys)
 	r.svc.logger.Info("Checking for update", "engine", r.engineName, "url", url)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, target, nil)
 	if err != nil {
-		return err
+		return core.MaskLicenseKeysInError(err, keys)
 	}
 	// When enabled, send If-Modified-Since so a server that honors it returns
 	// 304 instead of re-sending an unchanged file. Prefer the Last-Modified the
@@ -442,6 +447,7 @@ func (r *registration) httpUpdate() error {
 
 	resp, err := r.svc.httpClient.Do(req)
 	if err != nil {
+		err = core.MaskLicenseKeysInError(err, keys)
 		r.svc.logger.Warn("error connecting to update server", "engine", r.engineName, "url", url, "error", err)
 		return err
 	}
@@ -578,7 +584,8 @@ func (r *registration) fireCallbacks() {
 
 // RateLimitError is returned when the update server responds with HTTP 429.
 type RateLimitError struct {
-	// URL is the update URL that returned the rate-limit response.
+	// URL is the update URL that returned the rate-limit response, with each
+	// license key in it masked.
 	URL string
 	// RetryAfter is how long to wait before retrying, taken from the
 	// Retry-After response header.

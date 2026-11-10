@@ -69,7 +69,6 @@ const (
 	apiVersion             = "4.0" // fallback when the build version is unavailable
 	productName            = "Pipeline"
 	maxValueLength         = 10000
-	truncatedMarker        = "[TRUNCATED BY USAGE SHARING] "
 )
 
 type config struct {
@@ -342,21 +341,14 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []strin
 	writeElement(b, "ServerIP", serverIP())
 	writeElement(b, "Platform", runtime.GOOS)
 
-	// Evidence entries, deterministically ordered. A single BadSchema element is
-	// added at the end if any value contained characters that had to be encoded.
+	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))
 	for k := range rec.evidence {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	badSchema := false
 	for _, key := range keys {
-		if writeEvidence(b, key, rec.evidence[key]) {
-			badSchema = true
-		}
-	}
-	if badSchema {
-		writeElement(b, "BadSchema", "true")
+		writeEvidence(b, key, rec.evidence[key])
 	}
 	b.WriteString("</Device>")
 }
@@ -371,50 +363,47 @@ func writeElement(b *strings.Builder, name, value string) {
 	b.WriteByte('>')
 }
 
-// writeEvidence writes a single Evidence value using the usage-sharing schema:
-// a prefixed key becomes <prefix Name="field"><![CDATA[value]]></prefix> with
-// the prefix (category) lower-case as-is, and a bare key becomes
-// <field>value</field>. Over-long values are truncated with a marker and
-// invalid XML characters are hex-encoded. It returns true when any character
-// was encoded, so the caller can emit a single BadSchema element.
-func writeEvidence(b *strings.Builder, key, value string) bool {
+// writeEvidence writes a single Evidence value as the usage sharing element
+// page describes. A prefixed key becomes <prefix Name="field">value</prefix>
+// with the prefix as it is in the key, and a bare key becomes
+// <field>value</field>. A value or field with characters that XML does not
+// allow has them replaced with \xNNNN escapes and the element gets
+// escaped="true". A value over maxValueLength characters is cut to that
+// length and the element gets truncated="true".
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#processing
+func writeEvidence(b *strings.Builder, key, value string) {
 	prefix, field := core.SplitEvidenceKey(key)
 
+	truncated := false
 	if r := []rune(value); len(r) > maxValueLength {
-		value = truncatedMarker + string(r[:maxValueLength])
+		value = string(r[:maxValueLength])
+		truncated = true
 	}
 	encodedValue, badValue := encodeInvalidXMLChars(value)
 	encodedField, badField := encodeInvalidXMLChars(field)
 
+	name := prefix
 	if prefix == "" {
-		b.WriteByte('<')
-		b.WriteString(encodedField)
-		b.WriteByte('>')
-		xml.EscapeText(b, []byte(encodedValue))
-		b.WriteString("</")
-		b.WriteString(encodedField)
-		b.WriteByte('>')
-		return badValue || badField
+		name = encodedField
 	}
-
 	b.WriteByte('<')
-	b.WriteString(prefix)
-	b.WriteString(` Name="`)
-	xml.EscapeText(b, []byte(encodedField))
-	b.WriteString(`">`)
-	writeCDATA(b, encodedValue)
-	b.WriteString("</")
-	b.WriteString(prefix)
+	b.WriteString(name)
+	if badValue || badField {
+		b.WriteString(` escaped="true"`)
+	}
+	if truncated {
+		b.WriteString(` truncated="true"`)
+	}
+	if prefix != "" {
+		b.WriteString(` Name="`)
+		xml.EscapeText(b, []byte(encodedField))
+		b.WriteByte('"')
+	}
 	b.WriteByte('>')
-	return badValue || badField
-}
-
-// writeCDATA writes value inside a CDATA section, splitting any "]]>" so it
-// cannot close the section early.
-func writeCDATA(b *strings.Builder, value string) {
-	b.WriteString("<![CDATA[")
-	b.WriteString(strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>"))
-	b.WriteString("]]>")
+	xml.EscapeText(b, []byte(encodedValue))
+	b.WriteString("</")
+	b.WriteString(name)
+	b.WriteByte('>')
 }
 
 // encodeInvalidXMLChars replaces characters not valid in XML with a \xNNNN
