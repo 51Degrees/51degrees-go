@@ -23,6 +23,9 @@
 package core
 
 import (
+	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -96,6 +99,137 @@ const (
 	PrefixFiftyOne = "fiftyone"
 	PrefixLocation = "location"
 )
+
+// EvidenceHTTPRequest is the Evidence key under which the web integration
+// adds the request, as a WebRequest. No element accepts it, so it never takes
+// part in a cache key or an ETag, and the Usage Sharing Element reads the
+// request's headers, cookies and query string from it.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/web-integration.md#populating-evidence
+const EvidenceHTTPRequest = PrefixServer + ".http-request"
+
+// webRequestPlaceholder is what formatting a WebRequest prints.
+const webRequestPlaceholder = "[web request]"
+
+// WebRequest is the read-only view of the request added as
+// EvidenceHTTPRequest. Its named parts are the headers, cookies, query, session,
+// client IP address, protocol, method and path. Each part is returned as a
+// copy, so changing it never changes the request. Formatting a WebRequest with
+// any fmt verb, or calling String, gives a fixed placeholder, so printing or
+// logging the Evidence never writes out the request's headers and cookies.
+type WebRequest struct {
+	request  *http.Request
+	clientIP string
+	protocol string
+	session  map[string]string
+}
+
+// NewWebRequest returns a view of r.
+func NewWebRequest(r *http.Request) WebRequest { return WebRequest{request: r} }
+
+// WithClientIP returns the view with its client IP address set.
+func (w WebRequest) WithClientIP(ip string) WebRequest { w.clientIP = ip; return w }
+
+// WithProtocol returns the view with its protocol set.
+func (w WebRequest) WithProtocol(p string) WebRequest { w.protocol = p; return w }
+
+// WithSession returns the view with a copy of the session values given.
+func (w WebRequest) WithSession(s map[string]string) WebRequest {
+	w.session = copyStringMap(s)
+	return w
+}
+
+// Headers returns the request's headers, with the Host as the Host header.
+func (w WebRequest) Headers() http.Header {
+	if w.request == nil {
+		return http.Header{}
+	}
+	h := w.request.Header.Clone()
+	if h == nil {
+		h = http.Header{}
+	}
+	if w.request.Host != "" {
+		h.Set("Host", w.request.Host)
+	}
+	return h
+}
+
+// Cookies returns the request's cookies.
+func (w WebRequest) Cookies() []*http.Cookie {
+	if w.request == nil {
+		return nil
+	}
+	return w.request.Cookies()
+}
+
+// Query returns the query string parameters, and the form parameters when the
+// request was already parsed. The body is never read.
+func (w WebRequest) Query() url.Values {
+	if w.request == nil {
+		return url.Values{}
+	}
+	src := w.request.Form
+	if src == nil && w.request.URL != nil {
+		src = w.request.URL.Query()
+	}
+	out := make(url.Values, len(src))
+	for k, v := range src {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
+}
+
+// Session returns the session values.
+func (w WebRequest) Session() map[string]string { return copyStringMap(w.session) }
+
+// ClientIP returns the client IP address.
+func (w WebRequest) ClientIP() string { return w.clientIP }
+
+// Protocol returns the request protocol.
+func (w WebRequest) Protocol() string { return w.protocol }
+
+// Method returns the request method.
+func (w WebRequest) Method() string {
+	if w.request == nil {
+		return ""
+	}
+	return w.request.Method
+}
+
+// Path returns the path of the request line exactly as it was sent, with no
+// decoding and without the query string.
+func (w WebRequest) Path() string {
+	r := w.request
+	if r == nil {
+		return ""
+	}
+	if uri := r.RequestURI; strings.HasPrefix(uri, "/") {
+		if i := strings.IndexByte(uri, '?'); i >= 0 {
+			return uri[:i]
+		}
+		return uri
+	}
+	if r.URL == nil {
+		return ""
+	}
+	return r.URL.EscapedPath()
+}
+
+func copyStringMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// String returns a fixed placeholder.
+func (w WebRequest) String() string { return webRequestPlaceholder }
+
+// Format writes the fixed placeholder whatever the verb, so %v, %+v, %#v and
+// %s all print the same.
+func (w WebRequest) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(webRequestPlaceholder))
+}
 
 // prefixPrecedence maps known prefixes to their precedence rank (lower wins).
 var prefixPrecedence = map[string]int{

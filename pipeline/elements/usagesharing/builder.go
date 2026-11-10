@@ -61,7 +61,7 @@ type Builder struct {
 // NewBuilder creates a Usage Sharing Element builder with specification defaults.
 func NewBuilder() *Builder {
 	return &Builder{
-		blockedHeaders:  []string{"cookies"},
+		blockedHeaders:  []string{"cookie"},
 		sharePercentage: DefaultSharePercentage,
 		minEntries:      DefaultMinEntries,
 		maxQueueSize:    DefaultMaxQueueSize,
@@ -232,13 +232,36 @@ func (b *Builder) Build() *Element {
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 		clock:       clk,
 	}
-	e.SetEvidenceKeyFilter(core.NewFuncFilter(e.includeEvidence))
 	return e
 }
 
-// includeEvidence implements the share-usage accepted-Evidence filter.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
-func (e *Element) includeEvidence(key string) bool {
+// prefixSession is the Evidence prefix of session values.
+const prefixSession = "session"
+
+// neverShared lists the keys that are never shared, matched as the whole key
+// or after a ".".
+var neverShared = []string{"id.email", "id.salt", "request-query",
+	"request-path", "header.cookie"}
+
+// isNeverShared reports whether key is one of the neverShared keys.
+func isNeverShared(key string) bool {
+	key = strings.ToLower(key)
+	for _, n := range neverShared {
+		if key == n || strings.HasSuffix(key, "."+n) {
+			return true
+		}
+	}
+	return false
+}
+
+// isShared implements the rules for which of the keys the element finds are
+// shared. The element accepts no Evidence (its filter is empty), so these
+// rules never widen a Pipeline's cache keys or ETag.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
+func (e *Element) isShared(key string) bool {
+	if isNeverShared(key) {
+		return false
+	}
 	if e.cfg.shareAllEvidence {
 		return true
 	}
@@ -248,7 +271,7 @@ func (e *Element) includeEvidence(key string) bool {
 	case core.PrefixHeader:
 		_, blocked := e.cfg.blockedHeaders[field]
 		return !blocked
-	case core.PrefixCookie:
+	case core.PrefixCookie, prefixSession:
 		return strings.HasPrefix(field, "51d_")
 	case core.PrefixQuery:
 		if e.cfg.shareAllQueryParams {

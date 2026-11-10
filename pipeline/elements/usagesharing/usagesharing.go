@@ -191,16 +191,60 @@ func (e *Element) sample() bool {
 	return e.rng.Float64() < e.cfg.sharePercentage
 }
 
-// shareableEvidence returns the Evidence values that pass the share-usage
-// filter, keyed by their full Evidence key.
+// shareableEvidence returns the values the element finds that isShared lets
+// through, keyed by their Evidence key. It finds every Evidence value and,
+// when the Evidence holds the web request as core.EvidenceHTTPRequest, the
+// request's parts too. A key found in both keeps the Evidence value, and the
+// request itself is never shared.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
 func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
-	filter := e.EvidenceKeyFilter()
-	for key, val := range fd.Evidence().AsMap() {
-		if filter.Include(key) {
+	all := fd.Evidence().AsMap()
+	for key, val := range all {
+		if key != core.EvidenceHTTPRequest && e.isShared(key) {
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
+	if w, ok := all[core.EvidenceHTTPRequest].(core.WebRequest); ok {
+		for key, val := range requestEvidence(w) {
+			if _, found := all[key]; !found && e.isShared(key) {
+				out[key] = val
+			}
+		}
+	}
+	return out
+}
+
+// requestEvidence returns the web request's parts under the keys the web
+// integration gives them as Evidence. A header or query parameter with several
+// values gives the first.
+func requestEvidence(w core.WebRequest) map[string]string {
+	out := map[string]string{}
+	for name, values := range w.Headers() {
+		if len(values) > 0 {
+			out[strings.ToLower(core.PrefixHeader+"."+name)] = values[0]
+		}
+	}
+	for _, c := range w.Cookies() {
+		out[strings.ToLower(core.PrefixCookie+"."+c.Name)] = c.Value
+	}
+	for name, values := range w.Query() {
+		if len(values) > 0 {
+			out[strings.ToLower(core.PrefixQuery+"."+name)] = values[0]
+		}
+	}
+	for name, value := range w.Session() {
+		out[strings.ToLower(prefixSession+"."+name)] = value
+	}
+	setIfNotEmpty := func(key, value string) {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	setIfNotEmpty("server.client-ip", w.ClientIP())
+	setIfNotEmpty("header.protocol", w.Protocol())
+	setIfNotEmpty("server.request-method", w.Method())
+	setIfNotEmpty("server.request-path", w.Path())
 	return out
 }
 
