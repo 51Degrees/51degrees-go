@@ -200,3 +200,145 @@ func TestAvailablePropertiesAfterMissingName(t *testing.T) {
 		t.Errorf("Expected \"IsMobile\" at index %d to have values.\n", index)
 	}
 }
+
+// This tests the index of a property is its place in the names given, and not
+// a place the data set decides, by giving the same two names in both orders.
+func TestRequiredPropertyIndexFollowsNamesGiven(t *testing.T) {
+	for _, names := range [][]string{
+		{"IsMobile", "BrowserName"},
+		{"BrowserName", "IsMobile"},
+	} {
+		manager := initResourceManager(strings.Join(names, ","), t)
+		results := NewResultsHash(manager, 1, 0)
+		for want, name := range names {
+			if got := results.RequiredPropertyIndexFromName(name); got != want {
+				t.Errorf("Gave %v, so expected \"%s\" at index %d but got %d.\n",
+					names, name, want, got)
+			}
+		}
+		results.Free()
+		freeResourceManager(manager, t)
+	}
+}
+
+// This tests a name is found whatever its letter case, as the C library finds
+// it.
+func TestRequiredPropertyIndexIgnoresCase(t *testing.T) {
+	manager := initResourceManager("IsMobile,BrowserName", t)
+	defer freeResourceManager(manager, t)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+
+	for _, name := range []string{"IsMobile", "ismobile", "ISMOBILE"} {
+		if got := results.RequiredPropertyIndexFromName(name); got != 0 {
+			t.Errorf("Expected \"%s\" at index 0 but got %d.\n", name, got)
+		}
+	}
+}
+
+// This tests every index and value is the same after the data file is loaded
+// again, because the names the manager was given do not change.
+func TestRequiredPropertyIndexSurvivesReload(t *testing.T) {
+	manager := initResourceManager("IsMobile,BrowserName,DeviceType", t)
+	defer freeResourceManager(manager, t)
+
+	before := readEveryProperty(manager, t)
+	if err := manager.ReloadFromOriginalFile(); err != nil {
+		t.Fatalf("Failed to reload from the original file: %v\n", err)
+	}
+	after := readEveryProperty(manager, t)
+
+	if len(before) != len(after) {
+		t.Fatalf("Expected %d properties after the reload but got %d.\n",
+			len(before), len(after))
+	}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Errorf("At index %d expected \"%s\" after the reload but got "+
+				"\"%s\".\n", i, before[i], after[i])
+		}
+	}
+}
+
+// readEveryProperty returns the value of each property at its index, read by
+// its name, so a value that moved to another index shows as a difference.
+func readEveryProperty(manager *ResourceManager, t *testing.T) []string {
+	t.Helper()
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		t.Fatalf("Failed to perform detection on User-Agent \"%s\": %v\n",
+			uaMobile, err)
+	}
+	available := results.AvailableProperties()
+	values := make([]string, len(available))
+	for i, name := range available {
+		if index := results.RequiredPropertyIndexFromName(name); index != i {
+			t.Errorf("Expected \"%s\" at index %d but got %d.\n",
+				name, i, index)
+		}
+		value, err := results.ValuesString(name, ",")
+		if err != nil {
+			t.Fatalf("Failed to read \"%s\": %v\n", name, err)
+		}
+		values[i] = value
+	}
+	return values
+}
+
+// This tests a read by name and a read by index give the same value.
+func TestValuesStringByIndexMatchesByName(t *testing.T) {
+	manager := initResourceManager("IsMobile,BrowserName,DeviceType", t)
+	defer freeResourceManager(manager, t)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		t.Fatalf("Failed to perform detection on User-Agent \"%s\": %v\n",
+			uaMobile, err)
+	}
+
+	for i, name := range results.AvailableProperties() {
+		byName, err := results.ValuesString(name, ",")
+		if err != nil {
+			t.Fatalf("Failed to read \"%s\" by name: %v\n", name, err)
+		}
+		byIndex, err := results.ValuesStringByIndex(i, ",")
+		if err != nil {
+			t.Fatalf("Failed to read \"%s\" at index %d: %v\n", name, i, err)
+		}
+		if byName != byIndex {
+			t.Errorf("Read \"%s\" as \"%s\" by name and \"%s\" at index %d.\n",
+				name, byName, byIndex, i)
+		}
+	}
+}
+
+// This tests a manager given no name still reads by name, because it has no
+// table of names and asks the data set instead.
+func TestNoNamesManagerReadsByName(t *testing.T) {
+	manager := initResourceManager("", t)
+	defer freeResourceManager(manager, t)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		t.Fatalf("Failed to perform detection on User-Agent \"%s\": %v\n",
+			uaMobile, err)
+	}
+
+	index := results.RequiredPropertyIndexFromName("IsMobile")
+	if index < 0 {
+		t.Fatalf("Expected \"IsMobile\" to have an index.\n")
+	}
+	byName, err := results.ValuesString("IsMobile", ",")
+	if err != nil {
+		t.Fatalf("Failed to read \"IsMobile\" by name: %v\n", err)
+	}
+	byIndex, err := results.ValuesStringByIndex(index, ",")
+	if err != nil {
+		t.Fatalf("Failed to read \"IsMobile\" at index %d: %v\n", index, err)
+	}
+	if byName != byIndex || byName != "True" {
+		t.Errorf("Read \"IsMobile\" as \"%s\" by name and \"%s\" at index %d, "+
+			"and expected \"True\".\n", byName, byIndex, index)
+	}
+}

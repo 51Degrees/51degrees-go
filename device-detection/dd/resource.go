@@ -35,6 +35,9 @@ type ResourceManager struct {
 	setHeaders     map[string]([]string) // Headers to be set in a Http response
 	HttpHeaderKeys []EvidenceKey         // Http header keys required by this engine
 	CPtr           *C.ResourceManager    // Pointer to C resource
+	// indexes holds the required property index of each property name the
+	// manager was created with, built once when it is created.
+	indexes propertyIndexes
 }
 
 // Finalizer function for Resource Manager
@@ -48,7 +51,7 @@ func resourceFinalizer(m *ResourceManager) {
 // NewResourceManager creats a new object of ResourceManager
 func NewResourceManager() *ResourceManager {
 	cManager := new(C.ResourceManager)
-	manager := &ResourceManager{nil, nil, cManager}
+	manager := &ResourceManager{CPtr: cManager}
 	runtime.SetFinalizer(manager, resourceFinalizer)
 	return manager
 }
