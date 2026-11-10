@@ -603,3 +603,27 @@ func TestFactoryGivesNoElementWhenTheBuildFails(t *testing.T) {
 		})
 	}
 }
+
+// KnownPublicProperties gives a copy, as PublicProperties does, so a caller
+// that changes what it is given does not change the engine.
+func TestKnownPublicPropertiesGivesACopy(t *testing.T) {
+	cloud := &discoveryCloud{}
+	e, err := discoveryBuilder(cloud.serve(t), &logRecorder{}).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	products, ok := e.KnownPublicProperties()
+	if !ok {
+		t.Fatal("the Properties are not known after a healthy build")
+	}
+	products["device"].Properties[0].Name = "changed"
+	delete(products, "device")
+
+	again, ok := e.KnownPublicProperties()
+	if !ok || len(again) != 1 || len(again["device"].Properties) != 1 ||
+		again["device"].Properties[0].Name != "ismobile" {
+		t.Fatalf("after a caller changed its copy, KnownPublicProperties "+
+			"gives %v, %v, want the device product as the cloud gave it",
+			again, ok)
+	}
+}

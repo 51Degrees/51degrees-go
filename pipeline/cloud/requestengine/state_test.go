@@ -223,3 +223,35 @@ func TestDiscoveryStateIsCopied(t *testing.T) {
 			"gives %+v, %v, want %+v", got, err, want.Products)
 	}
 }
+
+// The Evidence Properties of a Property are copied with the rest, so
+// changing them in a discovery state, or in what PublicProperties gives,
+// does not change the engine.
+func TestEvidencePropertiesAreCopied(t *testing.T) {
+	newState := func() *DiscoveryState {
+		s := itemState()
+		s.Products["device"].Properties[0].EvidenceProperties =
+			[]string{"device.javascriptprofile"}
+		return s
+	}
+	given := newState()
+	cloud := &discoveryCloud{}
+	b := discoveryBuilder(cloud.serve(t), &logRecorder{}).SetDiscoveryState(given)
+	e, err := b.Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	given.Products["device"].Properties[0].EvidenceProperties[0] = "changed"
+	b.DiscoveryState().Products["device"].Properties[0].EvidenceProperties[0] = "changed"
+	products, err := e.PublicProperties()
+	if err != nil {
+		t.Fatalf("PublicProperties: %v", err)
+	}
+	products["device"].Properties[0].EvidenceProperties[0] = "changed"
+
+	want := newState().Products
+	if got, err := e.PublicProperties(); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("after the states and a copy changed, PublicProperties "+
+			"gives %+v, %v, want %+v", got, err, want)
+	}
+}
