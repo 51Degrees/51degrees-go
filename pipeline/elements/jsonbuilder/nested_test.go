@@ -58,7 +58,7 @@ func (e *recordsEngine) Process(fd core.FlowData) error {
 // are, and a value that is set but nil has no entry and no nullreason, at
 // the top level and in a record, while a Property assigned no value is
 // written as null with its nullreason. The .NET JSON Builder does the same.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
 func TestJSONBuilderRecordsAndNilValues(t *testing.T) {
 	result := buildJSON(t, newRecordsEngine())
 	devices, ok := result["devices"].(map[string]any)
@@ -129,7 +129,7 @@ func (e *nilEvidenceEngine) Process(fd core.FlowData) error {
 // still lists the delayed Properties that are its Evidence, so the page can
 // run them. It gets no delayexecution. The .NET and Java JSON Builders do the
 // same.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
 func TestJSONBuilderNilValueKeepsEvidenceProperties(t *testing.T) {
 	result := buildJSON(t, newNilEvidenceEngine())
 	delayed, ok := result["delayed"].(map[string]any)

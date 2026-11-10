@@ -55,7 +55,7 @@ func (e *delayedNoValueEngine) Process(fd core.FlowData) error {
 // delayexecution is written only for a Property that has a value, as the
 // .NET and Java JSON Builders write it. A Property assigned no value is
 // written as null with its nullreason and no delayexecution.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
 func TestJSONBuilderDelayExecutionOnlyWithAValue(t *testing.T) {
 	result := buildJSON(t, newDelayedNoValueEngine())
 	timing, ok := result["timing"].(map[string]any)
