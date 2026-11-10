@@ -105,9 +105,9 @@ func (b *Builder) SetLicenseKey(key string) *Builder { b.licenseKey = key; retur
 
 // SetRequestedProperties sets the Properties to ask the cloud service for, as
 // fully qualified names such as "device.ismobile". They are required with a
-// License Key alone, added to the Resource Key's Properties when both keys
-// are set, and refused with a Resource Key and no License Key, because the
-// list then adds no data.
+// License Key alone. Beside a Resource Key they are added to the Properties
+// the key carries, and one that no licence grants is answered as null with
+// its nullreason.
 func (b *Builder) SetRequestedProperties(names ...string) *Builder {
 	b.requestedProperties = append([]string(nil), names...)
 	return b
@@ -263,14 +263,6 @@ const (
 		"with one that does not list the Properties it wants. Call " +
 		"SetRequestedProperties with the fully qualified names wanted, for " +
 		"example \"device.ismobile\" and \"device.iscrawler\"."
-	messagePropertiesIgnoredWithResourceKey = "CloudRequestEngine has " +
-		"Requested Properties and a Resource Key but no License Key. " +
-		"Without a License Key the list adds no data. A Property the " +
-		"Resource Key carries is unchanged, and one it lacks comes back " +
-		"null as a paid feature, so the caller would believe it had asked " +
-		"for Properties it will never receive. Either leave out " +
-		"SetRequestedProperties, or call SetLicenseKey with a License Key " +
-		"that grants the Properties."
 )
 
 // checkCredentials refuses the combinations the specification's table marks
@@ -282,8 +274,6 @@ func checkCredentials(resourceKey, licenseKey string, requested []string) error 
 		return core.NewConfigurationError(messageNoCredential, nil)
 	case resourceKey == "" && len(requested) == 0:
 		return core.NewConfigurationError(messageLicenseKeyNeedsProperties, nil)
-	case resourceKey != "" && licenseKey == "" && len(requested) > 0:
-		return core.NewConfigurationError(messagePropertiesIgnoredWithResourceKey, nil)
 	}
 	return nil
 }
