@@ -31,17 +31,20 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"strconv"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
-// guidRe matches an RFC 4122 GUID. The session id is written into a JS string
-// literal by the JavaScript Builder, so a client-supplied value that is not a
-// GUID is rejected here (a fresh GUID is generated) to prevent script injection.
-var guidRe = regexp.MustCompile(
-	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+// digitsRe matches a sequence given as a string, which holds only the digits
+// 0 to 9, with no sign or spaces. Leading zeros are allowed.
+var digitsRe = regexp.MustCompile(`^[0-9]+$`)
+
+// maxSequence is the largest sequence value taken from Evidence, so that
+// adding one stays within a 32 bit integer.
+const maxSequence = math.MaxInt32 - 1
 
 // DataKey is the Element Data key for the Sequence Element.
 const DataKey = "sequence"
@@ -73,18 +76,20 @@ func New(logger *slog.Logger) *Element {
 	return e
 }
 
-// Process generates or increments the session id and sequence counter.
+// Process generates or increments the session id and sequence counter, and
+// writes both to Element Data and to Evidence.
 func (e *Element) Process(fd core.FlowData) error {
 	data := fd.GetOrAdd(DataKey, func(core.FlowData) core.ElementData { return core.NewBaseElementData() })
 
-	// Accept a supplied session id only if it is a valid GUID; otherwise
-	// generate a fresh one. This rejects client-influenced values that could
-	// break out of the JS string literal the id is later rendered into.
+	// The session id and the sequence are taken independently. A session id
+	// counts only if it is a non-empty string, otherwise a new one is made.
 	sessionID := ""
 	if raw, ok := fd.Evidence().Get(EvidenceSessionID); ok {
-		sessionID = fmt.Sprintf("%v", raw)
+		if s, isString := raw.(string); isString {
+			sessionID = s
+		}
 	}
-	if !guidRe.MatchString(sessionID) {
+	if sessionID == "" {
 		id, err := newGUID()
 		if err != nil {
 			return err
@@ -93,13 +98,19 @@ func (e *Element) Process(fd core.FlowData) error {
 	}
 	data.Set(SessionIDProperty, sessionID)
 
+	// A sequence counts only if it is a whole number, or a string of the
+	// digits 0 to 9, within range. Otherwise it counts as absent and gives 1.
 	seq := 1
 	if raw, ok := fd.Evidence().Get(EvidenceSequence); ok {
-		if n, err := toInt(raw); err == nil {
+		if n, ok := toSequence(raw); ok {
 			seq = n + 1
 		}
 	}
 	data.Set(SequenceProperty, seq)
+
+	// Later Flow Elements and the caller read the values from Evidence too.
+	fd.AddEvidence(EvidenceSessionID, sessionID)
+	fd.AddEvidence(EvidenceSequence, seq)
 	return nil
 }
 
@@ -108,19 +119,67 @@ func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 	return New(logger), nil
 }
 
-func toInt(v any) (int, error) {
+// toSequence reads a sequence from an Evidence value. It accepts a whole
+// number of any Go integer or float type, or a string of the digits 0 to 9,
+// from 0 up to maxSequence.
+func toSequence(v any) (int, bool) {
+	var n int64
 	switch t := v.(type) {
 	case int:
-		return t, nil
+		n = int64(t)
+	case int8:
+		n = int64(t)
+	case int16:
+		n = int64(t)
+	case int32:
+		n = int64(t)
 	case int64:
-		return int(t), nil
+		n = t
+	case uint:
+		if uint64(t) > maxSequence {
+			return 0, false
+		}
+		n = int64(t)
+	case uint8:
+		n = int64(t)
+	case uint16:
+		n = int64(t)
+	case uint32:
+		n = int64(t)
+	case uint64:
+		if t > maxSequence {
+			return 0, false
+		}
+		n = int64(t)
+	case float32:
+		return wholeSequence(float64(t))
 	case float64:
-		return int(t), nil
+		return wholeSequence(t)
 	case string:
-		return strconv.Atoi(t)
+		if !digitsRe.MatchString(t) {
+			return 0, false
+		}
+		parsed, err := strconv.ParseInt(t, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		n = parsed
 	default:
-		return 0, fmt.Errorf("cannot convert %T to int", v)
+		return 0, false
 	}
+	if n < 0 || n > maxSequence {
+		return 0, false
+	}
+	return int(n), true
+}
+
+// wholeSequence accepts a float that holds a whole number from 0 up to
+// maxSequence.
+func wholeSequence(f float64) (int, bool) {
+	if f != math.Trunc(f) || f < 0 || f > maxSequence {
+		return 0, false
+	}
+	return int(f), true
 }
 
 // newGUID returns a random RFC 4122 version 4 UUID string, matching the
