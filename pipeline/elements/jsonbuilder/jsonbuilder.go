@@ -30,10 +30,12 @@ package jsonbuilder
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"reflect"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
@@ -97,8 +99,17 @@ func (d *Data) JSON() string {
 	return ""
 }
 
-// Process builds the JSON representation of the Flow Data.
+// Process builds the JSON representation of the Flow Data. It fails and sets
+// no JSON when the query.sequence Evidence holds no integer, which means no
+// Sequence Element has run before it.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
 func (e *Element) Process(fd core.FlowData) error {
+	seq, ok := sequenceNumber(fd)
+	if !ok {
+		return core.NewConfigurationError("the JSON Builder Element found no "+
+			"sequence number, so a Sequence Element needs to be placed before "+
+			"it in the Pipeline", nil)
+	}
 	meta := buildMetaIndex(fd.Pipeline().Properties())
 	result := map[string]any{}
 	var jsProperties []string
@@ -155,7 +166,7 @@ func (e *Element) Process(fd core.FlowData) error {
 		result[elementKey] = obj
 	}
 
-	if sequenceNumber(fd) < MaxJavaScriptIterations {
+	if seq < MaxJavaScriptIterations {
 		if jsProperties == nil {
 			jsProperties = []string{}
 		}
@@ -292,15 +303,37 @@ func delayedEvidenceProperties(pm core.PropertyMetadata, elementKey string, meta
 	return out
 }
 
-func sequenceNumber(fd core.FlowData) int {
-	data, err := fd.Get("sequence")
-	if err != nil {
-		return 1
+// sequenceNumber returns the integer in the query.sequence Evidence, which
+// the Sequence Element writes, and false when that holds no integer. Text,
+// such as a query string gives, is the Sequence Element's input rather than
+// a sequence number, so it does not count.
+func sequenceNumber(fd core.FlowData) (int, bool) {
+	raw, ok := fd.Evidence().Get(sequence.EvidenceSequence)
+	if !ok {
+		return 0, false
 	}
-	if v, err := data.Get("sequence"); err == nil {
-		if n, ok := v.(int); ok {
-			return n
-		}
+	switch n := raw.(type) {
+	case int:
+		return n, true
+	case int8:
+		return int(n), true
+	case int16:
+		return int(n), true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), int64(int(n)) == n
+	case uint8:
+		return int(n), true
+	case uint16:
+		return int(n), true
+	case uint32:
+		return int(n), int64(int(n)) == int64(n)
+	case uint:
+		return int(n), n <= math.MaxInt
+	case uint64:
+		return int(n), n <= math.MaxInt
+	default:
+		return 0, false
 	}
-	return 1
 }

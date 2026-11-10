@@ -40,7 +40,7 @@ import (
 // lists those keys, because the engine writes those fields itself, the
 // service reads licence as the license key, and a second field would leave
 // which applied undecided.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 	var mu sync.Mutex
 	var form url.Values
@@ -107,7 +107,7 @@ func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 // Evidence named in any letter case is matched to the keys the cloud service
 // accepts, also in any letter case, and Evidence that strips to resource,
 // license, licence or values in any letter case is left out.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func TestRequestLeavesOutEngineFieldsInAnyLetterCase(t *testing.T) {
 	var mu sync.Mutex
 	var form url.Values
