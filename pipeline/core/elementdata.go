@@ -51,11 +51,11 @@ type BaseElementData struct {
 	values typedmap.Map
 }
 
-// NewBaseElementData creates a BaseElementData. It holds its values in a map
-// that is not safe for writing from several goroutines at once, as only the
-// Flow Element that creates it writes it, and that several goroutines can read
-// once it is written.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md
+// NewBaseElementData creates a BaseElementData. Its values are held in a map
+// that is not safe for writing from several goroutines at once, because only
+// the Flow Element that creates the instance writes it. Once that Flow Element
+// has finished, several goroutines can read the instance at once.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
 func NewBaseElementData() *BaseElementData {
 	return &BaseElementData{values: typedmap.NewMap()}
 }
