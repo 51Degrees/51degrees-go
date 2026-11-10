@@ -160,8 +160,8 @@ func recordText(r slog.Record) string {
 	return strings.Join(parts, " ")
 }
 
-// Every row of the specification's table of credentials. The four valid
-// rows build, and the three invalid ones fail the build with a
+// Every row of the specification's table of credentials. The five valid
+// rows build, and the two invalid ones fail the build with a
 // configuration error that names the fix, before any request is made. A
 // value that is empty or only whitespace counts as absent.
 // See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
@@ -181,8 +181,7 @@ func TestCredentialCombinations(t *testing.T) {
 		{"License Key alone", "", testLicenseKey, nil, "SetRequestedProperties"},
 		{"License Key and blank Properties", "", testLicenseKey,
 			[]string{" ", ""}, "SetRequestedProperties"},
-		{"Resource Key and Properties", testResourceKey, "", properties,
-			"SetLicenseKey"},
+		{"Resource Key and Properties", testResourceKey, "", properties, ""},
 		{"both keys and Properties", testResourceKey, testLicenseKey,
 			properties, ""},
 		{"no credential", "", "", nil, "SetResourceKey or SetLicenseKey"},
@@ -278,6 +277,36 @@ func TestResourceAndLicenseKeysSendBoth(t *testing.T) {
 	want := url.Values{
 		"resource":   {testResourceKey},
 		"license":    {testLicenseKey},
+		"user-agent": {"ua"},
+	}
+	if !reflect.DeepEqual(req.form, want) || len(req.query) != 0 {
+		t.Errorf("the data request had the query %v and the body %v, want "+
+			"no query and the body %v", req.query, req.form, want)
+	}
+}
+
+// With a Resource Key and Requested Properties, the data request carries the
+// Resource Key and the Requested Properties as values, so the cloud service
+// adds each one to those the Resource Key carries, as null with a nullreason
+// where no licence grants it.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#requested-properties
+func TestResourceKeyAndPropertiesSendValues(t *testing.T) {
+	cloud := newCredentialCloud()
+	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
+		SetResourceKey(testResourceKey).
+		SetRequestedProperties("device.hardwarevendor").
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if err := processWith(t, pipelineOf(t, e, false),
+		map[string]string{"header.user-agent": "ua"}); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	req, _ := cloud.last("json")
+	want := url.Values{
+		"resource":   {testResourceKey},
+		"values":     {"device.hardwarevendor"},
 		"user-agent": {"ua"},
 	}
 	if !reflect.DeepEqual(req.form, want) || len(req.query) != 0 {
