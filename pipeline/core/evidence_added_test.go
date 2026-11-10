@@ -191,3 +191,29 @@ func TestSuppliedEvidenceLeavesOutAddedValues(t *testing.T) {
 		t.Errorf("Evidence query.month = %v, want april", v)
 	}
 }
+
+// SuppliedEvidence gives a copy each time, so a caller that changes the map
+// does not change what later callers, such as the ETag, read.
+func TestSuppliedEvidenceIsACopy(t *testing.T) {
+	p, err := NewPipelineBuilder().SetLogger(quietLogger()).AddFlowElement(
+		newFuncElement("noop", nil, func(FlowData) error { return nil })).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	fd := p.CreateFlowData()
+	fd.AddEvidence("query.month", "march")
+	if err := fd.Process(); err != nil {
+		t.Fatal(err)
+	}
+
+	first := SuppliedEvidence(fd)
+	first["query.month"] = "changed"
+	first["query.extra"] = "added"
+	got := SuppliedEvidence(fd)
+	if len(got) != 1 || got["query.month"] != "march" {
+		t.Errorf("supplied = %v after changing an earlier copy, want only "+
+			"query.month=march", got)
+	}
+}
