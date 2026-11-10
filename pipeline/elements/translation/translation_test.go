@@ -23,6 +23,8 @@
 package translation
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -230,5 +232,113 @@ func TestBareLocaleSourceFile(t *testing.T) {
 	data, _ := fd.Get(DataKey)
 	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "England (UK)" {
 		t.Fatalf("bare-locale source not loaded, got %q", v)
+	}
+}
+
+// factoryEngine builds an Engine through Factory with a source key added to
+// the given build parameters.
+func factoryEngine(t *testing.T, params map[string]any) *Engine {
+	t.Helper()
+	params["SourceElementDataKey"] = "ip"
+	el, err := Factory(params, nil)
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	return el.(*Engine)
+}
+
+func TestFactoryMissingTranslationBehavior(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+		want   MissingBehavior
+	}{
+		{
+			name:   "absent gives the default",
+			params: map[string]any{},
+			want:   Original,
+		},
+		{
+			name: "specification spelling",
+			params: map[string]any{
+				"MissingTranslationBehavior": "EmptyString",
+			},
+			want: EmptyString,
+		},
+		{
+			name: "British spelling",
+			params: map[string]any{
+				"MissingTranslationBehaviour": "FlowError",
+			},
+			want: FlowError,
+		},
+		{
+			name: "specification spelling wins over British spelling",
+			params: map[string]any{
+				"MissingTranslationBehavior":  "EmptyString",
+				"MissingTranslationBehaviour": "FlowError",
+			},
+			want: EmptyString,
+		},
+		{
+			name: "British spelling is not read when both are given",
+			params: map[string]any{
+				"MissingTranslationBehavior":  "FlowError",
+				"MissingTranslationBehaviour": "NotABehavior",
+			},
+			want: FlowError,
+		},
+		{
+			name: "value ignores case and surrounding space",
+			params: map[string]any{
+				"MissingTranslationBehavior": " flowerror ",
+			},
+			want: FlowError,
+		},
+		{
+			name: "Original by name",
+			params: map[string]any{
+				"MissingTranslationBehavior": "Original",
+			},
+			want: Original,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := factoryEngine(t, c.params)
+			if e.missingBehavior != c.want {
+				t.Fatalf("missingBehavior = %d, want %d",
+					e.missingBehavior, c.want)
+			}
+		})
+	}
+}
+
+func TestFactoryUnknownMissingTranslationBehavior(t *testing.T) {
+	for _, key := range []string{
+		"MissingTranslationBehavior",
+		"MissingTranslationBehaviour",
+	} {
+		for _, value := range []string{"Bogus", ""} {
+			t.Run(key+"="+value, func(t *testing.T) {
+				el, err := Factory(map[string]any{
+					"SourceElementDataKey": "ip",
+					key:                    value,
+				}, nil)
+				if err == nil {
+					t.Fatalf("expected a configuration error, got element %v",
+						el)
+				}
+				var ce *core.ConfigurationError
+				if !errors.As(err, &ce) {
+					t.Fatalf("expected a ConfigurationError, got %T: %v",
+						err, err)
+				}
+				if !strings.Contains(err.Error(), "'"+value+"'") {
+					t.Fatalf("error does not name the value %q: %v",
+						value, err)
+				}
+			})
+		}
 	}
 }

@@ -86,17 +86,19 @@ func main() {
 				// Enable automatic updates.
 				onpremise.WithAutoUpdate(true),
 
-				// Set the frequency in minutes that the pipeline should
-				// check for updates to data files. A recommended
-				// polling interval in a production environment is
-				// around 30 minutes.
+				// Set the frequency in seconds that the pipeline should
+				// check for updates to data files. The example checks every
+				// few seconds so that an update can arrive while it waits
+				// between its two sets of lookups. A recommended polling
+				// interval in a production environment is around 30
+				// minutes, which is 1800 seconds.
 				onpremise.WithPollingInterval(3),
 
-				// Set the max amount of time in seconds that should be
-				// added to the polling interval. This is useful in datacenter
-				// applications where multiple instances may be polling for
-				// updates at the same time. A recommended amount in production
-				// environments is 600 seconds.
+				// Set the maximum random time in seconds added to each polling
+				// interval. A new time from 0 up to this maximum is drawn for
+				// each interval, so that multiple instances in a datacenter do
+				// not poll for updates at the same time. A recommended amount
+				// in production environments is 600 seconds.
 				onpremise.WithRandomization(1),
 
 				// Enable update on startup, the auto update system

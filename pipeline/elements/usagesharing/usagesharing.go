@@ -25,8 +25,9 @@
 //
 // Processing is fast: each request's data is placed on a bounded queue and a
 // background goroutine batches entries into a GZip-compressed XML payload and
-// sends it. Duplicate requests are suppressed via a sliding-window tracker, and
-// all errors are logged without disrupting the Pipeline.
+// sends it, pausing after repeated failed sends. Identical Evidence is shared
+// at most once in each repeat Evidence interval, and all errors are logged
+// without disrupting the Pipeline.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md
 package usagesharing
@@ -37,6 +38,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -47,6 +49,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -69,7 +72,6 @@ const (
 	apiVersion             = "4.0" // fallback when the build version is unavailable
 	productName            = "Pipeline"
 	maxValueLength         = 10000
-	truncatedMarker        = "[TRUNCATED BY USAGE SHARING] "
 )
 
 type config struct {
@@ -84,6 +86,10 @@ type config struct {
 	takeTimeout         time.Duration
 	shareURL            string
 	repeatInterval      time.Duration
+	recovery            recoveryConfig
+	// err refuses a configuration that cannot work, when the element is
+	// added to a Pipeline.
+	err error
 }
 
 // Element is the Usage Sharing Element.
@@ -106,6 +112,15 @@ type Element struct {
 	flowNames []string
 
 	closeOnce sync.Once
+
+	// ready wakes the sending goroutine when the queue may hold enough
+	// entries to start a message.
+	ready chan struct{}
+	// discarded counts the entries discarded since the queue was last found
+	// full, so the log has one entry for each time it fills.
+	discarded atomic.Int64
+	// clock times the back-off and the waits of the sending goroutine.
+	clock clock
 }
 
 type record struct {
@@ -118,6 +133,9 @@ type record struct {
 
 // Process samples and enqueues the request's shareable Evidence.
 func (e *Element) Process(fd core.FlowData) error {
+	if e.cfg.err != nil {
+		return e.cfg.err
+	}
 	e.startOne.Do(e.startConsumer)
 
 	if !e.sample() {
@@ -129,9 +147,11 @@ func (e *Element) Process(fd core.FlowData) error {
 		return nil
 	}
 
-	// Suppress duplicates seen within the repeat-evidence window. The hash
-	// excludes values designed to make a request unique (e.g. the sequence).
-	if e.tracker.seenRecently(hashEvidence(ev)) {
+	// Share identical Evidence at most once in each repeat Evidence interval.
+	// The hash excludes values designed to make a request unique (e.g. the
+	// sequence).
+	shared, undo := e.tracker.share(hashEvidence(ev))
+	if !shared {
 		return nil
 	}
 
@@ -151,7 +171,11 @@ func (e *Element) Process(fd core.FlowData) error {
 		}
 	}
 
-	e.enqueue(rec)
+	// Evidence the full queue discards was not shared, so it is shared as
+	// new when next seen.
+	if !e.enqueue(rec) {
+		undo()
+	}
 	return nil
 }
 
@@ -224,20 +248,41 @@ func requestEvidence(w core.WebRequest) map[string]string {
 	return out
 }
 
-func (e *Element) enqueue(rec *record) {
+// enqueue adds rec to the queue, waiting up to the add timeout for room, and
+// reports whether it was added. A full queue discards the entry. The log
+// says when discarding starts and how many were discarded once there is room
+// again, rather than once for each entry, which on a busy server would flood
+// it.
+func (e *Element) enqueue(rec *record) bool {
 	timer := time.NewTimer(e.cfg.addTimeout)
 	defer timer.Stop()
 	select {
 	case e.queue <- rec:
 	case <-timer.C:
-		// Queue full within the add timeout: discard and log (never disrupt).
-		e.Logger().Warn("usage sharing queue full; discarding entry")
+		if e.discarded.Add(1) == 1 {
+			e.Logger().Warn("usage sharing queue is full, so entries are " +
+				"discarded until there is room")
+		}
+		return false
 	}
+	if n := e.discarded.Swap(0); n > 0 {
+		e.Logger().Info("usage sharing queue has room again", "discarded", n)
+	}
+	if len(e.queue) >= e.minimum() {
+		select {
+		case e.ready <- struct{}{}:
+		default:
+		}
+	}
+	return true
 }
 
 // OnPipelineAdded records the fully-qualified Flow Element names used in the
 // invariant portion of each shared record.
 func (e *Element) OnPipelineAdded(p core.Pipeline) error {
+	if e.cfg.err != nil {
+		return e.cfg.err
+	}
 	if err := e.BaseElement.OnPipelineAdded(p); err != nil {
 		return err
 	}
@@ -256,84 +301,175 @@ func (e *Element) OnPipelineAdded(p core.Pipeline) error {
 // --- background consumer -------------------------------------------------
 
 func (e *Element) startConsumer() {
+	e.ready = make(chan struct{}, 1)
 	e.wg.Add(1)
 	go e.consume()
 }
 
+// minimum returns the minimum entries per message, being at least 1.
+func (e *Element) minimum() int {
+	return max(1, e.cfg.minEntries)
+}
+
+// consume sends one message at a time until the element is closed. A
+// message is started once the queue holds the minimum entries per message,
+// and the queue is sent from until it holds fewer, so a queue that filled
+// during a pause drains at once. Repeated failed sends pause sending, and
+// processing goes on adding to the queue meanwhile.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#error-handling
 func (e *Element) consume() {
 	defer e.wg.Done()
-	batch := make([]*record, 0, e.cfg.minEntries)
-	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
-		e.send(batch)
-		batch = batch[:0]
-	}
+	b := &backOff{cfg: e.cfg.recovery}
 	for {
-		timer := time.NewTimer(e.cfg.takeTimeout)
 		select {
 		case <-e.stop:
-			timer.Stop()
-			// Drain anything still queued, then send a final (possibly small) batch.
-			for {
-				select {
-				case rec := <-e.queue:
-					batch = append(batch, rec)
-				default:
-					flush()
-					return
-				}
+			e.finish(b)
+			return
+		default:
+		}
+		if wait := b.remaining(e.clock.now()); wait > 0 {
+			fired, stopTimer := e.clock.newTimer(wait)
+			select {
+			case <-e.stop:
+				stopTimer()
+				e.finish(b)
+				return
+			case <-fired:
 			}
-		case rec := <-e.queue:
-			timer.Stop()
-			batch = append(batch, rec)
-			if len(batch) >= e.cfg.minEntries {
-				flush()
+			continue
+		}
+		if len(e.queue) < e.minimum() {
+			select {
+			case <-e.stop:
+				e.finish(b)
+				return
+			case <-e.ready:
 			}
-		case <-timer.C:
-			// Periodically flush whatever has accumulated so data is not held
-			// indefinitely below the minimum batch size.
-			flush()
+			continue
+		}
+		ok := e.send(e.takeMessage())
+		switch b.record(ok, e.clock.now()) {
+		case backOffPaused:
+			e.Logger().Warn("usage sharing paused sending after failed sends",
+				"delay", b.delay)
+		case backOffLengthened:
+			e.Logger().Warn("usage sharing paused sending again after the "+
+				"trial send failed", "delay", b.delay)
+		case backOffResumed:
+			e.Logger().Info("usage sharing resumed sending")
 		}
 	}
 }
 
-func (e *Element) send(batch []*record) {
+// takeMessage takes the entries for one message, waiting up to the take
+// timeout for each one, until a wait ends with no entry, the message holds
+// twice the minimum entries per message or the element is closed. With a take
+// timeout of zero it takes only the entries already queued.
+func (e *Element) takeMessage() []*record {
+	limit := 2 * e.minimum()
+	batch := make([]*record, 0, limit)
+	for len(batch) < limit {
+		select {
+		case rec := <-e.queue:
+			batch = append(batch, rec)
+			continue
+		default:
+		}
+		if e.cfg.takeTimeout <= 0 {
+			return batch
+		}
+		fired, stopTimer := e.clock.newTimer(e.cfg.takeTimeout)
+		select {
+		case rec := <-e.queue:
+			stopTimer()
+			batch = append(batch, rec)
+		case <-fired:
+			return batch
+		case <-e.stop:
+			// The element is closing, so the entries taken are sent now
+			// rather than after a take timeout.
+			stopTimer()
+			return batch
+		}
+	}
+	return batch
+}
+
+// finish ends sending when the element is closed. While sending is paused it
+// sends nothing and discards what is queued, logging how many. Otherwise it
+// sends whatever is left in one final message.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
+func (e *Element) finish(b *backOff) {
+	var rest []*record
+	for drained := false; !drained; {
+		select {
+		case rec := <-e.queue:
+			rest = append(rest, rec)
+		default:
+			drained = true
+		}
+	}
+	if len(rest) == 0 {
+		return
+	}
+	if b.remaining(e.clock.now()) > 0 {
+		e.Logger().Warn("usage sharing closed while sending was paused, so "+
+			"the queued entries were discarded", "discarded", len(rest))
+		return
+	}
+	e.send(rest)
+}
+
+// send sends one message and reports whether it succeeded. It fails when the
+// request cannot be made, has no answer within the HTTP client's timeout or
+// is answered with anything other than 200, whose status code and content are
+// logged. A message or request that cannot be built is a request that cannot
+// be made, so it is a failed send as well.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#request-detail
+func (e *Element) send(batch []*record) bool {
 	xmlBytes, err := e.buildXML(batch)
 	if err != nil {
 		e.Logger().Error("usage sharing: failed to build XML", "error", err)
-		return
+		return false
 	}
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	if _, err := gz.Write(xmlBytes); err != nil {
 		e.Logger().Error("usage sharing: failed to compress payload", "error", err)
-		return
+		return false
 	}
 	if err := gz.Close(); err != nil {
 		e.Logger().Error("usage sharing: failed to finalize payload", "error", err)
-		return
+		return false
 	}
 	req, err := http.NewRequest(http.MethodPost, e.cfg.shareURL, &buf)
 	if err != nil {
 		e.Logger().Error("usage sharing: failed to create request", "error", err)
-		return
+		return false
 	}
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Content-Type", "text/xml")
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
 		e.Logger().Warn("usage sharing: request failed", "error", err)
-		return
+		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		e.Logger().Warn("usage sharing: unexpected response", "status", resp.StatusCode)
+		content, _ := io.ReadAll(io.LimitReader(resp.Body, maxLoggedResponseBytes))
+		e.Logger().Warn("usage sharing: the service refused the message",
+			"status", resp.StatusCode, "content", string(content))
+		return false
 	}
+	return true
 }
 
-// Close drains and sends any remaining data, then stops the background goroutine.
+// maxLoggedResponseBytes limits how much of a refused message's response is
+// read for the log.
+const maxLoggedResponseBytes = 64 << 10
+
+// Close sends any remaining data, unless sending is paused, then stops the
+// background goroutine.
 func (e *Element) Close() error {
 	e.closeOnce.Do(func() {
 		// Ensure the consumer was started so the final flush runs.
@@ -386,21 +522,14 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []strin
 	writeElement(b, "ServerIP", serverIP())
 	writeElement(b, "Platform", runtime.GOOS)
 
-	// Evidence entries, deterministically ordered. A single BadSchema element is
-	// added at the end if any value contained characters that had to be encoded.
+	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))
 	for k := range rec.evidence {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	badSchema := false
 	for _, key := range keys {
-		if writeEvidence(b, key, rec.evidence[key]) {
-			badSchema = true
-		}
-	}
-	if badSchema {
-		writeElement(b, "BadSchema", "true")
+		writeEvidence(b, key, rec.evidence[key])
 	}
 	b.WriteString("</Device>")
 }
@@ -415,50 +544,47 @@ func writeElement(b *strings.Builder, name, value string) {
 	b.WriteByte('>')
 }
 
-// writeEvidence writes a single Evidence value using the usage-sharing schema:
-// a prefixed key becomes <prefix Name="field"><![CDATA[value]]></prefix> with
-// the prefix (category) lower-case as-is, and a bare key becomes
-// <field>value</field>. Over-long values are truncated with a marker and
-// invalid XML characters are hex-encoded. It returns true when any character
-// was encoded, so the caller can emit a single BadSchema element.
-func writeEvidence(b *strings.Builder, key, value string) bool {
+// writeEvidence writes a single Evidence value as the usage sharing element
+// page describes. A prefixed key becomes <prefix Name="field">value</prefix>
+// with the prefix as it is in the key, and a bare key becomes
+// <field>value</field>. A value or field with characters that XML does not
+// allow has them replaced with \xNNNN escapes and the element gets
+// escaped="true". A value over maxValueLength characters is cut to that
+// length and the element gets truncated="true".
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#processing
+func writeEvidence(b *strings.Builder, key, value string) {
 	prefix, field := core.SplitEvidenceKey(key)
 
+	truncated := false
 	if r := []rune(value); len(r) > maxValueLength {
-		value = truncatedMarker + string(r[:maxValueLength])
+		value = string(r[:maxValueLength])
+		truncated = true
 	}
 	encodedValue, badValue := encodeInvalidXMLChars(value)
 	encodedField, badField := encodeInvalidXMLChars(field)
 
+	name := prefix
 	if prefix == "" {
-		b.WriteByte('<')
-		b.WriteString(encodedField)
-		b.WriteByte('>')
-		xml.EscapeText(b, []byte(encodedValue))
-		b.WriteString("</")
-		b.WriteString(encodedField)
-		b.WriteByte('>')
-		return badValue || badField
+		name = encodedField
 	}
-
 	b.WriteByte('<')
-	b.WriteString(prefix)
-	b.WriteString(` Name="`)
-	xml.EscapeText(b, []byte(encodedField))
-	b.WriteString(`">`)
-	writeCDATA(b, encodedValue)
-	b.WriteString("</")
-	b.WriteString(prefix)
+	b.WriteString(name)
+	if badValue || badField {
+		b.WriteString(` escaped="true"`)
+	}
+	if truncated {
+		b.WriteString(` truncated="true"`)
+	}
+	if prefix != "" {
+		b.WriteString(` Name="`)
+		xml.EscapeText(b, []byte(encodedField))
+		b.WriteByte('"')
+	}
 	b.WriteByte('>')
-	return badValue || badField
-}
-
-// writeCDATA writes value inside a CDATA section, splitting any "]]>" so it
-// cannot close the section early.
-func writeCDATA(b *strings.Builder, value string) {
-	b.WriteString("<![CDATA[")
-	b.WriteString(strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>"))
-	b.WriteString("]]>")
+	xml.EscapeText(b, []byte(encodedValue))
+	b.WriteString("</")
+	b.WriteString(name)
+	b.WriteByte('>')
 }
 
 // encodeInvalidXMLChars replaces characters not valid in XML with a \xNNNN
@@ -589,38 +715,54 @@ func isUniquenessKey(key string) bool {
 
 // --- duplicate tracker ---------------------------------------------------
 
+// tracker holds the time each Evidence hash was last shared.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
 type tracker struct {
 	mu       sync.Mutex
 	interval time.Duration
 	seen     map[uint64]time.Time
+	clock    clock
 }
 
 func newTracker(interval time.Duration) *tracker {
-	return &tracker{interval: interval, seen: make(map[uint64]time.Time)}
+	return &tracker{
+		interval: interval,
+		seen:     make(map[uint64]time.Time),
+		clock:    systemClock{},
+	}
 }
 
-// seenRecently reports whether the hash was seen within the interval. It also
-// records/refreshes the entry's timestamp and opportunistically prunes expired
-// entries.
-func (t *tracker) seenRecently(h uint64) bool {
-	now := time.Now()
+// share reports whether Evidence with hash h is to be shared now, being when
+// it has not been shared within the interval, and records the time it is
+// shared. Evidence seen again within the interval leaves the time as it is,
+// so Evidence seen continuously is still shared once in each interval. undo
+// restores the entry as it was, for Evidence that was then not shared.
+// Entries whose interval has passed are removed once there are many.
+func (t *tracker) share(h uint64) (shared bool, undo func()) {
+	now := t.clock.now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	last, ok := t.seen[h]
-	recently := ok && now.Sub(last) < t.interval
-	// Only (re)start the window when the entry is new or already expired.
-	// Refreshing the timestamp on every hit would turn the fixed window into a
-	// sliding one, suppressing continuous identical traffic forever instead of
-	// re-sharing it once per interval.
-	if !recently {
-		t.seen[h] = now
+	last, existed := t.seen[h]
+	if existed && now.Sub(last) < t.interval {
+		return false, func() {}
 	}
+	t.seen[h] = now
 	if len(t.seen) > 10000 {
 		for k, ts := range t.seen {
-			if now.Sub(ts) > t.interval {
+			if now.Sub(ts) >= t.interval {
 				delete(t.seen, k)
 			}
 		}
 	}
-	return recently
+	return true, func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if current, ok := t.seen[h]; ok && current.Equal(now) {
+			if existed {
+				t.seen[h] = last
+			} else {
+				delete(t.seen, h)
+			}
+		}
+	}
 }

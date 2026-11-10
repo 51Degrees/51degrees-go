@@ -63,7 +63,10 @@ type Element struct {
 
 // New creates a JSON Builder Element. setProperties optionally restricts which
 // Properties are included (fully-qualified names, e.g. "device.ismobile");
-// JavaScript and meta Properties are always included.
+// JavaScript and meta Properties are always included. The specification gives
+// the JSON Builder no configuration options, so this include list is specific
+// to Go.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#configuration-options
 func New(logger *slog.Logger, setProperties []string) *Element {
 	e := &Element{BaseElement: core.NewBaseElement(DataKey, core.NewWhitelistFilter(), logger)}
 	if len(setProperties) > 0 {
@@ -99,20 +102,26 @@ func (e *Element) Process(fd core.FlowData) error {
 	result := map[string]any{}
 	var jsProperties []string
 
-	for elementKey, data := range fd.ElementDataAsMap() {
+	// Keys are written in lower case, and so are the names that
+	// javascriptProperties and evidenceproperties list, so that each name finds
+	// its key.
+	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+	for dataKey, data := range fd.ElementDataAsMap() {
+		elementKey := strings.ToLower(dataKey)
 		if _, excluded := excludedDataKeys[elementKey]; excluded {
 			continue
 		}
 		obj := map[string]any{}
-		for propName, raw := range data.AsMap() {
+		for name, raw := range data.AsMap() {
+			propName := strings.ToLower(name)
 			fullName := elementKey + "." + propName
-			pm, hasMeta := meta[strings.ToLower(fullName)]
+			pm, hasMeta := meta[fullName]
 			isJS := isJavaScript(raw)
 
 			// Apply the SetProperties include-list, always keeping JavaScript
 			// Properties (meta Properties are emitted alongside their base).
 			if e.includeProperties != nil && !isJS {
-				if _, ok := e.includeProperties[strings.ToLower(fullName)]; !ok {
+				if _, ok := e.includeProperties[fullName]; !ok {
 					continue
 				}
 			}
@@ -173,7 +182,9 @@ func (e *Element) Process(fd core.FlowData) error {
 	return nil
 }
 
-// Factory builds a JSON Builder Element from configuration.
+// Factory builds a JSON Builder Element from configuration. Its
+// SetProperties parameter is the include list New takes, which is specific to
+// Go.
 func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 	props, _ := core.StringListParam(params, "SetProperties")
 	return New(logger, props), nil
@@ -257,7 +268,8 @@ func delayedEvidenceProperties(pm core.PropertyMetadata, elementKey string, meta
 		if !strings.Contains(ep, ".") {
 			full = elementKey + "." + ep
 		}
-		if m, ok := meta[strings.ToLower(full)]; ok && m.DelayExecution {
+		full = strings.ToLower(full)
+		if m, ok := meta[full]; ok && m.DelayExecution {
 			out = append(out, full)
 		}
 	}

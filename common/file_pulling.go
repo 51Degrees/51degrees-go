@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"compress/gzip"
 	"crypto/md5"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +21,43 @@ import (
 )
 
 const retryMs = 1000
+
+// pullRandom draws the random time added to each polling interval. It has
+// its own source, seeded from crypto/rand, because the global source is not
+// seeded by every Go version this module supports, and unseeded servers
+// would draw the same times and poll in step.
+var (
+	pullRandomMu sync.Mutex
+	pullRandom   = rand.New(rand.NewSource(randomSeed()))
+)
+
+// randomSeed returns a seed read from crypto/rand, or the time if that fails.
+func randomSeed() int64 {
+	var b [8]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		return time.Now().UnixNano()
+	}
+	return int64(binary.LittleEndian.Uint64(b[:]))
+}
+
+// randomizationMs returns a random number of milliseconds from 0 up to and
+// including maxMs, or 0 when maxMs is 0 or less. A new time is drawn for each
+// interval so that servers with the same setting do not poll in step.
+func randomizationMs(maxMs int) int {
+	if maxMs <= 0 {
+		return 0
+	}
+	pullRandomMu.Lock()
+	defer pullRandomMu.Unlock()
+	if int64(maxMs) == math.MaxInt64 {
+		return int(pullRandom.Int63())
+	}
+	return int(pullRandom.Int63n(int64(maxMs) + 1))
+}
+
+// drawRandomizationMs is the draw the scheduler uses. It is a variable so that
+// a test can see the maximum the scheduler passes to it.
+var drawRandomizationMs = randomizationMs
 
 // ScheduleFilePulling schedules periodic file pulling based on specified intervals and handles stop signals gracefully.
 // It optionally performs an immediate pull on startup if the update-on-start feature is enabled.
@@ -34,8 +75,9 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 		case wg := <-stopCh:
 			wg.Done()
 			return
-		// interval to perform the pull of updated data
-		case <-time.After(time.Duration(nextIterationInMs+e.randomization) * time.Millisecond):
+		// interval to perform the pull of updated data, plus a random time
+		// up to the randomization maximum
+		case <-time.After(time.Duration(nextIterationInMs+drawRandomizationMs(e.randomization)) * time.Millisecond):
 			nextIterationInMs = e.doFilePulling(reloadFileEvents)
 		}
 	}
@@ -45,7 +87,8 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 // It checks for file modifications, makes an HTTP request to fetch the file, and handles retry logic for failures.
 // The method returns the time in milliseconds before the next pull attempt.
 func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
-	e.logger.Printf("Pulling data from %s", e.GetDataFileUrl())
+	e.logger.Printf("Pulling data from %s", MaskLicenseKeysIn(e.GetDataFileUrl(),
+		LicenseKeysInURL(e.GetDataFileUrl())))
 
 	var lastModificationTimestamp *time.Time
 
@@ -133,9 +176,11 @@ func tempFilePattern(dataFile string) string {
 func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dataFile string) (*FileResponse, error) {
 	removeStaleTempFiles(dataFile, logger)
 
+	// An error net/http raises names the URL, so its license keys are masked.
+	keys := LicenseKeysInURL(url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, MaskLicenseKeysInError(err, keys)
 	}
 
 	if timestamp != nil {
@@ -144,7 +189,7 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, MaskLicenseKeysInError(err, keys)
 	}
 	defer resp.Body.Close()
 
