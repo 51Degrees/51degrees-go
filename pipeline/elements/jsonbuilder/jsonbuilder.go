@@ -64,7 +64,10 @@ type Element struct {
 
 // New creates a JSON Builder Element. setProperties optionally restricts which
 // Properties are included (fully-qualified names, e.g. "device.ismobile");
-// JavaScript and meta Properties are always included.
+// JavaScript and meta Properties are always included. The specification gives
+// the JSON Builder no configuration options, so this include list is specific
+// to Go.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#configuration-options
 func New(logger *slog.Logger, setProperties []string) *Element {
 	e := &Element{BaseElement: core.NewBaseElement(DataKey, core.NewWhitelistFilter(), logger)}
 	if len(setProperties) > 0 {
@@ -178,7 +181,9 @@ func (e *Element) Process(fd core.FlowData) error {
 	return nil
 }
 
-// Factory builds a JSON Builder Element from configuration.
+// Factory builds a JSON Builder Element from configuration. Its
+// SetProperties parameter is the include list New takes, which is specific to
+// Go.
 func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 	props, _ := core.StringListParam(params, "SetProperties")
 	return New(logger, props), nil

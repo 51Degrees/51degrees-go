@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -50,6 +51,115 @@ const configuratorURL = "https://configure.51degrees.com/?utm_source=code&utm_me
 type BaseCloudAspectEngine struct {
 	*engines.BaseAspectEngine
 	missingProductLogged sync.Once
+
+	// requestEngine is the Cloud Request Engine of the first Pipeline the
+	// engine was added to, which its Properties come from.
+	requestEngine atomic.Pointer[requestengine.CloudRequestEngine]
+	// noRequestEngine is set when that Pipeline has no Cloud Request Engine,
+	// so there are no Properties to wait for.
+	noRequestEngine atomic.Bool
+	// cloudProperties is the Property metadata of the engine's product, kept
+	// once the Cloud Request Engine knows it.
+	cloudProperties atomic.Pointer[[]core.PropertyMetadata]
+	// element is the engine that embeds this base, as the Pipeline holds it,
+	// which each of the product's Properties names.
+	element atomic.Pointer[core.FlowElement]
+}
+
+// OnPipelineAdded finds the engine that embeds this base and the Cloud
+// Request Engine in the Pipeline, which the engine's Properties come from.
+func (e *BaseCloudAspectEngine) OnPipelineAdded(p core.Pipeline) error {
+	if err := e.BaseAspectEngine.OnPipelineAdded(p); err != nil {
+		return err
+	}
+	if el := p.GetElement(e.DataKey()); el != nil {
+		e.element.CompareAndSwap(nil, &el)
+	}
+	cre, ok := p.GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
+	if !ok {
+		if e.requestEngine.Load() == nil {
+			e.noRequestEngine.Store(true)
+		}
+		return nil
+	}
+	e.requestEngine.CompareAndSwap(nil, cre)
+	return nil
+}
+
+// Properties returns the Property metadata the engine was given, followed by
+// that of its product as the Cloud Request Engine reports it. The product's
+// Properties are absent until the Cloud Request Engine knows them, which is
+// when it was built or, after a transient failure then, once a request has
+// fetched them.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
+func (e *BaseCloudAspectEngine) Properties() []core.PropertyMetadata {
+	own := e.BaseAspectEngine.Properties()
+	cloud := e.loadCloudProperties()
+	if len(cloud) == 0 {
+		return own
+	}
+	out := make([]core.PropertyMetadata, 0, len(own)+len(cloud))
+	return append(append(out, own...), cloud...)
+}
+
+// PropertiesLoaded reports whether the product's Properties are known, or
+// there is no Cloud Request Engine to give them, so a Pipeline stops
+// gathering the metadata again.
+func (e *BaseCloudAspectEngine) PropertiesLoaded() bool {
+	e.loadCloudProperties()
+	return e.cloudProperties.Load() != nil || e.noRequestEngine.Load()
+}
+
+// loadCloudProperties returns the product's Property metadata, building it
+// once the Cloud Request Engine knows the Properties.
+func (e *BaseCloudAspectEngine) loadCloudProperties() []core.PropertyMetadata {
+	if props := e.cloudProperties.Load(); props != nil {
+		return *props
+	}
+	cre, el := e.requestEngine.Load(), e.element.Load()
+	if cre == nil || el == nil {
+		return nil
+	}
+	products, ok := cre.KnownPublicProperties()
+	if !ok {
+		return nil
+	}
+	props := productMetadata(products, *el, e.DataKey())
+	e.cloudProperties.CompareAndSwap(nil, &props)
+	return *e.cloudProperties.Load()
+}
+
+// productMetadata returns the Property metadata of the product aspectKey in
+// products, each naming element.
+func productMetadata(products map[string]requestengine.ProductMeta,
+	element core.FlowElement, aspectKey string) []core.PropertyMetadata {
+	product := products[aspectKey]
+	out := make([]core.PropertyMetadata, 0, len(product.Properties))
+	for _, p := range product.Properties {
+		out = append(out, propertyMetadata(p, element))
+	}
+	return out
+}
+
+// propertyMetadata returns the metadata of a cloud Property, naming element,
+// with what the cloud service gives for it, as the .NET Cloud Aspect Engine
+// does. Type is left nil, meaning unknown, because the cloud service names
+// its types in its own terms, not as Go types.
+func propertyMetadata(p requestengine.PropertyMeta,
+	element core.FlowElement) core.PropertyMetadata {
+	pm := core.PropertyMetadata{
+		Name:               p.Name,
+		Element:            element,
+		Category:           p.Category,
+		Available:          true,
+		DelayExecution:     p.DelayExecution,
+		EvidenceProperties: p.EvidenceProperties,
+	}
+	for _, item := range p.ItemProperties {
+		pm.ItemProperties = append(pm.ItemProperties,
+			propertyMetadata(item, element))
+	}
+	return pm
 }
 
 // productLogger is a Cloud Aspect Engine built on BaseCloudAspectEngine, so
@@ -182,10 +292,10 @@ func isJSONNull(raw json.RawMessage) bool {
 }
 
 // AspectProperties derives Property metadata for the given Aspect from the Cloud
-// Request Engine that precedes this engine in the Pipeline. Per the
-// specification this is treated as lazily initialized, failable data and is NOT
-// cached, so it is re-derived (and the cloud metadata re-initialized if needed)
-// on each call.
+// Request Engine that precedes this engine in the Pipeline. That engine
+// normally fetched the Properties when it was built, but after a transient
+// failure then it fetches them on first use, so the result is not cached and
+// is derived again on each call.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func AspectProperties(fd core.FlowData, element core.FlowElement, aspectKey string) ([]core.PropertyMetadata, error) {
 	re := fd.Pipeline().GetElement(requestengine.DataKey)
@@ -197,18 +307,8 @@ func AspectProperties(fd core.FlowData, element core.FlowElement, aspectKey stri
 	if err != nil {
 		return nil, err
 	}
-	product, ok := products[aspectKey]
-	if !ok {
+	if _, ok := products[aspectKey]; !ok {
 		return nil, nil
 	}
-	out := make([]core.PropertyMetadata, 0, len(product.Properties))
-	for _, p := range product.Properties {
-		out = append(out, core.PropertyMetadata{
-			Name:      p.Name,
-			Element:   element,
-			Category:  p.Category,
-			Available: true,
-		})
-	}
-	return out, nil
+	return productMetadata(products, element, aspectKey), nil
 }
