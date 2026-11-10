@@ -80,16 +80,16 @@ func TestFailedSendLogsStatusAndContent(t *testing.T) {
 // sent.
 func TestCloseDuringTakeReturnsPromptly(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, NewBuilder().
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(NewBuilder().
 		SetMinimumEntriesPerMessage(1).
-		SetTakeTimeout(10*time.Second), u, &usageLog{})
+		SetTakeTimeout(10*time.Second), clk), u, &usageLog{})
 	share(t, p, 1)
-	// Give the sending goroutine time to take the entry and start waiting.
-	time.Sleep(200 * time.Millisecond)
-	start := time.Now()
-	p.Close()
-	if took := time.Since(start); took > 2*time.Second {
-		t.Errorf("close took %s while a message was being filled", took)
+	// The sending goroutine has taken the entry and waits for another.
+	clk.waitForTimer(t)
+	if !closeWithin(t, p, clk, 10*time.Second) {
+		t.Error("close waited for the take timeout while a message was " +
+			"being filled")
 	}
 	if got := u.messages(); !reflect.DeepEqual(got, []int{1}) {
 		t.Errorf("received the messages %v, want [1]", got)

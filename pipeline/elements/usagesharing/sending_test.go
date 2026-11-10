@@ -95,6 +95,28 @@ func (u *usageService) waitForMessages(t *testing.T, n int, within time.Duration
 	t.Fatalf("received the messages %v, want %d", u.messages(), n)
 }
 
+// totalEntries returns the number of entries in all the messages received
+// so far.
+func (u *usageService) totalEntries() int {
+	total := 0
+	for _, n := range u.messages() {
+		total += n
+	}
+	return total
+}
+
+// waitForEntries waits up to within for n entries in all.
+func (u *usageService) waitForEntries(t *testing.T, n int, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for u.totalEntries() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("received the messages %v, want %d entries", u.messages(), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // usageLog keeps every log record made through it, with its attributes as
 // text.
 type usageLog struct {
@@ -135,6 +157,19 @@ func (h *usageLog) matching(level slog.Level, part string) []string {
 	return out
 }
 
+// waitFor waits up to two seconds for a record at level whose text holds
+// part.
+func (h *usageLog) waitFor(t *testing.T, level slog.Level, part string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(h.matching(level, part)) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("no %s entry holding %q was logged", level, part)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // usagePipeline builds a Pipeline holding the element b builds, sending to
 // the stand-in service and logging to log.
 func usagePipeline(t *testing.T, b *Builder, u *usageService, log *usageLog) core.Pipeline {
@@ -167,19 +202,24 @@ func share(t *testing.T, p core.Pipeline, i int) {
 }
 
 // A message is not started until the queue holds the minimum entries per
-// message, however long the entries wait.
+// message, however long the entries wait. Once started, it waits up to the
+// take timeout for each further entry.
 func TestMessageWaitsForMinimumEntries(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, NewBuilder().
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(NewBuilder().
 		SetMinimumEntriesPerMessage(3).
-		SetTakeTimeout(20*time.Millisecond), u, &usageLog{})
+		SetTakeTimeout(20*time.Millisecond), clk), u, &usageLog{})
 	share(t, p, 1)
 	share(t, p, 2)
-	time.Sleep(300 * time.Millisecond)
+	clk.advance(time.Hour)
 	if got := u.messages(); len(got) != 0 {
 		t.Fatalf("sent %v with fewer than the minimum queued", got)
 	}
 	share(t, p, 3)
+	// The message holds the three queued entries and waits for a fourth.
+	clk.waitForTimer(t)
+	clk.advance(20 * time.Millisecond)
 	u.waitForMessages(t, 1, 2*time.Second)
 	if got := u.messages(); got[0] != 3 {
 		t.Errorf("the message holds %d entries, want 3", got[0])
@@ -188,17 +228,18 @@ func TestMessageWaitsForMinimumEntries(t *testing.T) {
 
 // Once started, a message takes the entries that arrive within the take
 // timeout of each other, up to twice the minimum entries per message, and
-// what is left waits for the minimum again.
+// what is left waits for the minimum again. The take timeout never ends here,
+// as the clock does not move.
 func TestMessageHoldsUpToTwiceMinimum(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, NewBuilder().
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(NewBuilder().
 		SetMinimumEntriesPerMessage(2).
-		SetTakeTimeout(300*time.Millisecond), u, &usageLog{})
+		SetTakeTimeout(300*time.Millisecond), clk), u, &usageLog{})
 	for i := 1; i <= 5; i++ {
 		share(t, p, i)
 	}
 	u.waitForMessages(t, 1, 2*time.Second)
-	time.Sleep(500 * time.Millisecond)
 	if got := u.messages(); len(got) != 1 || got[0] != 4 {
 		t.Errorf("received the messages %v, want one of 4 entries", got)
 	}
@@ -219,17 +260,21 @@ func failSends(t *testing.T, p core.Pipeline, u *usageService, n int) {
 // while processing goes on adding to the queue.
 func TestSendingPausesAfterFailedSends(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, NewBuilder().
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(NewBuilder().
 		SetMinimumEntriesPerMessage(1).
-		SetTakeTimeout(time.Millisecond), u, &usageLog{})
+		SetTakeTimeout(0), clk), u, &usageLog{})
 	failSends(t, p, u, 10)
+	clk.waitForTimer(t)
 	for i := 11; i <= 13; i++ {
 		share(t, p, i)
 	}
-	time.Sleep(time.Second)
-	if got := u.messages(); len(got) != 10 {
-		t.Errorf("received %d messages, want 10 while sending is paused", len(got))
+	clk.advance(DefaultInitialRecoveryDelay - time.Millisecond)
+	if got := len(u.messages()); got != 10 {
+		t.Errorf("received %d messages, want 10 while sending is paused", got)
 	}
+	clk.advance(time.Millisecond)
+	u.waitForMessages(t, 11, 2*time.Second)
 }
 
 // Closing while sending is paused does not wait for the pause to end and
@@ -237,17 +282,17 @@ func TestSendingPausesAfterFailedSends(t *testing.T) {
 func TestCloseWhilePausedSendsNothing(t *testing.T) {
 	u := &usageService{}
 	log := &usageLog{}
-	p := usagePipeline(t, NewBuilder().
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(NewBuilder().
 		SetMinimumEntriesPerMessage(1).
-		SetTakeTimeout(time.Millisecond), u, log)
+		SetTakeTimeout(0), clk), u, log)
 	failSends(t, p, u, 10)
+	clk.waitForTimer(t)
 	for i := 11; i <= 13; i++ {
 		share(t, p, i)
 	}
-	start := time.Now()
-	p.Close()
-	if took := time.Since(start); took > time.Second {
-		t.Errorf("close took %s while sending was paused", took)
+	if !closeWithin(t, p, clk, DefaultInitialRecoveryDelay) {
+		t.Error("close waited for the pause to end")
 	}
 	if got := u.messages(); len(got) != 10 {
 		t.Errorf("received %d messages, want 10 after closing while paused",
@@ -302,19 +347,19 @@ func TestDefaultQueueSize(t *testing.T) {
 // continuously is still shared once the interval since it was shared ends.
 func TestRepeatEvidenceSharedOncePerInterval(t *testing.T) {
 	u := &usageService{}
-	p := usagePipeline(t, NewBuilder().
+	clk := newFakeClock()
+	p := usagePipeline(t, withClock(NewBuilder().
 		SetMinimumEntriesPerMessage(1).
-		SetTakeTimeout(time.Millisecond).
-		SetRepeatEvidenceInterval(400*time.Millisecond), u, &usageLog{})
-	start := time.Now()
-	for time.Since(start) < 600*time.Millisecond {
+		SetTakeTimeout(0).
+		SetRepeatEvidenceInterval(400*time.Millisecond), clk), u, &usageLog{})
+	// Seen every 100ms from 0ms to 700ms, and shared at 0ms and 400ms.
+	for i := 0; i < 8; i++ {
 		share(t, p, 0)
-		time.Sleep(50 * time.Millisecond)
+		clk.advance(100 * time.Millisecond)
 	}
-	u.waitForMessages(t, 2, 2*time.Second)
-	time.Sleep(100 * time.Millisecond)
-	if got := u.messages(); len(got) != 2 {
-		t.Errorf("received the messages %v, want 2 in 600ms with an "+
-			"interval of 400ms", got)
+	u.waitForEntries(t, 2, 2*time.Second)
+	if got := u.totalEntries(); got != 2 {
+		t.Errorf("shared %d entries, want 2 in 800ms with an interval of "+
+			"400ms", got)
 	}
 }
