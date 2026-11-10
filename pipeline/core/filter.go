@@ -65,9 +65,9 @@ func (f *WhitelistFilter) Keys() []string {
 	return out
 }
 
-// FuncFilter accepts Evidence keys using an arbitrary predicate. This is used
-// where listing accepted keys is impractical, for example the Cloud Request
-// Engine, whose keys are known only once the cloud service has listed them.
+// FuncFilter accepts Evidence keys using an arbitrary predicate, for an
+// element whose accepted keys are impractical to list. It cannot list them,
+// so AggregateFilter.Keys, and the Vary header built from it, leave them out.
 type FuncFilter struct {
 	fn func(key string) bool
 }
