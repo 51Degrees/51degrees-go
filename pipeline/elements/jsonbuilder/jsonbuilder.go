@@ -24,13 +24,14 @@
 // representation of the values in a Flow Data for use by the JavaScript Builder
 // and client-side features.
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md
 package jsonbuilder
 
 import (
 	"encoding/json"
 	"log/slog"
 	"math"
+	"reflect"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -50,7 +51,7 @@ const MaxJavaScriptIterations = 10
 
 // excludedDataKeys are the Element data keys whose Properties are never included
 // in the JSON output.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/json-builder.md#process
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
 var excludedDataKeys = map[string]struct{}{
 	"set-headers":    {},
 	"cloud-response": {}, // Cloud Request Engine
@@ -65,7 +66,10 @@ type Element struct {
 
 // New creates a JSON Builder Element. setProperties optionally restricts which
 // Properties are included (fully-qualified names, e.g. "device.ismobile");
-// JavaScript and meta Properties are always included.
+// JavaScript and meta Properties are always included. The specification gives
+// the JSON Builder no configuration options, so this include list is specific
+// to Go.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#configuration-options
 func New(logger *slog.Logger, setProperties []string) *Element {
 	e := &Element{BaseElement: core.NewBaseElement(DataKey, core.NewWhitelistFilter(), logger)}
 	if len(setProperties) > 0 {
@@ -110,41 +114,45 @@ func (e *Element) Process(fd core.FlowData) error {
 	result := map[string]any{}
 	var jsProperties []string
 
-	for elementKey, data := range fd.ElementDataAsMap() {
+	// Keys are written in lower case, and so are the names that
+	// javascriptProperties and evidenceproperties list, so that each name finds
+	// its key.
+	// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
+	for dataKey, data := range fd.ElementDataAsMap() {
+		elementKey := strings.ToLower(dataKey)
 		if _, excluded := excludedDataKeys[elementKey]; excluded {
 			continue
 		}
 		obj := map[string]any{}
-		for propName, raw := range data.AsMap() {
+		for name, raw := range data.AsMap() {
+			propName := strings.ToLower(name)
 			fullName := elementKey + "." + propName
-			pm, hasMeta := meta[strings.ToLower(fullName)]
+			pm, hasMeta := meta[fullName]
 			isJS := isJavaScript(raw)
 
 			// Apply the SetProperties include-list, always keeping JavaScript
 			// Properties (meta Properties are emitted alongside their base).
 			if e.includeProperties != nil && !isJS {
-				if _, ok := e.includeProperties[strings.ToLower(fullName)]; !ok {
+				if _, ok := e.includeProperties[fullName]; !ok {
 					continue
 				}
 			}
 
-			// A raw (non-AspectPropertyValue) nil is omitted entirely. A
-			// no-value AspectPropertyValue still emits the name plus its
-			// nullreason below.
-			if raw == nil {
-				continue
-			}
-
-			value, isNull, nullReason := normalizeValue(raw)
-			if isNull {
+			// A value that is nil has no entry, and one assigned no value is
+			// written as null with its nullreason. Only a Property with a
+			// value gets delayexecution. Either way evidenceproperties is
+			// written, as the .NET and Java JSON Builders do, so the page can
+			// still run the JavaScript.
+			value, isNull, nullReason, ok := normalizeValue(raw)
+			if ok && isNull {
 				obj[propName] = nil
 				obj[propName+"nullreason"] = nullReason
-			} else {
+			} else if ok {
 				obj[propName] = value
 			}
 
 			if hasMeta {
-				if pm.DelayExecution {
+				if ok && !isNull && pm.DelayExecution {
 					obj[propName+"delayexecution"] = true
 				}
 				if eps := delayedEvidenceProperties(pm, elementKey, meta); len(eps) > 0 {
@@ -184,7 +192,9 @@ func (e *Element) Process(fd core.FlowData) error {
 	return nil
 }
 
-// Factory builds a JSON Builder Element from configuration.
+// Factory builds a JSON Builder Element from configuration. Its
+// SetProperties parameter is the include list New takes, which is specific to
+// Go.
 func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 	props, _ := core.StringListParam(params, "SetProperties")
 	return New(logger, props), nil
@@ -204,39 +214,56 @@ func buildMetaIndex(props []core.PropertyMetadata) map[string]core.PropertyMetad
 	return index
 }
 
-// normalizeValue unwraps AspectPropertyValue values, returning the underlying
-// value, whether it is a "no value", and the no-value message.
-func normalizeValue(raw any) (value any, isNull bool, nullReason string) {
-	if raw == nil {
-		return nil, true, "This property has no value."
-	}
-	if apv, ok := raw.(engines.PropertyValueAccessor); ok {
+// normalizeValue unwraps AspectPropertyValue values. It returns the value to
+// write, or isNull and the message for a Property assigned no value, and ok
+// false for a value that is nil, which has no entry and no nullreason.
+func normalizeValue(raw any) (value any, isNull bool, nullReason string, ok bool) {
+	if apv, isAPV := raw.(engines.PropertyValueAccessor); isAPV {
 		if !apv.HasValue() {
-			return nil, true, apv.NoValueMessage()
+			return nil, true, apv.NoValueMessage(), true
 		}
 		raw = apv.AsInterface()
 	}
+	if isNil(raw) {
+		return nil, false, "", false
+	}
 	// A list of sub-element data (e.g. multiple device profiles) is recursed so
 	// each nested object carries its own properties and no-value reasons.
-	if list, ok := raw.([]core.ElementData); ok {
+	if list, isList := raw.([]core.ElementData); isList {
 		out := make([]map[string]any, len(list))
 		for i, d := range list {
 			out[i] = normalizeElementData(d)
 		}
-		return out, false, ""
+		return out, false, "", true
 	}
-	return raw, false, ""
+	return raw, false, "", true
 }
 
-// normalizeElementData builds the JSON object for a nested Element Data,
-// emitting a nullreason for any no-value property and recursing further.
+// isNil reports whether v is nil, or a nil pointer, slice, map, channel,
+// function or interface, which JSON would write as null.
+func isNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch r := reflect.ValueOf(v); r.Kind() {
+	case reflect.Pointer, reflect.Slice, reflect.Map, reflect.Chan,
+		reflect.Func, reflect.Interface:
+		return r.IsNil()
+	default:
+		return false
+	}
+}
+
+// normalizeElementData builds the JSON object for a record, being a nested
+// Element Data, by the same rules as a top-level entry. Its keys are the
+// names AsMap gives, which ElementData keeps in lower case.
 func normalizeElementData(d core.ElementData) map[string]any {
 	obj := map[string]any{}
 	for name, raw := range d.AsMap() {
-		if raw == nil {
+		value, isNull, nullReason, ok := normalizeValue(raw)
+		if !ok {
 			continue
 		}
-		value, isNull, nullReason := normalizeValue(raw)
 		if isNull {
 			obj[name] = nil
 			obj[name+"nullreason"] = nullReason
@@ -268,7 +295,8 @@ func delayedEvidenceProperties(pm core.PropertyMetadata, elementKey string, meta
 		if !strings.Contains(ep, ".") {
 			full = elementKey + "." + ep
 		}
-		if m, ok := meta[strings.ToLower(full)]; ok && m.DelayExecution {
+		full = strings.ToLower(full)
+		if m, ok := meta[full]; ok && m.DelayExecution {
 			out = append(out, full)
 		}
 	}

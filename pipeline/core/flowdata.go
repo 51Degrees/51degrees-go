@@ -23,6 +23,7 @@
 package core
 
 import (
+	"maps"
 	"sync"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
@@ -39,7 +40,9 @@ type FlowData interface {
 	// before processing, and a Flow Element may add Evidence while it processes,
 	// for the Flow Elements after it and the caller to read. A call while a
 	// parallel group runs, or after processing has finished, is ignored and
-	// logged. Returns the Flow Data for chaining.
+	// logged. The caller must not add Evidence while processing runs, because
+	// such a call cannot be told apart from one made by a Flow Element.
+	// Returns the Flow Data for chaining.
 	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md#adding-evidence-values
 	AddEvidence(key string, value any) FlowData
 	// AddEvidenceMap adds multiple Evidence values.
@@ -144,11 +147,12 @@ func (fd *flowData) Process() error {
 
 // SuppliedEvidence returns the Evidence as it was when processing of the Flow
 // Data started, without the values that Flow Elements added while processing.
-// Before processing starts it returns the Evidence held now. It is for work
-// that depends on the request alone, such as a cache validator.
+// Before processing starts it returns the Evidence held now. Each call returns
+// a new map. It is for work that depends on the request alone, such as a cache
+// validator.
 func SuppliedEvidence(fd FlowData) map[string]any {
 	if f, ok := fd.(*flowData); ok && f.supplied != nil {
-		return f.supplied
+		return maps.Clone(f.supplied)
 	}
 	return fd.Evidence().AsMap()
 }
