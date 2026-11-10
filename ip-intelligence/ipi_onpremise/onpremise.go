@@ -115,7 +115,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 // handleFileExternallyChanged handles the logic for processing a file that has been altered externally to ensure consistency.
 func (e *Engine) handleFileExternallyChanged() {
-	if err := e.processFileExternallyChanged(); err != nil {
+	if err := e.reload(); err != nil {
 		e.logger.Printf("failed to handle file externally changed: %v", err)
 	}
 
@@ -124,8 +124,6 @@ func (e *Engine) handleFileExternallyChanged() {
 
 // run starts the engine
 func (e *Engine) run() error {
-	e.recoverEngine()
-
 	e.reloadLoop.Add(1)
 	go e.reloadFileEvent()
 
@@ -139,7 +137,8 @@ func (e *Engine) run() error {
 
 	if e.IsAutoUpdateEnabled() {
 		e.SetFilePullerStarted(true)
-		go e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
+		go e.pullDataFiles(e.IsUpdateOnStartEnabled(),
+			time.Duration(e.GetDataFilePullEveryMs())*time.Millisecond)
 	}
 
 	return nil
@@ -193,18 +192,54 @@ func (e *Engine) Stop() {
 	}
 }
 
-// recoverEngine attempts to recover the engine from a panic by logging the error and restarting file pulling if needed.
-func (e *Engine) recoverEngine() {
-	// recover from panic
-	// if panic occurs, we will log the error and restart the file pulling
+// pullDataFiles runs the file puller until the engine stops. A panic in a
+// pull is logged and the puller runs again, with its next pull after the
+// polling interval, so that one failed pull does not end automatic updates.
+func (e *Engine) pullDataFiles(pullsOnStart bool, interval time.Duration) {
+	for !e.schedulePulling() {
+		// ScheduleFilePulling pulls at once when update on start is enabled,
+		// so the polling interval is waited for here.
+		if pullsOnStart && !e.waitUnlessStopped(interval) {
+			return
+		}
+	}
+}
+
+// schedulePulling runs the file puller. It returns true when the engine
+// stopped it, and false when a pull panicked, which is logged.
+func (e *Engine) schedulePulling() (stopped bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logger.Printf("error occurred when pulling data: %v", r)
-			if !e.isStopped {
-				go e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
-			}
 		}
 	}()
+	e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
+	return true
+}
+
+// waitUnlessStopped waits for the interval. It returns false, having told
+// Stop that the puller has ended, if the engine is stopped first.
+func (e *Engine) waitUnlessStopped(interval time.Duration) bool {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case wg := <-e.stopCh:
+		wg.Done()
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+// reload loads the data file again. A panic is returned as an error, so the
+// goroutine that asked for the reload carries on and a later file is loaded.
+func (e *Engine) reload() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return e.processFileExternallyChanged()
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -213,7 +248,7 @@ func (e *Engine) recoverEngine() {
 func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
-		if err := e.processFileExternallyChanged(); err != nil {
+		if err := e.reload(); err != nil {
 			e.logger.Printf("failed to reload pulled data file: %v", err)
 		}
 	}
