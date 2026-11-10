@@ -30,6 +30,20 @@ if (!$Assets) {
     -DeviceDetection:$DeviceDetection -DeviceDetectionUrl:$DeviceDetectionUrl `
     -IpIntelligence:$IpIntelligence -IpIntelligenceUrl:$IpIntelligenceUrl
 
+# The IP Intelligence and mixed examples default to the free Lite data file,
+# and an example downloads it when it is missing. The examples of both modules
+# use the same file in cxx/data, so it is fetched once here, before any test
+# runs, rather than by an example while its tests run.
+if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
+    $data = Join-Path $RepoPath "cxx/data"
+    $lite = "51Degrees-LiteV41.ipi"
+    $global:LASTEXITCODE = 0
+    & (Join-Path $data "get-data-files.ps1") $lite
+    if ($LASTEXITCODE -ne 0) {
+        throw "$lite was not downloaded"
+    }
+}
+
 # The IP Intelligence reload tests use the small Asn data file and the
 # Enterprise data file, which has different properties, and look for both in
 # the module folder. The script in the data submodule of cxx downloads the Asn
