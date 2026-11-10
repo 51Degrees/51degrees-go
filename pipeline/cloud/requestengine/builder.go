@@ -33,11 +33,15 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
-// Builder constructs a CloudRequestEngine. The Resource Key is required.
+// Builder constructs a CloudRequestEngine, which authenticates with a
+// Resource Key, a License Key or both.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
 type Builder struct {
 	logger               *slog.Logger
 	httpClient           *http.Client
 	resourceKey          string
+	licenseKey           string
+	requestedProperties  []string
 	endpoint             string
 	dataEndpoint         string
 	propertiesEndpoint   string
@@ -91,6 +95,21 @@ func (b *Builder) SetHTTPClient(c *http.Client) *Builder { b.httpClient = c; ret
 // SetResourceKey sets the Resource Key used to authenticate requests and select
 // the returned Properties.
 func (b *Builder) SetResourceKey(key string) *Builder { b.resourceKey = key; return b }
+
+// SetLicenseKey sets the License Key used to authenticate requests. With no
+// Resource Key, SetRequestedProperties must name the Properties wanted,
+// because a License Key names none of its own. Beside a Resource Key, it
+// adds the products it grants to those the Resource Key carries.
+func (b *Builder) SetLicenseKey(key string) *Builder { b.licenseKey = key; return b }
+
+// SetRequestedProperties sets the Properties to ask the cloud service for, as
+// fully qualified names such as "device.ismobile". They are required with a
+// License Key alone and refused with a Resource Key, which the cloud service
+// answers with everything it carries whatever the list says.
+func (b *Builder) SetRequestedProperties(names ...string) *Builder {
+	b.requestedProperties = append([]string(nil), names...)
+	return b
+}
 
 // SetEndpoint sets the base URL; endpoint paths are derived from it unless set
 // explicitly.
@@ -230,6 +249,12 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	b := NewBuilder().SetLogger(logger)
 	if v, ok := core.StringParam(params, "ResourceKey"); ok {
 		b.SetResourceKey(v)
+	}
+	if v, ok := core.StringParam(params, "LicenseKey"); ok {
+		b.SetLicenseKey(v)
+	}
+	if v, ok := core.StringListParam(params, "RequestedProperties"); ok {
+		b.SetRequestedProperties(v...)
 	}
 	if v, ok := core.StringParam(params, "EndPoint"); ok {
 		b.SetEndpoint(v)
