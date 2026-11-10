@@ -221,10 +221,14 @@ func newPropertyCheck(
 	}
 }
 
-// answer returns check's answer for the property at requiredIndex.
+// answer returns check's answer for the property at requiredIndex. The
+// exception is cleared before each lookup, because the C library sets it on a
+// failure and never clears it, so one failure would otherwise give false for
+// every property looked up after it.
 func (p *propertyCheck) answer(requiredIndex int) bool {
 	a, seen := p.answers[requiredIndex]
 	if !seen {
+		p.exception.Clear()
 		a = p.check(requiredIndex, p.exception)
 		p.answers[requiredIndex] = a
 	}
