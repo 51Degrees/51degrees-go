@@ -28,8 +28,11 @@ package requestengine
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // The discovery state of one build, kept as JSON, lets a later build with the
@@ -110,5 +113,113 @@ func TestNoDiscoveryStateWithoutBothResults(t *testing.T) {
 	}
 	if s := b.DiscoveryState(); s != nil {
 		t.Errorf("after a failed build the state is %+v, want none", s)
+	}
+}
+
+// A discovery state that lacks either result, such as one read from an
+// empty JSON file, fails the build with a configuration error and no
+// request, because the engine would never fetch what is missing. A result
+// that is present and empty is kept, as it is when the cloud service gives
+// one.
+func TestIncompleteDiscoveryStateFailsTheBuild(t *testing.T) {
+	var fromEmptyJSON DiscoveryState
+	if err := json.Unmarshal([]byte(`{}`), &fromEmptyJSON); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	cases := []struct {
+		name  string
+		state *DiscoveryState
+	}{
+		{"empty JSON", &fromEmptyJSON},
+		{"no Evidence keys", &DiscoveryState{Products: map[string]ProductMeta{}}},
+		{"no Products", &DiscoveryState{EvidenceKeys: []string{"header.user-agent"}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cloud := &discoveryCloud{}
+			b := discoveryBuilder(cloud.serve(t), &logRecorder{}).
+				SetDiscoveryState(c.state)
+			e, err := b.Build()
+			var configErr *core.ConfigurationError
+			if e != nil || !errors.As(err, &configErr) {
+				t.Fatalf("build gives %v, %v, want a configuration error", e, err)
+			}
+			wantCounts(t, cloud, "after the build", [3]int64{0, 0, 0})
+			if s := b.DiscoveryState(); s != nil {
+				t.Errorf("after a failed build the state is %+v, want none", s)
+			}
+		})
+	}
+
+	t.Run("present and empty", func(t *testing.T) {
+		cloud := &discoveryCloud{}
+		e, err := discoveryBuilder(cloud.serve(t), &logRecorder{}).
+			SetDiscoveryState(&DiscoveryState{
+				EvidenceKeys: []string{},
+				Products:     map[string]ProductMeta{},
+			}).
+			Build()
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		if products, err := e.PublicProperties(); err != nil || len(products) != 0 {
+			t.Fatalf("PublicProperties gives %v, %v, want none", products, err)
+		}
+		wantCounts(t, cloud, "after the build and a read", [3]int64{0, 0, 0})
+	})
+}
+
+// itemState is a discovery state whose one Property has item Properties.
+func itemState() *DiscoveryState {
+	return &DiscoveryState{
+		EvidenceKeys: []string{"header.user-agent"},
+		Products: map[string]ProductMeta{"device": {
+			DataTier: "CloudV4",
+			Properties: []PropertyMeta{{
+				Name:     "profiles",
+				Type:     "Array",
+				Category: "Device",
+				ItemProperties: []PropertyMeta{
+					{Name: "profileid", Type: "String", Category: "Device"},
+				},
+			}},
+		}},
+	}
+}
+
+// change alters every part of s that a caller could reach.
+func change(s *DiscoveryState) {
+	s.EvidenceKeys[0] = "header.changed"
+	device := s.Products["device"]
+	device.Properties[0].ItemProperties[0].Name = "changed"
+	device.Properties[0].Name = "changed"
+	s.Products["other"] = ProductMeta{}
+}
+
+// An engine shares nothing with the discovery state it was built from or
+// the one its builder gives back, item Properties included, so changing
+// either state, or what PublicProperties gives, does not change the engine.
+func TestDiscoveryStateIsCopied(t *testing.T) {
+	given := itemState()
+	cloud := &discoveryCloud{}
+	b := discoveryBuilder(cloud.serve(t), &logRecorder{}).SetDiscoveryState(given)
+	e, err := b.Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	change(given)
+	change(b.DiscoveryState())
+	products, err := e.PublicProperties()
+	if err != nil {
+		t.Fatalf("PublicProperties: %v", err)
+	}
+	products["device"].Properties[0].ItemProperties[0].Name = "changed"
+
+	want := itemState()
+	wantKeys(t, e.EvidenceKeyFilter(), want.EvidenceKeys)
+	if got, err := e.PublicProperties(); err != nil ||
+		!reflect.DeepEqual(got, want.Products) {
+		t.Fatalf("after the states and a copy changed, PublicProperties "+
+			"gives %+v, %v, want %+v", got, err, want.Products)
 	}
 }

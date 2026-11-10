@@ -511,3 +511,95 @@ func TestBuildFailuresCountTowardRecovery(t *testing.T) {
 	}
 	wantCounts(t, cloud, "after the recovery period", [3]int64{2, 2, 1})
 }
+
+// A refused first-use retry of discovery answers that one request, so it
+// does not count toward the recovery period, which every visitor shares.
+// Each request still reaches the cloud service and gets its refusal.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#failures-that-count
+func TestRefusedDiscoveryRetryDoesNotCountTowardRecovery(t *testing.T) {
+	for _, endpoint := range []string{"accessibleproperties", "evidencekeys"} {
+		for _, status := range []int{400, 401, 403, 404, 408} {
+			t.Run(fmt.Sprintf("%s/%d", endpoint, status), func(t *testing.T) {
+				cloud := &discoveryCloud{}
+				failing, want := &cloud.evidenceStatus, [3]int64{1, 4, 0}
+				if endpoint == "accessibleproperties" {
+					failing, want = &cloud.propertiesStatus, [3]int64{4, 1, 0}
+				}
+				// One transient failure at build, below the threshold.
+				failing.Store(503)
+				now := time.Unix(1000, 0)
+				e, err := discoveryBuilder(cloud.serve(t), &logRecorder{}).
+					SetFailuresToEnterRecovery(2).
+					SetRecoveryDuration(60 * time.Second).
+					setClock(func() time.Time { return now }).
+					Build()
+				if err != nil {
+					t.Fatalf("build: %v", err)
+				}
+				p := pipelineOf(t, e, false)
+				failing.Store(int64(status))
+				for i := 1; i <= 3; i++ {
+					_, err := process(p)
+					var cloudErr *CloudRequestError
+					if !errors.As(err, &cloudErr) || cloudErr.StatusCode != status {
+						t.Fatalf("request %d gives %v, want the cloud's %d",
+							i, err, status)
+					}
+				}
+				wantCounts(t, cloud, "after three refused retries", want)
+			})
+		}
+	}
+}
+
+// PublicProperties gives a copy, so a caller that changes what it is given
+// changes neither the engine nor what any other caller reads.
+func TestPublicPropertiesGivesACopy(t *testing.T) {
+	cloud := &discoveryCloud{}
+	e, err := discoveryBuilder(cloud.serve(t), &logRecorder{}).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	products, err := e.PublicProperties()
+	if err != nil {
+		t.Fatalf("PublicProperties: %v", err)
+	}
+	products["device"].Properties[0].Name = "changed"
+	delete(products, "device")
+	products["other"] = ProductMeta{}
+
+	again, err := e.PublicProperties()
+	if err != nil || len(again) != 1 || len(again["device"].Properties) != 1 ||
+		again["device"].Properties[0].Name != "ismobile" {
+		t.Fatalf("after a caller changed its copy, PublicProperties gives "+
+			"%v, %v, want the device product as the cloud gave it", again, err)
+	}
+}
+
+// Factory gives no element with its error, so a caller that checks the
+// element against nil sees the failure.
+func TestFactoryGivesNoElementWhenTheBuildFails(t *testing.T) {
+	cloud := &discoveryCloud{}
+	cloud.evidenceStatus.Store(401)
+	srv := cloud.serve(t)
+	cases := []struct {
+		name   string
+		params map[string]any
+	}{
+		{"no Resource Key", map[string]any{"EndPoint": srv.URL + "/"}},
+		{"refused Resource Key", map[string]any{
+			"ResourceKey": discoveryKey, "EndPoint": srv.URL + "/"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			element, err := Factory(c.params, slog.New(&logRecorder{}))
+			if err == nil {
+				t.Fatal("Factory succeeded")
+			}
+			if element != nil {
+				t.Errorf("Factory gives the element %#v with its error, "+
+					"want none", element)
+			}
+		})
+	}
+}
