@@ -120,6 +120,8 @@ type Element struct {
 	// discarded counts the entries discarded since the queue was last found
 	// full, so the log has one entry for each time it fills.
 	discarded atomic.Int64
+	// clock times the back-off and the waits of the sending goroutine.
+	clock clock
 }
 
 type record struct {
@@ -282,14 +284,14 @@ func (e *Element) consume() {
 			return
 		default:
 		}
-		if wait := b.remaining(time.Now()); wait > 0 {
-			timer := time.NewTimer(wait)
+		if wait := b.remaining(e.clock.now()); wait > 0 {
+			fired, stopTimer := e.clock.newTimer(wait)
 			select {
 			case <-e.stop:
-				timer.Stop()
+				stopTimer()
 				e.finish(b)
 				return
-			case <-timer.C:
+			case <-fired:
 			}
 			continue
 		}
@@ -303,7 +305,7 @@ func (e *Element) consume() {
 			continue
 		}
 		ok := e.send(e.takeMessage())
-		switch b.record(ok, time.Now()) {
+		switch b.record(ok, e.clock.now()) {
 		case backOffPaused:
 			e.Logger().Warn("usage sharing paused sending after failed sends",
 				"delay", b.delay)
@@ -333,17 +335,17 @@ func (e *Element) takeMessage() []*record {
 		if e.cfg.takeTimeout <= 0 {
 			return batch
 		}
-		timer := time.NewTimer(e.cfg.takeTimeout)
+		fired, stopTimer := e.clock.newTimer(e.cfg.takeTimeout)
 		select {
 		case rec := <-e.queue:
-			timer.Stop()
+			stopTimer()
 			batch = append(batch, rec)
-		case <-timer.C:
+		case <-fired:
 			return batch
 		case <-e.stop:
 			// The element is closing, so the entries taken are sent now
 			// rather than after a take timeout.
-			timer.Stop()
+			stopTimer()
 			return batch
 		}
 	}
@@ -367,7 +369,7 @@ func (e *Element) finish(b *backOff) {
 	if len(rest) == 0 {
 		return
 	}
-	if b.remaining(time.Now()) > 0 {
+	if b.remaining(e.clock.now()) > 0 {
 		e.Logger().Warn("usage sharing closed while sending was paused, so "+
 			"the queued entries were discarded", "discarded", len(rest))
 		return
@@ -686,10 +688,15 @@ type tracker struct {
 	mu       sync.Mutex
 	interval time.Duration
 	seen     map[uint64]time.Time
+	clock    clock
 }
 
 func newTracker(interval time.Duration) *tracker {
-	return &tracker{interval: interval, seen: make(map[uint64]time.Time)}
+	return &tracker{
+		interval: interval,
+		seen:     make(map[uint64]time.Time),
+		clock:    systemClock{},
+	}
 }
 
 // share reports whether Evidence with hash h is to be shared now, being when
@@ -699,7 +706,7 @@ func newTracker(interval time.Duration) *tracker {
 // restores the entry as it was, for Evidence that was then not shared.
 // Entries whose interval has passed are removed once there are many.
 func (t *tracker) share(h uint64) (shared bool, undo func()) {
-	now := time.Now()
+	now := t.clock.now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	last, existed := t.seen[h]
