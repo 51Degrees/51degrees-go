@@ -24,7 +24,7 @@
 // single HTTP call to a remote 51Degrees cloud service per Flow Data and exposes
 // the raw JSON response for downstream Cloud Aspect Engines to deserialize.
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md
 package requestengine
 
 import (
@@ -134,7 +134,7 @@ type accessiblePropertiesResponse struct {
 // often can keep the state from one build, for example as JSON, and give it
 // to the next build with Builder.SetDiscoveryState so that build makes no
 // request.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#resilience
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#resilience
 type DiscoveryState struct {
 	// EvidenceKeys are the Evidence keys the cloud service accepts.
 	EvidenceKeys []string `json:"EvidenceKeys"`
@@ -201,7 +201,7 @@ func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bo
 // then, a call fetches them unless the engine is in its recovery period, so
 // call it while processing, where SuppressProcessExceptions covers a failure.
 // It returns a copy, so a caller may change it without changing the engine.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) {
 	if p := e.products.Load(); p != nil {
 		return cloneProducts(*p), nil
@@ -296,7 +296,7 @@ func (e *CloudRequestEngine) postEndpoint(endpoint string, form url.Values) ([]b
 
 // credentials returns the configured keys as the form fields the cloud
 // service reads them from, being resource and license.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
 func (e *CloudRequestEngine) credentials() url.Values {
 	form := url.Values{}
 	if e.resourceKey != "" {
@@ -310,7 +310,7 @@ func (e *CloudRequestEngine) credentials() url.Values {
 
 // licenseKeys returns the License Key, which no error or log entry may hold
 // in full, or none.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/logging.md#license-keys
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/logging.md#license-keys
 func (e *CloudRequestEngine) licenseKeys() []string {
 	if e.licenseKey == "" {
 		return nil
@@ -331,7 +331,7 @@ func (e *CloudRequestEngine) maskLicenseKey(text string) string {
 // because its nullreason explains it. Names are compared in any letter case,
 // because the answer is in lower case. The answer cannot change while the
 // key and the list stay the same, so the comparison is made once.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#properties-the-remote-server-did-not-return
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#properties-the-remote-server-did-not-return
 func (e *CloudRequestEngine) reportPropertiesNotReturned(body string) {
 	if len(e.requestedProperties) == 0 || e.notReturnedReported.Load() {
 		return
@@ -380,7 +380,7 @@ var engineFields = map[string]bool{
 // buildForm constructs the URL-encoded form, being the credentials, the
 // Requested Properties as values, comma separated, and the Evidence the
 // cloud service needs, as resolveEvidence gives it.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	form := e.credentials()
 	if len(e.requestedProperties) > 0 {
@@ -440,7 +440,11 @@ func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
 // checkResponse implements the error scenarios required of cloud HTTP requests.
 // The License Key is masked in each message, as the cloud service may write
 // it in its answer.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
+// maxLoggedContentBytes is how much of a failed response's content its error
+// shows.
+const maxLoggedContentBytes = 512
+
 func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
 		return NewCloudResponseError(e.maskLicenseKey(strings.Join(msgs, "; ")), status, headers)
@@ -449,9 +453,12 @@ func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.
 		return NewCloudResponseError(fmt.Sprintf("No data in response from cloud service at '%s'", url), status, headers)
 	}
 	if status != http.StatusOK {
+		// The content is masked before it is cut, so a License Key across
+		// the cut is still found.
+		content := truncate(e.maskLicenseKey(string(raw)), maxLoggedContentBytes)
 		return NewCloudResponseError(e.maskLicenseKey(
 			fmt.Sprintf("Cloud service at '%s' returned status code '%d' with content %s",
-				url, status, truncate(string(raw), 512))), status, headers)
+				url, status, content)), status, headers)
 	}
 	return nil
 }
@@ -463,7 +470,7 @@ func (e *CloudRequestEngine) logWarnings(raw []byte) {
 }
 
 // --- Discovery -----------------------------------------------------------
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#start-up-activity
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#start-up-activity
 
 // discoverAtBuild makes both discovery requests in parallel, so the build
 // waits for one timeout at most. A 4xx answer to either is a configuration
@@ -628,11 +635,11 @@ func (f acceptedEvidence) Keys() []string {
 }
 
 // fetchAccessibleProperties asks for the accessible Properties. A Resource
-// Key alone goes in the query of a GET, as it always has. Whenever a License
-// Key is set, the credentials are posted in the body instead, so the License
-// Key stays out of the URL and of request logs, and the service answers
+// Key alone goes in the query of a GET. Whenever a License Key is set, the
+// credentials are posted in the body instead, so the License Key stays out
+// of the URL and of request logs. For a License Key alone the service answers
 // with every Property the License Key entitles.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#discovery-under-a-license-key
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#discovery-under-a-license-key
 func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta, error) {
 	var raw []byte
 	var err error
@@ -755,7 +762,7 @@ func (e *CloudRequestEngine) recordFailure(err error) {
 // those count toward the recovery period, because the period stops every
 // visitor's requests, and any other status from 400 to 499 answers the
 // content of that one request.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
 func signalsServiceTrouble(err error) bool {
 	var cloudErr *CloudRequestError
 	if !errors.As(err, &cloudErr) {

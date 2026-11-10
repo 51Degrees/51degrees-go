@@ -347,8 +347,8 @@ func TestBothKeysAndPropertiesSendValues(t *testing.T) {
 	}
 }
 
-// With a Resource Key alone, the data request is as it was, carrying the
-// Resource Key and the Evidence and no license or values.
+// With a Resource Key alone, the data request carries the Resource Key and
+// the Evidence and no license or values.
 func TestResourceKeyAloneRequestIsUnchanged(t *testing.T) {
 	cloud := newCredentialCloud()
 	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
@@ -370,8 +370,8 @@ func TestResourceKeyAloneRequestIsUnchanged(t *testing.T) {
 }
 
 // Discovery works with each valid set of credentials. A Resource Key alone
-// asks for the accessible Properties with a GET carrying it in the query, as
-// before. Whenever a License Key is set, the request is a POST carrying the
+// asks for the accessible Properties with a GET carrying it in the query.
+// Whenever a License Key is set, the request is a POST carrying the
 // credentials in the body, so the License Key stays out of the URL. The
 // evidencekeys request carries no credential.
 func TestDiscoveryWithEachCredential(t *testing.T) {

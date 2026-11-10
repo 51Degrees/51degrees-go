@@ -35,7 +35,7 @@ import (
 
 // Builder constructs a CloudRequestEngine, which authenticates with a
 // Resource Key, a License Key or both.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
 type Builder struct {
 	logger               *slog.Logger
 	httpClient           *http.Client
@@ -183,12 +183,11 @@ func (b *Builder) DiscoveryState() *DiscoveryState { return b.discovered }
 // Key, License Key and Requested Properties that the specification's table
 // marks invalid fails the build with a *core.ConfigurationError, before any
 // request. A key or name that is empty or only whitespace counts as absent.
-// A 4xx answer to either request,
-// such as for an invalid Resource Key, fails the build with a
-// *core.ConfigurationError wrapping the *CloudRequestError. Any other failure
-// is logged as a warning and the build completes, and the engine fetches what
-// is missing on first use.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
+// A 4xx answer to either request, such as for an invalid Resource Key, fails
+// the build with a *core.ConfigurationError wrapping the *CloudRequestError.
+// Any other failure is logged as a warning and the build completes, and the
+// engine fetches what is missing on first use.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (b *Builder) Build() (*CloudRequestEngine, error) {
 	b.discovered = nil
 	resourceKey := strings.TrimSpace(b.resourceKey)
@@ -250,7 +249,7 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 // The messages for the combinations of credentials Build refuses. Each says
 // why the combination cannot work, because the rule on its own reads as
 // arbitrary.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
 const (
 	messageNoCredential = "CloudRequestEngine needs a Resource Key or a " +
 		"License Key to authenticate with, as the cloud service answers 401 " +
@@ -278,12 +277,15 @@ func checkCredentials(resourceKey, licenseKey string, requested []string) error 
 	return nil
 }
 
-// trimmedNames returns names with each trimmed and the empty ones left out.
+// trimmedNames returns names split at commas, as a list in one argument is
+// the same list, with each trimmed and the empty ones left out.
 func trimmedNames(names []string) []string {
 	var out []string
 	for _, name := range names {
-		if name = strings.TrimSpace(name); name != "" {
-			out = append(out, name)
+		for _, part := range strings.Split(name, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
 		}
 	}
 	return out
