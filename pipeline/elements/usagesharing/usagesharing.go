@@ -232,19 +232,19 @@ func (e *Element) isSessionCookie(key string) bool {
 // Evidence, which is only when track session is on and not all Evidence is
 // shared, as a shared cookie is compared already. It is read from the
 // Evidence and from the web request, and the Evidence value counts when
-// both hold it.
+// both hold it. Both are read by key, as Evidence keys are compared without
+// regard to case, so the Evidence is not copied for each request.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
 func (e *Element) trackedSession(fd core.FlowData) (string, bool) {
 	if !e.cfg.trackSession || e.cfg.shareAllEvidence {
 		return "", false
 	}
-	all := fd.Evidence().AsMap()
-	for key, val := range all {
-		if e.isSessionCookie(key) {
-			return fmt.Sprintf("%v", val), true
-		}
+	ev := fd.Evidence()
+	if val, ok := ev.Get(core.PrefixCookie + "." + e.cfg.sessionCookieName); ok {
+		return fmt.Sprintf("%v", val), true
 	}
-	if w, ok := all[core.EvidenceHTTPRequest].(core.WebRequest); ok {
+	request, _ := ev.Get(core.EvidenceHTTPRequest)
+	if w, ok := request.(core.WebRequest); ok {
 		for _, c := range w.Cookies() {
 			if strings.EqualFold(c.Name, e.cfg.sessionCookieName) {
 				return c.Value, true
