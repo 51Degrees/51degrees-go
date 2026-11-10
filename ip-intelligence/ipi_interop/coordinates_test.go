@@ -1,6 +1,9 @@
 package ipi_interop
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // A value converted from Azimuth or Declination is given to 3 decimal places,
 // as the float64 nearest the rounded decimal. The first case is the
@@ -17,6 +20,16 @@ func TestRoundCoordinate(t *testing.T) {
 	for _, c := range cases {
 		if got := roundCoordinate(c.in); got != c.want {
 			t.Errorf("roundCoordinate(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// A value that rounds to zero is given as zero, not as negative zero, which
+// matches the text the C library writes for it.
+func TestRoundCoordinateGivesNoNegativeZero(t *testing.T) {
+	for _, in := range []float64{-0.0004, math.Copysign(0, -1)} {
+		if got := roundCoordinate(in); got != 0 || math.Signbit(got) {
+			t.Errorf("roundCoordinate(%v) = %v, want 0", in, got)
 		}
 	}
 }
