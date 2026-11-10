@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 865cee97432d8b7b047223b82c64fc31a489735f by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx b4f769adac0f5c20fc969830064998b0d84e9c49 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -265,10 +265,14 @@
 #define fiftyoneDegreesPropertyGetByName ipi_fiftyoneDegreesPropertyGetByName
 #define fiftyoneDegreesPropertyGetCategory ipi_fiftyoneDegreesPropertyGetCategory
 #define fiftyoneDegreesPropertyGetDescription ipi_fiftyoneDegreesPropertyGetDescription
+#define fiftyoneDegreesPropertyGetIndexByName ipi_fiftyoneDegreesPropertyGetIndexByName
+#define fiftyoneDegreesPropertyGetMapText ipi_fiftyoneDegreesPropertyGetMapText
 #define fiftyoneDegreesPropertyGetName ipi_fiftyoneDegreesPropertyGetName
 #define fiftyoneDegreesPropertyGetStoredType ipi_fiftyoneDegreesPropertyGetStoredType
 #define fiftyoneDegreesPropertyGetStoredTypeByIndex ipi_fiftyoneDegreesPropertyGetStoredTypeByIndex
+#define fiftyoneDegreesPropertyGetText ipi_fiftyoneDegreesPropertyGetText
 #define fiftyoneDegreesPropertyGetUrl ipi_fiftyoneDegreesPropertyGetUrl
+#define fiftyoneDegreesPropertyGetValueCount ipi_fiftyoneDegreesPropertyGetValueCount
 #define fiftyoneDegreesPropertyGetValueType ipi_fiftyoneDegreesPropertyGetValueType
 #define fiftyoneDegreesPropertyValueTypeGetName ipi_fiftyoneDegreesPropertyValueTypeGetName
 #define fiftyoneDegreesPropertyValueTypeGetUnderlyingType ipi_fiftyoneDegreesPropertyValueTypeGetUnderlyingType
@@ -4758,7 +4762,7 @@ typedef fiftyoneDegreesFloatInternal fiftyoneDegreesFloat;
  * ## Introduction
  *
  * IP v4 and v6 addresses can be parsed using the
- * #fiftyoneDegreesIpAddressParse and #fiftyoneDegreesIpAddressesParse methods.
+ * #fiftyoneDegreesIpAddressParse method.
  *
  * @{
  */
@@ -4796,10 +4800,26 @@ typedef struct fiftyone_degrees_ip_address_t {
 } fiftyoneDegreesIpAddress;
 
 /**
- * Parse a single IP address string.
+ * Parse a single IP address string. The string is read only when all of it is
+ * one of these forms:
+ * - an IPv4 address in dotted-decimal form, such as 203.0.113.1, with no
+ *   leading zeros
+ * - an IPv6 address in any text form of RFC 4291 section 2.2, such as
+ *   2001:db8::1 or ::ffff:203.0.113.1
+ * - an IPv4 address, a colon and a port, such as 203.0.113.1:8080
+ * - an IPv6 address in square brackets, with or without a colon and a port
+ *   after the closing bracket, such as [2001:db8::1]:8080
+ *
+ * The port is checked and then dropped. Anything else is not read, including a
+ * prefix length, text or a space before or after the address, a list of
+ * addresses and an IPv6 zone index. The address is not changed in that case.
+ * An IPv4-mapped IPv6 address stays an IPv6 address here.
+ * See
+ * https://github.com/51Degrees/specifications/blob/main/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md#reading-the-client-ip-value
+ *
  * Does not modify the last 12 (out of 16) bytes when parsing IPv4.
  * @param start of the string containing the IP address to parse
- * @param end the last character of the string (with IP address) to be considered for parsing
+ * @param end the character after the last character of the string
  * @param address memory to write parsed IP address into.
  * @return <c>true</c> if address was parsed correctly, <c>false</c> otherwise
  */
@@ -7621,7 +7641,117 @@ EXTERNAL const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
 	fiftyoneDegreesCollectionItem *item,
 	fiftyoneDegreesException *exception);
 
-/** 
+/**
+ * The text of a property that #fiftyoneDegreesPropertyGetText gives.
+ */
+typedef enum e_fiftyone_degrees_property_text {
+	/** The property's name */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_NAME = 0,
+	/** The property's description, empty when it has none */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_DESCRIPTION = 1,
+	/** The name of the category the property is in, empty when it is in none */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_CATEGORY = 2,
+	/** The URL of more about the property, empty when it has none */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_URL = 3,
+	/**
+	 * The property's default value, as #fiftyoneDegreesValueGetDefaultText
+	 * gives it
+	 */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE = 4
+} fiftyoneDegreesPropertyText;
+
+/**
+ * Gets the index in the properties collection of the property with the name
+ * provided, which must match exactly. This finds the property that
+ * #fiftyoneDegreesPropertyGetByName gets.
+ * @param properties collection to find the property in
+ * @param strings collection containing the names of the properties
+ * @param propertyName name of the property to find
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the 0 based index of the property, or -1 when no property has the
+ * name or reading a property or a name sets the exception. A property whose
+ * name the strings collection gives nothing for is taken as the one named,
+ * so its index is returned.
+ */
+EXTERNAL int fiftyoneDegreesPropertyGetIndexByName(
+	fiftyoneDegreesCollection *properties,
+	fiftyoneDegreesCollection *strings,
+	const char *propertyName,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets a text of the property as the metadata gives it. A description,
+ * category or URL the property does not have is an empty text, as is a
+ * string the strings collection gives nothing for. The text is written into
+ * `buffer` when it fits, and otherwise into memory the caller frees, as
+ * #fiftyoneDegreesStoredBinaryValueToText describes.
+ * @param values collection containing the property's values, which only
+ * #FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE reads
+ * @param strings collection containing the property's strings
+ * @param propertyTypes collection of the type each property's values are
+ * stored as, or NULL when every value is stored as a string, which only
+ * #FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE reads
+ * @param property the property to get the text of
+ * @param text which text of the property to get
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the null terminated text, or NULL when it cannot be read or
+ * written or `text` is none of #fiftyoneDegreesPropertyText
+ */
+EXTERNAL char* fiftyoneDegreesPropertyGetText(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesProperty *property,
+	fiftyoneDegreesPropertyText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the name of one of the maps the property is in, which the metadata
+ * gives as the data files the property is present in, such as "Lite". The
+ * name is written as #fiftyoneDegreesPropertyGetText writes a text.
+ * @param strings collection containing the names of the maps
+ * @param maps collection of the offsets in `strings` of the map names
+ * @param property the property to get the name of a map of
+ * @param mapIndex the 0 based place of the map among the property's
+ * `mapCount` maps
+ * @param buffer memory the name is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the null terminated name, or NULL. NULL with no exception set
+ * means the strings collection gives nothing at the map's offset, and NULL
+ * with the exception set means `mapIndex` is not less than the property's
+ * `mapCount` or the name cannot be read or written.
+ */
+EXTERNAL char* fiftyoneDegreesPropertyGetMapText(
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *maps,
+	const fiftyoneDegreesProperty *property,
+	uint32_t mapIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the number of values the values collection holds for the property,
+ * which are at the indexes from its `firstValueIndex` to its
+ * `lastValueIndex`. A property whose value indexes are not both in the
+ * collection, as when both are -1, has none.
+ * @param values collection containing the property's values
+ * @param property the property to count the values of
+ * @return the number of values
+ */
+EXTERNAL uint32_t fiftyoneDegreesPropertyGetValueCount(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesProperty *property);
+
+/**
  * @}
  */
 
@@ -10203,6 +10333,7 @@ MAP_TYPE(EvidenceKeyValuePairArray)
 MAP_TYPE(PropertyAvailable)
 MAP_TYPE(PropertyNamed)
 MAP_TYPE(PropertyValueType)
+MAP_TYPE(PropertyText)
 MAP_TYPE(PropertiesAvailable)
 MAP_TYPE(EvidencePropertyIndex)
 MAP_TYPE(EvidenceProperties)
@@ -10427,6 +10558,10 @@ MAP_TYPE(WeightedItemList)
 #define PropertyGetStoredTypeByIndex fiftyoneDegreesPropertyGetStoredTypeByIndex /**< Synonym for #fiftyoneDegreesPropertyGetStoredTypeByIndex function. */
 #define CollectionReadFileVariable fiftyoneDegreesCollectionReadFileVariable /**< Synonym for #fiftyoneDegreesCollectionReadFileVariable function. */
 #define PropertyGetByName fiftyoneDegreesPropertyGetByName /**< Synonym for #fiftyoneDegreesPropertyGetByName function. */
+#define PropertyGetIndexByName fiftyoneDegreesPropertyGetIndexByName /**< Synonym for #fiftyoneDegreesPropertyGetIndexByName function. */
+#define PropertyGetText fiftyoneDegreesPropertyGetText /**< Synonym for #fiftyoneDegreesPropertyGetText function. */
+#define PropertyGetMapText fiftyoneDegreesPropertyGetMapText /**< Synonym for #fiftyoneDegreesPropertyGetMapText function. */
+#define PropertyGetValueCount fiftyoneDegreesPropertyGetValueCount /**< Synonym for #fiftyoneDegreesPropertyGetValueCount function. */
 #define ComponentGetKeyValuePair fiftyoneDegreesComponentGetKeyValuePair /**< Synonym for #fiftyoneDegreesComponentGetKeyValuePair function., */
 #define PropertyGetValueType fiftyoneDegreesPropertyGetValueType /**< Synonym for #fiftyoneDegreesPropertyGetValueType function. */
 #define EvidencePropertiesGetMethod fiftyoneDegreesEvidencePropertiesGetMethod /**< Synonym for #fiftyoneDegreesEvidencePropertiesGetMethod function. */
@@ -16542,256 +16677,177 @@ uint32_t fiftyoneDegreesIndicesPropertyProfileLookup(
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+#include <string.h>
 
-typedef void(*parseIterator)(
-	void *state,
-	IpType segmentType,
-	const char *start,
-	const char *end);
+/** The largest port number, the largest value of 16 bits. */
+#define MAX_PORT 65535
+
+/** The most decimal digits in one part of an IPv4 address. */
+#define MAX_IPV4_PART_DIGITS 3
+
+/** The most hexadecimal digits in one group of an IPv6 address. */
+#define MAX_IPV6_GROUP_DIGITS 4
+
+/** The number of bytes in one group of an IPv6 address. */
+#define IPV6_GROUP_LENGTH 2
+
+static int getHexValue(const char c) {
+	if ('0' <= c && c <= '9') {
+		return c - '0';
+	}
+	if ('a' <= c && c <= 'f') {
+		return c - 'a' + 10;
+	}
+	if ('A' <= c && c <= 'F') {
+		return c - 'A' + 10;
+	}
+	return -1;
+}
 
 /**
- * State is an integer which is increased every time the method is called.
+ * Reads an IPv4 address in dotted-decimal form. The address must fill the
+ * range from current to end, and no part may have a leading zero.
  */
-static void callbackIpAddressCount(
-	void * const state,
-	const IpType segmentType,
-	const char * const start,
-	const char * const end) {
-	if (start <= end) {
-		if (segmentType != IP_TYPE_INVALID) {
-			(*(int*)state)++;
-			if (segmentType == IP_TYPE_IPV6) {
-				(*(int*)state)++;
+static bool readIpv4(
+	const char *current,
+	const char * const end,
+	byte * const value) {
+	byte parts[IPV4_LENGTH];
+	for (int i = 0; i < IPV4_LENGTH; i++) {
+		const char * const partStart = current;
+		int part = 0;
+		while (current < end && '0' <= *current && *current <= '9') {
+			part = part * 10 + (*current - '0');
+			current++;
+			if (current - partStart > MAX_IPV4_PART_DIGITS) {
+				return false;
 			}
 		}
-	}
-}
-
-/*
- * Make sure each byte in the Ipv4 or Ipv6 address
- * stays within the bound 0,255
- * @parsedValue The value parsed from string
- * @return the adjusted value
- * if the value is out of the range then return
- * the closest boundary value (0 or 255)
- */
-static byte getIpByte(int parsedValue) {
-	if (parsedValue < 0) {
-		parsedValue = 0;
-	}
-	else if (parsedValue > UINT8_MAX) {
-		parsedValue = UINT8_MAX;
-	}
-	return (byte)parsedValue;
-}
-
-typedef struct {
-	IpAddress * const address;
-	byte *current;
-	int bytesPresent;
-	int abbreviationsFilled;
-} fiftyoneDegreeIpAddressBuildState;
-typedef fiftyoneDegreeIpAddressBuildState IpAddressBuildState;
-
-static void parseIpV6Segment(
-	IpAddressBuildState * const buildState,
-	const char * const start,
-	const char * const end) {
-	int i;
-	char first[3], second[3], val; // "FF" + '\0'
-	if (start > end) {
-		// This is an abbreviation, so fill it in.
-		if (buildState->abbreviationsFilled) {
-			return;
+		const int digits = (int)(current - partStart);
+		if (digits == 0 ||
+			(digits > 1 && *partStart == '0') ||
+			part > UINT8_MAX) {
+			return false;
 		}
-		buildState->abbreviationsFilled++;
-		for (i = 0; i < IPV6_LENGTH - buildState->bytesPresent; i++) {
-			*buildState->current = (byte)0;
-			buildState->current++;
+		parts[i] = (byte)part;
+		if (i < IPV4_LENGTH - 1) {
+			if (current >= end || *current != '.') {
+				return false;
+			}
+			current++;
+		}
+	}
+	if (current != end) {
+		return false;
+	}
+	memcpy(value, parts, IPV4_LENGTH);
+	return true;
+}
+
+/**
+ * Reads an IPv6 address in any of the text forms of RFC 4291 section 2.2. The
+ * address must fill the range from current to end.
+ */
+static bool readIpv6(
+	const char *current,
+	const char * const end,
+	byte * const value) {
+	byte bytes[IPV6_LENGTH] = { 0 };
+	// The number of bytes read, and the number of bytes before the "::".
+	int count = 0;
+	int gap = -1;
+
+	if (current < end && *current == ':') {
+		if (end - current < 2 || current[1] != ':') {
+			return false;
+		}
+		gap = 0;
+		current += 2;
+	}
+	while (current < end) {
+		const char * const groupStart = current;
+		int group = 0;
+		while (current < end && getHexValue(*current) >= 0) {
+			if (current - groupStart == MAX_IPV6_GROUP_DIGITS) {
+				return false;
+			}
+			group = group * 16 + getHexValue(*current);
+			current++;
+		}
+		if (current == groupStart) {
+			return false;
+		}
+		if (current < end && *current == '.') {
+			// An IPv4 address is the last 32 bits.
+			if (count + IPV4_LENGTH > IPV6_LENGTH ||
+				readIpv4(groupStart, end, bytes + count) == false) {
+				return false;
+			}
+			count += IPV4_LENGTH;
+			break;
+		}
+		if (count + IPV6_GROUP_LENGTH > IPV6_LENGTH) {
+			return false;
+		}
+		bytes[count++] = (byte)(group >> 8);
+		bytes[count++] = (byte)(group & 0xFF);
+		if (current == end) {
+			break;
+		}
+		if (*current != ':') {
+			return false;
+		}
+		current++;
+		if (current == end) {
+			// A single colon at the end.
+			return false;
+		}
+		if (*current == ':') {
+			if (gap >= 0) {
+				return false;
+			}
+			gap = count;
+			current++;
+		}
+	}
+
+	if (gap < 0) {
+		if (count != IPV6_LENGTH) {
+			return false;
 		}
 	}
 	else {
-		// Add the two bytes of the segment.
-		first[2] = '\0';
-		second[2] = '\0';
-		for (i = 0; i < IPV4_LENGTH; i++) {
-			if (end - i >= start) val = end[-i];
-			else val = '0';
-
-			if (i < 2) second[1 - i] = val;
-			else first[3 - i] = val;
+		// The "::" stands for at least one group of zeros.
+		if (count > IPV6_LENGTH - IPV6_GROUP_LENGTH) {
+			return false;
 		}
-		*buildState->current = getIpByte((int)strtol(first, NULL, 16));
-		buildState->current++;
-		*buildState->current = getIpByte((int)strtol(second, NULL, 16));
-		buildState->current++;
+		const int tail = count - gap;
+		memmove(bytes + IPV6_LENGTH - tail, bytes + gap, (size_t)tail);
+		memset(bytes + gap, 0, (size_t)(IPV6_LENGTH - count));
 	}
-}
-
-static void callbackIpAddressBuild(
-	void * const state,
-	const IpType segmentType,
-	const char * const start,
-	const char * const end) {
-	fiftyoneDegreeIpAddressBuildState *const buildState = state;
-	if (segmentType == IP_TYPE_IPV4) {
-		*buildState->current = getIpByte(atoi(start));
-		buildState->current++;
-	}
-	else if (segmentType == IP_TYPE_IPV6) {
-		parseIpV6Segment(buildState, start, end);
-	}
-}
-
-static IpType getIpTypeFromSeparator(const char separator) {
-	switch (separator) {
-		case '.':
-			return IP_TYPE_IPV4;
-		case ':':
-			return IP_TYPE_IPV6;
-		default:
-			return IP_TYPE_INVALID;
-	}
-}
-
-static IpType getSegmentTypeWithSeparator(
-	const char separator,
-	const IpType ipType,
-	const IpType lastSeparatorType) {
-	switch (ipType) {
-		case IP_TYPE_IPV4:
-			return IP_TYPE_IPV4;
-		case IP_TYPE_IPV6:
-			switch (separator) {
-				case ':':
-					return IP_TYPE_IPV6;
-				case '.':
-					return IP_TYPE_IPV4;
-				default:
-					return lastSeparatorType;
-			}
-		default:
-			return getIpTypeFromSeparator(separator);
-	}
-}
-
-typedef enum {
-	FIFTYONE_DEGREES_IP_NON_BREAK_CHAR = 0,
-	FIFTYONE_DEGREES_IP_SEGMENT_BREAK_CHAR,
-	FIFTYONE_DEGREES_IP_ADDRESS_BREAK_CHAR,
-	FIFTYONE_DEGREES_IP_INVALID_CHAR,
-} IpStringSeparatorType;
-
-#define IP_NON_BREAK_CHAR FIFTYONE_DEGREES_IP_NON_BREAK_CHAR
-#define IP_SEGMENT_BREAK_CHAR FIFTYONE_DEGREES_IP_SEGMENT_BREAK_CHAR
-#define IP_ADDRESS_BREAK_CHAR FIFTYONE_DEGREES_IP_ADDRESS_BREAK_CHAR
-#define IP_INVALID_CHAR FIFTYONE_DEGREES_IP_INVALID_CHAR
-
-static IpStringSeparatorType getSeparatorCharType(
-	const char ipChar,
-	const IpType ipType) {
-
-	switch (ipChar) {
-		case ':':
-			return ((ipType == IP_TYPE_IPV4)
-				? IP_ADDRESS_BREAK_CHAR : IP_SEGMENT_BREAK_CHAR);
-		case '.':
-			return IP_SEGMENT_BREAK_CHAR;
-		case ',':
-		case ' ':
-		case ']':
-		case '/':
-		case '\0':
-		case '\n':
-			return IP_ADDRESS_BREAK_CHAR;
-		default:
-			break;
-	}
-	if ('0' <= ipChar && ipChar <= '9') {
-		return IP_NON_BREAK_CHAR;
-	}
-	if (('a' <= ipChar && ipChar <= 'f') || ('A' <= ipChar && ipChar <= 'F')) {
-		return (ipType == IP_TYPE_IPV4
-			? IP_INVALID_CHAR : IP_NON_BREAK_CHAR);
-	}
-	return IP_INVALID_CHAR;
-}
-
-static int8_t getMaxSegmentLengthForIpType(const IpType ipType) {
-	return (ipType == IP_TYPE_IPV4) ? 3 : 4; // "255" or "FFFF"
+	memcpy(value, bytes, IPV6_LENGTH);
+	return true;
 }
 
 /**
- * Calls the callback method every time a byte is identified in the value
- * when parsed left to right.
+ * True when the range from current to end is a port, being decimal digits
+ * with a value up to MAX_PORT.
  */
-static IpType iterateIpAddress(
-	const char *start,
-	const char * const end,
-	void * const state,
-	int * const springCount,
-	IpType type,
-	const parseIterator foundSegment) {
-
-	const char * const postEnd = end + 1;
-
-	*springCount = 0;
-	if (*start == '[') {
-		if (type == IP_TYPE_IPV4) {
-			return IP_TYPE_INVALID;
-		}
-		start++;
+static bool isPort(const char *current, const char * const end) {
+	if (current >= end) {
+		return false;
 	}
-
-	IpType currentSegmentType =
-		IP_TYPE_INVALID;
-
-	const char *current = start;
-	const char *nextSegment = current;
-	for (; current <= postEnd && nextSegment <= postEnd; ++current) {
-		char nextChar = 0;
-		if (current < postEnd) {
-			nextChar = *current;
+	int port = 0;
+	for (; current < end; current++) {
+		if (*current < '0' || *current > '9') {
+			return false;
 		}
-		IpStringSeparatorType separatorType =
-			getSeparatorCharType(nextChar, type);
-		if (!separatorType) {
-			continue;
+		port = port * 10 + (*current - '0');
+		if (port > MAX_PORT) {
+			return false;
 		}
-		if (separatorType == IP_INVALID_CHAR) {
-			return IP_TYPE_INVALID;
-		}
-
-		currentSegmentType = getSegmentTypeWithSeparator(
-			nextChar, type, currentSegmentType);
-		if (type == IP_TYPE_INVALID) {
-			type = currentSegmentType;
-		}
-
-		if (current - nextSegment > getMaxSegmentLengthForIpType(type)) {
-			return IP_TYPE_INVALID;
-		}
-
-		// Check if it is leading abbreviation
-		if (current - 1 >= start) {
-			foundSegment(state, currentSegmentType,
-				nextSegment, current - 1);
-		}
-		if (separatorType == IP_ADDRESS_BREAK_CHAR) {
-			return type;
-		}
-		if (current == nextSegment && current != start) {
-			++*springCount;
-		}
-		nextSegment = current + 1;
 	}
-	if (nextSegment < current
-		&& type != IP_TYPE_INVALID) {
-
-		foundSegment(state, currentSegmentType,
-			nextSegment, current - 1);
-	}
-	return type;
+	return true;
 }
 
 bool fiftyoneDegreesIpAddressParse(
@@ -16799,54 +16855,55 @@ bool fiftyoneDegreesIpAddressParse(
 	const char * const end,
 	IpAddress * const address) {
 
-	if (!start) {
+	if (start == NULL || end == NULL || start >= end || address == NULL) {
 		return false;
 	}
 
-	int byteCount = 0;
-	int springCount = 0;
-	IpType type = iterateIpAddress(
-		start,
-		end,
-		&byteCount,
-		&springCount,
-		IP_TYPE_INVALID,
-		callbackIpAddressCount);
+	byte value[IPV6_LENGTH];
+	IpType type;
+	const size_t length = (size_t)(end - start);
 
-	switch (type) {
-		case IP_TYPE_IPV4:
-			if (byteCount != IPV4_LENGTH || springCount) {
-				return false;
-			}
-			break;
-		case IP_TYPE_IPV6:
-			if (byteCount > IPV6_LENGTH ||
-				springCount > 1 ||
-				(byteCount < IPV6_LENGTH && !springCount)) {
-				return false;
-			}
-			break;
-		default:
+	if (*start == '[') {
+		// An IPv6 address in brackets, followed by a port or nothing.
+		const char * const bracket = memchr(start, ']', length);
+		if (bracket == NULL ||
+			(bracket + 1 < end &&
+				(bracket[1] != ':' || isPort(bracket + 2, end) == false)) ||
+			readIpv6(start + 1, bracket, value) == false) {
 			return false;
+		}
+		type = IP_TYPE_IPV6;
+	}
+	else {
+		const char * const colon = memchr(start, ':', length);
+		if (colon == NULL) {
+			// Only an IPv4 address has no colon.
+			if (readIpv4(start, end, value) == false) {
+				return false;
+			}
+			type = IP_TYPE_IPV4;
+		}
+		else if (memchr(start, '.', (size_t)(colon - start)) != NULL) {
+			// A dot before the first colon means an IPv4 address and a port.
+			if (readIpv4(start, colon, value) == false ||
+				isPort(colon + 1, end) == false) {
+				return false;
+			}
+			type = IP_TYPE_IPV4;
+		}
+		else {
+			if (readIpv6(start, end, value) == false) {
+				return false;
+			}
+			type = IP_TYPE_IPV6;
+		}
 	}
 
-	address->type = type;
-	IpAddressBuildState buildState = {
-		address,
+	memcpy(
 		address->value,
-		byteCount,
-		0,
-	};
-
-	// Add the bytes from the source value and get the type of address.
-	iterateIpAddress(
-		start,
-		end,
-		&buildState,
-		&springCount,
-		type,
-		callbackIpAddressBuild);
-
+		value,
+		type == IP_TYPE_IPV4 ? IPV4_LENGTH : IPV6_LENGTH);
+	address->type = (byte)type;
 	return true;
 }
 
@@ -19856,12 +19913,19 @@ fiftyoneDegreesProperty* fiftyoneDegreesPropertyGet(
 		exception);
 }
 
-const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
-	fiftyoneDegreesCollection *properties,
-	fiftyoneDegreesCollection *strings,
-	const char *requiredPropertyName,
-	fiftyoneDegreesCollectionItem *item,
-	fiftyoneDegreesException *exception) {
+/**
+ * Finds the first property named `requiredPropertyName` and returns it with
+ * `item` holding it and `index` set to its index, or returns NULL. A property
+ * whose name the strings collection gives nothing for is taken as the one
+ * named, as is one whose name could not be read, which sets the exception.
+ */
+static const Property* findPropertyByName(
+	Collection * const properties,
+	Collection * const strings,
+	const char * const requiredPropertyName,
+	Item * const item,
+	uint32_t * const index,
+	Exception * const exception) {
 	Item propertyNameItem;
 	const String *name;
 	const Property *property = NULL;
@@ -19871,6 +19935,7 @@ const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
 	while (i < propertiesCount && property == NULL && EXCEPTION_OKAY) {
 		
 		// Get the property for this index.
+		*index = i;
 		const CollectionKey propertyKey = {
 			i++,
 			CollectionKeyType_Property,
@@ -19906,6 +19971,211 @@ const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
 		}
 	}
 	return property;
+}
+
+const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
+	fiftyoneDegreesCollection *properties,
+	fiftyoneDegreesCollection *strings,
+	const char *requiredPropertyName,
+	fiftyoneDegreesCollectionItem *item,
+	fiftyoneDegreesException *exception) {
+	uint32_t index = 0;
+	return findPropertyByName(
+		properties,
+		strings,
+		requiredPropertyName,
+		item,
+		&index,
+		exception);
+}
+
+int fiftyoneDegreesPropertyGetIndexByName(
+	fiftyoneDegreesCollection *properties,
+	fiftyoneDegreesCollection *strings,
+	const char *propertyName,
+	fiftyoneDegreesException *exception) {
+	Item item;
+	uint32_t index = 0;
+	DataReset(&item.data);
+	const Property * const property = findPropertyByName(
+		properties,
+		strings,
+		propertyName,
+		&item,
+		&index,
+		exception);
+	if (property == NULL) {
+		return -1;
+	}
+	COLLECTION_RELEASE(properties, &item);
+	return EXCEPTION_OKAY ? (int)index : -1;
+}
+
+/**
+ * An empty string, which is the text of a string a property does not have.
+ * The size of a string counts its terminating null.
+ */
+static const StoredBinaryValue propertyNoText = { { 1, '\0' } };
+
+/**
+ * Writes the string at `offset` in the strings collection as text, as the
+ * metadata gives it. An absent string, or one the collection gives nothing
+ * for, is an empty text.
+ */
+static char* getPropertyStringText(
+	const Collection * const strings,
+	const uint32_t offset,
+	const bool isAbsent,
+	char * const buffer,
+	const size_t bufferLength,
+	Exception * const exception) {
+	Item item;
+	DataReset(&item.data);
+	const StoredBinaryValue * const value = isAbsent
+		? NULL
+		: StoredBinaryValueGet(
+			strings,
+			offset,
+			FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_STRING,
+			&item,
+			exception);
+	if (value == NULL) {
+		return EXCEPTION_FAILED
+			? NULL
+			: StoredBinaryValueToText(
+				&propertyNoText,
+				FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_STRING,
+				0,
+				buffer,
+				bufferLength,
+				exception);
+	}
+	char *text = NULL;
+	if (EXCEPTION_OKAY) {
+		// A string has no decimal places.
+		text = StoredBinaryValueToText(
+			value,
+			FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_STRING,
+			0,
+			buffer,
+			bufferLength,
+			exception);
+	}
+	COLLECTION_RELEASE(strings, &item);
+	return text;
+}
+
+char* fiftyoneDegreesPropertyGetText(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesProperty *property,
+	fiftyoneDegreesPropertyText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception) {
+	switch (text) {
+	case FIFTYONE_DEGREES_PROPERTY_TEXT_NAME:
+		return getPropertyStringText(
+			strings,
+			property->nameOffset,
+			false,
+			buffer,
+			bufferLength,
+			exception);
+	case FIFTYONE_DEGREES_PROPERTY_TEXT_DESCRIPTION:
+		return getPropertyStringText(
+			strings,
+			property->descriptionOffset,
+			(int32_t)property->descriptionOffset == -1,
+			buffer,
+			bufferLength,
+			exception);
+	case FIFTYONE_DEGREES_PROPERTY_TEXT_CATEGORY:
+		return getPropertyStringText(
+			strings,
+			property->categoryOffset,
+			(int32_t)property->categoryOffset == -1,
+			buffer,
+			bufferLength,
+			exception);
+	case FIFTYONE_DEGREES_PROPERTY_TEXT_URL:
+		// A property with no URL points at offset 0, which holds the first
+		// string in the file rather than a URL.
+		return getPropertyStringText(
+			strings,
+			property->urlOffset,
+			(int32_t)property->urlOffset <= 0,
+			buffer,
+			bufferLength,
+			exception);
+	case FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE:
+		return ValueGetDefaultText(
+			values,
+			strings,
+			propertyTypes,
+			property,
+			buffer,
+			bufferLength,
+			exception);
+	default:
+		EXCEPTION_SET(INVALID_INPUT);
+		return NULL;
+	}
+}
+
+char* fiftyoneDegreesPropertyGetMapText(
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *maps,
+	const fiftyoneDegreesProperty *property,
+	uint32_t mapIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception) {
+	if (mapIndex >= property->mapCount) {
+		EXCEPTION_SET(COLLECTION_INDEX_OUT_OF_RANGE);
+		return NULL;
+	}
+	const uint32_t offset = (uint32_t)CollectionGetInteger32(
+		maps,
+		property->firstMapIndex + mapIndex,
+		exception);
+	if (EXCEPTION_FAILED) {
+		return NULL;
+	}
+	Item item;
+	DataReset(&item.data);
+	const StoredBinaryValue * const name = StoredBinaryValueGet(
+		strings,
+		offset,
+		FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_STRING,
+		&item,
+		exception);
+	if (name == NULL) {
+		return NULL;
+	}
+	char *text = NULL;
+	if (EXCEPTION_OKAY) {
+		text = StoredBinaryValueToText(
+			name,
+			FIFTYONE_DEGREES_PROPERTY_VALUE_TYPE_STRING,
+			0,
+			buffer,
+			bufferLength,
+			exception);
+	}
+	COLLECTION_RELEASE(strings, &item);
+	return text;
+}
+
+uint32_t fiftyoneDegreesPropertyGetValueCount(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesProperty *property) {
+	const uint32_t first = property->firstValueIndex;
+	const uint32_t last = property->lastValueIndex;
+	return first <= last && last < CollectionGetCount(values)
+		? last - first + 1
+		: 0;
 }
 
 byte fiftyoneDegreesPropertyGetValueType(
@@ -20093,7 +20363,8 @@ static InterlockDoubleWidth emptyCounter() {
 // optimization should be switch off on the involved variables. To do so
 // variables of these types should always be marked with 'volatile' qualifier.
 #define COUNTER __declspec(align(ALIGN_SIZE)) volatile InterlockDoubleWidth
-#define HANDLE __declspec(align(ALIGN_SIZE)) volatile ResourceHandle
+#define FIFTYONE_DEGREES_RESOURCE_HANDLE \
+	__declspec(align(ALIGN_SIZE)) volatile ResourceHandle
 #else
 typedef InterlockDoubleWidth AlignedInterlockDoubleWidth
 	__attribute__ ((aligned (ALIGN_SIZE)));
@@ -20101,7 +20372,7 @@ typedef InterlockDoubleWidth AlignedInterlockDoubleWidth
 
 typedef ResourceHandle AlignedResourceHandle
 	__attribute__ ((aligned (ALIGN_SIZE)));
-#define HANDLE AlignedResourceHandle
+#define FIFTYONE_DEGREES_RESOURCE_HANDLE AlignedResourceHandle
 #endif
 #else
 #define VOLATILE
@@ -20116,7 +20387,7 @@ static InterlockDoubleWidth emptyCounter() {
 	return empty;
 }
 #define COUNTER InterlockDoubleWidth
-#define HANDLE ResourceHandle
+#define FIFTYONE_DEGREES_RESOURCE_HANDLE ResourceHandle
 #endif
 
 static void add(VOLATILE InterlockDoubleWidth* counter, int32_t value) {
@@ -20288,7 +20559,7 @@ void fiftyoneDegreesResourceHandleDecUse(
 #ifdef _MSC_VER
 // Disable warning against the difference in the use of 'volatile' qualifier.
 // Casting won't resolve the issue which is described above with the definitions 
-// of COUNTER and HANDLE macros.
+// of COUNTER and FIFTYONE_DEGREES_RESOURCE_HANDLE macros.
 #pragma warning (disable: 4090)
 #endif
 	} while (FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_DW(
@@ -20322,7 +20593,7 @@ void fiftyoneDegreesResourceHandleDecUse(
 #ifdef _MSC_VER
 // Disable warning against the difference in the use of 'volatile' qualifier.
 // Casting won't resolve the issue which is described above with the definitions 
-// of COUNTER and HANDLE macros.
+// of COUNTER and FIFTYONE_DEGREES_RESOURCE_HANDLE macros.
 #pragma warning (disable: 4090)
 #endif
 		if (FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_DW(
@@ -20362,7 +20633,7 @@ fiftyoneDegreesResourceHandle* fiftyoneDegreesResourceHandleIncUse(
 #ifdef _MSC_VER
 // Disable warning against the difference in the use of 'volatile' qualifier.
 // Casting won't resolve the issue which is described above with the definitions 
-// of COUNTER and HANDLE macros.
+// of COUNTER and FIFTYONE_DEGREES_RESOURCE_HANDLE macros.
 #pragma warning (disable: 4090)
 #endif
 		// A null self pointer means the handle was replaced and its resource
@@ -20396,14 +20667,14 @@ int32_t fiftyoneDegreesResourceHandleGetUse(
 #ifdef _MSC_VER
 // Disable warning against the difference in the use of 'volatile' qualifier.
 // Casting won't resolve the issue which is described above with the definitions 
-// of COUNTER and HANDLE macros.
+// of COUNTER and FIFTYONE_DEGREES_RESOURCE_HANDLE macros.
 #pragma warning (disable: 4090)
 #endif
 void fiftyoneDegreesResourceReplace(
 	fiftyoneDegreesResourceManager *manager,
 	void *newResource,
 	fiftyoneDegreesResourceHandle **newResourceHandle) {
-	HANDLE* oldHandle = NULL;
+	FIFTYONE_DEGREES_RESOURCE_HANDLE* oldHandle = NULL;
 	
 	// Add the new resource to the manager replacing the existing one.
 	setupResource(
@@ -21087,12 +21358,13 @@ const char *fiftyoneDegreesStringSubString(const char *a, const char *b) {
 	int d;
 	const char *a1, *b1;
 	for (; *a != '\0' && *b != '\0'; a++) {
-		d = tolower(*a) - tolower(*b);
+		d = toLowerAscii((unsigned char)*a) - toLowerAscii((unsigned char)*b);
 		if (d == 0) {
 			a1 = a + 1;
 			b1 = b + 1;
 			for (; *a1 != '\0' && *b1 != '\0'; a1++, b1++) {
-				d = tolower(*a1) - tolower(*b1);
+				d = toLowerAscii((unsigned char)*a1) -
+					toLowerAscii((unsigned char)*b1);
 				if (d != 0) {
 					break;
 				}
@@ -26510,6 +26782,10 @@ EXTERNAL void fiftyoneDegreesResultsIpiFromIpAddress(
  * Process a single IP Address and populate the IP range offset in the results
  * structure.
  *
+ * The string must be all one address, as #fiftyoneDegreesIpAddressParse
+ * describes. Otherwise the exception is set to
+ * #FIFTYONE_DEGREES_STATUS_INCORRECT_IP_ADDRESS_FORMAT.
+ *
  * When the caller named the properties the data set was created with, the
  * graph of each component a named property belongs to is walked here, and a
  * walk that fails sets the exception. Otherwise populating the results walks
@@ -26531,6 +26807,13 @@ EXTERNAL void fiftyoneDegreesResultsIpiFromIpAddressString(
 /**
  * Processes the evidence value pairs in the evidence collection and
  * populates the result in the results structure.
+ *
+ * The keys are tried in the order of precedence, the query prefix before the
+ * server prefix and the data file's order within a prefix, and the first value
+ * that is read as one whole address is used. A value that is not, such as
+ * "1.2.3.4/24", "1.2.3.4, 5.6.7.8" or "fe80::1%eth0", is skipped without
+ * setting the exception, and when no value is read the results hold no
+ * address. See #fiftyoneDegreesIpAddressParse for the forms that are read.
  *
  * When the caller named the properties the data set was created with, the
  * graph of each component a named property belongs to is walked here, and a
@@ -26806,6 +27089,160 @@ EXTERNAL size_t fiftyoneDegreesIpiGetIpAddressAsString(
 	char *buffer,
 	uint32_t bufferLength,
 	fiftyoneDegreesException *exception);
+
+/**
+ * @name Metadata
+ *
+ * The properties of the data file, with the answers the C++ property metadata
+ * gives. Each function takes a data set from #fiftyoneDegreesDataSetIpiGet,
+ * which the caller holds while it reads so that every answer comes from the
+ * same data file. A property is found by its index in the data file, which
+ * counts every property the file defines, including those the data set was
+ * not created with. A function that gives text writes it into the buffer
+ * provided when it fits, and otherwise into memory the caller frees with
+ * fiftyoneDegreesFree when the pointer returned is not the buffer, as
+ * #fiftyoneDegreesStoredBinaryValueToText describes.
+ * @{
+ */
+
+/**
+ * Gets the number of properties the data file defines.
+ * @param dataSet the data set to read
+ * @return the number of properties
+ */
+EXTERNAL uint32_t fiftyoneDegreesIpiGetPropertyCount(
+	fiftyoneDegreesDataSetIpi *dataSet);
+
+/**
+ * Gets the index of the property with the name provided, which must match
+ * exactly.
+ * @param dataSet the data set to read
+ * @param propertyName name of the property to find
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the index of the property, or -1 when the data file has no
+ * property of that name or reading a property or a name sets the exception.
+ * A property whose name the strings collection gives nothing for is taken as
+ * the one named.
+ */
+EXTERNAL int fiftyoneDegreesIpiGetPropertyIndex(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	const char *propertyName,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the fields of the property that are not text. Any of the output
+ * pointers can be NULL, and the property's name is read only when
+ * `isAvailable` or `requiredPropertyIndex` is not.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param valueType set to the #fiftyoneDegreesPropertyValueType of the
+ * property's values
+ * @param componentId set to the id of the component the property belongs to
+ * @param displayOrder set to the order to display the property in
+ * @param isMandatory set to true when the property is mandatory
+ * @param isList set to true when the property can have more than one value
+ * @param isObsolete set to true when the property is obsolete
+ * @param show set to true when the property should be shown
+ * @param showValues set to true when the property's values should be shown
+ * @param mapCount set to the number of maps the property is in, which
+ * #fiftyoneDegreesIpiGetPropertyMapText names
+ * @param isAvailable set to true when the data set was created with the
+ * property, so that results can hold its values
+ * @param requiredPropertyIndex set to the index the results functions take
+ * for the property, or -1 when it has none
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the fields were read, otherwise false. False with no
+ * exception set means the properties collection gave nothing at the index.
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetProperty(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	uint8_t *valueType,
+	uint8_t *componentId,
+	uint8_t *displayOrder,
+	bool *isMandatory,
+	bool *isList,
+	bool *isObsolete,
+	bool *show,
+	bool *showValues,
+	uint32_t *mapCount,
+	bool *isAvailable,
+	int *requiredPropertyIndex,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets where the property's values are in the values collection, and which
+ * of them is its default. Any of the output pointers can be NULL, and the
+ * default value is found only when `defaultValueIndex` is not.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param firstValueIndex set to the index of the property's first value
+ * @param valueCount set to the number of values the property has, as
+ * #fiftyoneDegreesPropertyGetValueCount counts them
+ * @param defaultValueIndex set to the index of the property's default value
+ * as #fiftyoneDegreesValueGetDefaultIndex finds it, or -1 when it has none
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the indexes were read, otherwise false. False with no
+ * exception set means the properties collection gave nothing at the index.
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetPropertyValueIndexes(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	uint32_t *firstValueIndex,
+	uint32_t *valueCount,
+	long *defaultValueIndex,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets a text of the property, as #fiftyoneDegreesPropertyGetText gives it.
+ * The default value is written as the type the property is stored as.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param text which text of the property to get
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated text, or NULL when the property or the text
+ * cannot be read or written
+ */
+EXTERNAL char* fiftyoneDegreesIpiGetPropertyText(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	fiftyoneDegreesPropertyText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the name of one of the maps the property is in, as
+ * #fiftyoneDegreesPropertyGetMapText gives it.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param mapIndex the place of the map among the property's maps, less than
+ * the `mapCount` #fiftyoneDegreesIpiGetProperty gives
+ * @param buffer memory the name is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated name, or NULL. NULL with no exception set means
+ * the strings collection gives nothing at the map's offset, and the metadata
+ * then leaves the map out.
+ */
+EXTERNAL char* fiftyoneDegreesIpiGetPropertyMapText(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	uint32_t mapIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * @}
+ */
 
 /**
  * @}
@@ -27092,6 +27529,12 @@ MAP_TYPE(WeightedValuesCollection)
 #define IpiGetIpAddressAsString fiftyoneDegreesIpiGetIpAddressAsString /**< Synonym for #fiftyoneDegreesIpiGetIpAddressAsString function. */
 #define IpiGetIpAddressAsByteArray fiftyoneDegreesIpiGetIpAddressAsByteArray /**< Synonym for #fiftyoneDegreesIpiGetIpAddressAsByteArray function. */
 #define IpiIterateProfilesForPropertyAndValue fiftyoneDegreesIpiIterateProfilesForPropertyAndValue /**< Synonym for #fiftyoneDegreesIpiIterateProfilesForPropertyAndValue function. */
+#define IpiGetPropertyCount fiftyoneDegreesIpiGetPropertyCount /**< Synonym for #fiftyoneDegreesIpiGetPropertyCount function. */
+#define IpiGetPropertyIndex fiftyoneDegreesIpiGetPropertyIndex /**< Synonym for #fiftyoneDegreesIpiGetPropertyIndex function. */
+#define IpiGetProperty fiftyoneDegreesIpiGetProperty /**< Synonym for #fiftyoneDegreesIpiGetProperty function. */
+#define IpiGetPropertyValueIndexes fiftyoneDegreesIpiGetPropertyValueIndexes /**< Synonym for #fiftyoneDegreesIpiGetPropertyValueIndexes function. */
+#define IpiGetPropertyText fiftyoneDegreesIpiGetPropertyText /**< Synonym for #fiftyoneDegreesIpiGetPropertyText function. */
+#define IpiGetPropertyMapText fiftyoneDegreesIpiGetPropertyMapText /**< Synonym for #fiftyoneDegreesIpiGetPropertyMapText function. */
 #define ResultsIpiGetValuesCollection fiftyoneDegreesResultsIpiGetValuesCollection /**< Synonym for #fiftyoneDegreesResultsIpiGetValuesCollection function. */
 #define WeightedValuesCollectionRelease fiftyoneDegreesWeightedValuesCollectionRelease /**< Synonym for #fiftyoneDegreesWeightedValuesCollectionRelease function. */
 
@@ -29885,24 +30328,22 @@ static bool setResultsFromEvidence(
 			pair->item.keyLength);
 		// Only the current header index should be considered
 		if (headerIndex >= 0 && headerIndex == (int)curHeaderIndex) {
-			// Get the parsed Value
 			const char *ipAddressString = (const char *)pair->parsedValue;
-			// Obtain the byte array first
 			IpAddress ipAddress;
-			const bool parsed =
-				fiftyoneDegreesIpAddressParse(ipAddressString, ipAddressString + strlen(ipAddressString), &ipAddress);
-			// Check if the IP address was successfully created
-			if (!parsed || (ipAddress.type == IP_TYPE_INVALID)) {
-				EXCEPTION_SET(INCORRECT_IP_ADDRESS_FORMAT);
-				return false;
+			// A value that is not read as one whole address is skipped, so
+			// the next key in the order of precedence is tried.
+			if (ipAddressString != NULL &&
+				fiftyoneDegreesIpAddressParse(
+					ipAddressString,
+					ipAddressString + strlen(ipAddressString),
+					&ipAddress)) {
+				// Configure the next result in the array of results.
+				addResultsFromIpAddressNoChecks(
+					results,
+					ipAddress.value,
+					ipAddress.type,
+					exception);
 			}
-
-			// Configure the next result in the array of results.
-			addResultsFromIpAddressNoChecks(
-				results,
-				ipAddress.value,
-				ipAddress.type,
-				exception);
 		}
 	}
 
@@ -30956,6 +31397,231 @@ uint32_t fiftyoneDegreesIpiIterateProfilesForPropertyAndValue(
 		exception);
 	DataSetIpiRelease(dataSet);
 	return count;
+}
+
+/**
+ * Gets the data file property at `propertyIndex` into `item` and returns it,
+ * or returns NULL, releasing a property read with an exception set.
+ */
+static const Property* ipiMetaDataProperty(
+	DataSetIpi * const dataSet,
+	const uint32_t propertyIndex,
+	Item * const item,
+	Exception * const exception) {
+	DataReset(&item->data);
+	const Property * const property = PropertyGet(
+		dataSet->properties,
+		propertyIndex,
+		item,
+		exception);
+	if (property != NULL && EXCEPTION_FAILED) {
+		COLLECTION_RELEASE(dataSet->properties, item);
+		return NULL;
+	}
+	return property;
+}
+
+uint32_t fiftyoneDegreesIpiGetPropertyCount(
+	fiftyoneDegreesDataSetIpi *dataSet) {
+	return CollectionGetCount(dataSet->properties);
+}
+
+int fiftyoneDegreesIpiGetPropertyIndex(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	const char *propertyName,
+	fiftyoneDegreesException *exception) {
+	return PropertyGetIndexByName(
+		dataSet->properties,
+		dataSet->strings,
+		propertyName,
+		exception);
+}
+
+bool fiftyoneDegreesIpiGetProperty(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	uint8_t *valueType,
+	uint8_t *componentId,
+	uint8_t *displayOrder,
+	bool *isMandatory,
+	bool *isList,
+	bool *isObsolete,
+	bool *show,
+	bool *showValues,
+	uint32_t *mapCount,
+	bool *isAvailable,
+	int *requiredPropertyIndex,
+	fiftyoneDegreesException *exception) {
+	Item item;
+	const Property * const held = ipiMetaDataProperty(
+		dataSet,
+		propertyIndex,
+		&item,
+		exception);
+	if (held == NULL) {
+		return false;
+	}
+	// A copy, so the name is read with no other item held.
+	const Property property = *held;
+	COLLECTION_RELEASE(dataSet->properties, &item);
+	if (componentId != NULL) {
+		if (property.componentIndex >= dataSet->componentsList.count) {
+			EXCEPTION_SET(COLLECTION_INDEX_OUT_OF_RANGE);
+			return false;
+		}
+		*componentId = ((Component*)dataSet->componentsList.items[
+			property.componentIndex].data.ptr)->componentId;
+	}
+	if (valueType != NULL) {
+		*valueType = property.valueType;
+	}
+	if (displayOrder != NULL) {
+		*displayOrder = property.displayOrder;
+	}
+	if (isMandatory != NULL) {
+		*isMandatory = property.isMandatory != 0;
+	}
+	if (isList != NULL) {
+		*isList = property.isList != 0;
+	}
+	if (isObsolete != NULL) {
+		*isObsolete = property.isObsolete != 0;
+	}
+	if (show != NULL) {
+		*show = property.show != 0;
+	}
+	if (showValues != NULL) {
+		*showValues = property.showValues != 0;
+	}
+	if (mapCount != NULL) {
+		*mapCount = property.mapCount;
+	}
+	if (isAvailable != NULL || requiredPropertyIndex != NULL) {
+		// The available properties are found by name, matched ignoring case.
+		DataReset(&item.data);
+		const String * const name = PropertyGetName(
+			dataSet->strings,
+			&property,
+			&item,
+			exception);
+		if (EXCEPTION_FAILED) {
+			if (name != NULL) {
+				COLLECTION_RELEASE(dataSet->strings, &item);
+			}
+			return false;
+		}
+		const char * const value = STRING(name);
+		if (isAvailable != NULL) {
+			*isAvailable = value != NULL &&
+				PropertiesGetPropertyIndexFromName(
+					dataSet->b.b.available,
+					value) >= 0;
+		}
+		if (requiredPropertyIndex != NULL) {
+			*requiredPropertyIndex = value == NULL
+				? -1
+				: PropertiesGetRequiredPropertyIndexFromName(
+					dataSet->b.b.available,
+					value);
+		}
+		if (name != NULL) {
+			COLLECTION_RELEASE(dataSet->strings, &item);
+		}
+	}
+	return true;
+}
+
+bool fiftyoneDegreesIpiGetPropertyValueIndexes(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	uint32_t *firstValueIndex,
+	uint32_t *valueCount,
+	long *defaultValueIndex,
+	fiftyoneDegreesException *exception) {
+	Item item;
+	const Property * const held = ipiMetaDataProperty(
+		dataSet,
+		propertyIndex,
+		&item,
+		exception);
+	if (held == NULL) {
+		return false;
+	}
+	// A copy, so the default value is found with no other item held.
+	const Property property = *held;
+	COLLECTION_RELEASE(dataSet->properties, &item);
+	if (firstValueIndex != NULL) {
+		*firstValueIndex = property.firstValueIndex;
+	}
+	if (valueCount != NULL) {
+		*valueCount = PropertyGetValueCount(dataSet->values, &property);
+	}
+	if (defaultValueIndex != NULL) {
+		*defaultValueIndex = ValueGetDefaultIndex(
+			dataSet->values,
+			dataSet->strings,
+			dataSet->propertyTypes,
+			&property,
+			exception);
+	}
+	return EXCEPTION_OKAY;
+}
+
+char* fiftyoneDegreesIpiGetPropertyText(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	fiftyoneDegreesPropertyText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception) {
+	Item item;
+	const Property * const property = ipiMetaDataProperty(
+		dataSet,
+		propertyIndex,
+		&item,
+		exception);
+	if (property == NULL) {
+		return NULL;
+	}
+	char * const result = PropertyGetText(
+		dataSet->values,
+		dataSet->strings,
+		dataSet->propertyTypes,
+		property,
+		text,
+		buffer,
+		bufferLength,
+		exception);
+	COLLECTION_RELEASE(dataSet->properties, &item);
+	return result;
+}
+
+char* fiftyoneDegreesIpiGetPropertyMapText(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	uint32_t mapIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception) {
+	Item item;
+	const Property * const property = ipiMetaDataProperty(
+		dataSet,
+		propertyIndex,
+		&item,
+		exception);
+	if (property == NULL) {
+		return NULL;
+	}
+	char * const result = PropertyGetMapText(
+		dataSet->strings,
+		dataSet->maps,
+		property,
+		mapIndex,
+		buffer,
+		bufferLength,
+		exception);
+	COLLECTION_RELEASE(dataSet->properties, &item);
+	return result;
 }
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.

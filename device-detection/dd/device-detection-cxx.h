@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 865cee97432d8b7b047223b82c64fc31a489735f by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx b4f769adac0f5c20fc969830064998b0d84e9c49 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -344,10 +344,14 @@
 #define fiftyoneDegreesPropertyGetByName ipi_fiftyoneDegreesPropertyGetByName
 #define fiftyoneDegreesPropertyGetCategory ipi_fiftyoneDegreesPropertyGetCategory
 #define fiftyoneDegreesPropertyGetDescription ipi_fiftyoneDegreesPropertyGetDescription
+#define fiftyoneDegreesPropertyGetIndexByName ipi_fiftyoneDegreesPropertyGetIndexByName
+#define fiftyoneDegreesPropertyGetMapText ipi_fiftyoneDegreesPropertyGetMapText
 #define fiftyoneDegreesPropertyGetName ipi_fiftyoneDegreesPropertyGetName
 #define fiftyoneDegreesPropertyGetStoredType ipi_fiftyoneDegreesPropertyGetStoredType
 #define fiftyoneDegreesPropertyGetStoredTypeByIndex ipi_fiftyoneDegreesPropertyGetStoredTypeByIndex
+#define fiftyoneDegreesPropertyGetText ipi_fiftyoneDegreesPropertyGetText
 #define fiftyoneDegreesPropertyGetUrl ipi_fiftyoneDegreesPropertyGetUrl
+#define fiftyoneDegreesPropertyGetValueCount ipi_fiftyoneDegreesPropertyGetValueCount
 #define fiftyoneDegreesPropertyGetValueType ipi_fiftyoneDegreesPropertyGetValueType
 #define fiftyoneDegreesPropertyValueTypeGetName ipi_fiftyoneDegreesPropertyValueTypeGetName
 #define fiftyoneDegreesPropertyValueTypeGetUnderlyingType ipi_fiftyoneDegreesPropertyValueTypeGetUnderlyingType
@@ -4376,7 +4380,7 @@ EXTERNAL void fiftyoneDegreesCollectionHeldStringsFree(
  * ## Introduction
  *
  * IP v4 and v6 addresses can be parsed using the
- * #fiftyoneDegreesIpAddressParse and #fiftyoneDegreesIpAddressesParse methods.
+ * #fiftyoneDegreesIpAddressParse method.
  *
  * @{
  */
@@ -4414,10 +4418,26 @@ typedef struct fiftyone_degrees_ip_address_t {
 } fiftyoneDegreesIpAddress;
 
 /**
- * Parse a single IP address string.
+ * Parse a single IP address string. The string is read only when all of it is
+ * one of these forms:
+ * - an IPv4 address in dotted-decimal form, such as 203.0.113.1, with no
+ *   leading zeros
+ * - an IPv6 address in any text form of RFC 4291 section 2.2, such as
+ *   2001:db8::1 or ::ffff:203.0.113.1
+ * - an IPv4 address, a colon and a port, such as 203.0.113.1:8080
+ * - an IPv6 address in square brackets, with or without a colon and a port
+ *   after the closing bracket, such as [2001:db8::1]:8080
+ *
+ * The port is checked and then dropped. Anything else is not read, including a
+ * prefix length, text or a space before or after the address, a list of
+ * addresses and an IPv6 zone index. The address is not changed in that case.
+ * An IPv4-mapped IPv6 address stays an IPv6 address here.
+ * See
+ * https://github.com/51Degrees/specifications/blob/main/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md#reading-the-client-ip-value
+ *
  * Does not modify the last 12 (out of 16) bytes when parsing IPv4.
  * @param start of the string containing the IP address to parse
- * @param end the last character of the string (with IP address) to be considered for parsing
+ * @param end the character after the last character of the string
  * @param address memory to write parsed IP address into.
  * @return <c>true</c> if address was parsed correctly, <c>false</c> otherwise
  */
@@ -7088,7 +7108,117 @@ EXTERNAL const fiftyoneDegreesProperty* fiftyoneDegreesPropertyGetByName(
 	fiftyoneDegreesCollectionItem *item,
 	fiftyoneDegreesException *exception);
 
-/** 
+/**
+ * The text of a property that #fiftyoneDegreesPropertyGetText gives.
+ */
+typedef enum e_fiftyone_degrees_property_text {
+	/** The property's name */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_NAME = 0,
+	/** The property's description, empty when it has none */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_DESCRIPTION = 1,
+	/** The name of the category the property is in, empty when it is in none */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_CATEGORY = 2,
+	/** The URL of more about the property, empty when it has none */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_URL = 3,
+	/**
+	 * The property's default value, as #fiftyoneDegreesValueGetDefaultText
+	 * gives it
+	 */
+	FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE = 4
+} fiftyoneDegreesPropertyText;
+
+/**
+ * Gets the index in the properties collection of the property with the name
+ * provided, which must match exactly. This finds the property that
+ * #fiftyoneDegreesPropertyGetByName gets.
+ * @param properties collection to find the property in
+ * @param strings collection containing the names of the properties
+ * @param propertyName name of the property to find
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the 0 based index of the property, or -1 when no property has the
+ * name or reading a property or a name sets the exception. A property whose
+ * name the strings collection gives nothing for is taken as the one named,
+ * so its index is returned.
+ */
+EXTERNAL int fiftyoneDegreesPropertyGetIndexByName(
+	fiftyoneDegreesCollection *properties,
+	fiftyoneDegreesCollection *strings,
+	const char *propertyName,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets a text of the property as the metadata gives it. A description,
+ * category or URL the property does not have is an empty text, as is a
+ * string the strings collection gives nothing for. The text is written into
+ * `buffer` when it fits, and otherwise into memory the caller frees, as
+ * #fiftyoneDegreesStoredBinaryValueToText describes.
+ * @param values collection containing the property's values, which only
+ * #FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE reads
+ * @param strings collection containing the property's strings
+ * @param propertyTypes collection of the type each property's values are
+ * stored as, or NULL when every value is stored as a string, which only
+ * #FIFTYONE_DEGREES_PROPERTY_TEXT_DEFAULT_VALUE reads
+ * @param property the property to get the text of
+ * @param text which text of the property to get
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the null terminated text, or NULL when it cannot be read or
+ * written or `text` is none of #fiftyoneDegreesPropertyText
+ */
+EXTERNAL char* fiftyoneDegreesPropertyGetText(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesProperty *property,
+	fiftyoneDegreesPropertyText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the name of one of the maps the property is in, which the metadata
+ * gives as the data files the property is present in, such as "Lite". The
+ * name is written as #fiftyoneDegreesPropertyGetText writes a text.
+ * @param strings collection containing the names of the maps
+ * @param maps collection of the offsets in `strings` of the map names
+ * @param property the property to get the name of a map of
+ * @param mapIndex the 0 based place of the map among the property's
+ * `mapCount` maps
+ * @param buffer memory the name is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h.
+ * @return the null terminated name, or NULL. NULL with no exception set
+ * means the strings collection gives nothing at the map's offset, and NULL
+ * with the exception set means `mapIndex` is not less than the property's
+ * `mapCount` or the name cannot be read or written.
+ */
+EXTERNAL char* fiftyoneDegreesPropertyGetMapText(
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *maps,
+	const fiftyoneDegreesProperty *property,
+	uint32_t mapIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the number of values the values collection holds for the property,
+ * which are at the indexes from its `firstValueIndex` to its
+ * `lastValueIndex`. A property whose value indexes are not both in the
+ * collection, as when both are -1, has none.
+ * @param values collection containing the property's values
+ * @param property the property to count the values of
+ * @return the number of values
+ */
+EXTERNAL uint32_t fiftyoneDegreesPropertyGetValueCount(
+	const fiftyoneDegreesCollection *values,
+	const fiftyoneDegreesProperty *property);
+
+/**
  * @}
  */
 
@@ -8955,8 +9085,11 @@ FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE_DEFAULT
 /**
  * Default limit in bytes for maxMatchedUserAgentLength. No RFC or browser sets
  * a limit on these headers. In the 20,000 evidence sample the longest pseudo
- * header is 316 bytes and the longest User-Agent 331, with none over 500. A
- * longer value is ignored, because in practice that does not happen.
+ * header is 316 bytes and the longest User-Agent 331, with none over 500 in
+ * that sample, but longer values do occur in real traffic. A longer value is
+ * ignored, because the buffers for pseudo headers, transformed evidence and the
+ * matched value are sized from this limit when results are created, never
+ * during detection.
  */
 #define FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_MAX_LENGTH 500
 
@@ -11621,6 +11754,159 @@ EXTERNAL char* fiftyoneDegreesHashGetDeviceIdFromResults(
 	fiftyoneDegreesException *exception);
 
 /**
+ * @name Metadata
+ *
+ * The properties of the data file, with the answers the C++ property metadata
+ * gives. Each function takes a data set from #fiftyoneDegreesDataSetHashGet,
+ * which the caller holds while it reads so that every answer comes from the
+ * same data file. A property is found by its index in the data file, which
+ * counts every property the file defines, including those the data set was
+ * not created with. A function that gives text writes it into the buffer
+ * provided when it fits, and otherwise into memory the caller frees with
+ * fiftyoneDegreesFree when the pointer returned is not the buffer, as
+ * #fiftyoneDegreesStoredBinaryValueToText describes.
+ * @{
+ */
+
+/**
+ * Gets the number of properties the data file defines.
+ * @param dataSet the data set to read
+ * @return the number of properties
+ */
+EXTERNAL uint32_t fiftyoneDegreesHashGetPropertyCount(
+	fiftyoneDegreesDataSetHash *dataSet);
+
+/**
+ * Gets the index of the property with the name provided, which must match
+ * exactly.
+ * @param dataSet the data set to read
+ * @param propertyName name of the property to find
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the index of the property, or -1 when the data file has no
+ * property of that name or reading a property or a name sets the exception.
+ * A property whose name the strings collection gives nothing for is taken as
+ * the one named.
+ */
+EXTERNAL int fiftyoneDegreesHashGetPropertyIndex(
+	fiftyoneDegreesDataSetHash *dataSet,
+	const char *propertyName,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the fields of the property that are not text. Any of the output
+ * pointers can be NULL, and the property's name is read only when
+ * `isAvailable` or `requiredPropertyIndex` is not.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param valueType set to the #fiftyoneDegreesPropertyValueType of the
+ * property's values
+ * @param componentId set to the id of the component the property belongs to
+ * @param displayOrder set to the order to display the property in
+ * @param isMandatory set to true when the property is mandatory
+ * @param isList set to true when the property can have more than one value
+ * @param isObsolete set to true when the property is obsolete
+ * @param show set to true when the property should be shown
+ * @param showValues set to true when the property's values should be shown
+ * @param mapCount set to the number of maps the property is in, which
+ * #fiftyoneDegreesHashGetPropertyMapText names
+ * @param isAvailable set to true when the data set was created with the
+ * property, so that results can hold its values
+ * @param requiredPropertyIndex set to the index the results functions take
+ * for the property, or -1 when it has none
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the fields were read, otherwise false. False with no
+ * exception set means the properties collection gave nothing at the index.
+ */
+EXTERNAL bool fiftyoneDegreesHashGetProperty(
+	fiftyoneDegreesDataSetHash *dataSet,
+	uint32_t propertyIndex,
+	uint8_t *valueType,
+	uint8_t *componentId,
+	uint8_t *displayOrder,
+	bool *isMandatory,
+	bool *isList,
+	bool *isObsolete,
+	bool *show,
+	bool *showValues,
+	uint32_t *mapCount,
+	bool *isAvailable,
+	int *requiredPropertyIndex,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets where the property's values are in the values collection, and which
+ * of them is its default. Any of the output pointers can be NULL, and the
+ * default value is found only when `defaultValueIndex` is not.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param firstValueIndex set to the index of the property's first value
+ * @param valueCount set to the number of values the property has, as
+ * #fiftyoneDegreesPropertyGetValueCount counts them
+ * @param defaultValueIndex set to the index of the property's default value
+ * as #fiftyoneDegreesValueGetDefaultIndex finds it, or -1 when it has none
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the indexes were read, otherwise false. False with no
+ * exception set means the properties collection gave nothing at the index.
+ */
+EXTERNAL bool fiftyoneDegreesHashGetPropertyValueIndexes(
+	fiftyoneDegreesDataSetHash *dataSet,
+	uint32_t propertyIndex,
+	uint32_t *firstValueIndex,
+	uint32_t *valueCount,
+	long *defaultValueIndex,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets a text of the property, as #fiftyoneDegreesPropertyGetText gives it.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param text which text of the property to get
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated text, or NULL when the property or the text
+ * cannot be read or written
+ */
+EXTERNAL char* fiftyoneDegreesHashGetPropertyText(
+	fiftyoneDegreesDataSetHash *dataSet,
+	uint32_t propertyIndex,
+	fiftyoneDegreesPropertyText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the name of one of the maps the property is in, as
+ * #fiftyoneDegreesPropertyGetMapText gives it.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param mapIndex the place of the map among the property's maps, less than
+ * the `mapCount` #fiftyoneDegreesHashGetProperty gives
+ * @param buffer memory the name is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated name, or NULL. NULL with no exception set means
+ * the strings collection gives nothing at the map's offset, and the metadata
+ * then leaves the map out.
+ */
+EXTERNAL char* fiftyoneDegreesHashGetPropertyMapText(
+	fiftyoneDegreesDataSetHash *dataSet,
+	uint32_t propertyIndex,
+	uint32_t mapIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * @}
+ */
+
+/**
  * @}
  */
 
@@ -12295,6 +12581,7 @@ MAP_TYPE(EvidenceKeyValuePairArray)
 MAP_TYPE(PropertyAvailable)
 MAP_TYPE(PropertyNamed)
 MAP_TYPE(PropertyValueType)
+MAP_TYPE(PropertyText)
 MAP_TYPE(PropertiesAvailable)
 MAP_TYPE(EvidencePropertyIndex)
 MAP_TYPE(EvidenceProperties)
@@ -12519,6 +12806,10 @@ MAP_TYPE(WeightedItemList)
 #define PropertyGetStoredTypeByIndex fiftyoneDegreesPropertyGetStoredTypeByIndex /**< Synonym for #fiftyoneDegreesPropertyGetStoredTypeByIndex function. */
 #define CollectionReadFileVariable fiftyoneDegreesCollectionReadFileVariable /**< Synonym for #fiftyoneDegreesCollectionReadFileVariable function. */
 #define PropertyGetByName fiftyoneDegreesPropertyGetByName /**< Synonym for #fiftyoneDegreesPropertyGetByName function. */
+#define PropertyGetIndexByName fiftyoneDegreesPropertyGetIndexByName /**< Synonym for #fiftyoneDegreesPropertyGetIndexByName function. */
+#define PropertyGetText fiftyoneDegreesPropertyGetText /**< Synonym for #fiftyoneDegreesPropertyGetText function. */
+#define PropertyGetMapText fiftyoneDegreesPropertyGetMapText /**< Synonym for #fiftyoneDegreesPropertyGetMapText function. */
+#define PropertyGetValueCount fiftyoneDegreesPropertyGetValueCount /**< Synonym for #fiftyoneDegreesPropertyGetValueCount function. */
 #define ComponentGetKeyValuePair fiftyoneDegreesComponentGetKeyValuePair /**< Synonym for #fiftyoneDegreesComponentGetKeyValuePair function., */
 #define PropertyGetValueType fiftyoneDegreesPropertyGetValueType /**< Synonym for #fiftyoneDegreesPropertyGetValueType function. */
 #define EvidencePropertiesGetMethod fiftyoneDegreesEvidencePropertiesGetMethod /**< Synonym for #fiftyoneDegreesEvidencePropertiesGetMethod function. */
@@ -13163,6 +13454,12 @@ MAP_TYPE(HashValueProfiles)
 #define HashReloadManagerFromMemory fiftyoneDegreesHashReloadManagerFromMemory /**< Synonym for #fiftyoneDegreesHashReloadManagerFromMemory function. */
 #define HashIterateProfilesForPropertyAndValue fiftyoneDegreesHashIterateProfilesForPropertyAndValue /**< Synonym for #fiftyoneDegreesHashIterateProfilesForPropertyAndValue function. */
 #define HashGetProfileIdsForPropertyAndValue fiftyoneDegreesHashGetProfileIdsForPropertyAndValue /**< Synonym for #fiftyoneDegreesHashGetProfileIdsForPropertyAndValue function. */
+#define HashGetPropertyCount fiftyoneDegreesHashGetPropertyCount /**< Synonym for #fiftyoneDegreesHashGetPropertyCount function. */
+#define HashGetPropertyIndex fiftyoneDegreesHashGetPropertyIndex /**< Synonym for #fiftyoneDegreesHashGetPropertyIndex function. */
+#define HashGetProperty fiftyoneDegreesHashGetProperty /**< Synonym for #fiftyoneDegreesHashGetProperty function. */
+#define HashGetPropertyValueIndexes fiftyoneDegreesHashGetPropertyValueIndexes /**< Synonym for #fiftyoneDegreesHashGetPropertyValueIndexes function. */
+#define HashGetPropertyText fiftyoneDegreesHashGetPropertyText /**< Synonym for #fiftyoneDegreesHashGetPropertyText function. */
+#define HashGetPropertyMapText fiftyoneDegreesHashGetPropertyMapText /**< Synonym for #fiftyoneDegreesHashGetPropertyMapText function. */
 #define ResultsHashGetValuesJson fiftyoneDegreesResultsHashGetValuesJson /**< Synonym for #fiftyoneDegreesResultsHashGetValuesJson function. */
 #define HashGetHardwareProfileScript fiftyoneDegreesHashGetHardwareProfileScript /**< Synonym for #fiftyoneDegreesHashGetHardwareProfileScript function. */
 
