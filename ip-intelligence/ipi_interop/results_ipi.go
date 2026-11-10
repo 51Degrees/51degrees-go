@@ -168,12 +168,17 @@ func (r *ResultsIpi) isCoordinate(dataSet *C.DataSetIpi, requiredIndex C.int, ex
 }
 
 // roundCoordinate gives v to coordinateDecimalPlaces decimal places, as the
-// float64 nearest the rounded decimal.
+// float64 nearest the rounded decimal. A value that rounds to zero is given
+// as zero rather than negative zero, which matches the text the C library
+// writes for it.
 func roundCoordinate(v float64) float64 {
 	rounded, err := strconv.ParseFloat(
 		strconv.FormatFloat(v, 'f', coordinateDecimalPlaces, 64), 64)
 	if err != nil {
 		return v
+	}
+	if rounded == 0 {
+		return 0
 	}
 	return rounded
 }
