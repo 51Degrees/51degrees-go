@@ -145,7 +145,10 @@ func (b *Builder) setClock(now func() time.Time) *Builder { b.now = now; return 
 // Properties that an earlier build discovered, read from DiscoveryState, so
 // Build makes no discovery request. They depend only on the Resource Key, so
 // use a state from a build with the same key. Nil, the default, makes Build
-// fetch them from the cloud service.
+// fetch them from the cloud service. Build refuses a state whose
+// EvidenceKeys or Products is nil, such as one read from an empty JSON
+// object, because the engine would never fetch what is missing. An empty
+// list or map is kept, as it is when the cloud service gives one.
 func (b *Builder) SetDiscoveryState(s *DiscoveryState) *Builder { b.state = s; return b }
 
 // DiscoveryState returns what the last Build discovered, or was given with
@@ -165,6 +168,11 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 	b.discovered = nil
 	if b.resourceKey == "" {
 		return nil, core.NewConfigurationError("a Resource Key is required to build a CloudRequestEngine", nil)
+	}
+	if b.state != nil && (b.state.EvidenceKeys == nil || b.state.Products == nil) {
+		return nil, core.NewConfigurationError("the discovery state given to "+
+			"the builder lacks its Evidence keys or its Products, so build "+
+			"without it to fetch them from the cloud service", nil)
 	}
 	base := strings.TrimRight(b.endpoint, "/") + "/"
 	dataEndpoint := orDefault(b.dataEndpoint, base+"json")
@@ -241,5 +249,11 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.FloatParam(params, "RecoverySeconds"); ok {
 		b.SetRecoveryDuration(time.Duration(v * float64(time.Second)))
 	}
-	return b.Build()
+	// Return a nil element on failure, not a nil *CloudRequestEngine, which
+	// would make a non-nil core.FlowElement.
+	e, err := b.Build()
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
 }

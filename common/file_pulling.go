@@ -87,7 +87,8 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 // It checks for file modifications, makes an HTTP request to fetch the file, and handles retry logic for failures.
 // The method returns the time in milliseconds before the next pull attempt.
 func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
-	e.logger.Printf("Pulling data from %s", e.GetDataFileUrl())
+	e.logger.Printf("Pulling data from %s", MaskLicenseKeysIn(e.GetDataFileUrl(),
+		LicenseKeysInURL(e.GetDataFileUrl())))
 
 	var lastModificationTimestamp *time.Time
 
@@ -175,9 +176,11 @@ func tempFilePattern(dataFile string) string {
 func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dataFile string) (*FileResponse, error) {
 	removeStaleTempFiles(dataFile, logger)
 
+	// An error net/http raises names the URL, so its license keys are masked.
+	keys := LicenseKeysInURL(url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, MaskLicenseKeysInError(err, keys)
 	}
 
 	if timestamp != nil {
@@ -186,7 +189,7 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, MaskLicenseKeysInError(err, keys)
 	}
 	defer resp.Body.Close()
 

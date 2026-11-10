@@ -32,7 +32,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -185,10 +184,11 @@ func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bo
 // are normally fetched when the engine is built. After a transient failure
 // then, a call fetches them unless the engine is in its recovery period, so
 // call it while processing, where SuppressProcessExceptions covers a failure.
+// It returns a copy, so a caller may change it without changing the engine.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) {
 	if p := e.products.Load(); p != nil {
-		return *p, nil
+		return cloneProducts(*p), nil
 	}
 	if until, inRecovery := e.inRecovery(); inRecovery {
 		return nil, &TemporarilyUnavailableError{RecoveryUntil: until}
@@ -196,7 +196,7 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 	if err := e.loadProducts(); err != nil {
 		return nil, err
 	}
-	return *e.products.Load(), nil
+	return cloneProducts(*e.products.Load()), nil
 }
 
 // Process makes the cloud request and stores the raw JSON response.
@@ -218,7 +218,7 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 
 	body, err := e.makeDataRequest(fd)
 	if err != nil {
-		e.recordFailure()
+		e.recordFailure(err)
 		e.storeFailed(fd)
 		return err
 	}
@@ -396,11 +396,12 @@ func (e *CloudRequestEngine) retryDiscovery() error {
 }
 
 // loadProducts fetches the accessible Properties and keeps them. A failure
-// counts toward the recovery period, as any failed request does.
+// that says the cloud service is in trouble counts toward the recovery
+// period, as it does for any request.
 func (e *CloudRequestEngine) loadProducts() error {
 	products, err := e.fetchAccessibleProperties()
 	if err != nil {
-		e.recordFailure()
+		e.recordFailure(err)
 		return err
 	}
 	e.recordSuccess()
@@ -409,11 +410,12 @@ func (e *CloudRequestEngine) loadProducts() error {
 }
 
 // loadEvidenceKeys fetches the accepted Evidence keys and keeps them. A
-// failure counts toward the recovery period, as any failed request does.
+// failure that says the cloud service is in trouble counts toward the
+// recovery period, as it does for any request.
 func (e *CloudRequestEngine) loadEvidenceKeys() error {
 	keys, err := e.fetchEvidenceKeys()
 	if err != nil {
-		e.recordFailure()
+		e.recordFailure(err)
 		return err
 	}
 	e.recordSuccess()
@@ -430,10 +432,10 @@ func (e *CloudRequestEngine) keepProducts(products map[string]ProductMeta) {
 	e.products.CompareAndSwap(nil, &products)
 }
 
-// useState keeps a discovery state given to the builder, in place of making
-// the discovery requests.
+// useState keeps a copy of a discovery state given to the builder, in place
+// of making the discovery requests.
 func (e *CloudRequestEngine) useState(s *DiscoveryState) {
-	e.keepProducts(maps.Clone(s.Products))
+	e.keepProducts(cloneProducts(s.Products))
 	e.evidenceKeys.CompareAndSwap(nil, core.NewWhitelistFilter(s.EvidenceKeys...))
 }
 
@@ -446,8 +448,35 @@ func (e *CloudRequestEngine) discoveryState() *DiscoveryState {
 	}
 	return &DiscoveryState{
 		EvidenceKeys: keys.Keys(),
-		Products:     maps.Clone(*products),
+		Products:     cloneProducts(*products),
 	}
+}
+
+// cloneProducts returns a copy of products that shares no map or slice with
+// it, item Properties included. Nil stays nil and empty stays empty.
+func cloneProducts(products map[string]ProductMeta) map[string]ProductMeta {
+	if products == nil {
+		return nil
+	}
+	out := make(map[string]ProductMeta, len(products))
+	for name, product := range products {
+		product.Properties = cloneProperties(product.Properties)
+		out[name] = product
+	}
+	return out
+}
+
+// cloneProperties returns a copy of properties that shares no slice with it.
+func cloneProperties(properties []PropertyMeta) []PropertyMeta {
+	if properties == nil {
+		return nil
+	}
+	out := make([]PropertyMeta, len(properties))
+	for i, property := range properties {
+		property.ItemProperties = cloneProperties(property.ItemProperties)
+		out[i] = property
+	}
+	return out
 }
 
 // acceptedEvidence is the engine's Evidence key filter, holding the keys from
@@ -560,8 +589,10 @@ func (e *CloudRequestEngine) inRecovery() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func (e *CloudRequestEngine) recordFailure() {
-	if e.recoveryDuration <= 0 {
+// recordFailure counts a failed request toward the recovery period when it
+// says the cloud service is in trouble.
+func (e *CloudRequestEngine) recordFailure(err error) {
+	if e.recoveryDuration <= 0 || !signalsServiceTrouble(err) {
 		return
 	}
 	now := e.now()
@@ -580,6 +611,27 @@ func (e *CloudRequestEngine) recordFailure() {
 		e.consecutiveRecoveries++
 		e.recoveryUntil = now.Add(e.recoveryDurationFor(e.consecutiveRecoveries))
 		e.failureTimes = e.failureTimes[:0]
+	}
+}
+
+// signalsServiceTrouble reports whether a failed request says the cloud
+// service is in trouble, being a request that did not complete, a status of
+// 500 or more, a 429, or a success status whose body could not be used. Only
+// those count toward the recovery period, because the period stops every
+// visitor's requests, and any other status from 400 to 499 answers the
+// content of that one request.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+func signalsServiceTrouble(err error) bool {
+	var cloudErr *CloudRequestError
+	if !errors.As(err, &cloudErr) {
+		return true
+	}
+	status := cloudErr.StatusCode
+	switch {
+	case status == 0, status >= 500, status == http.StatusTooManyRequests:
+		return true
+	default:
+		return status >= 200 && status < 300
 	}
 }
 
