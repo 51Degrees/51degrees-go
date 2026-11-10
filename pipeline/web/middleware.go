@@ -46,7 +46,7 @@ import (
 // Default intercepted URL paths.
 const (
 	DefaultJavaScriptURL = "/51Degrees.core.js"
-	DefaultJSONURL       = "/51dpipeline/json"
+	DefaultJSONURL       = javascriptbuilder.DefaultEndpoint
 	DefaultMaxAge        = 30 * time.Minute
 )
 
