@@ -106,9 +106,8 @@ func (b *Builder) SetLicenseKey(key string) *Builder { b.licenseKey = key; retur
 // SetRequestedProperties sets the Properties to ask the cloud service for, as
 // fully qualified names such as "device.ismobile". They are required with a
 // License Key alone, added to the Resource Key's Properties when both keys
-// are set, and refused with a Resource Key and no License Key, which the
-// cloud service answers with everything the key carries whatever the list
-// says.
+// are set, and refused with a Resource Key and no License Key, because the
+// list then adds no data.
 func (b *Builder) SetRequestedProperties(names ...string) *Builder {
 	b.requestedProperties = append([]string(nil), names...)
 	return b
@@ -265,12 +264,13 @@ const (
 		"SetRequestedProperties with the fully qualified names wanted, for " +
 		"example \"device.ismobile\" and \"device.iscrawler\"."
 	messagePropertiesIgnoredWithResourceKey = "CloudRequestEngine has " +
-		"Requested Properties and a Resource Key but no License Key. The " +
-		"cloud service ignores the list unless a License Key is sent, and " +
-		"answers with everything the Resource Key carries, so the caller " +
-		"would believe the response had changed when it had not. Either " +
-		"leave out SetRequestedProperties, or call SetLicenseKey with a " +
-		"License Key that grants the Properties."
+		"Requested Properties and a Resource Key but no License Key. " +
+		"Without a License Key the list adds no data. A Property the " +
+		"Resource Key carries is unchanged, and one it lacks comes back " +
+		"null as a paid feature, so the caller would believe it had asked " +
+		"for Properties it will never receive. Either leave out " +
+		"SetRequestedProperties, or call SetLicenseKey with a License Key " +
+		"that grants the Properties."
 )
 
 // checkCredentials refuses the combinations the specification's table marks
