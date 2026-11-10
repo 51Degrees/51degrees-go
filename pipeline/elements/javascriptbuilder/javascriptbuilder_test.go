@@ -247,17 +247,17 @@ func TestProtocolInjectionRejected(t *testing.T) {
 }
 
 // TestSessionIDInjectionRejected verifies a hostile session-id cannot break out
-// of its JS string literal; the sequence element replaces it with a GUID.
+// of its JS string literal. The Sequence Element keeps any non-empty text as
+// the session id, and the JavaScript Builder writes one that does not match
+// sessionIDRe as an empty string.
 func TestSessionIDInjectionRejected(t *testing.T) {
 	js := renderWith(t, map[string]string{
 		"header.host":      "example.com",
 		"query.session-id": `"; alert('xss'); var z="`,
 	})
-	// The session id reaches a JS string literal; that line must not carry the
-	// payload (the sequence element replaces it with a GUID).
-	line := grepLine(js, "var sessionId =")
-	if strings.Contains(line, "alert") {
-		t.Fatalf("session-id payload reached the sessionId literal: %q", line)
+	line := strings.TrimSpace(grepLine(js, "var sessionId ="))
+	if want := `var sessionId = "";`; line != want {
+		t.Fatalf("sessionId line = %q, want %q", line, want)
 	}
 }
 
