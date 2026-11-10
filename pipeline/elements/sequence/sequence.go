@@ -38,7 +38,8 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
-// digitsRe matches a sequence given as a string, which is decimal digits only.
+// digitsRe matches a sequence given as a string, which holds only the digits
+// 0 to 9, with no sign or spaces. Leading zeros are allowed.
 var digitsRe = regexp.MustCompile(`^[0-9]+$`)
 
 // maxSequence is the largest sequence value taken from Evidence, so that
@@ -97,8 +98,8 @@ func (e *Element) Process(fd core.FlowData) error {
 	}
 	data.Set(SessionIDProperty, sessionID)
 
-	// A sequence counts only if it is a whole number, or a string of decimal
-	// digits, within range. Otherwise it counts as absent and gives 1.
+	// A sequence counts only if it is a whole number, or a string of the
+	// digits 0 to 9, within range. Otherwise it counts as absent and gives 1.
 	seq := 1
 	if raw, ok := fd.Evidence().Get(EvidenceSequence); ok {
 		if n, ok := toSequence(raw); ok {
@@ -119,11 +120,16 @@ func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 }
 
 // toSequence reads a sequence from an Evidence value. It accepts a whole
-// number or a string of decimal digits, from 0 up to maxSequence.
+// number of any Go integer or float type, or a string of the digits 0 to 9,
+// from 0 up to maxSequence.
 func toSequence(v any) (int, bool) {
 	var n int64
 	switch t := v.(type) {
 	case int:
+		n = int64(t)
+	case int8:
+		n = int64(t)
+	case int16:
 		n = int64(t)
 	case int32:
 		n = int64(t)
@@ -134,6 +140,10 @@ func toSequence(v any) (int, bool) {
 			return 0, false
 		}
 		n = int64(t)
+	case uint8:
+		n = int64(t)
+	case uint16:
+		n = int64(t)
 	case uint32:
 		n = int64(t)
 	case uint64:
@@ -141,11 +151,10 @@ func toSequence(v any) (int, bool) {
 			return 0, false
 		}
 		n = int64(t)
+	case float32:
+		return wholeSequence(float64(t))
 	case float64:
-		if t != math.Trunc(t) || t < 0 || t > maxSequence {
-			return 0, false
-		}
-		n = int64(t)
+		return wholeSequence(t)
 	case string:
 		if !digitsRe.MatchString(t) {
 			return 0, false
@@ -162,6 +171,15 @@ func toSequence(v any) (int, bool) {
 		return 0, false
 	}
 	return int(n), true
+}
+
+// wholeSequence accepts a float that holds a whole number from 0 up to
+// maxSequence.
+func wholeSequence(f float64) (int, bool) {
+	if f != math.Trunc(f) || f < 0 || f > maxSequence {
+		return 0, false
+	}
+	return int(f), true
 }
 
 // newGUID returns a random RFC 4122 version 4 UUID string, matching the
