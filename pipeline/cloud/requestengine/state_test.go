@@ -24,7 +24,7 @@ package requestengine
 
 // These tests follow the specification's rule for building from a kept copy
 // of the discovery results.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#resilience
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#resilience
 
 import (
 	"encoding/json"

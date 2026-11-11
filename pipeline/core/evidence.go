@@ -104,7 +104,7 @@ const (
 // adds the request, as a WebRequest. No element accepts it, so it never takes
 // part in a cache key or an ETag, and the Usage Sharing Element reads the
 // request's headers, cookies and query string from it.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/web-integration.md#populating-evidence
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/web-integration.md#populating-evidence
 const EvidenceHTTPRequest = PrefixServer + ".http-request"
 
 // webRequestPlaceholder is what formatting a WebRequest prints.

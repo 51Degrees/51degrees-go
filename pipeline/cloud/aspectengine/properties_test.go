@@ -159,7 +159,7 @@ func metadataCloud() http.Handler {
 // being whether it delays execution, the Properties that are its Evidence
 // and its item Properties, so the JSON Builder can write delayexecution and
 // evidenceproperties for it as .NET does.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/json-builder.md
 func TestCloudPropertiesCarryTheirMetadata(t *testing.T) {
 	srv := httptest.NewServer(metadataCloud())
 	t.Cleanup(srv.Close)
