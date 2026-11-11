@@ -81,7 +81,7 @@ func TestEvidenceTheServiceDoesNotListIsStillSent(t *testing.T) {
 // precedence over it and a key that is itself query takes the precedence of
 // query Evidence. This is what .NET does, where KeyHasPrefix compares the
 // part of the key before its first separator, or the whole key where it has
-// none (CloudRequestEngine.cs lines 865 to 878 on rc).
+// none (CloudRequestEngine.cs lines 865 to 878 in 51degrees-dotnet at a145428).
 func TestEvidenceWithNoPrefixIsSentUnderItsWholeKey(t *testing.T) {
 	cs := &cloudServer{jsonBody: `{"device":{"ismobile":true}}`}
 	srv := httptest.NewServer(cs.handler())
