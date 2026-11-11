@@ -348,22 +348,6 @@ func TestEngine_validateAndAppendUrlParams(t *testing.T) {
 	}
 }
 
-func TestEngine_recoverEngine(t *testing.T) {
-	engine := &Engine{
-		logger:    &common_go.LogWrapper{},
-		isStopped: false,
-	}
-
-	// Test that recoverEngine doesn't panic
-	defer func() {
-		if r := recover(); r != nil {
-			t.Error("recoverEngine should handle panics gracefully")
-		}
-	}()
-
-	engine.recoverEngine()
-}
-
 // TestEngine_GetPropertyNameByIndex checks an engine with no data set loaded.
 // TestReloadToDifferentProperties checks engines with data, across reloads.
 func TestEngine_GetPropertyNameByIndex(t *testing.T) {

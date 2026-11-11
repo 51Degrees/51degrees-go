@@ -20,8 +20,6 @@ import (
 	"time"
 )
 
-const retryMs = 1000
-
 // pullRandom draws the random time added to each polling interval. It has
 // its own source, seeded from crypto/rand, because the global source is not
 // seeded by every Go version this module supports, and unseeded servers
@@ -68,7 +66,7 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 	// if update on start is enabled and has not run yet, perform the pull immediately
 	if e.isUpdateOnStartEnabled && !e.startUpPullDone {
 		e.logger.Infof("Updating on start-up")
-		nextIterationInMs = e.doFilePulling(reloadFileEvents)
+		nextIterationInMs = e.pullRecovering(reloadFileEvents)
 	}
 
 	nextIterationInMs = e.delayBeforeFirstPull(nextIterationInMs)
@@ -81,7 +79,7 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 		// interval to perform the pull of updated data, plus a random time
 		// up to the randomization maximum
 		case <-time.After(time.Duration(nextIterationInMs+drawRandomizationMs(e.randomization)) * time.Millisecond):
-			nextIterationInMs = e.doFilePulling(reloadFileEvents)
+			nextIterationInMs = e.pullRecovering(reloadFileEvents)
 		}
 	}
 }
@@ -197,9 +195,23 @@ func (e *FileUpdater) engineLabel() string {
 	return e.engineName
 }
 
+// pullRecovering makes one pull and returns the time in milliseconds before
+// the next. A panic in the pull is logged and the next pull comes after the
+// polling interval, so one failed pull does not end automatic updates.
+func (e *FileUpdater) pullRecovering(reloadFileEvents chan struct{}) (nextMs int) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.logUnhandledError(fmt.Errorf("panic: %v", r))
+			nextMs = e.dataFilePullEveryMs
+		}
+	}()
+	return e.doFilePulling(reloadFileEvents)
+}
+
 // doFilePulling handles the process of pulling a data file, saving it locally, and triggering reload events if necessary.
-// It checks for file modifications, makes an HTTP request to fetch the file, and handles retry logic for failures.
-// The method returns the time in milliseconds before the next pull attempt.
+// It checks for file modifications and makes an HTTP request to fetch the file.
+// The method returns the time in milliseconds before the next pull attempt, which is the polling interval unless the
+// server gave a Retry-After time.
 func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 	next, _, _ := e.pull(reloadFileEvents)
 	return next
@@ -216,15 +228,13 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 	if e.GetDataFile() == "" {
 		e.logCheckError(fmt.Sprintf("The data file '%s' is checking for updates but does not have a "+
 			"temporary file path configured.", e.engineLabel()))
-		return retryMs, false, ErrNoDataFileProvided
+		return e.GetDataFilePullEveryMs(), false, ErrNoDataFileProvided
 	}
 
 	lastModificationTimestamp, err := e.ifModifiedSince()
 	if err != nil {
 		e.logUnhandledError(fmt.Errorf("failed to get file info: %w", err))
-		// retry after 1 second, since we have unhandled error
-		// this can happen from file info error or something else
-		return retryMs, false, err
+		return e.GetDataFilePullEveryMs(), false, err
 	}
 
 	e.logger.Infof("Checking for update from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
@@ -244,10 +254,8 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 			// retry after the specified time
 			return fileResponse.retryAfter * 1000, false, err
 		}
-		e.logger.Printf("retrying after 1 second")
-		// retry after 1 second, since we have unhandled error
-		// this can happen from network stutter or something else
-		return retryMs, false, err
+		e.logger.Printf("retrying after the polling interval")
+		return e.GetDataFilePullEveryMs(), false, err
 	}
 
 	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
@@ -257,9 +265,7 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 		os.Remove(fileResponse.path)
 		e.logCheckError(fmt.Sprintf("An error occurred when copying a data file to replace the existing one "+
 			"at '%s'. Error detail: %v", e.GetDataFile(), err))
-		// retry after 1 second, since we have unhandled error
-		// this can happen from disk write error or something else
-		return retryMs, false, err
+		return e.GetDataFilePullEveryMs(), false, err
 	}
 	e.logger.Printf("data file written successfully: %d bytes", fileResponse.size)
 

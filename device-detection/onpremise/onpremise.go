@@ -108,7 +108,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 // handleFileExternallyChanged handles events where a file has been externally modified, ensuring proper processing and logging.
 func (e *Engine) handleFileExternallyChanged() {
-	if err := e.processFileExternallyChanged(); err != nil {
+	if err := e.reload(); err != nil {
 		e.logger.Printf("failed to handle file externally changed: %v", err)
 	}
 
@@ -117,8 +117,6 @@ func (e *Engine) handleFileExternallyChanged() {
 
 // run starts the engine
 func (e *Engine) run() error {
-	e.recoverEngine()
-
 	e.reloadLoop.Add(1)
 	go e.reloadFileEvent()
 
@@ -179,18 +177,15 @@ func (e *Engine) Stop() {
 	}
 }
 
-// recoverEngine handles recovery from a panic during file pulling, logs the error, and restarts the file pulling process if needed.
-func (e *Engine) recoverEngine() {
-	// recover from panic
-	// if panic occurs, we will log the error and restart the file pulling
+// reload loads the data file again. A panic is returned as an error, so the
+// goroutine that asked for the reload carries on and a later file is loaded.
+func (e *Engine) reload() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			e.logger.Printf("error occurred when pulling data: %v", r)
-			if !e.isStopped {
-				go e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
-			}
+			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
+	return e.processFileExternallyChanged()
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -199,7 +194,7 @@ func (e *Engine) recoverEngine() {
 func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
-		if err := e.processFileExternallyChanged(); err != nil {
+		if err := e.reload(); err != nil {
 			e.logger.Printf("failed to reload pulled data file: %v", err)
 		}
 	}
@@ -271,9 +266,11 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		return nil
 	}
 	// Only a load that worked is logged, as a manager whose first load failed
-	// has no data set to read the published date from.
+	// has no data set to read the published date from. Each return that loaded
+	// sets loaded first, because err is still nil while a panic unwinds.
+	loaded := false
 	defer func() {
-		if err != nil {
+		if !loaded {
 			return
 		}
 		year, month, day := e.getPublishedDate().Date()
@@ -294,13 +291,14 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 			return fmt.Errorf("failed to init manager from file: %w", err)
 		}
 		e.dataFileLastUsedByManager = filePath
-		// return nil is created for the first time
+		loaded = true
 		return nil
 	} else if !e.IsCreateTempDataCopyEnabled() {
 		err = e.manager.ReloadFromOriginalFile()
 		if err != nil {
 			return fmt.Errorf("failed to reload manager from original file: %w", err)
 		}
+		loaded = true
 		return nil
 	}
 
@@ -314,6 +312,7 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 
 	e.removeCopy(e.dataFileLastUsedByManager)
 	e.dataFileLastUsedByManager = filePath
+	loaded = true
 
 	return nil
 }
