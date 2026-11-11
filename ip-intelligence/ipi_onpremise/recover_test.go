@@ -100,7 +100,7 @@ func TestPanicInAPulledReloadIsLoggedAndReloadingCarriesOn(t *testing.T) {
 
 	server.publish(good)
 	waitFor(t, "the panic to be logged", func() bool {
-		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'IpIntelligenceEngine'", recoverTestPanic)
+		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'IpiOnPremiseEngine'", recoverTestPanic)
 	})
 	if got := e.asnName(t); got != answer {
 		t.Errorf("AsnName is %q after the panic, was %q", got, answer)
@@ -134,7 +134,7 @@ func TestPanicInAWatchedReloadIsLoggedAndWatchingCarriesOn(t *testing.T) {
 
 	replaceFile(t, data, good)
 	waitFor(t, "the panic to be logged", func() bool {
-		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'IpIntelligenceEngine'",
+		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'IpiOnPremiseEngine'",
 			recoverTestPanic)
 	})
 	replaceFile(t, data, marked)
