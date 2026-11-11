@@ -33,8 +33,9 @@ import (
 // {{&x}} and {{{x}}}), sections ({{#x}}...{{/x}}), inverted sections
 // ({{^x}}...{{/x}}) and comments ({{! x}}), with a line that holds only one
 // of the last three tags and spaces or tabs removed, which the specification
-// calls a standalone line. The template's sections are all booleans and it
-// iterates no lists, so a full Mustache engine is unnecessary.
+// calls a standalone line. A closing tag closes the innermost open section,
+// and its name is not checked. The template's sections are all booleans and
+// it iterates no lists, so a full Mustache engine is unnecessary.
 
 type mustacheNode interface {
 	render(ctx map[string]any, b *strings.Builder)
