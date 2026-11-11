@@ -207,8 +207,10 @@ func (results *ResultsHash) IterationsByIndex(index uint32) (int32, error) {
 	return int32(cResults[index].iterations), nil
 }
 
-// Drift returns the maximum drift for a matched substring. A graph that cannot
-// be read counts as one that matched nothing.
+// Drift returns the drift of every result added together, each result's drift
+// being how far, in character positions, the substring's hashes were found
+// from where they were expected. A graph that cannot be read counts as one
+// that matched nothing.
 func (results *ResultsHash) Drift() int32 {
 	_ = results.evaluateAll()
 	drift := int32(0)

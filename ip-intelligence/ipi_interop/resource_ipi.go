@@ -69,7 +69,10 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 // keeps the configuration and the property names the manager was created
 // with, or with no names, those of the first data file it loaded, as a reload
 // of the original file does, so each index names the same property
-// afterwards. A failed reload keeps the data set in use and returns an error.
+// afterwards. The C reload makes the new data set active through
+// fiftyoneDegreesResourceReplace, which frees the data set it replaced once the
+// last lookup using it has finished, so nothing is held here. A failed reload
+// keeps the data set in use and returns an error.
 //
 // Deprecated: config and properties are ignored, because a reload keeps the
 // manager's configuration and names. Pass the values the manager was created
@@ -124,4 +127,21 @@ func GetPublishedDate(manager *ResourceManager) time.Time {
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 	published := cDataSet.header.published
 	return time.Date(int(published.year), time.Month(published.month), int(published.day), 0, 0, 0, 0, time.UTC)
+}
+
+// GetNextUpdateDate returns the date after which the loaded data file expects
+// a new data file to be available, or the zero time when the data file gives
+// no date.
+func GetNextUpdateDate(manager *ResourceManager) time.Time {
+	cDataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	if cDataSet == nil {
+		return time.Time{}
+	}
+	// Release the dataset
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+	next := cDataSet.header.nextUpdate
+	if next.year == 0 {
+		return time.Time{}
+	}
+	return time.Date(int(next.year), time.Month(next.month), int(next.day), 0, 0, 0, 0, time.UTC)
 }

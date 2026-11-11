@@ -3,6 +3,7 @@ package common_go
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
@@ -313,7 +314,7 @@ func TestDoDataFileRequest_Success(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -343,7 +344,7 @@ func TestDoDataFileRequest_GzipContent(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -363,7 +364,7 @@ func TestDoDataFileRequest_NotModified(t *testing.T) {
 	logger := &LogWrapper{}
 	timestamp := time.Now()
 
-	result, err := doDataFileRequest(server.URL, logger, &timestamp, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, &timestamp, filepath.Join(t.TempDir(), "data"))
 
 	if !errors.Is(err, ErrFileNotModified) {
 		t.Errorf("doDataFileRequest() error = %v, want ErrFileNotModified", err)
@@ -382,7 +383,7 @@ func TestDoDataFileRequest_InvalidRetryAfter(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid Retry-After")
@@ -398,7 +399,7 @@ func TestDoDataFileRequest_ServerError(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for server error")
@@ -420,7 +421,7 @@ func TestDoDataFileRequest_InvalidMD5(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid MD5")
@@ -441,7 +442,7 @@ func TestDoDataFileRequest_NoMD5Header(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -454,7 +455,7 @@ func TestDoDataFileRequest_NoMD5Header(t *testing.T) {
 func TestDoDataFileRequest_InvalidURL(t *testing.T) {
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest("invalid://url", logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), "invalid://url", logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid URL")
@@ -465,7 +466,7 @@ func TestDoDataFileRequest_InvalidURL(t *testing.T) {
 }
 
 // A failed pull must leave the current data file untouched and no temp file behind.
-func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
+func TestPull_KeepsDataFileOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.hash")
 	if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
@@ -482,9 +483,6 @@ func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
 			updater.SetDataFile(dataFile)
 			updater.SetLoggerEnabled(false)
 
-			if next := updater.doFilePulling(make(chan struct{}, 1)); next != retryMs {
-				t.Errorf("next pull in %d ms, want %d", next, retryMs)
-			}
 			if got := readTempFile(t, dataFile); got != "current" {
 				t.Errorf("data file content = %q, want unchanged", got)
 			}
@@ -496,8 +494,48 @@ func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
 	}
 }
 
+// failedPullIntervalMs is a polling interval no default uses, so a test can
+// tell it from any other wait.
+const failedPullIntervalMs = 47 * 60 * 1000
+
+// A failed pull is tried again after the polling interval, as a check that
+// finds nothing is, so a failing server is not asked again every second.
+// See https://github.com/51Degrees/specifications/blob/67ead69/pipeline-specification/features/data-updates.md#update-polling
+func TestPull_TriesAgainAfterThePollingInterval(t *testing.T) {
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refused.Close()
+	for name, test := range map[string]struct {
+		server  *httptest.Server
+		missing bool
+	}{
+		"connection refused": {server: refused},
+		"server error":       {server: createMockServer(http.StatusInternalServerError, nil, nil)},
+		"bad md5":            {server: createMockServer(http.StatusOK, map[string]string{"Content-MD5": "wrong"}, []byte("new"))},
+		"no data file":       {server: createMockServer(http.StatusOK, nil, []byte("new")), missing: true},
+		"429 without a time": {server: createMockServer(http.StatusTooManyRequests, nil, nil)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer test.server.Close()
+			dataFile := filepath.Join(t.TempDir(), "data.hash")
+			if !test.missing {
+				if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			updater := NewFileUpdater(test.server.URL)
+			updater.SetDataFile(dataFile)
+			updater.SetLoggerEnabled(false)
+			updater.SetDataFilePullEveryMs(failedPullIntervalMs)
+
+			if next, _, _ := updater.pull(make(chan struct{}, 1)); next != failedPullIntervalMs {
+				t.Errorf("next pull in %d ms, want the polling interval of %d ms", next, failedPullIntervalMs)
+			}
+		})
+	}
+}
+
 // A successful pull replaces the data file with the uncompressed download in one rename.
-func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
+func TestPull_ReplacesDataFile(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.hash")
 	if err := os.WriteFile(dataFile, []byte("current"), 0640); err != nil {
@@ -520,7 +558,7 @@ func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
 	updater.SetIsFileWatcherEnabled(false) // the pull itself must announce the new file
 	reload := make(chan struct{}, 1)
 
-	if next := updater.doFilePulling(reload); next != updater.GetDataFilePullEveryMs() {
+	if next, _, _ := updater.pull(reload); next != updater.GetDataFilePullEveryMs() {
 		t.Errorf("next pull in %d ms, want %d", next, updater.GetDataFilePullEveryMs())
 	}
 	if got := readTempFile(t, dataFile); got != "new content" {

@@ -88,8 +88,9 @@ func withoutSettings(environment []string) []string {
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
 		switch strings.ToUpper(strings.SplitN(variable, "=", 2)[0]) {
-		case "DATA_FILE", "DD_DATA_FILE", "EVIDENCE_YAML", "LICENSE_KEY",
-			"DEVICE_DETECTION_KEY", "IPI_KEY", "IPI_DATA_FILE_URL":
+		case "_51DEGREES_IPI_PATH", "_51DEGREES_DD_PATH",
+			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY",
+			"_51DEGREES_IPI_DATA_FILE_URL":
 			continue
 		}
 		kept = append(kept, variable)
