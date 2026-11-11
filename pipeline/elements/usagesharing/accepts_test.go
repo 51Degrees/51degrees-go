@@ -249,7 +249,7 @@ func TestUsageSharingSharesTheSessionValuesOfTheWebRequest(t *testing.T) {
 // string or form parameters they follow the query rule, so they are shared
 // when allow listed, when all query string parameters are shared or when all
 // Evidence is shared.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
 func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 	fiftyone := []string{"fiftyone.resource-key", "fiftyone.license-key"}
 	query := []string{"query.resource", "query.license", "query.licence"}

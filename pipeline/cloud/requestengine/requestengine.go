@@ -24,7 +24,7 @@
 // single HTTP call to a remote 51Degrees cloud service per Flow Data and exposes
 // the raw JSON response for downstream Cloud Aspect Engines to deserialize.
 //
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md
 package requestengine
 
 import (
@@ -134,7 +134,7 @@ type accessiblePropertiesResponse struct {
 // often can keep the state from one build, for example as JSON, and give it
 // to the next build with Builder.SetDiscoveryState so that build makes no
 // request.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#resilience
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#resilience
 type DiscoveryState struct {
 	// EvidenceKeys are the Evidence keys the cloud service accepts.
 	EvidenceKeys []string `json:"EvidenceKeys"`
@@ -201,7 +201,7 @@ func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bo
 // then, a call fetches them unless the engine is in its recovery period, so
 // call it while processing, where SuppressProcessExceptions covers a failure.
 // It returns a copy, so a caller may change it without changing the engine.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) {
 	if p := e.products.Load(); p != nil {
 		return cloneProducts(*p), nil
@@ -296,7 +296,7 @@ func (e *CloudRequestEngine) postEndpoint(endpoint string, form url.Values) ([]b
 
 // credentials returns the configured keys as the form fields the cloud
 // service reads them from, being resource and license.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
 func (e *CloudRequestEngine) credentials() url.Values {
 	form := url.Values{}
 	if e.resourceKey != "" {
@@ -310,7 +310,7 @@ func (e *CloudRequestEngine) credentials() url.Values {
 
 // licenseKeys returns the License Key, which no error or log entry may hold
 // in full, or none.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/logging.md#license-keys
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/logging.md#license-keys
 func (e *CloudRequestEngine) licenseKeys() []string {
 	if e.licenseKey == "" {
 		return nil
@@ -333,7 +333,7 @@ func (e *CloudRequestEngine) maskLicenseKey(text string) string {
 // because its nullreason explains it. Names are compared in any letter case,
 // because the answer is in lower case. The answer cannot change while the
 // key and the list stay the same, so the comparison is made once.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#properties-the-remote-server-did-not-return
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#properties-the-remote-server-did-not-return
 func (e *CloudRequestEngine) reportPropertiesNotReturned(body string) {
 	if len(e.requestedProperties) == 0 || e.notReturnedReported.Load() {
 		return
@@ -383,9 +383,9 @@ var engineFields = map[string]bool{
 	"resource": true, "license": true, "licence": true, "values": true}
 
 // buildForm constructs the URL-encoded form, being the credentials, the
-// Requested Properties as values, comma separated, and the Evidence the
-// cloud service needs, as resolveEvidence gives it.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// Requested Properties as values, comma separated, and the Evidence, as
+// resolveEvidence gives it.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	form := e.credentials()
 	if len(e.requestedProperties) > 0 {
@@ -397,26 +397,28 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	return form
 }
 
-// resolveEvidence returns the Evidence whose keys the cloud service accepts,
-// with each prefix removed, leaving out any that strips to a field the engine
-// writes itself. Conflicts between prefixes are resolved using the defined
-// precedence. It returns nothing while the accepted keys are not known, which
-// Process does not allow, as it fetches them first.
+// resolveEvidence returns every Evidence value with its prefix removed,
+// leaving out the web request, which is not a value to send, and any that
+// strips to a field the engine writes itself. The keys the cloud service
+// accepts do not limit it, as what the service uses changes and the other
+// Evidence helps it improve. Conflicts between prefixes are resolved using
+// the defined precedence, so a key with no prefix ranks as a key whose
+// prefix is the whole key, giving query the precedence of query Evidence
+// and anything else the lowest precedence.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
 	type choice struct {
 		prefix string
 		value  string
 	}
-	accepted := e.evidenceKeys.Load()
-	if accepted == nil {
-		return nil
-	}
 	best := map[string]choice{}
 	for key, raw := range fd.Evidence().AsMap() {
-		if !accepted.Include(key) {
+		if strings.EqualFold(key, core.EvidenceHTTPRequest) {
 			continue
 		}
 		prefix, field := core.SplitEvidenceKey(key)
+		if prefix == "" {
+			prefix = key
+		}
 		if engineFields[strings.ToLower(field)] {
 			continue
 		}
@@ -449,7 +451,7 @@ const maxLoggedContentBytes = 512
 // checkResponse implements the error scenarios required of cloud HTTP requests.
 // The License Key is masked in each message, as the cloud service may write
 // it in its answer.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
 func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
 		return NewCloudResponseError(e.maskLicenseKey(strings.Join(msgs, "; ")), status, headers)
@@ -475,7 +477,7 @@ func (e *CloudRequestEngine) logWarnings(raw []byte) {
 }
 
 // --- Discovery -----------------------------------------------------------
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#start-up-activity
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#start-up-activity
 
 // discoverAtBuild makes both discovery requests in parallel, so the build
 // waits for one timeout at most. A 4xx answer to either is a configuration
@@ -644,7 +646,7 @@ func (f acceptedEvidence) Keys() []string {
 // credentials are posted in the body instead, so the License Key stays out
 // of the URL and of request logs. For a License Key alone the service answers
 // with every Property the License Key entitles.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#discovery-under-a-license-key
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#discovery-under-a-license-key
 func (e *CloudRequestEngine) fetchAccessibleProperties() (map[string]ProductMeta, error) {
 	var raw []byte
 	var err error
@@ -767,7 +769,7 @@ func (e *CloudRequestEngine) recordFailure(err error) {
 // those count toward the recovery period, because the period stops every
 // visitor's requests, and any other status from 400 to 499 answers the
 // content of that one request.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
 func signalsServiceTrouble(err error) bool {
 	var cloudErr *CloudRequestError
 	if !errors.As(err, &cloudErr) {
