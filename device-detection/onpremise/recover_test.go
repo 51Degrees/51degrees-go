@@ -66,7 +66,7 @@ func TestPanicInAPullIsLoggedAndPullingCarriesOn(t *testing.T) {
 	logs.armed.Store(true)
 
 	waitFor(t, "the panic to be logged", func() bool {
-		return logs.has("error occurred when pulling data", recoverTestPanic)
+		return logs.has("An unhandled error occurred while checking for automatic updates", recoverTestPanic)
 	})
 	pulls := logs.count(pullingLine)
 	waitFor(t, "a pull after the panic", func() bool {
@@ -100,7 +100,7 @@ func TestPanicInAPulledReloadIsLoggedAndReloadingCarriesOn(t *testing.T) {
 
 	server.publish(good)
 	waitFor(t, "the panic to be logged", func() bool {
-		return logs.has("An error occurred while applying a data file update to DeviceDetectionHashEngine", recoverTestPanic)
+		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'DeviceDetectionHashEngine'", recoverTestPanic)
 	})
 	if got := e.isMobile(t); got != answer {
 		t.Errorf("IsMobile is %q after the panic, was %q", got, answer)
@@ -134,7 +134,7 @@ func TestPanicInAWatchedReloadIsLoggedAndWatchingCarriesOn(t *testing.T) {
 
 	replaceFile(t, data, good)
 	waitFor(t, "the panic to be logged", func() bool {
-		return logs.has("An error occurred while applying a data file update to DeviceDetectionHashEngine",
+		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'DeviceDetectionHashEngine'",
 			recoverTestPanic)
 	})
 	replaceFile(t, data, marked)

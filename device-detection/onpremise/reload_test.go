@@ -33,7 +33,7 @@ const (
 )
 
 // applyErrorLogged starts the message logged when a data file cannot be loaded.
-const applyErrorLogged = "An error occurred while applying a data file update to DeviceDetectionHashEngine"
+const applyErrorLogged = "Error during check for data update. An error occurred when applying a data update to engine 'DeviceDetectionHashEngine' after 1 tries"
 
 // unusableFile is a data file that a load must refuse, with part of the
 // message the refusal gives.

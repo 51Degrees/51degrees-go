@@ -99,7 +99,8 @@ func TestScheduleFilePulling_APanicInAPullIsLoggedAndPullingCarriesOn(t *testing
 	}
 	stopPuller(stopCh, reload)
 
-	if !logs.has("error occurred when pulling data: " + pullTestPanic) {
+	if !logs.has("An unhandled error occurred while checking for automatic updates for engine 'Engine'. " +
+		"Error detail: panic: " + pullTestPanic) {
 		t.Error("the panic was not logged")
 	}
 	mu.Lock()
