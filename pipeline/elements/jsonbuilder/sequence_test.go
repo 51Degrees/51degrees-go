@@ -33,6 +33,11 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/sequence"
 )
 
+// noSequenceMessage is the specification's text for the error, the same in
+// every language.
+const noSequenceMessage = "The JSON Builder needs a sequence number. Place " +
+	"a Sequence Element before the JSON Builder in the Pipeline."
+
 // The JSON Builder takes the sequence number from the integer in the
 // query.sequence Evidence, which the Sequence Element writes. With an integer
 // it builds the JSON. With none, or with a value that is not an integer such
@@ -113,9 +118,13 @@ func checkSequenceNumber(t *testing.T, withSequence bool, value any,
 		if !errors.As(failure, &config) {
 			t.Errorf("the error %T is not a *core.ConfigurationError", failure)
 		}
-		if !strings.Contains(failure.Error(), "Sequence Element") {
-			t.Errorf("the error %q does not say a Sequence Element is needed",
-				failure)
+		if config != nil && config.Message != noSequenceMessage {
+			t.Errorf("the error message is %q, want %q", config.Message,
+				noSequenceMessage)
+		}
+		if !strings.HasSuffix(failure.Error(), noSequenceMessage) {
+			t.Errorf("the error %q does not end with %q", failure,
+				noSequenceMessage)
 		}
 		if getErr == nil {
 			t.Errorf("the JSON Builder set its JSON %q", data.(*Data).JSON())
