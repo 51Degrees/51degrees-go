@@ -236,6 +236,22 @@ func TestRequiredPropertyIndexIgnoresCase(t *testing.T) {
 	}
 }
 
+// This tests a name given twice keeps the place it was first given, whatever
+// the letter case of the second, as the C library keeps it.
+func TestRequiredPropertyIndexOfANameGivenTwiceIsItsFirst(t *testing.T) {
+	manager := initResourceManager("IsMobile,BrowserName,ismobile", t)
+	defer freeResourceManager(manager, t)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+
+	for _, name := range []string{"IsMobile", "ismobile", "ISMOBILE"} {
+		if got := results.RequiredPropertyIndexFromName(name); got != 0 {
+			t.Errorf("Gave IsMobile first and ismobile third, so expected "+
+				"\"%s\" at index 0 but got %d.\n", name, got)
+		}
+	}
+}
+
 // This tests every index and value is the same after the data file is loaded
 // again, because the names the manager was given do not change.
 func TestRequiredPropertyIndexSurvivesReload(t *testing.T) {
