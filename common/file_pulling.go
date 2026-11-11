@@ -241,15 +241,6 @@ func (e *FileUpdater) pullRecovering(ctx context.Context, reloadFileEvents chan 
 	return nextMs
 }
 
-// doFilePulling handles the process of pulling a data file, saving it locally, and triggering reload events if necessary.
-// It checks for file modifications and makes an HTTP request to fetch the file.
-// The method returns the time in milliseconds before the next pull attempt, which is the polling interval unless the
-// server gave a Retry-After time.
-func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
-	next, _, _ := e.pull(reloadFileEvents)
-	return next
-}
-
 // pull does one pull and returns the time in milliseconds before the next one, whether a new data file replaced
 // the old one, and the error that stopped it. The new file is announced on reloadFileEvents, unless the file
 // watcher does that or the channel is nil.

@@ -527,7 +527,7 @@ func TestDoFilePulling_TriesAgainAfterThePollingInterval(t *testing.T) {
 			updater.SetLoggerEnabled(false)
 			updater.SetDataFilePullEveryMs(failedPullIntervalMs)
 
-			if next := updater.doFilePulling(make(chan struct{}, 1)); next != failedPullIntervalMs {
+			if next, _, _ := updater.pull(make(chan struct{}, 1)); next != failedPullIntervalMs {
 				t.Errorf("next pull in %d ms, want the polling interval of %d ms", next, failedPullIntervalMs)
 			}
 		})
@@ -558,7 +558,7 @@ func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
 	updater.SetIsFileWatcherEnabled(false) // the pull itself must announce the new file
 	reload := make(chan struct{}, 1)
 
-	if next := updater.doFilePulling(reload); next != updater.GetDataFilePullEveryMs() {
+	if next, _, _ := updater.pull(reload); next != updater.GetDataFilePullEveryMs() {
 		t.Errorf("next pull in %d ms, want %d", next, updater.GetDataFilePullEveryMs())
 	}
 	if got := readTempFile(t, dataFile); got != "new content" {

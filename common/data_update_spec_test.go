@@ -112,7 +112,7 @@ func TestPull_SendsPublishedDate(t *testing.T) {
 	published := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
 	updater.SetPublishedDateFunc(func() time.Time { return published })
 
-	updater.doFilePulling(make(chan struct{}, 1))
+	updater.pull(make(chan struct{}, 1))
 
 	got := seen()
 	if len(got) != 1 || got[0] != published.Format(http.TimeFormat) {
@@ -142,7 +142,7 @@ func TestPull_FallsBackToModificationTime(t *testing.T) {
 				updater.SetPublishedDateFunc(published)
 			}
 
-			updater.doFilePulling(make(chan struct{}, 1))
+			updater.pull(make(chan struct{}, 1))
 
 			got := seen()
 			if len(got) != 1 || got[0] != modTime.Format(http.TimeFormat) {
@@ -158,7 +158,7 @@ func TestPull_DownloadsMissingDataFile(t *testing.T) {
 	defer server.Close()
 	updater, _, dataFile := newRecordingUpdater(t, server.URL)
 
-	if next := updater.doFilePulling(make(chan struct{}, 1)); next != updater.GetDataFilePullEveryMs() {
+	if next, _, _ := updater.pull(make(chan struct{}, 1)); next != updater.GetDataFilePullEveryMs() {
 		t.Errorf("next pull in %d ms, want %d", next, updater.GetDataFilePullEveryMs())
 	}
 	if got := seen(); len(got) != 1 || got[0] != "" {
@@ -348,7 +348,7 @@ func TestPull_LogsInformation(t *testing.T) {
 		server, _ := headerServer(http.StatusOK, "new data")
 		defer server.Close()
 		updater, log, _ := newRecordingUpdater(t, server.URL)
-		updater.doFilePulling(make(chan struct{}, 1))
+		updater.pull(make(chan struct{}, 1))
 		for _, want := range []string{
 			"INFO Checking for update",
 			"INFO Checking for update from '" + server.URL + "' for Engine 'TestEngine'",
@@ -366,7 +366,7 @@ func TestPull_LogsInformation(t *testing.T) {
 		if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		updater.doFilePulling(make(chan struct{}, 1))
+		updater.pull(make(chan struct{}, 1))
 		if !log.hasPrefix("INFO No data newer than ") ||
 			!strings.Contains(log.String(), " found at '"+server.URL+"' for Engine 'TestEngine'") {
 			t.Errorf("missing no newer data entry in:\n%s", log)
@@ -397,7 +397,7 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 		url := server.URL
 		server.Close()
 		updater, log, _ := newRecordingUpdater(t, url)
-		updater.doFilePulling(make(chan struct{}, 1))
+		updater.pull(make(chan struct{}, 1))
 		want := checkError + "Error accessing data update service at '" + url +
 			"' for engine 'TestEngine'. Error detail: "
 		if !log.hasPrefix(want) {
@@ -418,7 +418,7 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 			server, _ := headerServer(test.status, "")
 			defer server.Close()
 			updater, log, _ := newRecordingUpdater(t, server.URL)
-			updater.doFilePulling(make(chan struct{}, 1))
+			updater.pull(make(chan struct{}, 1))
 			want := checkError + fmt.Sprintf(test.want, server.URL)
 			if !log.has(want) {
 				t.Errorf("missing log entry %q in:\n%s", want, log)
@@ -429,7 +429,7 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 		server := createMockServer(http.StatusOK, map[string]string{"Content-MD5": "wrong"}, []byte("new"))
 		defer server.Close()
 		updater, log, _ := newRecordingUpdater(t, server.URL)
-		updater.doFilePulling(make(chan struct{}, 1))
+		updater.pull(make(chan struct{}, 1))
 		want := checkError + "Integrity check failed. MD5 hash in HTTP response 'wrong' for " +
 			"'TestEngine'data update does not match calculated hash for the downloaded file '"
 		if !log.hasPrefix(want) {
@@ -440,7 +440,7 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 		server, _ := headerServer(http.StatusOK, "new data")
 		defer server.Close()
 		updater, log, _ := newRecordingUpdater(t, server.URL)
-		updater.doFilePulling(make(chan struct{}, 1))
+		updater.pull(make(chan struct{}, 1))
 		want := "WARN No MD5 hash included in data update response for '" + server.URL +
 			"'. Unable to verify data integrity"
 		if !log.has(want) {
@@ -455,7 +455,7 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 		// table has no row for.
 		missingDir := filepath.Join(t.TempDir(), "missing", "data.hash")
 		updater.SetDataFile(missingDir)
-		updater.doFilePulling(make(chan struct{}, 1))
+		updater.pull(make(chan struct{}, 1))
 		want := "ERROR An unhandled error occurred while checking for automatic updates for engine " +
 			"'TestEngine'. Error detail: "
 		if !log.hasPrefix(want) {
@@ -521,7 +521,7 @@ func TestPull_LogsAFileThatCannotBeReplaced(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dataFile, "child"), []byte("x"), 0644); err != nil {
 				t.Fatal(err)
 			}
-			updater.doFilePulling(make(chan struct{}, 1))
+			updater.pull(make(chan struct{}, 1))
 			if !log.hasPrefix(c.want) {
 				t.Errorf("missing log entry starting %q in:\n%s", c.want, log)
 			}
@@ -534,7 +534,7 @@ func TestPull_LogsAMissingTemporaryFilePath(t *testing.T) {
 	updater.SetEngineName("TestEngine")
 	log := &recordedLog{}
 	updater.SetCustomLogger(log)
-	if next := updater.doFilePulling(make(chan struct{}, 1)); next != updater.GetDataFilePullEveryMs() {
+	if next, _, _ := updater.pull(make(chan struct{}, 1)); next != updater.GetDataFilePullEveryMs() {
 		t.Errorf("next pull in %d ms, want the polling interval of %d ms", next, updater.GetDataFilePullEveryMs())
 	}
 	want := "ERROR Error during check for data update. The data file 'TestEngine' is checking for updates " +
