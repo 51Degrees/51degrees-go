@@ -1,0 +1,36 @@
+name: Environment variable names
+
+# The name rule is a test in the common module, so it runs with the unit tests
+# in the full build. This workflow runs it on its own as well, on every pull
+# request, because the full build takes an hour and a name is worth catching in
+# a minute. It is the same job the other 51Degrees language repositories do with
+# their own check script.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - rc
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  environment-variable-names:
+    name: No tracked file names an old variable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: common/go.mod
+
+      - name: Check the names
+        working-directory: common
+        run: go test -v -run 'OldVariable' ./...
