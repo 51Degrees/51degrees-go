@@ -57,7 +57,7 @@ const (
 	defaultDataFileUrl = "" // TODO: set default file path url (when it will be available)
 
 	// engineTypeName names the engine in the data update log messages.
-	engineTypeName = "IpIntelligenceEngine"
+	engineTypeName = "IpiOnPremiseEngine"
 )
 
 // New creates an instance of the on-premise IP intelligence engine.  WithDataFile must be provided
