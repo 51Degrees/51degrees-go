@@ -24,7 +24,7 @@ package requestengine
 
 // These tests follow the rule for which failures count towards the
 // recovery period.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
 
 import (
 	"errors"
