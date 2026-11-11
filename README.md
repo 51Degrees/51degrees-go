@@ -84,7 +84,7 @@ pwsh ci/create-workspace.ps1
 
 The engines compile C sources made from the `cxx` submodule. After moving the submodule to another 51degrees-cxx release, run `pwsh ci/update-amalgamation.ps1` and commit the result. The build fails when they don't match.
 
-The JavaScript Builder Element embeds a copy of the `javascript-templates` submodule's `JavaScriptResource.mustache`. After moving the submodule, run `pwsh ci/update-javascript-template.ps1` and commit the result. The build fails when the copy doesn't match.
+The JavaScript Builder Element embeds a copy of the `javascript-templates` submodule's `.mustache` files from `pipeline/elements/javascriptbuilder/javascript-templates`. After moving the submodule, copy its `.mustache` files there and commit them. The JavaScript templates check (`pwsh ci/check-javascript-templates.ps1`) fails when the copy doesn't match.
 
 ## Find out more
 

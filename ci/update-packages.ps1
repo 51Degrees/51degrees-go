@@ -21,11 +21,14 @@ if ($release -and $release -ne $current) {
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
 
-# Move javascript-templates to the head of its default branch, as the nightly
-# submodule update does in the other languages, and copy the JavaScript
-# template from it.
-git -C $RepoName submodule update --remote javascript-templates
-& (Join-Path $RepoName ci/update-javascript-template.ps1)
+# The JavaScript Builder Element keeps a committed copy of the templates,
+# because a Go module is built from git's archive of a tag, which leaves a
+# submodule empty. The submodule moves to the head of javascript-templates
+# first, so the copy and the commit it came from change in the same pull
+# request. ci/check-javascript-templates.ps1 fails when they differ.
+git -C $RepoName submodule update --init --remote javascript-templates
+Copy-Item -Path (Join-Path $RepoName 'javascript-templates/*.mustache') `
+    -Destination (Join-Path $RepoName 'pipeline/elements/javascriptbuilder/javascript-templates') -Force
 
 # Update the dependencies of each module, without the workspace. The examples
 # move to the latest release of the published modules. A change to them alone

@@ -81,9 +81,9 @@ func firstDifference(got, want string) string {
 func TestTemplateIsTheSharedTemplate(t *testing.T) {
 	shared := lf(readSharedTemplate(t))
 	if embedded := lf(templateSource); embedded != shared {
-		t.Fatalf("the embedded template is not %s, %s, so run "+
-			"ci/update-javascript-template.ps1", sharedTemplatePath,
-			firstDifference(embedded, shared))
+		t.Fatalf("the embedded template is not %s, %s, so copy the "+
+			"submodule's file into this package's javascript-templates "+
+			"folder", sharedTemplatePath, firstDifference(embedded, shared))
 	}
 }
 

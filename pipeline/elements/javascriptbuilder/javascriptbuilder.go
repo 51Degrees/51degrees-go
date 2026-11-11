@@ -102,12 +102,11 @@ func validObjectName(s string) bool {
 }
 
 // templateSource is javascript-templates' JavaScriptResource.mustache, the
-// template every 51Degrees language renders. The package holds a copy
-// because a Go module carries no submodule, and
-// ci/update-javascript-template.ps1 makes the copy from the
-// javascript-templates submodule.
+// template every 51Degrees language renders. The package holds a copy of the
+// javascript-templates submodule's file because a Go module carries no
+// submodule, and ci/check-javascript-templates.ps1 fails when they differ.
 //
-//go:embed JavaScriptResource.mustache
+//go:embed javascript-templates/JavaScriptResource.mustache
 var templateSource string
 
 // DataKey is the Element Data key for the JavaScript Builder Element.
