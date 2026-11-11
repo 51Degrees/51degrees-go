@@ -313,6 +313,34 @@ func TestValuesStringByIndexMatchesByName(t *testing.T) {
 	}
 }
 
+// This tests a name the data set has no property for reads as no value,
+// whether it is read by its name or by its index, rather than reading past
+// the end of the data set's properties.
+func TestReadOfANameTheDataSetDoesNotHave(t *testing.T) {
+	manager := initResourceManager("NoSuchProperty,IsMobile", t)
+	defer freeResourceManager(manager, t)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		t.Fatalf("Failed to perform detection on User-Agent \"%s\": %v\n",
+			uaMobile, err)
+	}
+
+	byName, err := results.ValuesString("NoSuchProperty", ",")
+	if err != nil {
+		t.Errorf("Failed to read \"NoSuchProperty\" by name: %v\n", err)
+	}
+	byIndex, err := results.ValuesStringByIndex(0, ",")
+	if err != nil {
+		t.Errorf("Failed to read \"NoSuchProperty\" at index 0: %v\n", err)
+	}
+	if byName != "" || byIndex != "" {
+		t.Errorf("Read \"NoSuchProperty\" as \"%s\" by name and \"%s\" at "+
+			"index 0, and expected neither to have a value.\n",
+			byName, byIndex)
+	}
+}
+
 // This tests a manager given no name still reads by name, because it has no
 // table of names and asks the data set instead.
 func TestNoNamesManagerReadsByName(t *testing.T) {

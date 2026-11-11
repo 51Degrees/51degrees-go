@@ -420,6 +420,16 @@ func valuesStringWithSize(
 	requiredPropertyIndex int,
 	defaultSize uint64,
 	separator string) (value string, err error) {
+	// The data set may have no property at the index, because a name it does
+	// not have keeps its place among the names given. The C library's read by
+	// name gives no value for one of those, and its read by index reads past
+	// the end of the collection instead, so the same check is made here.
+	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
+	if C.PropertiesGetAvailableIndex(
+		dataSet.b.b.available, C.int(requiredPropertyIndex)) < 0 {
+		return "", nil
+	}
+
 	// Create slice based on a certain size. This size will be updated
 	// if the actual size is higher.
 	var buffer []C.char
