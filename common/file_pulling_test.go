@@ -482,15 +482,52 @@ func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
 			updater.SetDataFile(dataFile)
 			updater.SetLoggerEnabled(false)
 
-			if next := updater.doFilePulling(make(chan struct{}, 1)); next != retryMs {
-				t.Errorf("next pull in %d ms, want %d", next, retryMs)
-			}
 			if got := readTempFile(t, dataFile); got != "current" {
 				t.Errorf("data file content = %q, want unchanged", got)
 			}
 			entries, _ := os.ReadDir(dir)
 			if len(entries) != 1 {
 				t.Errorf("directory has %d entries, want only the data file", len(entries))
+			}
+		})
+	}
+}
+
+// failedPullIntervalMs is a polling interval no default uses, so a test can
+// tell it from any other wait.
+const failedPullIntervalMs = 47 * 60 * 1000
+
+// A failed pull is tried again after the polling interval, as a check that
+// finds nothing is, so a failing server is not asked again every second.
+// See https://github.com/51Degrees/specifications/blob/67ead69/pipeline-specification/features/data-updates.md#update-polling
+func TestDoFilePulling_TriesAgainAfterThePollingInterval(t *testing.T) {
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refused.Close()
+	for name, test := range map[string]struct {
+		server  *httptest.Server
+		missing bool
+	}{
+		"connection refused": {server: refused},
+		"server error":       {server: createMockServer(http.StatusInternalServerError, nil, nil)},
+		"bad md5":            {server: createMockServer(http.StatusOK, map[string]string{"Content-MD5": "wrong"}, []byte("new"))},
+		"no data file":       {server: createMockServer(http.StatusOK, nil, []byte("new")), missing: true},
+		"429 without a time": {server: createMockServer(http.StatusTooManyRequests, nil, nil)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer test.server.Close()
+			dataFile := filepath.Join(t.TempDir(), "data.hash")
+			if !test.missing {
+				if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			updater := NewFileUpdater(test.server.URL)
+			updater.SetDataFile(dataFile)
+			updater.SetLoggerEnabled(false)
+			updater.SetDataFilePullEveryMs(failedPullIntervalMs)
+
+			if next := updater.doFilePulling(make(chan struct{}, 1)); next != failedPullIntervalMs {
+				t.Errorf("next pull in %d ms, want the polling interval of %d ms", next, failedPullIntervalMs)
 			}
 		})
 	}

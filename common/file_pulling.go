@@ -20,8 +20,6 @@ import (
 	"time"
 )
 
-const retryMs = 1000
-
 // pullRandom draws the random time added to each polling interval. It has
 // its own source, seeded from crypto/rand, because the global source is not
 // seeded by every Go version this module supports, and unseeded servers
@@ -67,7 +65,7 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 	// if update on start is enabled, perform the pull immediately
 	if e.isUpdateOnStartEnabled {
 		e.logger.Printf("Doing pull on start")
-		nextIterationInMs = e.doFilePulling(reloadFileEvents)
+		nextIterationInMs = e.pullRecovering(reloadFileEvents)
 	}
 
 	for {
@@ -78,14 +76,28 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 		// interval to perform the pull of updated data, plus a random time
 		// up to the randomization maximum
 		case <-time.After(time.Duration(nextIterationInMs+drawRandomizationMs(e.randomization)) * time.Millisecond):
-			nextIterationInMs = e.doFilePulling(reloadFileEvents)
+			nextIterationInMs = e.pullRecovering(reloadFileEvents)
 		}
 	}
 }
 
+// pullRecovering makes one pull and returns the time in milliseconds before
+// the next. A panic in the pull is logged and the next pull comes after the
+// polling interval, so one failed pull does not end automatic updates.
+func (e *FileUpdater) pullRecovering(reloadFileEvents chan struct{}) (nextMs int) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.logger.Printf("error occurred when pulling data: %v", r)
+			nextMs = e.dataFilePullEveryMs
+		}
+	}()
+	return e.doFilePulling(reloadFileEvents)
+}
+
 // doFilePulling handles the process of pulling a data file, saving it locally, and triggering reload events if necessary.
-// It checks for file modifications, makes an HTTP request to fetch the file, and handles retry logic for failures.
-// The method returns the time in milliseconds before the next pull attempt.
+// It checks for file modifications and makes an HTTP request to fetch the file.
+// The method returns the time in milliseconds before the next pull attempt, which is the polling interval unless the
+// server gave a Retry-After time.
 func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 	e.logger.Printf("Pulling data from %s", MaskLicenseKeysIn(e.GetDataFileUrl(),
 		LicenseKeysInURL(e.GetDataFileUrl())))
@@ -96,9 +108,7 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 		file, err := os.Stat(e.GetDataFile())
 		if err != nil {
 			e.logger.Printf("failed to get file info: %v", err)
-			// retry after 1 second, since we have unhandled error
-			// this can happen from file info error or something else
-			return retryMs
+			return e.GetDataFilePullEveryMs()
 		}
 		modTime := file.ModTime().UTC()
 		lastModificationTimestamp = &modTime
@@ -117,10 +127,8 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 			// retry after the specified time
 			return fileResponse.retryAfter * 1000
 		} else {
-			e.logger.Printf("retrying after 1 second")
-			// retry after 1 second, since we have unhandled error
-			// this can happen from network stutter or something else
-			return retryMs
+			e.logger.Printf("retrying after the polling interval")
+			return e.GetDataFilePullEveryMs()
 		}
 	}
 
@@ -130,9 +138,7 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 	if err != nil {
 		os.Remove(fileResponse.path)
 		e.logger.Printf("failed to write data file: %v", err)
-		// retry after 1 second, since we have unhandled error
-		// this can happen from disk write error or something else
-		return retryMs
+		return e.GetDataFilePullEveryMs()
 	}
 	e.logger.Printf("data file written successfully: %d bytes", fileResponse.size)
 
