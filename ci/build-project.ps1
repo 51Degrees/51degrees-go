@@ -27,7 +27,9 @@ foreach ($product in Get-AffectedProducts $RepoName) {
             Copy-Item go.mod go.unreleased.mod
             Copy-Item go.sum go.unreleased.sum -ErrorAction SilentlyContinue
             go mod edit @replaces go.unreleased.mod
-            go build -modfile=go.unreleased.mod ./...
+            # Quoted, because PowerShell splits an unquoted -name=value argument
+            # at its first dot.
+            go build "-modfile=go.unreleased.mod" ./...
         } else {
             go build ./...
         }
