@@ -64,11 +64,19 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 	return nil
 }
 
-// ReloadFromFile replaces the data set being used by the resource manager with
-// one loaded from the specified data file, using the configuration and
-// properties given. It calls the C API fiftyoneDegreesIpiInitManagerFromFile,
-// which checks the status and the exception before it makes the new data set
-// active, so a file that fails to load leaves the data set in use unchanged.
+// ReloadFromFile reloads the data set of the manager from the data file at
+// filePath, through fiftyoneDegreesIpiReloadManagerFromFile. The new data set
+// keeps the configuration and the property names the manager was created
+// with, or with no names, those of the first data file it loaded, as a reload
+// of the original file does, so each index names the same property
+// afterwards. The C reload makes the new data set active through
+// fiftyoneDegreesResourceReplace, which frees the data set it replaced once the
+// last lookup using it has finished, so nothing is held here. A failed reload
+// keeps the data set in use and returns an error.
+//
+// Deprecated: config and properties are ignored, because a reload keeps the
+// manager's configuration and names. Pass the values the manager was created
+// with.
 func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties string, filePath string) error {
 	exp := NewException()
 	defer exp.Free()
@@ -76,22 +84,7 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 	cPath := C.CString(filePath)
 	defer C.free(unsafe.Pointer(cPath))
 
-	propsRequired := NewPropertiesRequired(properties)
-	defer propsRequired.Free()
-
-	// The init function makes the new data set active without releasing the
-	// one it replaces. Holding that one across the call and releasing it
-	// afterwards frees it once the last lookup using it has finished.
-	previous := C.DataSetGet(manager.CPtr)
-	defer C.DataSetRelease(previous)
-
-	s := C.IpiInitManagerFromFile(
-		manager.CPtr,
-		config.CPtr,
-		propsRequired.CPtr,
-		cPath,
-		exp.CPtr,
-	)
+	s := C.IpiReloadManagerFromFile(manager.CPtr, cPath, exp.CPtr)
 	return reloadError(s, exp, cPath)
 }
 
