@@ -3,6 +3,7 @@ package common_go
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	cryptorand "crypto/rand"
 	"encoding/binary"
@@ -66,7 +67,12 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 	// if update on start is enabled and has not run yet, perform the pull immediately
 	if e.isUpdateOnStartEnabled && !e.startUpPullDone {
 		e.logger.Infof("Updating on start-up")
-		nextIterationInMs = e.pullRecovering(reloadFileEvents)
+		next, stop := e.pullUnlessStopped(stopCh, reloadFileEvents)
+		if stop != nil {
+			stop.Done()
+			return
+		}
+		nextIterationInMs = next
 	}
 
 	nextIterationInMs = e.delayBeforeFirstPull(nextIterationInMs)
@@ -79,7 +85,12 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 		// interval to perform the pull of updated data, plus a random time
 		// up to the randomization maximum
 		case <-time.After(time.Duration(nextIterationInMs+drawRandomizationMs(e.randomization)) * time.Millisecond):
-			nextIterationInMs = e.pullRecovering(reloadFileEvents)
+			next, stop := e.pullUnlessStopped(stopCh, reloadFileEvents)
+			if stop != nil {
+				stop.Done()
+				return
+			}
+			nextIterationInMs = next
 		}
 	}
 }
@@ -195,17 +206,39 @@ func (e *FileUpdater) engineLabel() string {
 	return e.engineName
 }
 
+// pullUnlessStopped makes one pull and returns the time in milliseconds before
+// the next. A stop that arrives while the pull runs cancels its request, so a
+// stop does not wait for a large data file to download, and is returned once
+// the pull has ended for the caller to answer.
+func (e *FileUpdater) pullUnlessStopped(
+	stopCh chan *sync.WaitGroup,
+	reloadFileEvents chan struct{}) (int, *sync.WaitGroup) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() { done <- e.pullRecovering(ctx, reloadFileEvents) }()
+	select {
+	case next := <-done:
+		return next, nil
+	case stop := <-stopCh:
+		cancel()
+		<-done
+		return 0, stop
+	}
+}
+
 // pullRecovering makes one pull and returns the time in milliseconds before
 // the next. A panic in the pull is logged and the next pull comes after the
 // polling interval, so one failed pull does not end automatic updates.
-func (e *FileUpdater) pullRecovering(reloadFileEvents chan struct{}) (nextMs int) {
+func (e *FileUpdater) pullRecovering(ctx context.Context, reloadFileEvents chan struct{}) (nextMs int) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logUnhandledError(fmt.Errorf("panic: %v", r))
 			nextMs = e.dataFilePullEveryMs
 		}
 	}()
-	return e.doFilePulling(reloadFileEvents)
+	nextMs, _, _ = e.pullWith(ctx, reloadFileEvents)
+	return nextMs
 }
 
 // doFilePulling handles the process of pulling a data file, saving it locally, and triggering reload events if necessary.
@@ -221,6 +254,12 @@ func (e *FileUpdater) doFilePulling(reloadFileEvents chan struct{}) int {
 // the old one, and the error that stopped it. The new file is announced on reloadFileEvents, unless the file
 // watcher does that or the channel is nil.
 func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
+	return e.pullWith(context.Background(), reloadFileEvents)
+}
+
+// pullWith does one pull as pull does, with its request ended when ctx is.
+// A pull that ctx ended is not logged as a failure.
+func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct{}) (int, bool, error) {
 	e.logger.Infof("Checking for update")
 
 	// The download is written next to the data file, so without a data file
@@ -241,8 +280,11 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 
 	// The download goes to a temp file next to the data file and is renamed over it, so the
 	// engine only ever sees the complete old file or the complete new one.
-	fileResponse, err := doDataFileRequest(e.dataFileUrl, e.logger, lastModificationTimestamp, e.GetDataFile())
+	fileResponse, err := doDataFileRequest(ctx, e.dataFileUrl, e.logger, lastModificationTimestamp, e.GetDataFile())
 	if err != nil {
+		if ctx.Err() != nil {
+			return e.GetDataFilePullEveryMs(), false, err
+		}
 		if errors.Is(err, ErrFileNotModified) {
 			e.logger.Infof("No data newer than %s found at '%s' for Engine '%s'",
 				formatSince(lastModificationTimestamp), e.maskedDataFileUrl(), e.engineLabel())
@@ -396,12 +438,13 @@ func tempFilePattern(dataFile string) string {
 // raw body is computed, so a multi-gigabyte data file needs no extra RAM. The directory needs free space for a second
 // copy of the data file until the caller renames the temp file over it.
 // Returns a FileResponse with the temp file path or an error if the request fails or conditions are not met.
-func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dataFile string) (*FileResponse, error) {
+func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
+	dataFile string) (*FileResponse, error) {
 	removeStaleTempFiles(dataFile, logger)
 
 	// An error net/http raises names the URL, so its license keys are masked.
 	keys := LicenseKeysInURL(url)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}

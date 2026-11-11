@@ -3,6 +3,7 @@ package common_go
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
@@ -313,7 +314,7 @@ func TestDoDataFileRequest_Success(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -343,7 +344,7 @@ func TestDoDataFileRequest_GzipContent(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -363,7 +364,7 @@ func TestDoDataFileRequest_NotModified(t *testing.T) {
 	logger := &LogWrapper{}
 	timestamp := time.Now()
 
-	result, err := doDataFileRequest(server.URL, logger, &timestamp, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, &timestamp, filepath.Join(t.TempDir(), "data"))
 
 	if !errors.Is(err, ErrFileNotModified) {
 		t.Errorf("doDataFileRequest() error = %v, want ErrFileNotModified", err)
@@ -382,7 +383,7 @@ func TestDoDataFileRequest_InvalidRetryAfter(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid Retry-After")
@@ -398,7 +399,7 @@ func TestDoDataFileRequest_ServerError(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for server error")
@@ -420,7 +421,7 @@ func TestDoDataFileRequest_InvalidMD5(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid MD5")
@@ -441,7 +442,7 @@ func TestDoDataFileRequest_NoMD5Header(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -454,7 +455,7 @@ func TestDoDataFileRequest_NoMD5Header(t *testing.T) {
 func TestDoDataFileRequest_InvalidURL(t *testing.T) {
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest("invalid://url", logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), "invalid://url", logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid URL")
