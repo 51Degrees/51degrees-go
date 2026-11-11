@@ -708,19 +708,26 @@ func (r *registration) currentDataTime() (time.Time, bool) {
 	return info.ModTime(), true
 }
 
+// fireCallbacks calls each update callback in turn. A callback that panics is
+// logged with the error table's last row and the callbacks after it are not
+// called, as the specification says. The panic is not passed to the caller.
 func (r *registration) fireCallbacks() {
 	for _, fn := range r.onUpdate {
-		// Isolate each callback: a panic in user code is logged and the
-		// remaining callbacks still run, rather than unwinding the caller.
-		func() {
-			defer func() {
-				if rec := recover(); rec != nil {
-					r.svc.logger.Error(r.unhandledMessage(), "panic", rec)
-				}
-			}()
-			fn()
-		}()
+		if !r.callback(fn) {
+			return
+		}
 	}
+}
+
+// callback calls fn, and reports whether it returned rather than panicked.
+func (r *registration) callback(fn func()) (returned bool) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.svc.logger.Error(r.unhandledMessage(), "panic", rec)
+		}
+	}()
+	fn()
+	return true
 }
 
 // RateLimitError is returned when the update server responds with HTTP 429.
