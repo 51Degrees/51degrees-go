@@ -75,9 +75,13 @@ func newPropertyIndexes(manager *ResourceManager) propertyIndexes {
 	for i := 0; i < count; i++ {
 		if name := C.PropertiesGetNameFromRequiredIndex(
 			available, C.int(i)); name != nil {
+			// A name given more than once keeps its first index, as in C.
 			given := C.GoString(&name.value)
-			indexes[given] = i
-			indexes[strings.ToLower(given)] = i
+			for _, key := range []string{given, strings.ToLower(given)} {
+				if _, found := indexes[key]; !found {
+					indexes[key] = i
+				}
+			}
 		}
 	}
 	return indexes
