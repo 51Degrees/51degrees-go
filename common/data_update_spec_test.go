@@ -534,8 +534,8 @@ func TestPull_LogsAMissingTemporaryFilePath(t *testing.T) {
 	updater.SetEngineName("TestEngine")
 	log := &recordedLog{}
 	updater.SetCustomLogger(log)
-	if next := updater.doFilePulling(make(chan struct{}, 1)); next != retryMs {
-		t.Errorf("next pull in %d ms, want %d", next, retryMs)
+	if next := updater.doFilePulling(make(chan struct{}, 1)); next != updater.GetDataFilePullEveryMs() {
+		t.Errorf("next pull in %d ms, want the polling interval of %d ms", next, updater.GetDataFilePullEveryMs())
 	}
 	want := "ERROR Error during check for data update. The data file 'TestEngine' is checking for updates " +
 		"but does not have a temporary file path configured."
