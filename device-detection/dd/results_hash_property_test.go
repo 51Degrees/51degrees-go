@@ -357,9 +357,62 @@ func TestReadOfANameTheDataSetDoesNotHave(t *testing.T) {
 	}
 }
 
-// This tests a manager given no name still reads by name, because it has no
-// table of names and asks the data set instead.
-func TestNoNamesManagerReadsByName(t *testing.T) {
+// This tests a manager given no name reads by index too. Its names are those
+// of the first data file loaded, in the order of the data set's available
+// properties, so each name's index is its place in AvailableProperties, and a
+// reload keeps every index and value.
+func TestNoNamesManagerReadsEveryPropertyByIndex(t *testing.T) {
+	manager := initResourceManager("", t)
+	defer freeResourceManager(manager, t)
+	read := func() map[string]string {
+		results := NewResultsHash(manager, 1, 0)
+		defer results.Free()
+		if err := results.MatchUserAgent(uaMobile); err != nil {
+			t.Fatalf("Failed to perform detection on User-Agent \"%s\": %v\n",
+				uaMobile, err)
+		}
+		values := map[string]string{}
+		for want, name := range results.AvailableProperties() {
+			if got := results.RequiredPropertyIndexFromName(name); got != want {
+				t.Errorf("Expected \"%s\" at index %d but got %d.\n",
+					name, want, got)
+			}
+			byName, err := results.ValuesString(name, ",")
+			if err != nil {
+				t.Fatalf("Failed to read \"%s\" by name: %v\n", name, err)
+			}
+			byIndex, err := results.ValuesStringByIndex(want, ",")
+			if err != nil {
+				t.Fatalf("Failed to read \"%s\" at index %d: %v\n",
+					name, want, err)
+			}
+			if byName != byIndex {
+				t.Errorf("Read \"%s\" as \"%s\" by name and \"%s\" at "+
+					"index %d.\n", name, byName, byIndex, want)
+			}
+			values[name] = byName
+		}
+		return values
+	}
+	before := read()
+	if len(before) == 0 {
+		t.Fatal("Expected a manager given no name to have properties.")
+	}
+	if err := manager.ReloadFromOriginalFile(); err != nil {
+		t.Fatalf("Failed to reload the data file: %v\n", err)
+	}
+	after := read()
+	for name, value := range before {
+		if after[name] != value {
+			t.Errorf("Read \"%s\" as \"%s\" before the reload and \"%s\" "+
+				"after.\n", name, value, after[name])
+		}
+	}
+}
+
+// This tests a manager given no name reads IsMobile by name and by index
+// alike.
+func TestNoNamesManagerReadsIsMobile(t *testing.T) {
 	manager := initResourceManager("", t)
 	defer freeResourceManager(manager, t)
 	results := NewResultsHash(manager, 1, 0)
