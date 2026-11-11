@@ -69,7 +69,10 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 // keeps the configuration and the property names the manager was created
 // with, or with no names, those of the first data file it loaded, as a reload
 // of the original file does, so each index names the same property
-// afterwards. A failed reload keeps the data set in use and returns an error.
+// afterwards. The C reload makes the new data set active through
+// fiftyoneDegreesResourceReplace, which frees the data set it replaced once the
+// last lookup using it has finished, so nothing is held here. A failed reload
+// keeps the data set in use and returns an error.
 //
 // Deprecated: config and properties are ignored, because a reload keeps the
 // manager's configuration and names. Pass the values the manager was created
