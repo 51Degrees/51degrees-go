@@ -87,6 +87,8 @@ type config struct {
 	shareURL            string
 	repeatInterval      time.Duration
 	recovery            recoveryConfig
+	trackSession        bool
+	sessionCookieName   string
 	// err refuses a configuration that cannot work, when the element is
 	// added to a Pipeline.
 	err error
@@ -149,8 +151,12 @@ func (e *Element) Process(fd core.FlowData) error {
 
 	// Share identical Evidence at most once in each repeat Evidence interval.
 	// The hash excludes values designed to make a request unique (e.g. the
-	// sequence).
-	shared, undo := e.tracker.share(hashEvidence(ev))
+	// sequence), and with track session on it covers the session cookie too.
+	hash := hashEvidence(ev)
+	if session, ok := e.trackedSession(fd); ok {
+		hash = hashWithSession(hash, session)
+	}
+	shared, undo := e.tracker.share(hash)
 	if !shared {
 		return nil
 	}
@@ -191,16 +197,94 @@ func (e *Element) sample() bool {
 	return e.rng.Float64() < e.cfg.sharePercentage
 }
 
-// shareableEvidence returns the Evidence values that pass the share-usage
-// filter, keyed by their full Evidence key.
+// shareableEvidence returns the values the element finds that isShared lets
+// through, keyed by their Evidence key. It finds every Evidence value and,
+// when the Evidence holds the web request as core.EvidenceHTTPRequest, the
+// request's parts too. A key found in both keeps the Evidence value, and the
+// request itself is never shared.
+// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
 func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
-	filter := e.EvidenceKeyFilter()
-	for key, val := range fd.Evidence().AsMap() {
-		if filter.Include(key) {
+	all := fd.Evidence().AsMap()
+	for key, val := range all {
+		if key != core.EvidenceHTTPRequest && e.isShared(key) {
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
+	if w, ok := all[core.EvidenceHTTPRequest].(core.WebRequest); ok {
+		for key, val := range requestEvidence(w) {
+			if _, found := all[key]; !found && e.isShared(key) {
+				out[key] = val
+			}
+		}
+	}
+	return out
+}
+
+// isSessionCookie reports whether key is the session cookie's Evidence key,
+// compared without regard to case.
+func (e *Element) isSessionCookie(key string) bool {
+	prefix, field := core.SplitEvidenceKey(key)
+	return prefix == core.PrefixCookie &&
+		strings.EqualFold(field, e.cfg.sessionCookieName)
+}
+
+// trackedSession returns the session cookie to compare along with the
+// Evidence, which is only when track session is on and not all Evidence is
+// shared, as a shared cookie is compared already. It is read from the
+// Evidence and from the web request, and the Evidence value counts when
+// both hold it. Both are read by key, as Evidence keys are compared without
+// regard to case, so the Evidence is not copied for each request.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
+func (e *Element) trackedSession(fd core.FlowData) (string, bool) {
+	if !e.cfg.trackSession || e.cfg.shareAllEvidence {
+		return "", false
+	}
+	ev := fd.Evidence()
+	if val, ok := ev.Get(core.PrefixCookie + "." + e.cfg.sessionCookieName); ok {
+		return fmt.Sprintf("%v", val), true
+	}
+	request, _ := ev.Get(core.EvidenceHTTPRequest)
+	if w, ok := request.(core.WebRequest); ok {
+		for _, c := range w.Cookies() {
+			if strings.EqualFold(c.Name, e.cfg.sessionCookieName) {
+				return c.Value, true
+			}
+		}
+	}
+	return "", false
+}
+
+// requestEvidence returns the web request's parts under the keys the web
+// integration gives them as Evidence. A header or query parameter with several
+// values gives the first.
+func requestEvidence(w core.WebRequest) map[string]string {
+	out := map[string]string{}
+	for name, values := range w.Headers() {
+		if len(values) > 0 {
+			out[strings.ToLower(core.PrefixHeader+"."+name)] = values[0]
+		}
+	}
+	for _, c := range w.Cookies() {
+		out[strings.ToLower(core.PrefixCookie+"."+c.Name)] = c.Value
+	}
+	for name, values := range w.Query() {
+		if len(values) > 0 {
+			out[strings.ToLower(core.PrefixQuery+"."+name)] = values[0]
+		}
+	}
+	for name, value := range w.Session() {
+		out[strings.ToLower(prefixSession+"."+name)] = value
+	}
+	setIfNotEmpty := func(key, value string) {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	setIfNotEmpty("server.client-ip", w.ClientIP())
+	setIfNotEmpty("header.protocol", w.Protocol())
+	setIfNotEmpty("server.request-method", w.Method())
+	setIfNotEmpty("server.request-path", w.Path())
 	return out
 }
 
@@ -657,6 +741,20 @@ func hashEvidence(ev map[string]string) uint64 {
 		h.Write([]byte(ev[k]))
 		h.Write([]byte{0x1e})
 	}
+	return h.Sum64()
+}
+
+// hashWithSession combines an Evidence hash with the session cookie's
+// value, so the same Evidence from another session has another hash.
+func hashWithSession(evidence uint64, session string) uint64 {
+	h := fnv.New64a()
+	var b [8]byte
+	for i := range b {
+		b[i] = byte(evidence >> (8 * i))
+	}
+	h.Write(b[:])
+	h.Write([]byte{0x1d})
+	h.Write([]byte(session))
 	return h.Sum64()
 }
 

@@ -159,7 +159,8 @@ func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
 func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
-// cookies, query and form parameters, client IP, host and protocol.
+// cookies, query and form parameters, client IP, host and protocol, and the
+// request itself as core.EvidenceHTTPRequest.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
 func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
@@ -208,8 +209,14 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 		}
 	}
 
-	fd.AddEvidence("server.client-ip", m.clientIP(r))
-	fd.AddEvidence("header.protocol", m.requestProtocol(r))
+	clientIP, protocol := m.clientIP(r), m.requestProtocol(r)
+	fd.AddEvidence("server.client-ip", clientIP)
+	fd.AddEvidence("header.protocol", protocol)
+
+	// The request itself, whether or not an element accepts it, so that the
+	// Usage Sharing Element can share headers no element accepts.
+	fd.AddEvidence(core.EvidenceHTTPRequest,
+		core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol))
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
