@@ -300,7 +300,7 @@ func TestMatchingETagOnPostGetsPreconditionFailed(t *testing.T) {
 
 // etagChildEnv makes TestETagInChildProcess print the ETag of fixedEvidence
 // rather than skip.
-const etagChildEnv = "FIFTYONE_WEB_ETAG_CHILD"
+const etagChildEnv = "_51DEGREES_WEB_ETAG_CHILD"
 
 // fixedEvidence holds a value for every key the web pipeline's filter takes
 // that a browser's request carries.
