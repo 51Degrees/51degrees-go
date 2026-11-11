@@ -48,16 +48,52 @@ func TestNoFileNamesAFiftyOneVariable(t *testing.T) {
 			t.Fatalf("reading %s: %v", file, err)
 		}
 		for number, line := range bytes.Split(text, []byte("\n")) {
-			for _, name := range fiftyOneName.FindAll(line, -1) {
-				if !bytes.HasPrefix(name, []byte("FIFTYONE_DEGREES_")) {
-					found = append(found,
-						file+":"+strconv.Itoa(number+1)+" "+string(name))
-				}
+			for _, name := range fiftyOneVariables(line) {
+				found = append(found,
+					file+":"+strconv.Itoa(number+1)+" "+name)
 			}
 		}
 	}
 	if len(found) > 0 {
 		t.Errorf("name these variables _51DEGREES_ instead:\n%s",
 			strings.Join(found, "\n"))
+	}
+}
+
+// fiftyOneVariables returns the names in the line that start FIFTYONE_ and are
+// not the C library's.
+func fiftyOneVariables(line []byte) []string {
+	var names []string
+	for _, name := range fiftyOneName.FindAll(line, -1) {
+		if !bytes.HasPrefix(name, []byte("FIFTYONE_DEGREES_")) {
+			names = append(names, string(name))
+		}
+	}
+	return names
+}
+
+// fiftyOne starts each example below. It is written in two parts so that this
+// file does not name a variable itself.
+const fiftyOne = "FIFTY" + "ONE_"
+
+// A name counts only where a variable is named, after a quote, a backtick, an
+// equals sign, a dollar sign, env: or env., so a constant or a type with such
+// a name is left alone.
+func TestFiftyOneVariablesAreOnlyVariables(t *testing.T) {
+	const name = fiftyOne + "DATA"
+	for line, want := range map[string]string{
+		`os.Getenv("` + name + `")`:              name,
+		"$env:" + name + " = 1":                  name,
+		"${" + name + ":-x}":                     name,
+		"${{ env." + name + " }}":                name,
+		"cmd.Env = append(env, `" + name + "=1`)": name,
+		"const " + fiftyOne + "LIMIT = 4":        "",
+		"type " + fiftyOne + "THING struct{}":    "",
+		`"` + fiftyOne + `DEGREES_STRING"`:       "",
+	} {
+		got := strings.Join(fiftyOneVariables([]byte(line)), ",")
+		if got != want {
+			t.Errorf("%s gave %q, want %q", line, got, want)
+		}
 	}
 }
