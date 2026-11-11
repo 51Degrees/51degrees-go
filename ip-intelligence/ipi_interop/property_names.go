@@ -42,6 +42,23 @@ func NewPropertyNames(manager *ResourceManager) *PropertyNames {
 	return &PropertyNames{names: requiredPropertyNames(dataSet)}
 }
 
+// Release does nothing, because the names hold no data set.
+//
+// Deprecated: there is nothing to release, so remove the call.
+func (p *PropertyNames) Release() {}
+
+// For returns the names whichever data set the results were made from,
+// because an index names the same property in every data set the manager
+// loads.
+//
+// Deprecated: use Name, which gives the name at a required property index.
+func (p *PropertyNames) For(r *ResultsIpi) []string {
+	if p == nil {
+		return nil
+	}
+	return p.names
+}
+
 // Name returns the name at the required property index, or an empty string
 // for an index outside the required properties.
 func (p *PropertyNames) Name(index int) string {
