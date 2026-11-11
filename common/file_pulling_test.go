@@ -466,7 +466,7 @@ func TestDoDataFileRequest_InvalidURL(t *testing.T) {
 }
 
 // A failed pull must leave the current data file untouched and no temp file behind.
-func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
+func TestPull_KeepsDataFileOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.hash")
 	if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
@@ -501,7 +501,7 @@ const failedPullIntervalMs = 47 * 60 * 1000
 // A failed pull is tried again after the polling interval, as a check that
 // finds nothing is, so a failing server is not asked again every second.
 // See https://github.com/51Degrees/specifications/blob/67ead69/pipeline-specification/features/data-updates.md#update-polling
-func TestDoFilePulling_TriesAgainAfterThePollingInterval(t *testing.T) {
+func TestPull_TriesAgainAfterThePollingInterval(t *testing.T) {
 	refused := httptest.NewServer(http.NotFoundHandler())
 	refused.Close()
 	for name, test := range map[string]struct {
@@ -535,7 +535,7 @@ func TestDoFilePulling_TriesAgainAfterThePollingInterval(t *testing.T) {
 }
 
 // A successful pull replaces the data file with the uncompressed download in one rename.
-func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
+func TestPull_ReplacesDataFile(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.hash")
 	if err := os.WriteFile(dataFile, []byte("current"), 0640); err != nil {
