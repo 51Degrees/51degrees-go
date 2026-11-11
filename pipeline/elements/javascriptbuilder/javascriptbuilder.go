@@ -21,8 +21,9 @@
  * ********************************************************************* */
 
 // Package javascriptbuilder implements the JavaScript Builder Element, which
-// merges the JSON Builder output into a Mustache template to produce the
-// client-side JavaScript used to access results and gather additional Evidence.
+// merges the JSON Builder output into javascript-templates' Mustache template
+// to produce the client-side JavaScript used to access results and gather
+// additional Evidence.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/javascript-builder.md
 package javascriptbuilder
@@ -100,7 +101,12 @@ func validObjectName(s string) bool {
 	return jsObjectNameRe.MatchString(s) && !reservedObjectNames[s]
 }
 
-//go:embed template.mustache
+// templateSource is javascript-templates' JavaScriptResource.mustache, the
+// template every 51Degrees language renders. The package holds a copy of the
+// javascript-templates submodule's file because a Go module carries no
+// submodule, and ci/check-javascript-templates.ps1 fails when they differ.
+//
+//go:embed javascript-templates/JavaScriptResource.mustache
 var templateSource string
 
 // DataKey is the Element Data key for the JavaScript Builder Element.
@@ -309,6 +315,11 @@ func (e *Element) Process(fd core.FlowData) error {
 		"_hasDelayedProperties": strings.Contains(jsonStr, "delayexecution"),
 		"_supportsPromises":     e.supportsPromises(fd),
 		"_supportsFetch":        e.supportsFetch(fd),
+		// The block that gathers the visitor's answer, which a 51Did is
+		// made from, from the 51Degrees Preference Management Platform
+		// (PMP) or the Transparency and Consent Framework. Go has no
+		// 51Did element, so the block is left out.
+		"_userPrompt": false,
 	}
 
 	rendered := e.tmpl.render(ctx)
