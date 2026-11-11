@@ -6,6 +6,7 @@
 package ipi_onpremise
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -127,8 +128,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 // handleFileExternallyChanged handles the logic for processing a file that has been altered externally to ensure consistency.
 func (e *Engine) handleFileExternallyChanged() {
 	if err := e.reload(); err != nil {
-		e.logger.Errorf("An error occurred while applying a data file update to %s. "+
-			"Error detail: %v", engineTypeName, err)
+		e.logReloadError(err)
 	}
 
 	e.IncreaseFileExternallyChangedCount()
@@ -227,15 +227,36 @@ func (e *Engine) Stop() {
 	}
 }
 
-// reload loads the data file again. A panic is returned as an error, so the
-// goroutine that asked for the reload carries on and a later file is loaded.
+// reload loads the data file again. A panic is returned as a reloadPanic, so
+// the goroutine that asked for the reload carries on and a later file is
+// loaded.
 func (e *Engine) reload() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("panic: %v", r)
+			err = &reloadPanic{r}
 		}
 	}()
 	return e.processFileExternallyChanged()
+}
+
+// reloadPanic is a panic in a reload, returned as an error.
+type reloadPanic struct{ value interface{} }
+
+func (p *reloadPanic) Error() string { return fmt.Sprintf("panic: %v", p.value) }
+
+// logReloadError logs a reload of a pulled or watched file that failed, as
+// the specification's error table gives it, which follows .NET. A panic is
+// logged with the table's last row, and any other failure as a refresh that
+// failed. A reload is tried once.
+func (e *Engine) logReloadError(err error) {
+	var p *reloadPanic
+	if errors.As(err, &p) {
+		e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
+			"Error detail: %v", engineTypeName, p.value)
+		return
+	}
+	e.logger.Errorf("Error during check for data update. An error occurred when applying a data update to "+
+		"engine '%s' after 1 tries. Error detail: %v", engineTypeName, err)
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -245,8 +266,7 @@ func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
 		if err := e.reload(); err != nil {
-			e.logger.Errorf("An error occurred while applying a data file update to %s. "+
-			"Error detail: %v", engineTypeName, err)
+			e.logReloadError(err)
 		}
 	}
 }

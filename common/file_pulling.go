@@ -201,7 +201,7 @@ func (e *FileUpdater) engineLabel() string {
 func (e *FileUpdater) pullRecovering(reloadFileEvents chan struct{}) (nextMs int) {
 	defer func() {
 		if r := recover(); r != nil {
-			e.logger.Printf("error occurred when pulling data: %v", r)
+			e.logUnhandledError(fmt.Errorf("panic: %v", r))
 			nextMs = e.dataFilePullEveryMs
 		}
 	}()
