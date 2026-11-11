@@ -1,6 +1,6 @@
 [submodule "cxx"]
 	path = cxx
-	url = https://github.com/51Degrees/51degrees-cxx.git
+	url = ../51degrees-cxx
 [submodule "javascript-templates"]
 	path = javascript-templates
 	url = ../javascript-templates
