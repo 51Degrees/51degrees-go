@@ -219,6 +219,36 @@ func TestFailedChecksAreReportedAsTheErrorTableGivesThem(t *testing.T) {
 	})
 }
 
+// A callback that panics is logged with the error table's last row, and the
+// callbacks after it are not called, as the Errors section says. The panic
+// does not reach the caller.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
+func TestACallbackThatPanicsStopsTheCallbacksAfterIt(t *testing.T) {
+	svc, out := loggedService(nil)
+	defer svc.Close()
+	if err := svc.Register(&fakeEngine{}, "Eng", Config{Identifier: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	svc.OnUpdate("a", func() {
+		calls = append(calls, "first")
+		panic("callback test panic")
+	})
+	svc.OnUpdate("a", func() { calls = append(calls, "second") })
+
+	if err := svc.UpdateFromMemory("a", []byte("x")); err != nil {
+		t.Fatalf("UpdateFromMemory gave %v, want no error, as a callback's panic is not the caller's", err)
+	}
+	if got := strings.Join(calls, ","); got != "first" {
+		t.Errorf("the callbacks called were %q, want only the first", got)
+	}
+	want := `level=ERROR msg="An unhandled error occurred while checking for automatic updates for engine 'Eng'" ` +
+		`panic="callback test panic"`
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("missing %s in:\n%s", want, out)
+	}
+}
+
 type failingEngine struct{}
 
 func (failingEngine) RefreshFromBytes([]byte) error { return errors.New("boom") }
