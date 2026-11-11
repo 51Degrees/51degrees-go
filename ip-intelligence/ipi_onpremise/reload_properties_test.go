@@ -382,3 +382,112 @@ func sameValues(a, b map[string]string) bool {
 	}
 	return true
 }
+
+// TestReloadKeepsTheNameTable checks the table of property names is made once,
+// when the engine is built, and that a reload keeps that same table. Each
+// index then names the property it named before the reload, and the reloaded
+// data set reads that property at that index. The "same file" cases need only
+// the ASN file, and the others need the Enterprise file as well, whose
+// properties and their order differ from the ASN file's.
+// See https://github.com/51Degrees/specifications/blob/d72eb074feb014a22e67d19802e1158a27658664/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md#finding-properties
+func TestReloadKeepsTheNameTable(t *testing.T) {
+	asn := testDataPath(t, reloadTestDataFile)
+	// Two of the ASN file's names in the reverse of the data set's order, so
+	// an index is a place among the names given and not among the data set's.
+	asnNames := requiredNames(t, asn)
+	if len(asnNames) < 2 {
+		t.Fatalf("%s needs two properties", reloadTestDataFile)
+	}
+	reversed := []string{asnNames[1], asnNames[0]}
+	enterprise := func(t *testing.T) string {
+		return testDataPath(t, enterpriseTestDataFile)
+	}
+	cases := []struct {
+		name          string
+		first, second func(t *testing.T) string
+		properties    func(t *testing.T) []string
+	}{
+		{"same file, every property",
+			func(*testing.T) string { return asn },
+			func(*testing.T) string { return asn },
+			func(*testing.T) []string { return nil }},
+		{"same file, named properties",
+			func(*testing.T) string { return asn },
+			func(*testing.T) string { return asn },
+			func(*testing.T) []string { return reversed }},
+		{"ASN then Enterprise, every property",
+			func(*testing.T) string { return asn },
+			enterprise,
+			func(*testing.T) []string { return nil }},
+		{"Enterprise then ASN, named properties",
+			enterprise,
+			func(*testing.T) string { return asn },
+			func(t *testing.T) []string {
+				return namedProperties(t, asn, enterprise(t))
+			}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			first, second := c.first(t), c.second(t)
+			master := filepath.Join(t.TempDir(), "data.ipi")
+			pointAt(t, master, first)
+			e := propertiesTestEngine(t, master, c.properties(t), true)
+			table := e.names.Load()
+			if table == nil {
+				t.Fatal("the engine was built with no table of names")
+			}
+			var before []string
+			for i := 0; e.GetPropertyNameByIndex(i) != ""; i++ {
+				before = append(before, e.GetPropertyNameByIndex(i))
+			}
+			if len(before) == 0 {
+				t.Fatal("the table names no property")
+			}
+
+			pointAt(t, master, second)
+			if err := e.processFileExternallyChanged(); err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+
+			if e.names.Load() != table {
+				t.Error("the reload replaced the table of names made " +
+					"when the engine was built")
+			}
+			for i, want := range before {
+				if got := e.GetPropertyNameByIndex(i); got != want {
+					t.Errorf("index %d names %q after the reload, %q before it",
+						i, got, want)
+				}
+			}
+			checkIndexesRead(t, e, before)
+		})
+	}
+}
+
+// checkIndexesRead fails the test for each index at which the engine's data
+// set reads a property other than the one names gives for that index.
+func checkIndexesRead(t *testing.T, e *Engine, names []string) {
+	t.Helper()
+	results := ipi_interop.NewResultsIpi(e.manager)
+	defer results.Free()
+	for _, address := range propertiesTestAddresses {
+		if err := results.ResultsIpiFromIpAddress(address); err != nil {
+			t.Fatalf("%s: %v", address, err)
+		}
+		if !results.HasValues() {
+			continue
+		}
+		for i, want := range names {
+			values, err := results.GetWeightedValuesByIndexes([]int{i}, nil)
+			if err != nil {
+				t.Fatalf("%s index %d: %v", address, i, err)
+			}
+			for got := range values {
+				if got != want {
+					t.Errorf("%s index %d reads %q, the table names %q",
+						address, i, got, want)
+				}
+			}
+		}
+	}
+}
