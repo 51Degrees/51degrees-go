@@ -64,11 +64,11 @@ type Builder struct {
 
 // EnvCloudAPIURL is the environment variable that overrides the default cloud
 // base endpoint when SetEndpoint is not used.
-const EnvCloudAPIURL = "FOD_CLOUD_API_URL"
+const EnvCloudAPIURL = "_51DEGREES_CLOUD_ENDPOINT"
 
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
-// recovery settings. The base endpoint defaults to the FOD_CLOUD_API_URL
-// environment variable when set, otherwise DefaultEndpoint; SetEndpoint still
+// recovery settings. The base endpoint is the _51DEGREES_CLOUD_ENDPOINT
+// environment variable when set, otherwise DefaultEndpoint, and SetEndpoint
 // overrides either.
 func NewBuilder() *Builder {
 	endpoint := DefaultEndpoint

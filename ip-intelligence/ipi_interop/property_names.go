@@ -25,38 +25,21 @@ package ipi_interop
 import "C"
 import "unsafe"
 
-// PropertyNames holds the name of each required property of one data set, by
-// required property index. It keeps that data set in memory until Release,
-// so while it exists no other data set can be at the same address, and For
-// can tell results made from it by their data set pointer alone.
+// PropertyNames holds the name of each required property by required property
+// index. The names are those the engine was built with, or with none, those of
+// the first data file it loaded. The C library keeps them across a reload, so
+// one table, made when the engine is built, names the indexes of every data
+// set the manager loads.
 type PropertyNames struct {
-	dataSet *C.DataSetIpi
-	names   []string
+	names []string
 }
 
-// NewPropertyNames reads the names from the manager's current data set. The
-// caller must call Release before the manager is freed.
+// NewPropertyNames reads the names from the manager's current data set. It is
+// called once, after the manager's first load.
 func NewPropertyNames(manager *ResourceManager) *PropertyNames {
 	dataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
-	return &PropertyNames{dataSet: dataSet, names: requiredPropertyNames(dataSet)}
-}
-
-// Release lets the data set be freed once nothing else uses it.
-func (p *PropertyNames) Release() {
-	if p.dataSet != nil {
-		C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(p.dataSet)))
-		p.dataSet = nil
-	}
-}
-
-// For returns the names when the results were made from the data set they
-// were read from, and nil otherwise.
-func (p *PropertyNames) For(r *ResultsIpi) []string {
-	if p == nil || p.dataSet == nil || r == nil || r.CPtr == nil ||
-		unsafe.Pointer(r.CPtr.b.dataSet) != unsafe.Pointer(p.dataSet) {
-		return nil
-	}
-	return p.names
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(dataSet)))
+	return &PropertyNames{names: requiredPropertyNames(dataSet)}
 }
 
 // Name returns the name at the required property index, or an empty string
@@ -69,8 +52,8 @@ func (p *PropertyNames) Name(index int) string {
 }
 
 // requiredPropertyNames reads the name at each required property index, which
-// is the place of a property in the names the engine was given, or in the data
-// set's own properties when it was given none.
+// is the place of a property in the names the engine was given, or when it was
+// given none, in the properties of the first data file it loaded.
 func requiredPropertyNames(dataSet *C.DataSetIpi) []string {
 	available := dataSet.b.b.available
 	names := make([]string, int(C.fiftyoneDegreesPropertiesGetRequiredPropertyCount(available)))
