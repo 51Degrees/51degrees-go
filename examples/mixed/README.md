@@ -20,8 +20,8 @@ instead, run `../../ci/create-workspace.ps1` first.
 
 | Product | Env variable | Data file when it is not set |
 |---|---|---|
-| IP Intelligence | `DATA_FILE` | `51Degrees-LiteV41.ipi` |
-| Device Detection | `DD_DATA_FILE` | `51Degrees-LiteV4.1.hash` |
+| IP Intelligence | `_51DEGREES_IPI_PATH` | `51Degrees-LiteV41.ipi` |
+| Device Detection | `_51DEGREES_DD_PATH` | `51Degrees-LiteV4.1.hash` |
 
 The [data](https://github.com/51Degrees/data) repository, which is the
 `cxx/data` submodule of this repository, links to the free Lite files, and the
@@ -47,8 +47,8 @@ cd examples/mixed
 go run ./getting_started_console
 
 # or with paid data files
-DATA_FILE=../../51Degrees-EnterpriseIpiV41.ipi \
-DD_DATA_FILE=../../TAC-HashV41.hash \
+_51DEGREES_IPI_PATH=../../51Degrees-EnterpriseIpiV41.ipi \
+_51DEGREES_DD_PATH=../../TAC-HashV41.hash \
 go run ./getting_started_console
 
 # or the web example, then: curl http://localhost:8080/

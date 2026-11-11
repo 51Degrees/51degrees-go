@@ -109,7 +109,7 @@ go run ./dd/getting_started
 cd ../..
 ```
 
-The IP Intelligence example reads the data file named by the `DATA_FILE`
+The IP Intelligence example reads the data file named by the `_51DEGREES_IPI_PATH`
 environment variable, and otherwise looks for `51Degrees-EnterpriseIpiV41.ipi`
 in the folder it runs in, without searching
 (`examples/ip-intelligence/common/example_base.go`). So name the Lite file.
@@ -119,7 +119,7 @@ repository links to it (`GetDataFile` in
 
 ```
 cd examples/ip-intelligence
-DATA_FILE=../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi go run ./getting_started
+_51DEGREES_IPI_PATH=../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi go run ./getting_started
 cd ../..
 ```
 
@@ -127,7 +127,7 @@ In PowerShell, set the variable first.
 
 ```
 cd examples/ip-intelligence
-$env:DATA_FILE = '../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi'
+$env:_51DEGREES_IPI_PATH = '../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi'
 go run ./getting_started
 cd ../..
 ```
@@ -190,7 +190,7 @@ the service that the example starts itself, with the placeholder key
   file sizes as above.
 - **Running from the wrong folder.** There is no `go.mod` at the repository
   root, and each examples folder is a module of its own, so run `go run` from
-  that folder. Without `DATA_FILE`, the IP Intelligence example finds no data
+  that folder. Without `_51DEGREES_IPI_PATH`, the IP Intelligence example finds no data
   file wherever it runs, unless a paid file named
   `51Degrees-EnterpriseIpiV41.ipi` is in that folder.
 - **cgo turned off or no C compiler.** The engines are C code built through

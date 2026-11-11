@@ -11,16 +11,29 @@ import (
 	"testing"
 )
 
-// fiftyOneName finds a name that starts FIFTYONE_ where a variable is named,
-// after a quote, a backtick, an equals sign, a dollar sign, env: or env. The
-// names of the C library all start FIFTYONE_DEGREES_ and are left out.
-var fiftyOneName = regexp.MustCompile("(?:[\"'`=$]|\\$\\{|env[:.])(FIFTYONE_[A-Z0-9_]+)")
+// oldName finds an old variable name where a variable is named, which is
+// after a quote, a backtick, an equals sign, a dollar sign, env: or env., or
+// at the start of a line past any spaces, tabs and a list dash. The last of
+// those is how a workflow declares one, as a key in an env: block, and how a
+// readme lists one, neither of which puts any of the other characters in
+// front of the name.
+//
+// Two families are matched. A name that starts FIFTYONE_, because the
+// 51Degrees environment variables start _51DEGREES_, which is shorter, and the
+// names the examples and the CI scripts read before each variable took one
+// _51DEGREES_ name. The names of the C library all start FIFTYONE_DEGREES_ and
+// are left out.
+//
+// Every name in this pattern is preceded by a bracket or a bar rather than by
+// one of the characters above, so this file does not match itself.
+var oldName = regexp.MustCompile("(?:[\"'`=$]|\\$\\{|env[:.]|^[\t -]*)" +
+	"(FIFTYONE_[A-Z0-9_]+|DD_DATA_FILE|DATA_FILE|EVIDENCE_YAML" +
+	"|LICENSE_KEY|IPI_KEY|IPI_DATA_FILE_URL|DEVICE_DETECTION_KEY)")
 
-// No tracked file names a variable that starts FIFTYONE_, because the
-// 51Degrees environment variables start _51DEGREES_, which is shorter. The cxx
-// submodule is not read. Outside a git checkout, such as the module cache,
-// there are no tracked files to read.
-func TestNoFileNamesAFiftyOneVariable(t *testing.T) {
+// No tracked file names one of those variables. The cxx submodule is not read.
+// Outside a git checkout, such as the module cache, there are no tracked files
+// to read.
+func TestNoFileNamesAnOldVariable(t *testing.T) {
 	top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		t.Skipf("not in a git checkout: %v", err)
@@ -48,23 +61,22 @@ func TestNoFileNamesAFiftyOneVariable(t *testing.T) {
 			t.Fatalf("reading %s: %v", file, err)
 		}
 		for number, line := range bytes.Split(text, []byte("\n")) {
-			for _, name := range fiftyOneVariables(line) {
+			for _, name := range oldVariables(line) {
 				found = append(found,
 					file+":"+strconv.Itoa(number+1)+" "+name)
 			}
 		}
 	}
 	if len(found) > 0 {
-		t.Errorf("name these variables _51DEGREES_ instead:\n%s",
+		t.Errorf("give these variables their one _51DEGREES_ name:\n%s",
 			strings.Join(found, "\n"))
 	}
 }
 
-// fiftyOneVariables returns the names in the line that start FIFTYONE_ and are
-// not the C library's.
-func fiftyOneVariables(line []byte) []string {
+// oldVariables returns the old names in the line, leaving out the C library's.
+func oldVariables(line []byte) []string {
 	var names []string
-	for _, match := range fiftyOneName.FindAllSubmatch(line, -1) {
+	for _, match := range oldName.FindAllSubmatch(line, -1) {
 		if name := match[1]; !bytes.HasPrefix(name, []byte("FIFTYONE_DEGREES_")) {
 			names = append(names, string(name))
 		}
@@ -72,14 +84,21 @@ func fiftyOneVariables(line []byte) []string {
 	return names
 }
 
-// fiftyOne starts each example below. It is written in two parts so that this
-// file does not name a variable itself.
-const fiftyOne = "FIFTY" + "ONE_"
+// Each name below is written in two parts so that this file does not name a
+// variable itself.
+const (
+	fiftyOne  = "FIFTY" + "ONE_"
+	dataFile  = "DATA" + "_FILE"
+	licence   = "LICENSE" + "_KEY"
+	ipiKey    = "IPI" + "_KEY"
+	deviceKey = "DEVICE" + "_DETECTION_KEY"
+)
 
 // A name counts only where a variable is named, after a quote, a backtick, an
-// equals sign, a dollar sign, env: or env., so a constant or a type with such
-// a name is left alone.
-func TestFiftyOneVariablesAreOnlyVariables(t *testing.T) {
+// equals sign, a dollar sign, env: or env., so a constant, a type or a GitHub
+// secret of the same name is left alone, as is a longer name that only ends in
+// one of these words.
+func TestOldVariablesAreOnlyVariables(t *testing.T) {
 	const name = fiftyOne + "DATA"
 	for line, want := range map[string]string{
 		`os.Getenv("` + name + `")`:              name,
@@ -90,8 +109,31 @@ func TestFiftyOneVariablesAreOnlyVariables(t *testing.T) {
 		"const " + fiftyOne + "LIMIT = 4":        "",
 		"type " + fiftyOne + "THING struct{}":    "",
 		`"` + fiftyOne + `DEGREES_STRING"`:       "",
+
+		`os.Getenv("` + dataFile + `")`:         dataFile,
+		"$env:DD_" + dataFile + " = $path":      "DD_" + dataFile,
+		`os.Getenv("` + licence + `")`:          licence,
+		`os.Getenv("` + ipiKey + `")`:           ipiKey,
+		`os.Getenv("IPI_` + dataFile + `_URL")`: "IPI_" + dataFile + "_URL",
+		`os.Getenv("` + deviceKey + `")`:        deviceKey,
+
+		// A workflow declares a variable as a key in an env: block, and a
+		// readme lists one, so a name at the start of a line counts.
+		"  " + licence + ": ${{ secrets.DEVICE" + "_DETECTION_KEY }}": licence,
+		"- " + dataFile + " names the data file": dataFile,
+		dataFile + "=/data/file.ipi go run ./x":  dataFile,
+
+		// The one name each of those variables now carries.
+		`os.Getenv("_51DEGREES_DD_PATH")`:         "",
+		`os.Getenv("_51DEGREES_` + licence + `")`: "",
+		// A longer name that ends in one of these words.
+		`os.Getenv("_51DEGREES_TEST_` + licence + `")`: "",
+		// A GitHub secret is not an environment variable, and it is read
+		// through secrets. rather than env., so a workflow line whose key is
+		// not an old name is left alone whatever the secret is called.
+		"  DeviceDetection: ${{ secrets." + deviceKey + " }}": "",
 	} {
-		got := strings.Join(fiftyOneVariables([]byte(line)), ",")
+		got := strings.Join(oldVariables([]byte(line)), ",")
 		if got != want {
 			t.Errorf("%s gave %q, want %q", line, got, want)
 		}

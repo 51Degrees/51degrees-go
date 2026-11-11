@@ -9,7 +9,7 @@ Demonstrates how to set up periodic data file updates by either polling the 51de
 To run the example, execute the following command:
 
 ```bash
-LICENSE_KEY=my_license_key go run onpremise/update_polling_interval.go
+_51DEGREES_LICENSE_KEY=my_license_key go run onpremise/update_polling_interval.go
 ```
 
 # onpremise API Usage

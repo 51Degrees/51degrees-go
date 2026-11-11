@@ -62,8 +62,8 @@ func runWithoutUpdates(params common.ExampleParams) {
 	processExampleEvidence(engine, common.ExampleEvidenceMobile)
 
 	fmt.Printf("Automatic updates download the Enterprise data file with a "+
-		"licence key, which LICENSE_KEY gives. Contact us for a key and a "+
-		"copy at %s\n", contactUs)
+		"licence key, which _51DEGREES_LICENSE_KEY gives. Contact us for a "+
+		"key and a copy at %s\n", contactUs)
 }
 
 func main() {
