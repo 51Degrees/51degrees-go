@@ -11,7 +11,7 @@ const (
 	// recoverTestPanic is what the log panics with.
 	recoverTestPanic = "recover test panic"
 	// pullingLine starts the first line each pull logs.
-	pullingLine = "Pulling data from"
+	pullingLine = "Checking for update from"
 	// loadedLine starts the line each load that worked logs.
 	loadedLine = "data file loaded from"
 )
@@ -66,7 +66,7 @@ func TestPanicInAPullIsLoggedAndPullingCarriesOn(t *testing.T) {
 	logs.armed.Store(true)
 
 	waitFor(t, "the panic to be logged", func() bool {
-		return logs.has("error occurred when pulling data", recoverTestPanic)
+		return logs.has("An unhandled error occurred while checking for automatic updates", recoverTestPanic)
 	})
 	pulls := logs.count(pullingLine)
 	waitFor(t, "a pull after the panic", func() bool {

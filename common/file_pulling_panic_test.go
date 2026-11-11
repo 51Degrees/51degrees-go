@@ -73,7 +73,7 @@ func TestScheduleFilePulling_APanicInAPullIsLoggedAndPullingCarriesOn(t *testing
 	server := createMockServer(http.StatusOK, nil, []byte("new"))
 	defer server.Close()
 
-	logs := &panicOnceLogger{trigger: "Pulling data from"}
+	logs := &panicOnceLogger{trigger: "Checking for update from"}
 	updater := NewFileUpdater(server.URL)
 	updater.SetDataFile(dataFile)
 	updater.SetIsFileWatcherEnabled(false)
@@ -99,7 +99,8 @@ func TestScheduleFilePulling_APanicInAPullIsLoggedAndPullingCarriesOn(t *testing
 	}
 	stopPuller(stopCh, reload)
 
-	if !logs.has("error occurred when pulling data: " + pullTestPanic) {
+	if !logs.has("An unhandled error occurred while checking for automatic updates for engine 'Engine'. " +
+		"Error detail: panic: " + pullTestPanic) {
 		t.Error("the panic was not logged")
 	}
 	mu.Lock()
