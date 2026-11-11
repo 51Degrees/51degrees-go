@@ -130,8 +130,7 @@ func (e *Engine) run() error {
 
 	if e.IsAutoUpdateEnabled() {
 		e.SetFilePullerStarted(true)
-		go e.pullDataFiles(e.IsUpdateOnStartEnabled(),
-			time.Duration(e.GetDataFilePullEveryMs())*time.Millisecond)
+		go e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
 	}
 
 	return nil
@@ -175,45 +174,6 @@ func (e *Engine) Stop() {
 	if e.IsCreateTempDataCopyEnabled() {
 		dir := filepath.Dir(e.dataFileLastUsedByManager)
 		os.RemoveAll(dir)
-	}
-}
-
-// pullDataFiles runs the file puller until the engine stops. A panic in a
-// pull is logged and the puller runs again, with its next pull after the
-// polling interval, so that one failed pull does not end automatic updates.
-func (e *Engine) pullDataFiles(pullsOnStart bool, interval time.Duration) {
-	for !e.schedulePulling() {
-		// ScheduleFilePulling pulls at once when update on start is enabled,
-		// so the polling interval is waited for here.
-		if pullsOnStart && !e.waitUnlessStopped(interval) {
-			return
-		}
-	}
-}
-
-// schedulePulling runs the file puller. It returns true when the engine
-// stopped it, and false when a pull panicked, which is logged.
-func (e *Engine) schedulePulling() (stopped bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.logger.Printf("error occurred when pulling data: %v", r)
-		}
-	}()
-	e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
-	return true
-}
-
-// waitUnlessStopped waits for the interval. It returns false, having told
-// Stop that the puller has ended, if the engine is stopped first.
-func (e *Engine) waitUnlessStopped(interval time.Duration) bool {
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
-	select {
-	case wg := <-e.stopCh:
-		wg.Done()
-		return false
-	case <-timer.C:
-		return true
 	}
 }
 
@@ -306,9 +266,11 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		return nil
 	}
 	// Only a load that worked is logged, as a manager whose first load failed
-	// has no data set to read the published date from.
+	// has no data set to read the published date from. Each return that loaded
+	// sets loaded first, because err is still nil while a panic unwinds.
+	loaded := false
 	defer func() {
-		if err != nil {
+		if !loaded {
 			return
 		}
 		year, month, day := e.getPublishedDate().Date()
@@ -329,13 +291,14 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 			return fmt.Errorf("failed to init manager from file: %w", err)
 		}
 		e.dataFileLastUsedByManager = filePath
-		// return nil is created for the first time
+		loaded = true
 		return nil
 	} else if !e.IsCreateTempDataCopyEnabled() {
 		err = e.manager.ReloadFromOriginalFile()
 		if err != nil {
 			return fmt.Errorf("failed to reload manager from original file: %w", err)
 		}
+		loaded = true
 		return nil
 	}
 
@@ -349,6 +312,7 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 
 	e.removeCopy(e.dataFileLastUsedByManager)
 	e.dataFileLastUsedByManager = filePath
+	loaded = true
 
 	return nil
 }

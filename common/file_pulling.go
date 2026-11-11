@@ -65,7 +65,7 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 	// if update on start is enabled, perform the pull immediately
 	if e.isUpdateOnStartEnabled {
 		e.logger.Printf("Doing pull on start")
-		nextIterationInMs = e.doFilePulling(reloadFileEvents)
+		nextIterationInMs = e.pull(reloadFileEvents)
 	}
 
 	for {
@@ -76,9 +76,22 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 		// interval to perform the pull of updated data, plus a random time
 		// up to the randomization maximum
 		case <-time.After(time.Duration(nextIterationInMs+drawRandomizationMs(e.randomization)) * time.Millisecond):
-			nextIterationInMs = e.doFilePulling(reloadFileEvents)
+			nextIterationInMs = e.pull(reloadFileEvents)
 		}
 	}
+}
+
+// pull makes one pull and returns the time in milliseconds before the next.
+// A panic in the pull is logged and the next pull comes after the polling
+// interval, so one failed pull does not end automatic updates.
+func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (nextMs int) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.logger.Printf("error occurred when pulling data: %v", r)
+			nextMs = e.dataFilePullEveryMs
+		}
+	}()
+	return e.doFilePulling(reloadFileEvents)
 }
 
 // doFilePulling handles the process of pulling a data file, saving it locally, and triggering reload events if necessary.
