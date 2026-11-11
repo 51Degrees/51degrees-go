@@ -214,14 +214,14 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 	// The download is written next to the data file, so without a data file
 	// path there is nowhere to put it.
 	if e.GetDataFile() == "" {
-		e.logger.Errorf("The data file '%s' is checking for updates but does not have a temporary file path "+
-			"configured.", e.engineLabel())
+		e.logCheckError(fmt.Sprintf("The data file '%s' is checking for updates but does not have a "+
+			"temporary file path configured.", e.engineLabel()))
 		return retryMs, false, ErrNoDataFileProvided
 	}
 
 	lastModificationTimestamp, err := e.ifModifiedSince()
 	if err != nil {
-		e.logger.Printf("failed to get file info: %v", err)
+		e.logUnhandledError(fmt.Errorf("failed to get file info: %w", err))
 		// retry after 1 second, since we have unhandled error
 		// this can happen from file info error or something else
 		return retryMs, false, err
@@ -255,14 +255,8 @@ func (e *FileUpdater) pull(reloadFileEvents chan struct{}) (int, bool, error) {
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
 		os.Remove(fileResponse.path)
-		if e.isCreateTempDataCopyEnabled {
-			e.logger.Errorf("An error occurred when copying a data file to replace the existing one at '%s'. "+
-				"Error detail: %v", e.GetDataFile(), err)
-		} else {
-			// The engine reads the data file itself, so the file may be locked.
-			e.logger.Errorf("Unable to update data file. This is probably because the Engine was built with the " +
-				"'use temp file' option disabled.")
-		}
+		e.logCheckError(fmt.Sprintf("An error occurred when copying a data file to replace the existing one "+
+			"at '%s'. Error detail: %v", e.GetDataFile(), err))
 		// retry after 1 second, since we have unhandled error
 		// this can happen from disk write error or something else
 		return retryMs, false, err
@@ -294,27 +288,54 @@ func formatSince(since *time.Time) string {
 	return since.UTC().Format(time.RFC3339)
 }
 
-// logPullError writes a failed pull at the level and in the words of the specification's error table.
+// logPullError logs a failed pull as the specification's error table gives it,
+// which follows .NET. A failure the table has a row for is logged at Error as
+// "Error during check for data update", followed by the row's message, and any
+// other failure at Error with the table's last row.
 func (e *FileUpdater) logPullError(err error) {
-	var pe *pullError
-	if !errors.As(err, &pe) {
-		e.logger.Warnf("An error occurred while downloading a data file update for %s from %s. "+
-			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.maskedDataFileUrl(), err)
+	if message, ok := e.pullErrorMessage(err); ok {
+		e.logCheckError(message)
 		return
 	}
+	e.logUnhandledError(err)
+}
+
+// logCheckError logs a failure the error table has a row for.
+func (e *FileUpdater) logCheckError(message string) {
+	e.logger.Errorf("Error during check for data update. %s", message)
+}
+
+// logUnhandledError logs a failure the error table has no row for.
+func (e *FileUpdater) logUnhandledError(err error) {
+	e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
+		"Error detail: %v", e.engineLabel(), err)
+}
+
+// pullErrorMessage gives the error table's message for a failed pull, and
+// false for a failure the table has no row for.
+func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
+	var pe *pullError
+	if !errors.As(err, &pe) {
+		return "", false
+	}
+	url, engine := e.maskedDataFileUrl(), e.engineLabel()
 	switch pe.kind {
 	case pullConnect:
-		e.logger.Warnf("An error occurred when connecting to %s in order to check for data file updates for %s. "+
-			"Update will be attempted again later. Error detail: %v", e.maskedDataFileUrl(), e.engineLabel(), pe.err)
+		return fmt.Sprintf("Error accessing data update service at '%s' for engine '%s'. Error detail: %v",
+			url, engine, pe.err), true
+	case pullTooManyRequests:
+		return fmt.Sprintf("Too many requests to '%s' for engine '%s'", url, engine), true
+	case pullForbidden:
+		return fmt.Sprintf("Access denied to data update service at '%s' for engine '%s'", url, engine), true
+	case pullStatus:
+		return fmt.Sprintf("HTTP status code '%d' from data update service at '%s' for engine '%s'",
+			pe.status, url, engine), true
 	case pullIntegrity:
-		e.logger.Warnf("An error occurred during the integrity check of new data file for %s. "+
-			"Update will be attempted again later. Error detail: %v", e.engineLabel(), pe.err)
-	case pullWrite:
-		e.logger.Errorf("An error occurred when writing to %s. Error detail: %v", e.GetDataFile(), pe.err)
-	default:
-		e.logger.Warnf("An error occurred while downloading a data file update for %s from %s. "+
-			"Update will be attempted again later. Error detail: %v", e.engineLabel(), e.maskedDataFileUrl(), pe.err)
+		// The table, as .NET, has no space after the engine's name.
+		return fmt.Sprintf("Integrity check failed. MD5 hash in HTTP response '%s' for '%s'data update does "+
+			"not match calculated hash for the downloaded file '%s'.", pe.expectedMD5, engine, pe.actualMD5), true
 	}
+	return "", false
 }
 
 // pullErrorKind says which step of a pull failed, which decides the log message.
@@ -323,6 +344,9 @@ type pullErrorKind int
 const (
 	pullConnect pullErrorKind = iota
 	pullDownload
+	pullTooManyRequests
+	pullForbidden
+	pullStatus
 	pullIntegrity
 	pullWrite
 )
@@ -331,6 +355,12 @@ const (
 type pullError struct {
 	kind pullErrorKind
 	err  error
+	// status is the HTTP status code of a pullStatus failure.
+	status int
+	// expectedMD5 and actualMD5 are the hashes of a pullIntegrity failure,
+	// the first as the response gave it and the second as read from the file.
+	expectedMD5 string
+	actualMD5   string
 }
 
 func (p *pullError) Error() string { return p.err.Error() }
@@ -389,16 +419,25 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 		retryAfter := resp.Header.Get("Retry-After")
 		retryAfterSeconds, err := strconv.Atoi(retryAfter)
 		if err != nil || len(retryAfter) == 0 {
-			return nil, newPullError(pullDownload, fmt.Errorf("failed to parse Retry-After header: %v", err))
+			return nil, newPullError(pullTooManyRequests,
+				fmt.Errorf("failed to parse Retry-After header: %v", err))
 		}
 
 		return &FileResponse{
 			retryAfter: retryAfterSeconds,
-		}, newPullError(pullDownload, fmt.Errorf("received 429, retrying after %d seconds", retryAfterSeconds))
+		}, newPullError(pullTooManyRequests, fmt.Errorf("retrying after %d seconds", retryAfterSeconds))
+	}
+
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, newPullError(pullForbidden, errors.New(resp.Status))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, newPullError(pullDownload, fmt.Errorf("failed to pull data file: %s", resp.Status))
+		return nil, &pullError{
+			kind:   pullStatus,
+			err:    errors.New(resp.Status),
+			status: resp.StatusCode,
+		}
 	}
 
 	// the MD5 header covers the raw body, compressed or not, so hash everything read from it
@@ -424,11 +463,17 @@ func doDataFileRequest(url string, logger *LogWrapper, timestamp *time.Time, dat
 	if err == nil {
 		contentMD5 := resp.Header.Get("Content-MD5")
 		if len(contentMD5) > 0 {
-			if hex.EncodeToString(hash.Sum(nil)) != contentMD5 {
-				err = newPullError(pullIntegrity, errors.New("MD5 validation failed"))
+			if actual := hex.EncodeToString(hash.Sum(nil)); actual != contentMD5 {
+				err = &pullError{
+					kind:        pullIntegrity,
+					err:         errors.New("MD5 validation failed"),
+					expectedMD5: contentMD5,
+					actualMD5:   actual,
+				}
 			}
 		} else {
-			logger.Printf("MD5 header not found in response, skipping validation")
+			logger.Warnf("No MD5 hash included in data update response for '%s'. "+
+				"Unable to verify data integrity", MaskLicenseKeysIn(url, keys))
 		}
 	}
 	if err != nil {
