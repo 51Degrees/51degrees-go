@@ -31,6 +31,24 @@ jobs:
         with:
           go-version-file: common/go.mod
 
+      # go test -run exits 0 when its pattern matches nothing, so a test
+      # renamed out of the pattern would leave this job green whilst checking
+      # nothing. Each test is named here and its PASS line is required.
       - name: Check the names
         working-directory: common
-        run: go test -v -run 'OldVariable' ./...
+        shell: bash
+        run: |
+          names='TestNoFileNamesAnOldVariable TestOldVariablesAreOnlyVariables'
+          pattern=$(echo $names | tr ' ' '|')
+          set +e
+          output=$(go test -v -run "^(${pattern})\$" ./... 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          for name in $names; do
+            if ! printf '%s' "$output" | grep -q -- "--- PASS: $name"; then
+              echo "::error::$name did not run, so the names were not checked"
+              exit 1
+            fi
+          done
+          exit $status
