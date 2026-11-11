@@ -402,7 +402,9 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 // strips to a field the engine writes itself. The keys the cloud service
 // accepts do not limit it, as what the service uses changes and the other
 // Evidence helps it improve. Conflicts between prefixes are resolved using
-// the defined precedence.
+// the defined precedence, so a key with no prefix ranks as a key whose
+// prefix is the whole key, giving query the precedence of query Evidence
+// and anything else the lowest precedence.
 func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
 	type choice struct {
 		prefix string
@@ -414,6 +416,9 @@ func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string
 			continue
 		}
 		prefix, field := core.SplitEvidenceKey(key)
+		if prefix == "" {
+			prefix = key
+		}
 		if engineFields[strings.ToLower(field)] {
 			continue
 		}
