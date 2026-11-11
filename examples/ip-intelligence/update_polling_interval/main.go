@@ -180,9 +180,9 @@ func runWithoutUpdates(params *common.ExampleParams) {
 	processEvidence(engine, free, evidences[1])
 
 	fmt.Printf("\nAutomatic updates download the Enterprise data file with a "+
-		"licence key, which IPI_KEY gives, or from a copy you host, whose "+
-		"address IPI_DATA_FILE_URL gives. Contact us for a key and a copy "+
-		"at %s\n", contactUs)
+		"licence key, which _51DEGREES_LICENSE_KEY gives, or from a copy "+
+		"you host, whose address _51DEGREES_IPI_DATA_FILE_URL gives. "+
+		"Contact us for a key and a copy at %s\n", contactUs)
 }
 
 func main() {
