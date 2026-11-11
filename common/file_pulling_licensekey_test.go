@@ -84,7 +84,7 @@ func TestFilePullingMasksLicenseKeys(t *testing.T) {
 			log := &licenseKeyLog{}
 			updater.SetCustomLogger(log)
 
-			updater.doFilePulling(make(chan struct{}, 1))
+			updater.pull(make(chan struct{}, 1))
 
 			lines := log.all()
 			all := strings.Join(lines, "\n")

@@ -32,6 +32,9 @@ const (
 		"Safari/9537.53"
 )
 
+// applyErrorLogged starts the message logged when a data file cannot be loaded.
+const applyErrorLogged = "Error during check for data update. An error occurred when applying a data update to engine 'DeviceDetectionHashEngine' after 1 tries"
+
 // unusableFile is a data file that a load must refuse, with part of the
 // message the refusal gives.
 type unusableFile struct {
@@ -299,7 +302,7 @@ func TestReloadFailureWhilePulling(t *testing.T) {
 				WithRandomization(0),
 				WithFileWatch(false),
 				WithCustomLogger(logs))
-			checkReloadFailure(t, e, logs, "failed to reload pulled data file",
+			checkReloadFailure(t, e, logs, applyErrorLogged,
 				bad, server.publish, good, before)
 		})
 	}
@@ -325,7 +328,7 @@ func TestReloadFailureWhileWatching(t *testing.T) {
 						WithCustomLogger(logs))
 					drop := func(content []byte) { replaceFile(t, data, content) }
 					checkReloadFailure(t, e, logs,
-						"failed to handle file externally changed",
+						applyErrorLogged,
 						bad, drop, good, before)
 				})
 		}
