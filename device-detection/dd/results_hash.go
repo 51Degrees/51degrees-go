@@ -59,8 +59,7 @@ var cMethodMap = map[C.HashMatchMethod]MatchMethod{
 type ResultsHash struct {
 	CPtr     *C.ResultsHash
 	CResults *interface{} // Pointer to a slice holding C results
-	// indexes are those of the manager the results were created from, and nil
-	// when it was created with no name.
+	// indexes are those of the manager the results were created from.
 	indexes propertyIndexes
 }
 
@@ -464,10 +463,6 @@ const valuesStringDefaultSize = 50
 func (results *ResultsHash) ValuesString(
 	propertyName string,
 	separator string) (value string, err error) {
-	if results.indexes == nil {
-		return valuesStringByName(
-			results, propertyName, valuesStringDefaultSize, separator)
-	}
 	index := results.indexes.index(propertyName)
 	if index < 0 {
 		return "", nil
@@ -495,46 +490,6 @@ func (results *ResultsHash) ValuesStringByIndex(
 	}
 	return valuesStringWithSize(
 		results, requiredPropertyIndex, valuesStringDefaultSize, separator)
-}
-
-// valuesStringByName reads the values of a property the data set is asked for
-// by name, which the C library looks up and reads in one call. It is how a
-// manager created with no name reads, because its indexes are the data set's
-// own order and it has no table of names.
-func valuesStringByName(
-	results *ResultsHash,
-	propertyName string,
-	defaultSize uint64,
-	separator string) (value string, err error) {
-	var buffer []C.char
-	cPropertyName := C.CString(propertyName)
-	defer C.free(unsafe.Pointer(cPropertyName))
-	cSeparator := C.CString(separator)
-	defer C.free(unsafe.Pointer(cSeparator))
-	exp := NewException()
-
-	actualSize := uint64(0)
-	for ok := true; ok; {
-		buffer = make([]C.char, defaultSize)
-		actualSize = uint64(C.ResultsHashGetValuesString(
-			results.CPtr,
-			cPropertyName,
-			&buffer[0],
-			C.size_t(defaultSize),
-			cSeparator,
-			exp.CPtr))
-
-		// Check exception
-		if !exp.IsOkay() {
-			return "", messageError(C.ExceptionGetMessage(exp.CPtr))
-		}
-		if ok = actualSize > defaultSize; ok {
-			// Add 1 for the null terminator
-			defaultSize = actualSize + 1
-		}
-	}
-
-	return C.GoString(&buffer[0]), nil
 }
 
 // AvailableProperties returns a list of available properties. The index
@@ -568,24 +523,12 @@ func (results *ResultsHash) PropertyName(
 
 // RequiredPropertyIndexFromName returns the required index of a property
 // using its name, being its place among the names the manager was created
-// with, or -1 for a name not among them. The names are looked up in a table
-// built when the manager was created, never in the data set.
-//
-// A manager created with no name has no table, so the data set is asked
-// instead. Those indexes are the data set's own order and a reload can move
-// them, which the C library is changing.
+// with, or with no names, among the names of the first data file loaded, or -1
+// for a name not among them. The names are looked up in a table built when
+// the manager was created, never in the data set.
 func (results *ResultsHash) RequiredPropertyIndexFromName(
 	propertyName string) int {
-	if results.indexes != nil {
-		return results.indexes.index(propertyName)
-	}
-	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
-	cAvailable := dataSet.b.b.available
-	cName := C.CString(propertyName)
-	defer C.free(unsafe.Pointer(cName))
-	i := C.PropertiesGetRequiredPropertyIndexFromName(
-		cAvailable, cName)
-	return int(i)
+	return results.indexes.index(propertyName)
 }
 
 // PropertyType returns the type that a value of a property determined by
