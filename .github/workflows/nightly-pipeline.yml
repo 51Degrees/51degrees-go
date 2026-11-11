@@ -13,8 +13,9 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  # Moves cxx to the latest 51degrees-cxx release, remakes the engines' C
-  # sources from it and updates Go dependencies, in a pull request.
+  # Moves cxx to the latest 51degrees-cxx release and javascript-templates to
+  # the head of its default branch, remakes the files made from them and
+  # updates Go dependencies, in a pull request.
   PackageUpdate:
     name: Nightly Package Update
     uses: 51Degrees/common-ci/.github/workflows/nightly-package-update.yml@main

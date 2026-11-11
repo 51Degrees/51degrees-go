@@ -27,12 +27,14 @@ import (
 	"strings"
 )
 
-// This file implements the small subset of Mustache used by the vendored
-// JavaScript template (template.mustache): variable substitution ({{x}},
-// {{&x}}, {{{x}}}), sections ({{#x}}...{{/x}}) and inverted sections
-// ({{^x}}...{{/x}}). The template's section keys are all booleans and it does
-// not iterate lists at the top level, so a full Mustache engine is unnecessary.
-// See https://mustache.github.io/
+// This file implements the part of Mustache that javascript-templates'
+// JavaScriptResource.mustache uses, as the Mustache specification
+// (https://github.com/mustache/spec) defines it. That is variables ({{x}},
+// {{&x}} and {{{x}}}), sections ({{#x}}...{{/x}}), inverted sections
+// ({{^x}}...{{/x}}) and comments ({{! x}}), with a line that holds only one
+// of the last three tags and spaces or tabs removed, which the specification
+// calls a standalone line. The template's sections are all booleans and it
+// iterates no lists, so a full Mustache engine is unnecessary.
 
 type mustacheNode interface {
 	render(ctx map[string]any, b *strings.Builder)
@@ -93,47 +95,54 @@ type frame struct {
 	children []mustacheNode
 }
 
-// parseMustache parses a template string into a renderable tree. It returns an
-// error string via panic-free best-effort: unbalanced sections render whatever
-// was parsed.
+// parseMustache parses a template string into a renderable tree. A section
+// that is not closed is left out, and a tag that is not closed is written as
+// text.
 func parseMustache(src string) *mustacheTemplate {
 	root := &frame{}
 	stack := []*frame{root}
 	top := func() *frame { return stack[len(stack)-1] }
 	add := func(n mustacheNode) { f := top(); f.children = append(f.children, n) }
 
-	for len(src) > 0 {
-		open := strings.Index(src, "{{")
+	// text is where the text not yet added starts.
+	text := 0
+	for {
+		open := strings.Index(src[text:], "{{")
 		if open < 0 {
-			add(textNode(src))
 			break
 		}
-		if open > 0 {
-			add(textNode(src[:open]))
-		}
-		src = src[open+2:]
-
-		// Triple-brace unescaped variable: {{{ name }}}
-		if strings.HasPrefix(src, "{") {
-			src = src[1:]
-			close := strings.Index(src, "}}}")
-			if close < 0 {
-				add(textNode("{{{" + src))
-				break
+		open += text
+		var tag string
+		end := -1
+		if strings.HasPrefix(src[open+2:], "{") {
+			// Triple-brace unescaped variable: {{{ name }}}
+			if close := strings.Index(src[open+3:], "}}}"); close >= 0 {
+				tag = "&" + src[open+3:open+3+close]
+				end = open + 3 + close + 3
 			}
-			name := strings.TrimSpace(src[:close])
-			add(varNode{name: name, unescape: true})
-			src = src[close+3:]
-			continue
+		} else if close := strings.Index(src[open+2:], "}}"); close >= 0 {
+			tag = strings.TrimSpace(src[open+2 : open+2+close])
+			end = open + 2 + close + 2
 		}
-
-		close := strings.Index(src, "}}")
-		if close < 0 {
-			add(textNode("{{" + src))
+		if end < 0 {
 			break
 		}
-		tag := strings.TrimSpace(src[:close])
-		src = src[close+2:]
+
+		// A standalone tag takes its line with it, from the line's start
+		// to its line ending.
+		before, after := open, end
+		if strings.HasPrefix(tag, "#") || strings.HasPrefix(tag, "^") ||
+			strings.HasPrefix(tag, "/") || strings.HasPrefix(tag, "!") {
+			if start, ok := standaloneStart(src, text, open); ok {
+				if next, ok := standaloneEnd(src, end); ok {
+					before, after = start, next
+				}
+			}
+		}
+		if before > text {
+			add(textNode(src[text:before]))
+		}
+		text = after
 
 		switch {
 		case strings.HasPrefix(tag, "#"):
@@ -154,7 +163,43 @@ func parseMustache(src string) *mustacheTemplate {
 			add(varNode{name: tag})
 		}
 	}
+	if text < len(src) {
+		add(textNode(src[text:]))
+	}
 	return &mustacheTemplate{root: root.children}
+}
+
+// standaloneStart returns where the line holding a tag that starts at open
+// begins, if only spaces and tabs come between the two. The text added so far
+// ends at from, so anything on the line before from is another tag.
+func standaloneStart(src string, from, open int) (int, bool) {
+	i := open
+	for i > from && (src[i-1] == ' ' || src[i-1] == '\t') {
+		i--
+	}
+	if i == 0 || src[i-1] == '\n' {
+		return i, true
+	}
+	return 0, false
+}
+
+// standaloneEnd returns where the line after a tag that ends at end begins,
+// past its LF or CRLF, if only spaces and tabs come before the line ending or
+// the end of the template.
+func standaloneEnd(src string, end int) (int, bool) {
+	i := end
+	for i < len(src) && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	switch {
+	case i == len(src):
+		return i, true
+	case src[i] == '\n':
+		return i + 1, true
+	case strings.HasPrefix(src[i:], "\r\n"):
+		return i + 2, true
+	}
+	return 0, false
 }
 
 func isTruthy(v any) bool {

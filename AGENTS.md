@@ -265,6 +265,18 @@ IP Intelligence's copy of the common C library is renamed with the list in
 `ipi_interop/cgoflags.go`), so one program can use both engines. The mixed
 examples check that.
 
+## The JavaScript template
+
+The JavaScript Builder Element renders
+[javascript-templates](https://github.com/51Degrees/javascript-templates)'
+`JavaScriptResource.mustache`, as every other 51Degrees language does. A Go
+module carries no submodule, so
+`pipeline/elements/javascriptbuilder/JavaScriptResource.mustache` is a copy of
+the file in the `javascript-templates` submodule, made by
+`ci/update-javascript-template.ps1`. Never edit the copy by hand. The build
+fails when it is not the file at the submodule's commit, and the nightly
+package update moves the submodule and the copy together.
+
 ## Data files
 
 The data files come from the [data](https://github.com/51Degrees/data)

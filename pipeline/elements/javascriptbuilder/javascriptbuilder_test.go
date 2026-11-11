@@ -289,7 +289,7 @@ func TestParametersExcludeSessionAndSequence(t *testing.T) {
 		"query.session-id": "12345678-1234-4234-8234-1234567890ab",
 		"query.myparam":    "myvalue",
 	})
-	line := grepLine(js, "var parameters =")
+	line := grepLine(js, "var renderedParameters =")
 	if !strings.Contains(line, "myparam") {
 		t.Fatalf("parameters should include myparam: %q", line)
 	}
