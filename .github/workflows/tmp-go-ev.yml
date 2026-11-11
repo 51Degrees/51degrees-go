@@ -1,0 +1,18 @@
+name: Temporary Cloud Request Engine test run
+
+on:
+  push:
+    branches:
+      - 'tmp/go-ev-*'
+
+jobs:
+  Test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Cloud Request Engine tests
+        working-directory: pipeline
+        run: go test ./cloud/requestengine/... -v
