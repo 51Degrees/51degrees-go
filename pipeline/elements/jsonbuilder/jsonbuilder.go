@@ -106,9 +106,9 @@ func (d *Data) JSON() string {
 func (e *Element) Process(fd core.FlowData) error {
 	seq, ok := sequenceNumber(fd)
 	if !ok {
-		return core.NewConfigurationError("the JSON Builder Element found no "+
-			"sequence number, so a Sequence Element needs to be placed before "+
-			"it in the Pipeline", nil)
+		return core.NewConfigurationError("The JSON Builder needs a sequence "+
+			"number. Place a Sequence Element before the JSON Builder in the "+
+			"Pipeline.", nil)
 	}
 	meta := buildMetaIndex(fd.Pipeline().Properties())
 	result := map[string]any{}

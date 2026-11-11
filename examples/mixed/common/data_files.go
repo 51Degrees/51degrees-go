@@ -35,8 +35,8 @@ import (
 	"strings"
 )
 
-// The free data files the examples use when DD_DATA_FILE and DATA_FILE name
-// no others.
+// The free data files the examples use when _51DEGREES_DD_PATH and
+// _51DEGREES_IPI_PATH name no others.
 const (
 	DeviceDetectionDataFile = "51Degrees-LiteV4.1.hash"
 	IpIntelligenceDataFile  = "51Degrees-LiteV41.ipi"

@@ -59,6 +59,9 @@ var cMethodMap = map[C.HashMatchMethod]MatchMethod{
 type ResultsHash struct {
 	CPtr     *C.ResultsHash
 	CResults *interface{} // Pointer to a slice holding C results
+	// indexes are those of the manager the results were created from, and nil
+	// when it was created with no name.
+	indexes propertyIndexes
 }
 
 /* Constructor and Destructor */
@@ -98,7 +101,7 @@ func NewResultsHash(
 	// value.
 	var cResults interface{} = (*[math.MaxInt32 / int(C.sizeof_ResultHash)]C.ResultHash)(
 		unsafe.Pointer(r.items))[:r.capacity:r.capacity]
-	res := &ResultsHash{r, &cResults}
+	res := &ResultsHash{CPtr: r, CResults: &cResults, indexes: manager.indexes}
 	runtime.SetFinalizer(res, resultsFinalizer)
 	return res
 }
@@ -205,8 +208,10 @@ func (results *ResultsHash) IterationsByIndex(index uint32) (int32, error) {
 	return int32(cResults[index].iterations), nil
 }
 
-// Drift returns the maximum drift for a matched substring. A graph that cannot
-// be read counts as one that matched nothing.
+// Drift returns the drift of every result added together, each result's drift
+// being how far, in character positions, the substring's hashes were found
+// from where they were expected. A graph that cannot be read counts as one
+// that matched nothing.
 func (results *ResultsHash) Drift() int32 {
 	_ = results.evaluateAll()
 	drift := int32(0)
@@ -415,11 +420,94 @@ func (results *ResultsHash) Values(
 // multiple values, they are separated by the specified separator.
 func valuesStringWithSize(
 	results *ResultsHash,
-	propertyName string,
+	requiredPropertyIndex int,
 	defaultSize uint64,
 	separator string) (value string, err error) {
 	// Create slice based on a certain size. This size will be updated
 	// if the actual size is higher.
+	var buffer []C.char
+	cSeparator := C.CString(separator)
+	defer C.free(unsafe.Pointer(cSeparator))
+	exp := NewException()
+
+	actualSize := uint64(0)
+	for ok := true; ok; {
+		buffer = make([]C.char, defaultSize)
+		actualSize = uint64(C.ResultsHashGetValuesStringByRequiredPropertyIndex(
+			results.CPtr,
+			C.int(requiredPropertyIndex),
+			&buffer[0],
+			C.size_t(defaultSize),
+			cSeparator,
+			exp.CPtr))
+
+		// Check exception
+		if !exp.IsOkay() {
+			return "", messageError(C.ExceptionGetMessage(exp.CPtr))
+		}
+		if ok = actualSize > defaultSize; ok {
+			// Add 1 for the null terminator
+			defaultSize = actualSize + 1
+		}
+	}
+
+	return C.GoString(&buffer[0]), nil
+}
+
+// valuesStringDefaultSize is the buffer a value is first read into. A longer
+// value is read again into a buffer of its own length.
+const valuesStringDefaultSize = 50
+
+// ValuesString returns a string of all values resulted from a detection.
+// If there are multiple values, they are separated by the specified separator.
+// The name is looked up in the table of the names the manager was created
+// with, and the value is read by its index. A name not among them, or one the
+// data set has no property for, gives an empty string.
+func (results *ResultsHash) ValuesString(
+	propertyName string,
+	separator string) (value string, err error) {
+	if results.indexes == nil {
+		return valuesStringByName(
+			results, propertyName, valuesStringDefaultSize, separator)
+	}
+	index := results.indexes.index(propertyName)
+	if index < 0 {
+		return "", nil
+	}
+	return results.ValuesStringByIndex(index, separator)
+}
+
+// ValuesStringByIndex returns a string of all values for the property at the
+// required property index, being its place among the names the manager was
+// created with, which a reload does not change. If there are multiple values,
+// they are separated by the specified separator. An index outside those
+// names, or one the data set has no property for, gives an empty string.
+func (results *ResultsHash) ValuesStringByIndex(
+	requiredPropertyIndex int,
+	separator string) (value string, err error) {
+	// The data set may have no property at the index, because a name it does
+	// not have keeps its place among the names given, and a reload can change
+	// which names it has. The C library's read by name checks for that and
+	// gives no value, where its read by index raises an index out of range
+	// error, so the check is made here.
+	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
+	if C.PropertiesGetAvailableIndex(
+		dataSet.b.b.available, C.int(requiredPropertyIndex)) < 0 {
+		return "", nil
+	}
+	return valuesStringWithSize(
+		results, requiredPropertyIndex, valuesStringDefaultSize, separator)
+}
+
+// valuesStringByName reads the values of a property the data set is asked for
+// by name, which the C library looks up and reads in one call. It is how a
+// manager created with no name reads, because its indexes are the data set's
+// own order and it has no table of names.
+func valuesStringByName(
+	results *ResultsHash,
+	propertyName string,
+	defaultSize uint64,
+	separator string) (value string, err error) {
 	var buffer []C.char
 	cPropertyName := C.CString(propertyName)
 	defer C.free(unsafe.Pointer(cPropertyName))
@@ -449,17 +537,6 @@ func valuesStringWithSize(
 	}
 
 	return C.GoString(&buffer[0]), nil
-}
-
-// ValuesString returns a string of all values resulted from a detection.
-// If there are multiple values, they are separated by the specified separator.
-func (results *ResultsHash) ValuesString(
-	propertyName string,
-	separator string) (value string, err error) {
-	// Use a reasonable default size here. If it is not big enough,
-	// an actual size will be used.
-	const defaultSize = 50
-	return valuesStringWithSize(results, propertyName, defaultSize, separator)
 }
 
 // AvailableProperties returns a list of available properties. The index
@@ -492,9 +569,18 @@ func (results *ResultsHash) PropertyName(
 }
 
 // RequiredPropertyIndexFromName returns the required index of a property
-// using its name
+// using its name, being its place among the names the manager was created
+// with, or -1 for a name not among them. The names are looked up in a table
+// built when the manager was created, never in the data set.
+//
+// A manager created with no name has no table, so the data set is asked
+// instead. Those indexes are the data set's own order and a reload can move
+// them, which the C library is changing.
 func (results *ResultsHash) RequiredPropertyIndexFromName(
 	propertyName string) int {
+	if results.indexes != nil {
+		return results.indexes.index(propertyName)
+	}
 	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
 	cAvailable := dataSet.b.b.available
 	cName := C.CString(propertyName)

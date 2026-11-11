@@ -490,7 +490,8 @@ func TestValuesStringWithSize(t *testing.T) {
 		}
 
 		// Get values
-		value, err := valuesStringWithSize(results, data.property, testSize, ",")
+		value, err := valuesStringWithSize(results,
+			results.RequiredPropertyIndexFromName(data.property), testSize, ",")
 		if err != nil {
 			t.Errorf("Failed to get values string for User-Agent \"%s\".\n",
 				uaMobile)
