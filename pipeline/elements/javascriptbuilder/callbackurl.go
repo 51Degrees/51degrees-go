@@ -36,7 +36,7 @@ const userInfoMarker = "***"
 // JSON from its parts and checks it. The protocol and host usually come
 // from the request, and the URL is written inside a single-quoted
 // JavaScript string, so it is checked and encoded first.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/javascript-builder.md#callback-url
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/javascript-builder.md#callback-url
 //
 // valid is the URL for the script, or "" when there is none. refused is set
 // when the URL fails the rules, being the URL as built for the log, with

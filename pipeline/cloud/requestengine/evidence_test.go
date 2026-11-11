@@ -34,14 +34,14 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
-// The request carries only the Evidence the cloud service accepts, with each
-// prefix removed and the query value winning a conflict. Evidence that strips
-// to resource, license, licence or values is left out even when the service
-// lists those keys, because the engine writes those fields itself, the
-// service reads licence as the license key, and a second field would leave
-// which applied undecided.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
-func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
+// The request carries every Evidence value, those the cloud service does not
+// list included, with each prefix removed and the query value winning a
+// conflict. Evidence that strips to resource, license, licence or values is
+// left out even when the service lists those keys, because the engine writes
+// those fields itself, the service reads licence as the license key, and a
+// second field would leave which applied undecided.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+func TestRequestCarriesEveryEvidenceValueButTheEngineFields(t *testing.T) {
 	var mu sync.Mutex
 	var form url.Values
 	mux := http.NewServeMux()
@@ -81,6 +81,8 @@ func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 		"header.user-agent":      "header agent",
 		"query.user-agent":       "query agent",
 		"header.accept-language": "en-GB",
+		"cookie.session":         "abc",
+		"server.client-ip":       "203.0.113.1",
 		"query.resource":         "evidence-resource",
 		"header.resource":        "header-resource",
 		"query.license":          "evidence-license",
@@ -96,18 +98,21 @@ func TestRequestCarriesOnlyEvidenceTheServiceNeeds(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	want := url.Values{
-		"resource":   {"configured-key"},
-		"user-agent": {"query agent"},
+		"resource":        {"configured-key"},
+		"user-agent":      {"query agent"},
+		"accept-language": {"en-GB"},
+		"session":         {"abc"},
+		"client-ip":       {"203.0.113.1"},
 	}
 	if !reflect.DeepEqual(form, want) {
 		t.Errorf("the request carried %v, want %v", form, want)
 	}
 }
 
-// Evidence named in any letter case is matched to the keys the cloud service
-// accepts, also in any letter case, and Evidence that strips to resource,
-// license, licence or values in any letter case is left out.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// Evidence that strips to resource, license, licence or values in any letter
+// case is left out, whatever the letter case of the keys the cloud service
+// lists, and other Evidence is sent.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func TestRequestLeavesOutEngineFieldsInAnyLetterCase(t *testing.T) {
 	var mu sync.Mutex
 	var form url.Values
