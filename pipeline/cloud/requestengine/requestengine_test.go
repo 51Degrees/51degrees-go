@@ -119,10 +119,9 @@ func TestCloudRequestSuccess(t *testing.T) {
 	if cs.lastForm.Get("resource") != "test-key" {
 		t.Fatalf("resource key not sent, got %q", cs.lastForm.Get("resource"))
 	}
-	// Only the Evidence the cloud service accepts is sent, so query.extra,
-	// which evidencekeys does not list, is left out.
-	if cs.lastForm.Has("extra") {
-		t.Fatalf("evidence not in evidencekeys was sent as %q", cs.lastForm.Get("extra"))
+	// Evidence the cloud service does not list is sent too.
+	if got := cs.lastForm.Get("extra"); got != "extra-value" {
+		t.Fatalf("evidence not in evidencekeys was sent as %q, want extra-value", got)
 	}
 }
 

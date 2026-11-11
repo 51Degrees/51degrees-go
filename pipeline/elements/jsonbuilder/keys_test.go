@@ -64,7 +64,7 @@ func (e *mixedCaseEngine) Process(fd core.FlowData) error {
 // javascriptProperties. The names javascriptProperties and
 // evidenceproperties list are the same lower case names, so each finds its
 // entry in the JSON.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/json-builder.md#process
 func TestJSONBuilderKeysInLowerCase(t *testing.T) {
 	result := buildJSON(t, newMixedCaseEngine())
 	if _, present := result["Hardware"]; present {

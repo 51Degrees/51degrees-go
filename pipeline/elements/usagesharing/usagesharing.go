@@ -202,7 +202,7 @@ func (e *Element) sample() bool {
 // when the Evidence holds the web request as core.EvidenceHTTPRequest, the
 // request's parts too. A key found in both keeps the Evidence value, and the
 // request itself is never shared.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
 func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
 	all := fd.Evidence().AsMap()

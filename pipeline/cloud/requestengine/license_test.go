@@ -24,7 +24,7 @@ package requestengine
 
 // These tests follow the specification's rules for the credentials, the
 // Requested Properties and the Properties the cloud service did not return.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#credentials
 
 import (
 	"errors"
@@ -164,7 +164,7 @@ func recordText(r slog.Record) string {
 // rows build, and the two invalid ones fail the build with a
 // configuration error that names the fix, before any request is made. A
 // value that is empty or only whitespace counts as absent.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
 func TestCredentialCombinations(t *testing.T) {
 	properties := []string{"device.ismobile"}
 	cases := []struct {
@@ -227,7 +227,7 @@ func TestCredentialCombinations(t *testing.T) {
 // license and the Requested Properties as values, comma separated, with no
 // resource, all in the body and nothing in the URL. Evidence that strips to
 // values or license is still left out.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
 func TestLicenseKeyAloneSendsLicenseAndValues(t *testing.T) {
 	cloud := newCredentialCloud()
 	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
@@ -289,7 +289,7 @@ func TestResourceAndLicenseKeysSendBoth(t *testing.T) {
 // Resource Key and the Requested Properties as values, so the cloud service
 // adds each one to those the Resource Key carries, as null with a nullreason
 // where no licence grants it.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#requested-properties
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#requested-properties
 func TestResourceKeyAndPropertiesSendValues(t *testing.T) {
 	cloud := newCredentialCloud()
 	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
@@ -319,7 +319,7 @@ func TestResourceKeyAndPropertiesSendValues(t *testing.T) {
 // Resource Key, the License Key and the Requested Properties as values, all
 // in the body, so the cloud service answers with the Resource Key's
 // Properties plus the requested ones the License Key grants.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#license-key
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#license-key
 func TestBothKeysAndPropertiesSendValues(t *testing.T) {
 	cloud := newCredentialCloud()
 	e, err := credentialBuilder(cloud.serve(t), &logRecorder{}).
@@ -437,7 +437,7 @@ func TestDiscoveryWithEachCredential(t *testing.T) {
 // The License Key never appears in full in an error or a log entry, even
 // when the cloud service writes it in its answer. It appears masked, with
 // only its last four characters showing.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/logging.md#license-keys
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/logging.md#license-keys
 func TestLicenseKeyIsMasked(t *testing.T) {
 	echo := `{"errors":["The license key ` + testLicenseKey + ` is not valid"]}`
 	masked := core.MaskLicenseKey(testLicenseKey)
@@ -532,7 +532,7 @@ func TestLicenseKeyIsMasked(t *testing.T) {
 // letter case, and the Properties the answer left out are logged once as
 // not covered by the credential, while every request succeeds. A Property
 // that is present but null counts as answered.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#properties-the-remote-server-did-not-return
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#properties-the-remote-server-did-not-return
 func TestPropertiesNotReturnedAreLoggedOnce(t *testing.T) {
 	cloud := newCredentialCloud()
 	cloud.jsonBody = `{"device":{"ismobile":true,"iscrawler":null,` +
@@ -594,7 +594,7 @@ func TestPropertiesNotReturnedAreLoggedOnce(t *testing.T) {
 // With a Resource Key and no License Key, a Property no licence grants comes
 // back null, so a name the answer left out is not a Property at all. The
 // warning says so, rather than blaming a License Key that was never set.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#accepted-combinations
 func TestResourceKeyPropertiesNotReturnedNameNoLicenseKey(t *testing.T) {
 	cloud := newCredentialCloud()
 	cloud.jsonBody = `{"device":{"ismobile":true,"hardwarevendor":null,` +
@@ -671,7 +671,7 @@ func TestFactoryTakesLicenseKeyAndRequestedProperties(t *testing.T) {
 // A License Key that a failed response's content holds across the point
 // where the logged content is cut is still masked, so no part of it is
 // shown in the error.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/features/logging.md#license-keys
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/logging.md#license-keys
 func TestLicenseKeyAcrossTheCutIsMasked(t *testing.T) {
 	cloud := newCredentialCloud()
 	cloud.jsonStatus = http.StatusInternalServerError

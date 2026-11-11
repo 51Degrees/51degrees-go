@@ -23,7 +23,7 @@
 package requestengine
 
 // These tests follow the start-up rules of the specification.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
 
 import (
 	"context"
@@ -515,7 +515,7 @@ func TestBuildFailuresCountTowardRecovery(t *testing.T) {
 // A refused first-use retry of discovery answers that one request, so it
 // does not count toward the recovery period, which every visitor shares.
 // Each request still reaches the cloud service and gets its refusal.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/cloud-request-engine.md#failures-that-count
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#failures-that-count
 func TestRefusedDiscoveryRetryDoesNotCountTowardRecovery(t *testing.T) {
 	for _, endpoint := range []string{"accessibleproperties", "evidencekeys"} {
 		for _, status := range []int{400, 401, 403, 404, 408} {
