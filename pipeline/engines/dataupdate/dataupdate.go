@@ -27,7 +27,7 @@
 // All update work happens on background goroutines; per the specification,
 // errors there are logged and never crash the process, and refresh is performed
 // in a thread-safe manner so the Engine can keep processing during an update.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md
 package dataupdate
 
 import (
@@ -64,7 +64,7 @@ type Refreshable interface {
 
 // URLFormatter customizes the data update URL, for example by appending query
 // parameters required by the 51Degrees Distributor.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#update-polling
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#update-polling
 type URLFormatter func(cfg Config) string
 
 // Config describes a single data source and how it should be updated. It maps
@@ -268,7 +268,7 @@ func (s *Service) OnUpdate(identifier string, fn func()) {
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP
 // polling is configured it polls the remote server; otherwise it refreshes from
 // the configured file if it is newer.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#programmatic-update
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#programmatic-update
 func (s *Service) CheckForUpdate(identifier string) error {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
@@ -285,7 +285,7 @@ func (s *Service) CheckForUpdate(identifier string) error {
 // UpdateFromMemory refreshes the named data source's Engine from data held in
 // memory, with no download. It is the programmatic update for a memory data
 // source.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#programmatic-update
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#programmatic-update
 func (s *Service) UpdateFromMemory(identifier string, data []byte) error {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
@@ -376,7 +376,7 @@ func (r *registration) randomExtra() time.Duration {
 // firstDelay returns the wait before the first poll. When the loaded data
 // expects an update after a later date, polling does not start until then, and
 // the random time is added to the wait.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#automatic-update-via-http
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#automatic-update-via-http
 func (r *registration) firstDelay(regular time.Duration) time.Duration {
 	if r.cfg.NextUpdate == nil {
 		return regular
