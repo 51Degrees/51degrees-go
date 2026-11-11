@@ -157,3 +157,33 @@ func TestReloadFromFileFreesReplacedDataSet(t *testing.T) {
 		}
 	}
 }
+
+// A reload from a file keeps the configuration and the property names the
+// manager was created with, so names and a configuration given to
+// ReloadFromFile change nothing, and the required properties stay those of
+// the first data file.
+func TestReloadFromFileKeepsTheManagersNames(t *testing.T) {
+	good := readReloadTestFile(t)
+	dir := t.TempDir()
+	first := filepath.Join(dir, "data0.ipi")
+	writeReloadTestFile(t, first, good)
+	manager := NewResourceManager()
+	defer manager.Free()
+	if err := InitManagerFromFile(manager, *NewConfigIpi(Balanced), "", first); err != nil {
+		t.Fatal(err)
+	}
+	want := GetAvailablePropertyNames(manager)
+	if len(want) < 2 {
+		t.Fatalf("%s has %d properties, want at least 2", reloadTestDataFile, len(want))
+	}
+
+	next := filepath.Join(dir, "data1.ipi")
+	writeReloadTestFile(t, next, good)
+	if err := manager.ReloadFromFile(*NewConfigIpi(InMemory), want[0], next); err != nil {
+		t.Fatal(err)
+	}
+	got := GetAvailablePropertyNames(manager)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("after a reload given %q the properties are %v, want %v", want[0], got, want)
+	}
+}
