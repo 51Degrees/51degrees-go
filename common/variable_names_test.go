@@ -11,14 +11,15 @@ import (
 	"testing"
 )
 
-// fiftyOneName finds a name that starts FIFTYONE_. The names of the C library
-// all start FIFTYONE_DEGREES_ and are left out.
-var fiftyOneName = regexp.MustCompile(`FIFTYONE_[A-Z0-9_]+`)
+// fiftyOneName finds a name that starts FIFTYONE_ where a variable is named,
+// after a quote, a backtick, an equals sign, a dollar sign, env: or env. The
+// names of the C library all start FIFTYONE_DEGREES_ and are left out.
+var fiftyOneName = regexp.MustCompile("(?:[\"'`=$]|\\$\\{|env[:.])(FIFTYONE_[A-Z0-9_]+)")
 
 // No tracked file names a variable that starts FIFTYONE_, because the
-// 51Degrees environment variables start _51DEGREES_, which is shorter. The C
-// sources and the cxx submodule hold only the C library's names. Outside a git
-// checkout, such as the module cache, there are no tracked files to read.
+// 51Degrees environment variables start _51DEGREES_, which is shorter. The cxx
+// submodule is not read. Outside a git checkout, such as the module cache,
+// there are no tracked files to read.
 func TestNoFileNamesAFiftyOneVariable(t *testing.T) {
 	top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
@@ -35,8 +36,7 @@ func TestNoFileNamesAFiftyOneVariable(t *testing.T) {
 	}
 	var found []string
 	for _, file := range files {
-		if strings.HasPrefix(file, "cxx/") || file == "cxx" ||
-			strings.HasSuffix(file, ".c") || strings.HasSuffix(file, ".h") {
+		if strings.HasPrefix(file, "cxx/") || file == "cxx" {
 			continue
 		}
 		path := filepath.Join(root, filepath.FromSlash(file))
@@ -64,8 +64,8 @@ func TestNoFileNamesAFiftyOneVariable(t *testing.T) {
 // not the C library's.
 func fiftyOneVariables(line []byte) []string {
 	var names []string
-	for _, name := range fiftyOneName.FindAll(line, -1) {
-		if !bytes.HasPrefix(name, []byte("FIFTYONE_DEGREES_")) {
+	for _, match := range fiftyOneName.FindAllSubmatch(line, -1) {
+		if name := match[1]; !bytes.HasPrefix(name, []byte("FIFTYONE_DEGREES_")) {
 			names = append(names, string(name))
 		}
 	}
