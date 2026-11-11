@@ -39,10 +39,10 @@ import (
 // The input properties is a comma separated string list. This matches the C API
 // fiftyoneDegreesHashInitManagerFromFile.
 //
-// With properties named, the manager keeps the required property index of each
-// name, so a read by name costs a map lookup rather than a search of the data
-// set. The index is the name's place among the names given, which a reload
-// does not change.
+// The manager keeps the required property index of each name, so a read by
+// name costs a map lookup rather than a search of the data set. The index is
+// the name's place among the names given, or with no names, among the names
+// of the first data file loaded, and a reload does not change it.
 func InitManagerFromFile(
 	manager *ResourceManager,
 	config ConfigHash,
@@ -72,12 +72,9 @@ func InitManagerFromFile(
 		return messageError(C.StatusGetMessage(s, cPath))
 	}
 
-	// Keep the index of each name given, so a read by name does not search
-	// the data set. A manager given no name is left without the table,
-	// because its indexes come from the data set and a reload can move them.
-	if properties != "" {
-		manager.indexes = newPropertyIndexes(manager)
-	}
+	// Keep the index of each name, so a read by name does not search the data
+	// set. The C library keeps the names across a reload, so the table holds.
+	manager.indexes = newPropertyIndexes(manager)
 
 	// Construct the Set Headers list
 	manager.setHeaders = constructResponseHeaders(manager)

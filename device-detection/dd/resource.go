@@ -36,8 +36,8 @@ type ResourceManager struct {
 	HttpHeaderKeys []EvidenceKey         // Http header keys required by this engine
 	CPtr           *C.ResourceManager    // Pointer to C resource
 	// indexes holds the required property index of each property name the
-	// manager was created with, built once when it is created, and nil when
-	// it was created with no name.
+	// manager was created with, or with no names, of each name of the first
+	// data file it loaded, built once when it is created.
 	indexes propertyIndexes
 }
 
