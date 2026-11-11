@@ -47,10 +47,10 @@ type Engine struct {
 	isStopped bool
 
 	managerProperties []string
-	// names holds the property names of the data set loaded last. namesMu
-	// stops two loads replacing it at once.
-	names   atomic.Pointer[ipi_interop.PropertyNames]
-	namesMu sync.Mutex
+	// names holds the property name at each required property index. It is
+	// made once, when the first data file is loaded, and kept across reloads,
+	// because the C library keeps the names the engine was built with.
+	names atomic.Pointer[ipi_interop.PropertyNames]
 }
 
 const (
@@ -208,13 +208,6 @@ func (e *Engine) Stop() {
 	e.isStopped = true
 	close(e.stopCh)
 
-	// The names hold a data set of the manager, so they go first.
-	e.namesMu.Lock()
-	if names := e.names.Swap(nil); names != nil {
-		names.Release()
-	}
-	e.namesMu.Unlock()
-
 	if e.manager != nil {
 		e.manager.Free()
 	} else {
@@ -324,25 +317,7 @@ func (e *Engine) processFileExternallyChanged() error {
 		return err
 	}
 
-	if err := e.reloadManager(reloadFilePath); err != nil {
-		return err
-	}
-	e.refreshPropertyNames()
-
-	return nil
-}
-
-// refreshPropertyNames reads the property names of the data set the manager
-// has now, in place of those of the data set loaded before it.
-func (e *Engine) refreshPropertyNames() {
-	e.namesMu.Lock()
-	defer e.namesMu.Unlock()
-	if e.isStopped || e.manager == nil {
-		return
-	}
-	if old := e.names.Swap(ipi_interop.NewPropertyNames(e.manager)); old != nil {
-		old.Release()
-	}
+	return e.reloadManager(reloadFilePath)
 }
 
 // this function will be called when the engine is started or the is new file available
@@ -377,6 +352,9 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 			}
 			return fmt.Errorf("failed to init manager from file: %+v", err)
 		}
+		// The table of names is made once, here, and never from a later
+		// data set.
+		e.names.Store(ipi_interop.NewPropertyNames(e.manager))
 		e.dataFileLastUsedByManager = filePath
 		loaded = true
 		return nil
@@ -475,18 +453,12 @@ func (e *Engine) ProcessWithResults(ipAddress string, results *ipi_interop.Resul
 	var err error
 
 	if results.HasValues() {
-		// The values are those of every required property of the results' own
-		// data set. The names read at the last load are used only for results
-		// from that data set, so results made before a reload, or reused across
-		// one, are named from their own data set instead.
+		// The values are those of every required property. An index names
+		// the same property in every data set the manager loads, so the table
+		// made at build names the values of results from any of them.
 		var resolver func(int) string
-		if names := e.names.Load().For(results); names != nil {
-			resolver = func(index int) string {
-				if index >= 0 && index < len(names) {
-					return names[index]
-				}
-				return ""
-			}
+		if names := e.names.Load(); names != nil {
+			resolver = names.Name
 		}
 		values, err = results.GetWeightedValuesByIndexes(nil, resolver)
 		if err != nil {
@@ -513,8 +485,8 @@ func (e *Engine) appendLicenceKey() error {
 }
 
 // GetPropertyNameByIndex returns the name of the property at the required
-// property index in the data set loaded last, or an empty string for an index
-// outside its required properties.
+// property index, or an empty string for an index outside the required
+// properties.
 func (e *Engine) GetPropertyNameByIndex(index int) string {
 	return e.names.Load().Name(index)
 }

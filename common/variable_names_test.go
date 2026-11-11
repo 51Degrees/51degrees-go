@@ -20,15 +20,16 @@ import (
 //
 // Two families are matched. A name that starts FIFTYONE_, because the
 // 51Degrees environment variables start _51DEGREES_, which is shorter, and the
-// names the examples and the CI scripts read before each variable took one
-// _51DEGREES_ name. The names of the C library all start FIFTYONE_DEGREES_ and
-// are left out.
+// names the examples, the CI scripts and the cloud request engine read before
+// each variable took one _51DEGREES_ name. The names of the C library all
+// start FIFTYONE_DEGREES_ and are left out.
 //
 // Every name in this pattern is preceded by a bracket or a bar rather than by
 // one of the characters above, so this file does not match itself.
 var oldName = regexp.MustCompile("(?:[\"'`=$]|\\$\\{|env[:.]|^[\t -]*)" +
 	"(FIFTYONE_[A-Z0-9_]+|DD_DATA_FILE|DATA_FILE|EVIDENCE_YAML" +
-	"|LICENSE_KEY|IPI_KEY|IPI_DATA_FILE_URL|DEVICE_DETECTION_KEY)")
+	"|LICENSE_KEY|IPI_KEY|IPI_DATA_FILE_URL|DEVICE_DETECTION_KEY" +
+	"|FOD_CLOUD_API_URL)")
 
 // No tracked file names one of those variables. The cxx submodule is not read.
 // Outside a git checkout, such as the module cache, there are no tracked files
@@ -92,6 +93,7 @@ const (
 	licence   = "LICENSE" + "_KEY"
 	ipiKey    = "IPI" + "_KEY"
 	deviceKey = "DEVICE" + "_DETECTION_KEY"
+	cloudURL  = "FOD" + "_CLOUD_API_URL"
 )
 
 // A name counts only where a variable is named, after a quote, a backtick, an
@@ -116,6 +118,7 @@ func TestOldVariablesAreOnlyVariables(t *testing.T) {
 		`os.Getenv("` + ipiKey + `")`:           ipiKey,
 		`os.Getenv("IPI_` + dataFile + `_URL")`: "IPI_" + dataFile + "_URL",
 		`os.Getenv("` + deviceKey + `")`:        deviceKey,
+		`os.Getenv("` + cloudURL + `")`:         cloudURL,
 
 		// A workflow declares a variable as a key in an env: block, and a
 		// readme lists one, so a name at the start of a line counts.
@@ -126,6 +129,7 @@ func TestOldVariablesAreOnlyVariables(t *testing.T) {
 		// The one name each of those variables now carries.
 		`os.Getenv("_51DEGREES_DD_PATH")`:         "",
 		`os.Getenv("_51DEGREES_` + licence + `")`: "",
+		`os.Getenv("_51DEGREES_CLOUD_ENDPOINT")`:  "",
 		// A longer name that ends in one of these words.
 		`os.Getenv("_51DEGREES_TEST_` + licence + `")`: "",
 		// A GitHub secret is not an environment variable, and it is read
