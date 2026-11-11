@@ -49,7 +49,8 @@ func (p *PropertyNames) Release() {}
 
 // For returns the names whichever data set the results were made from,
 // because an index names the same property in every data set the manager
-// loads.
+// loads. It does not look at r, so results from another manager's data set
+// are given this manager's names.
 //
 // Deprecated: use Name, which gives the name at a required property index.
 func (p *PropertyNames) For(r *ResultsIpi) []string {

@@ -63,7 +63,9 @@ type Builder struct {
 }
 
 // EnvCloudAPIURL is the environment variable that overrides the default cloud
-// base endpoint when SetEndpoint is not used.
+// base endpoint when SetEndpoint is not used. The constant's Go name does not
+// match the variable's name, so that code that already uses the constant
+// still compiles.
 const EnvCloudAPIURL = "_51DEGREES_CLOUD_ENDPOINT"
 
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
