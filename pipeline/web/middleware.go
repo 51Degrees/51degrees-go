@@ -46,7 +46,7 @@ import (
 // Default intercepted URL paths.
 const (
 	DefaultJavaScriptURL = "/51Degrees.core.js"
-	DefaultJSONURL       = "/51dpipeline/json"
+	DefaultJSONURL       = javascriptbuilder.DefaultEndpoint
 	DefaultMaxAge        = 30 * time.Minute
 )
 
@@ -159,7 +159,8 @@ func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
 func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
-// cookies, query and form parameters, client IP, host and protocol.
+// cookies, query and form parameters, client IP, host and protocol, and the
+// request itself as core.EvidenceHTTPRequest.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
 func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
@@ -208,8 +209,14 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 		}
 	}
 
-	fd.AddEvidence("server.client-ip", m.clientIP(r))
-	fd.AddEvidence("header.protocol", m.requestProtocol(r))
+	clientIP, protocol := m.clientIP(r), m.requestProtocol(r)
+	fd.AddEvidence("server.client-ip", clientIP)
+	fd.AddEvidence("header.protocol", protocol)
+
+	// The request itself, whether or not an element accepts it, so that the
+	// Usage Sharing Element can share headers no element accepts.
+	fd.AddEvidence(core.EvidenceHTTPRequest,
+		core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol))
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
@@ -307,16 +314,18 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 }
 
 // etag computes a hash over the Evidence values that the Pipeline's filter
-// accepts, so that the cached content is revalidated when relevant Evidence
-// changes. FNV-1a over the sorted keys and their values has no per-process
-// seed, so the same Evidence gives the same ETag in every process, as a
-// browser revalidating after a restart or against another server needs.
+// accepts, as the request supplied them, so that the cached content is
+// revalidated when relevant Evidence changes. Values that Flow Elements add
+// while processing, such as a new session id, are left out. FNV-1a over the
+// sorted keys and their values has no per-process seed, so the same Evidence
+// gives the same ETag in every process, as a browser revalidating after a
+// restart or against another server needs.
 // The ETag is weak, W/"...", because a data file update can change the
 // content for the same Evidence without changing the hash (RFC 9110 sections
 // 8.8.1 and 8.8.3).
 func (m *Middleware) etag(fd core.FlowData) string {
 	filter := m.pipeline.EvidenceKeyFilter()
-	all := fd.Evidence().AsMap()
+	all := core.SuppliedEvidence(fd)
 	keys := make([]string, 0, len(all))
 	for k := range all {
 		if filter == nil || filter.Include(k) {

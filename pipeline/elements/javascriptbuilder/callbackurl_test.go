@@ -367,8 +367,8 @@ func TestCallbackURLLogged(t *testing.T) {
 	t.Run("once per element", func(t *testing.T) {
 		h := &recordingHandler{}
 		logger := slog.New(h)
-		first := NewBuilder().SetLogger(logger).Build()
-		second := NewBuilder().SetLogger(logger).Build()
+		first := NewBuilder().SetLogger(logger).SetEndpoint(testEndpoint).Build()
+		second := NewBuilder().SetLogger(logger).SetEndpoint(testEndpoint).Build()
 		for _, host := range []string{"a b", "example.123", "u@example.com"} {
 			for _, e := range []*Element{first, second} {
 				scriptURL(t, e, map[string]string{
@@ -386,7 +386,8 @@ func TestCallbackURLLogged(t *testing.T) {
 			"exa\u2029mple.com", "exa\u0085mple.com",
 		} {
 			h := &recordingHandler{}
-			scriptURL(t, NewBuilder().SetLogger(slog.New(h)).Build(),
+			scriptURL(t, NewBuilder().SetLogger(slog.New(h)).
+				SetEndpoint(testEndpoint).Build(),
 				map[string]string{"header.protocol": "https", "header.host": host})
 			records := h.records()
 			if len(records) != 1 {
@@ -400,7 +401,8 @@ func TestCallbackURLLogged(t *testing.T) {
 
 	t.Run("not when valid", func(t *testing.T) {
 		h := &recordingHandler{}
-		scriptURL(t, NewBuilder().SetLogger(slog.New(h)).Build(),
+		scriptURL(t, NewBuilder().SetLogger(slog.New(h)).
+			SetEndpoint(testEndpoint).Build(),
 			map[string]string{"header.protocol": "https", "header.host": "example.com"})
 		if n := len(h.records()); n != 0 {
 			t.Errorf("logged %d records, want none: %q", n, h.records())
@@ -408,8 +410,8 @@ func TestCallbackURLLogged(t *testing.T) {
 	})
 }
 
-// recordingHandler keeps the text of each error record as the handler
-// receives it, with no escaping of its own.
+// recordingHandler keeps the text of each warning and error record as the
+// handler receives it, after its level, with no escaping of its own.
 type recordingHandler struct {
 	mu   sync.Mutex
 	text []string
@@ -418,11 +420,11 @@ type recordingHandler struct {
 func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
-	if r.Level < slog.LevelError {
+	if r.Level < slog.LevelWarn {
 		return nil
 	}
 	var b strings.Builder
-	b.WriteString(r.Message)
+	b.WriteString(r.Level.String() + " " + r.Message)
 	r.Attrs(func(a slog.Attr) bool {
 		b.WriteString(" " + a.Key + "=" + a.Value.String())
 		return true
