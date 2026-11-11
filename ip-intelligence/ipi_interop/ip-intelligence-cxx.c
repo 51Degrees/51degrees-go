@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx cfad8978827292b97ad08f306891edea09ece304 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 1a92d51e7c19bc77a9095738d907f665194b4b77 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -6193,8 +6193,10 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
  * names the caller gave when the data set was created, which is the index
  * every read by position takes. A reload does not change it. A name the data
  * does not have keeps its index, and reads as a property the data set does
- * not have. When the caller named no property, it is the index of the
- * property in the list of available properties, which a reload can change.
+ * not have. When the caller named no property, the names are those of the
+ * first data set loaded, in the order of its list of available properties,
+ * and a reload keeps them, so a property that only a later data set holds
+ * gets no index.
  *
  * **Available Index** : the 0 based index of the property in the list of
  * available properties, which holds the properties the data has in ascending
@@ -6235,8 +6237,9 @@ EXTERNAL void fiftyoneDegreesResourceReplace(
  * method is used when a data set is being reloaded due to a change in the
  * underlying data. The new results are created from the names the caller
  * gave the first time, so a property the previous data did not have is
- * available once the new data has it, and a caller that named no property
- * gets every property of the new data.
+ * available once the new data has it. A caller that named no property gets
+ * every property of the new data, with the names of the first data set as
+ * its required property indexes.
  *
  * Creation also requires a method to retrieve the name of the properties from 
  * the underlying data source. A method pointer conforming to 
@@ -6341,8 +6344,10 @@ typedef struct fiftyone_degrees_property_available_t {
                          available components. */
     int32_t requiredPropertyIndex; /**< Index of the property in the names
                                    the caller gave, the first if the name was
-                                   given more than once. When the caller named
-                                   no property, the index of this item */
+                                   given more than once, or -1 if it is not
+                                   among them. When the caller named no
+                                   property, the index of this item in the
+                                   first data set loaded */
 } fiftyoneDegreesPropertyAvailable;
 
 /**
@@ -6362,12 +6367,18 @@ FIFTYONE_DEGREES_ARRAY_TYPE(
 	                                Initialised to false and set by the engine.
 	                                A list created from an existing list keeps
 	                                the value, which carries it across a reload */
+	bool namesFromDataSet; /**< True when the caller named no property, so the
+	                           names are those of the first data set loaded.
+	                           The data set then walks a component's graph at
+	                           the first read of one of its properties, as
+	                           when no names are held */
 	uint32_t namedCount; /**< Number of names the caller gave, which is the
 	                         number of required property indexes when the
 	                         caller named properties */
 	fiftyoneDegreesPropertyNamed *named; /**< The names the caller gave, in the
 	                                         caller's order, or NULL when the
-	                                         caller named no property. A list
+	                                         caller named no property and this
+	                                         is the first data set. A list
 	                                         created from an existing list is
 	                                         created from these names */
 )
@@ -6469,8 +6480,8 @@ EXTERNAL int fiftyoneDegreesPropertiesGetPropertyIndexFromName(
 /**
  * Gets the required property index of the property named, which is its
  * place in the names the caller gave, the first if the name was given more
- * than once. When the caller named no property, it is the index of the
- * property in the available properties.
+ * than once. When the caller named no property, it is the place of the
+ * property in the first data set loaded.
  * @param available properties instance
  * @param propertyName string containing the property name
  * @return 0 based required property index, or -1 if the data set does not
@@ -6484,7 +6495,7 @@ EXTERNAL int fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName(
  * Maps the required property index to the index in the source data structure.
  * @param available properties instance
  * @param requiredPropertyIndex index of the property in the names the caller
- * gave, or when the caller named no property, in the available properties
+ * gave, or when the caller named no property, in the first data set loaded
  * @return 0 based index of the property in the source, or -1 if the index is
  * outside the names given or the data set does not have the property
  */
@@ -6497,7 +6508,7 @@ EXTERNAL int fiftyoneDegreesPropertiesGetPropertyIndexFromRequiredIndex(
  * data set does not have gives the name the caller gave.
  * @param available properties instance
  * @param requiredPropertyIndex index of the property in the names the caller
- * gave, or when the caller named no property, in the available properties
+ * gave, or when the caller named no property, in the first data set loaded
  * @return string representation of the property, or NULL if the index is
  * outside the names given
  */
@@ -6520,9 +6531,9 @@ EXTERNAL fiftyoneDegreesString*
 /**
  * Gets the number of required property indexes, which is the number of names
  * the caller gave, or when the caller named no property, the number of
- * available properties. Use it, rather than the count field, with
- * #fiftyoneDegreesPropertiesGetNameFromRequiredIndex and the reads that take
- * a required property index.
+ * properties the first data set loaded has. Use it, rather than the count
+ * field, with #fiftyoneDegreesPropertiesGetNameFromRequiredIndex and the
+ * reads that take a required property index.
  * @param available properties instance
  * @return number of required property indexes
  */
@@ -6539,7 +6550,7 @@ FIFTYONE_DEGREES_PROPERTIES_INLINE uint32_t
  * Gets the available index of the property at the required property index.
  * @param available properties instance
  * @param requiredPropertyIndex index of the property in the names the caller
- * gave, or when the caller named no property, in the available properties
+ * gave, or when the caller named no property, in the first data set loaded
  * @return 0 based available index, or -1 if the index is outside the names
  * given or the data set does not have the property
  */
@@ -8494,13 +8505,16 @@ FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsPendingSet(
  * they answer for, rather than leaving each walk to the first read of one of
  * the component's properties. That is when the caller named the properties
  * the data set was created with, as every graph the results need is then
- * known before anything is read.
+ * known before anything is read. Names kept from the first data set of a
+ * caller that named none do not walk here.
  * @param dataSet pointer to the data set the results are populated from
  * @return true if populating the results walks the graphs
  */
 FIFTYONE_DEGREES_RESULTS_INLINE bool fiftyoneDegreesResultsWalkWhenPopulated(
 	const fiftyoneDegreesDataSetBase *dataSet) {
-	return dataSet->available != NULL && dataSet->available->named != NULL;
+	return dataSet->available != NULL &&
+		dataSet->available->named != NULL &&
+		dataSet->available->namesFromDataSet == false;
 }
 
 /**
@@ -19109,6 +19123,7 @@ static PropertiesAvailable* initRequiredPropertiesMemory(uint32_t count) {
 		available->count = 0;
 		available->capacity = count;
 		available->allComponentsRequired = false;
+		available->namesFromDataSet = false;
 		available->namedCount = 0;
 		available->named = NULL;
 		available->items = (PropertyAvailable*)(available + 1);
@@ -19322,6 +19337,35 @@ static PropertyNamed* copyNamesFromNamed(
 	return named;
 }
 
+/**
+ * Copies the names of the available properties, in their order, for a list
+ * created from a list that names no property.
+ */
+static PropertyNamed* copyNamesFromAvailable(
+	const PropertiesAvailable *existing,
+	uint32_t *count) {
+	uint32_t i;
+	const String *name;
+	namesSize size = { 0, 0 };
+	namesCopy copy;
+	for (i = 0; i < existing->count; i++) {
+		name = (const String*)existing->items[i].name.data.ptr;
+		addNameSize(&size, NULL, name == NULL ? 0 : (size_t)name->size - 1);
+	}
+	PropertyNamed *named = createNamed(&size, &copy);
+	if (named != NULL) {
+		for (i = 0; i < existing->count; i++) {
+			name = (const String*)existing->items[i].name.data.ptr;
+			addNameCopy(
+				&copy,
+				name == NULL ? "" : &name->value,
+				name == NULL ? 0 : (size_t)name->size - 1);
+		}
+		*count = copy.count;
+	}
+	return named;
+}
+
 static void iteratePropertiesFromNamed(
 	propertiesSource *source,
 	PropertiesAvailable *available,
@@ -19501,7 +19545,8 @@ static PropertyAvailable* findAvailable(
 /**
  * Sets the required property index of each available property, which is the
  * place of its name among the names given, and the available index of each
- * name given. Without names, each property's index is its own place.
+ * name given. Without names, each property's index is its own place. A
+ * property not among the names keeps an index of -1.
  */
 static void setRequiredPropertyIndexes(PropertiesAvailable *available) {
 	uint32_t i;
@@ -19540,21 +19585,26 @@ fiftyoneDegreesPropertiesAvailable* fiftyoneDegreesPropertiesCreate(
 	PropertyNamed *named = NULL;
 	uint32_t namedCount = 0;
 	bool allComponentsRequired = false;
+	bool namesFromDataSet = false;
 
 	// Copy the names the caller gave. Existing properties give the names they
 	// were created with, so a reload starts again from the caller's names.
+	// Existing properties that name nothing give the names of their data set,
+	// in its order, so a reload keeps each index on its property.
 	if (properties != NULL) {
 		if (properties->existing != NULL) {
 			allComponentsRequired =
 				properties->existing->allComponentsRequired;
-			if (properties->existing->named != NULL) {
-				named = copyNamesFromNamed(
+			namesFromDataSet = properties->existing->named == NULL ||
+				properties->existing->namesFromDataSet;
+			named = properties->existing->named != NULL ?
+				copyNamesFromNamed(
 					properties->existing->named,
 					properties->existing->namedCount,
-					&namedCount);
-				if (named == NULL) {
-					return NULL;
-				}
+					&namedCount) :
+				copyNamesFromAvailable(properties->existing, &namedCount);
+			if (named == NULL) {
+				return NULL;
 			}
 		}
 		else if (properties->array != NULL && properties->count > 0) {
@@ -19575,7 +19625,7 @@ fiftyoneDegreesPropertiesAvailable* fiftyoneDegreesPropertiesCreate(
 		}
 	}
 
-	if (named != NULL) {
+	if (named != NULL && namesFromDataSet == false) {
 		// Set the required properties from the names given.
 		available = initSpecificPropertiesFromNamed(
 			&source,
@@ -19593,6 +19643,7 @@ fiftyoneDegreesPropertiesAvailable* fiftyoneDegreesPropertiesCreate(
 		return NULL;
 	}
 	available->allComponentsRequired = allComponentsRequired;
+	available->namesFromDataSet = namesFromDataSet;
 	available->named = named;
 	available->namedCount = namedCount;
 
@@ -19706,6 +19757,7 @@ bool fiftyoneDegreesPropertiesRequiredNamesFewerThan(
 	}
 	if (properties->existing != NULL) {
 		return properties->existing->named != NULL &&
+			properties->existing->namesFromDataSet == false &&
 			properties->existing->namedCount < total;
 	}
 	if (properties->array != NULL && properties->count > 0) {
@@ -31897,8 +31949,9 @@ bool fiftyoneDegreesIpiGetProperty(
 		}
 		const char * const value = STRING(name);
 		if (isAvailable != NULL) {
+			// Available when it can be read, which needs a required index.
 			*isAvailable = value != NULL &&
-				PropertiesGetPropertyIndexFromName(
+				PropertiesGetRequiredPropertyIndexFromName(
 					dataSet->b.b.available,
 					value) >= 0;
 		}
