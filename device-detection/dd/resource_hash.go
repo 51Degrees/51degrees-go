@@ -38,6 +38,11 @@ import (
 // InitFromFile initializes a resource manager based on a given data file path.
 // The input properties is a comma separated string list. This matches the C API
 // fiftyoneDegreesHashInitManagerFromFile.
+//
+// With properties named, the manager keeps the required property index of each
+// name, so a read by name costs a map lookup rather than a search of the data
+// set. The index is the name's place among the names given, which a reload
+// does not change.
 func InitManagerFromFile(
 	manager *ResourceManager,
 	config ConfigHash,
@@ -65,6 +70,13 @@ func InitManagerFromFile(
 	// Check status code
 	if s != C.SUCCESS {
 		return messageError(C.StatusGetMessage(s, cPath))
+	}
+
+	// Keep the index of each name given, so a read by name does not search
+	// the data set. A manager given no name is left without the table,
+	// because its indexes come from the data set and a reload can move them.
+	if properties != "" {
+		manager.indexes = newPropertyIndexes(manager)
 	}
 
 	// Construct the Set Headers list
@@ -270,4 +282,21 @@ func GetPublishedDate(manager *ResourceManager) time.Time {
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 	published := cDataSet.header.published
 	return time.Date(int(published.year), time.Month(published.month), int(published.day), 0, 0, 0, 0, time.UTC)
+}
+
+// GetNextUpdateDate returns the date after which the loaded data file expects
+// a new data file to be available, or the zero time when the data file gives
+// no date.
+func GetNextUpdateDate(manager *ResourceManager) time.Time {
+	cDataSet := (*C.DataSetHash)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	if cDataSet == nil {
+		return time.Time{}
+	}
+	// Release the dataset
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+	next := cDataSet.header.nextUpdate
+	if next.year == 0 {
+		return time.Time{}
+	}
+	return time.Date(int(next.year), time.Month(next.month), int(next.day), 0, 0, 0, 0, time.UTC)
 }

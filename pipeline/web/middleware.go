@@ -46,7 +46,7 @@ import (
 // Default intercepted URL paths.
 const (
 	DefaultJavaScriptURL = "/51Degrees.core.js"
-	DefaultJSONURL       = "/51dpipeline/json"
+	DefaultJSONURL       = javascriptbuilder.DefaultEndpoint
 	DefaultMaxAge        = 30 * time.Minute
 )
 
@@ -159,7 +159,8 @@ func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
 func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
-// cookies, query and form parameters, client IP, host and protocol.
+// cookies, query and form parameters, client IP, host and protocol, and the
+// request itself as core.EvidenceHTTPRequest.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
 func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
@@ -208,8 +209,14 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 		}
 	}
 
-	fd.AddEvidence("server.client-ip", m.clientIP(r))
-	fd.AddEvidence("header.protocol", m.requestProtocol(r))
+	clientIP, protocol := m.clientIP(r), m.requestProtocol(r)
+	fd.AddEvidence("server.client-ip", clientIP)
+	fd.AddEvidence("header.protocol", protocol)
+
+	// The request itself, whether or not an element accepts it, so that the
+	// Usage Sharing Element can share headers no element accepts.
+	fd.AddEvidence(core.EvidenceHTTPRequest,
+		core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol))
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
@@ -275,7 +282,7 @@ const failedCacheControl = "private, no-cache"
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#cache-header-detail
 func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, failed bool, contentType string, body []byte) {
 	etag := m.etag(fd)
-	matched := r.Header.Get("If-None-Match") == etag
+	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
 	// endpoints is permitted, and can read a 304 or 412. The literal "null"
 	// origin is not reflected.
@@ -307,13 +314,18 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 }
 
 // etag computes a hash over the Evidence values that the Pipeline's filter
-// accepts, so that the cached content is revalidated when relevant Evidence
-// changes. FNV-1a over the sorted keys and their values has no per-process
-// seed, so the same Evidence gives the same ETag in every process, as a
-// browser revalidating after a restart or against another server needs.
+// accepts, as the request supplied them, so that the cached content is
+// revalidated when relevant Evidence changes. Values that Flow Elements add
+// while processing, such as a new session id, are left out. FNV-1a over the
+// sorted keys and their values has no per-process seed, so the same Evidence
+// gives the same ETag in every process, as a browser revalidating after a
+// restart or against another server needs.
+// The ETag is weak, W/"...", because a data file update can change the
+// content for the same Evidence without changing the hash (RFC 9110 sections
+// 8.8.1 and 8.8.3).
 func (m *Middleware) etag(fd core.FlowData) string {
 	filter := m.pipeline.EvidenceKeyFilter()
-	all := fd.Evidence().AsMap()
+	all := core.SuppliedEvidence(fd)
 	keys := make([]string, 0, len(all))
 	for k := range all {
 		if filter == nil || filter.Include(k) {
@@ -328,7 +340,63 @@ func (m *Middleware) etag(fd core.FlowData) string {
 		h.Write([]byte(fmt.Sprintf("%v", all[k])))
 		h.Write([]byte{0x1e})
 	}
-	return fmt.Sprintf(`"%x"`, h.Sum64())
+	return fmt.Sprintf(`W/"%x"`, h.Sum64())
+}
+
+// ifNoneMatchMatches reports whether the If-None-Match field lines match
+// etag, with the weak comparison RFC 9110 section 13.1.2 requires. The field
+// is "*", which matches because the endpoints always have content, or a list
+// of entity tags, one of which matches when its quoted part equals etag's,
+// with or without W/ on either (section 8.8.3.2). A field that is neither "*"
+// nor a comma separated list of entity tags does not match (section 13.1.2,
+// step 3).
+func ifNoneMatchMatches(lines []string, etag string) bool {
+	field := strings.TrimSpace(strings.Join(lines, ","))
+	if field == "*" {
+		return true
+	}
+	want := strings.TrimPrefix(etag, "W/")
+	matched, needComma := false, false
+	for {
+		field = strings.TrimLeft(field, " \t")
+		if field == "" {
+			return matched
+		}
+		if field[0] == ',' {
+			field, needComma = field[1:], false
+			continue
+		}
+		if needComma {
+			return false
+		}
+		opaque, rest, ok := scanEntityTag(field)
+		if !ok {
+			return false
+		}
+		matched = matched || opaque == want
+		field, needComma = rest, true
+	}
+}
+
+// scanEntityTag reads the entity tag at the start of s, as RFC 9110 section
+// 8.8.3 defines it, and returns its quoted part without W/ and the text after
+// it. ok is false when s does not start with an entity tag.
+func scanEntityTag(s string) (opaque, rest string, ok bool) {
+	s = strings.TrimPrefix(s, "W/")
+	if !strings.HasPrefix(s, `"`) {
+		return "", "", false
+	}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return s[:i+1], s[i+1:], true
+		case c == 0x21 || c >= 0x23 && c != 0x7f:
+			// etagc, a visible character other than '"', or obs-text.
+		default:
+			return "", "", false
+		}
+	}
+	return "", "", false
 }
 
 // varyHeader lists the HTTP headers in the Pipeline's Evidence key filter that

@@ -29,8 +29,9 @@ import "unsafe"
 
 // GetAvailablePropertyNames returns the names of the required properties that
 // the manager's current data set has, in required property index order. They
-// are the names the engine was given that the data file has, or every property
-// of the data file when the engine was given none.
+// are the names the engine was given that the data file has, or when the
+// engine was given none, the properties of the first data file it loaded that
+// the current one has.
 func GetAvailablePropertyNames(manager *ResourceManager) []string {
 	cDataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))

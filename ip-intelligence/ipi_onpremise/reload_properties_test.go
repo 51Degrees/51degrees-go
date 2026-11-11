@@ -220,8 +220,13 @@ func sameAnswers(t *testing.T, reloaded, fresh map[string]map[string]string) {
 }
 
 // checkReload loads the first file, reloads the second through the path the
-// temporary copy setting chooses, and checks that the engine then answers and
-// names its properties as a fresh engine on the second file does.
+// temporary copy setting chooses, and checks the engine afterwards. It answers
+// as a fresh engine on the second file does for every property the second
+// file has. Its names stay those it was created with, being the names given,
+// or with none given, the properties of the first file, so each index names
+// the same property as before the reload, and a property the second file
+// lacks gives no value.
+// See https://github.com/51Degrees/specifications/blob/cd74d0cdb3ebe208a59369ca79b40288dd54e278/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md#finding-properties
 func checkReload(
 	t *testing.T,
 	first string,
@@ -232,6 +237,10 @@ func checkReload(
 	master := filepath.Join(t.TempDir(), "data.ipi")
 	pointAt(t, master, first)
 	e := propertiesTestEngine(t, master, properties, temp)
+	before := make([]string, 0)
+	for i := 0; e.GetPropertyNameByIndex(i) != ""; i++ {
+		before = append(before, e.GetPropertyNameByIndex(i))
+	}
 	for address, values := range lookups(e) {
 		if message, failed := values["(error)"]; failed {
 			t.Errorf("%s failed before the reload: %s", address, message)
@@ -242,20 +251,49 @@ func checkReload(
 		t.Fatalf("reload: %v", err)
 	}
 	fresh := propertiesTestEngine(t, second, properties, false)
-	sameAnswers(t, lookups(e), lookups(fresh))
-	// The required properties are the names given, or every property of the
-	// file when none were given. One past the last index has no name.
-	count := len(properties)
-	if properties == nil {
-		count = len(ipi_interop.GetAvailablePropertyNames(fresh.manager))
+	reloaded, answers := lookups(e), lookups(fresh)
+	inSecond := make(map[string]bool)
+	for _, name := range ipi_interop.GetAvailablePropertyNames(fresh.manager) {
+		inSecond[name] = true
 	}
-	for i := 0; i <= count; i++ {
-		got, want := e.GetPropertyNameByIndex(i), fresh.GetPropertyNameByIndex(i)
-		if got != want {
-			t.Errorf("GetPropertyNameByIndex(%d) after the reload %q, fresh engine %q",
+	for _, address := range propertiesTestAddresses {
+		for name, got := range reloaded[address] {
+			if !inSecond[name] && name != "(error)" {
+				if got != "" {
+					t.Errorf("%s %s, which the second file lacks, after the reload %q, want no value",
+						address, name, shorten(got))
+				}
+				delete(reloaded[address], name)
+			}
+		}
+		for name := range answers[address] {
+			if name != "(error)" && (!inSecond[name] || !contains(before, name)) {
+				delete(answers[address], name)
+			}
+		}
+	}
+	sameAnswers(t, reloaded, answers)
+	// Each index names what it named before the reload, and one past the last
+	// has no name.
+	for i := 0; i <= len(before); i++ {
+		want := ""
+		if i < len(before) {
+			want = before[i]
+		}
+		if got := e.GetPropertyNameByIndex(i); got != want {
+			t.Errorf("GetPropertyNameByIndex(%d) after the reload %q, before it %q",
 				i, got, want)
 		}
 	}
+}
+
+func contains(names []string, name string) bool {
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestReloadToDifferentProperties(t *testing.T) {

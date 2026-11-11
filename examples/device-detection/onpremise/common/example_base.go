@@ -19,17 +19,14 @@ type ExampleParams struct {
 type ExampleFunc func(params ExampleParams) error
 
 func RunExample(exampleFunc ExampleFunc) {
-	licenseKey := os.Getenv("LICENSE_KEY")
-	if licenseKey == "" {
-		licenseKey = os.Getenv("DEVICE_DETECTION_KEY")
-	}
+	licenseKey := os.Getenv("_51DEGREES_LICENSE_KEY")
 
-	dataFile := os.Getenv("DATA_FILE")
+	dataFile := os.Getenv("_51DEGREES_DD_PATH")
 	if dataFile == "" {
 		dataFile = "51Degrees-LiteV4.1.hash"
 	}
 
-	evidenceYaml := os.Getenv("EVIDENCE_YAML")
+	evidenceYaml := os.Getenv("_51DEGREES_EVIDENCE_YAML")
 	if evidenceYaml == "" {
 		evidenceYaml = "20000 Evidence Records.yml"
 	}
