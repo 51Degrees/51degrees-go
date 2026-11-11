@@ -29,7 +29,7 @@ import (
 
 // A Property holding weighted values serializes, as the JSON Builder writes
 // it, in the form the specification's example shows.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/weighted-values.md#serializing
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/weighted-values.md#serializing
 func TestWeightedValuesSerializeAsTheExample(t *testing.T) {
 	property := map[string]any{"weightedpropertyname": []WeightedValue[string]{
 		NewWeightedValue("value 1", 32768),

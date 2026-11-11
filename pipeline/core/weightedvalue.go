@@ -29,7 +29,7 @@ import (
 
 // MaxRawWeighting is the value that the raw weightings of all values for a
 // single property sum to, representing a 1.0 likelihood.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/weighted-values.md
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/weighted-values.md
 const MaxRawWeighting = math.MaxUint16
 
 // WeightedValue pairs a value with a weighting that expresses how likely it is
@@ -63,7 +63,7 @@ func (w WeightedValue[T]) Weighting() float64 {
 // MarshalJSON serializes the weighted value with the lower case keys the
 // JSON Builder and the cloud service use, as
 // {"rawweighting": <uint16>, "value": <value>}.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/weighted-values.md#serializing
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/weighted-values.md#serializing
 func (w WeightedValue[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		RawWeighting uint16 `json:"rawweighting"`

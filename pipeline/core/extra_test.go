@@ -184,7 +184,7 @@ func TestPipelinePropertiesAreCopied(t *testing.T) {
 
 // A weighted value serializes with the lower case keys the specification's
 // example shows.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/weighted-values.md#serializing
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/weighted-values.md#serializing
 func TestWeightedValueMarshalJSON(t *testing.T) {
 	w := NewWeightedValue("london", 32768)
 	b, err := w.MarshalJSON()
