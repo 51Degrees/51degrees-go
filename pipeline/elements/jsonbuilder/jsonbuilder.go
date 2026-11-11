@@ -24,7 +24,7 @@
 // representation of the values in a Flow Data for use by the JavaScript Builder
 // and client-side features.
 //
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/json-builder.md
 package jsonbuilder
 
 import (
@@ -51,7 +51,7 @@ const MaxJavaScriptIterations = 10
 
 // excludedDataKeys are the Element data keys whose Properties are never included
 // in the JSON output.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/json-builder.md#process
 var excludedDataKeys = map[string]struct{}{
 	"set-headers":    {},
 	"cloud-response": {}, // Cloud Request Engine
@@ -69,7 +69,7 @@ type Element struct {
 // JavaScript and meta Properties are always included. The specification gives
 // the JSON Builder no configuration options, so this include list is specific
 // to Go.
-// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#configuration-options
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/json-builder.md#configuration-options
 func New(logger *slog.Logger, setProperties []string) *Element {
 	e := &Element{BaseElement: core.NewBaseElement(DataKey, core.NewWhitelistFilter(), logger)}
 	if len(setProperties) > 0 {
@@ -117,7 +117,7 @@ func (e *Element) Process(fd core.FlowData) error {
 	// Keys are written in lower case, and so are the names that
 	// javascriptProperties and evidenceproperties list, so that each name finds
 	// its key.
-	// See https://github.com/51Degrees/specifications/blob/rc/pipeline-specification/pipeline-elements/json-builder.md#process
+	// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/json-builder.md#process
 	for dataKey, data := range fd.ElementDataAsMap() {
 		elementKey := strings.ToLower(dataKey)
 		if _, excluded := excludedDataKeys[elementKey]; excluded {
