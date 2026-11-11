@@ -59,7 +59,8 @@ var cMethodMap = map[C.HashMatchMethod]MatchMethod{
 type ResultsHash struct {
 	CPtr     *C.ResultsHash
 	CResults *interface{} // Pointer to a slice holding C results
-	// indexes are those of the manager the results were created from.
+	// indexes are those of the manager the results were created from, and nil
+	// when it was created with no name.
 	indexes propertyIndexes
 }
 
@@ -420,16 +421,6 @@ func valuesStringWithSize(
 	requiredPropertyIndex int,
 	defaultSize uint64,
 	separator string) (value string, err error) {
-	// The data set may have no property at the index, because a name it does
-	// not have keeps its place among the names given. The C library's read by
-	// name gives no value for one of those, and its read by index reads past
-	// the end of the collection instead, so the same check is made here.
-	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
-	if C.PropertiesGetAvailableIndex(
-		dataSet.b.b.available, C.int(requiredPropertyIndex)) < 0 {
-		return "", nil
-	}
-
 	// Create slice based on a certain size. This size will be updated
 	// if the actual size is higher.
 	var buffer []C.char
@@ -467,12 +458,17 @@ const valuesStringDefaultSize = 50
 
 // ValuesString returns a string of all values resulted from a detection.
 // If there are multiple values, they are separated by the specified separator.
-// The name is looked up in the names the manager was created with, and the
-// value is read by its index. A name not among them gives an empty string.
+// The name is looked up in the table of the names the manager was created
+// with, and the value is read by its index. A name not among them, or one the
+// data set has no property for, gives an empty string.
 func (results *ResultsHash) ValuesString(
 	propertyName string,
 	separator string) (value string, err error) {
-	index := results.RequiredPropertyIndexFromName(propertyName)
+	if results.indexes == nil {
+		return valuesStringByName(
+			results, propertyName, valuesStringDefaultSize, separator)
+	}
+	index := results.indexes.index(propertyName)
 	if index < 0 {
 		return "", nil
 	}
@@ -482,12 +478,63 @@ func (results *ResultsHash) ValuesString(
 // ValuesStringByIndex returns a string of all values for the property at the
 // required property index, being its place among the names the manager was
 // created with, which a reload does not change. If there are multiple values,
-// they are separated by the specified separator.
+// they are separated by the specified separator. An index outside those
+// names, or one the data set has no property for, gives an empty string.
 func (results *ResultsHash) ValuesStringByIndex(
 	requiredPropertyIndex int,
 	separator string) (value string, err error) {
+	// The data set may have no property at the index, because a name it does
+	// not have keeps its place among the names given, and a reload can change
+	// which names it has. The C library's read by name checks for that and
+	// gives no value, and its read by index reads past the end of the
+	// collection instead, so the check is made here.
+	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
+	if C.PropertiesGetAvailableIndex(
+		dataSet.b.b.available, C.int(requiredPropertyIndex)) < 0 {
+		return "", nil
+	}
 	return valuesStringWithSize(
 		results, requiredPropertyIndex, valuesStringDefaultSize, separator)
+}
+
+// valuesStringByName reads the values of a property the data set is asked for
+// by name, which the C library looks up and reads in one call. It is how a
+// manager created with no name reads, because its indexes are the data set's
+// own order and it has no table of names.
+func valuesStringByName(
+	results *ResultsHash,
+	propertyName string,
+	defaultSize uint64,
+	separator string) (value string, err error) {
+	var buffer []C.char
+	cPropertyName := C.CString(propertyName)
+	defer C.free(unsafe.Pointer(cPropertyName))
+	cSeparator := C.CString(separator)
+	defer C.free(unsafe.Pointer(cSeparator))
+	exp := NewException()
+
+	actualSize := uint64(0)
+	for ok := true; ok; {
+		buffer = make([]C.char, defaultSize)
+		actualSize = uint64(C.ResultsHashGetValuesString(
+			results.CPtr,
+			cPropertyName,
+			&buffer[0],
+			C.size_t(defaultSize),
+			cSeparator,
+			exp.CPtr))
+
+		// Check exception
+		if !exp.IsOkay() {
+			return "", messageError(C.ExceptionGetMessage(exp.CPtr))
+		}
+		if ok = actualSize > defaultSize; ok {
+			// Add 1 for the null terminator
+			defaultSize = actualSize + 1
+		}
+	}
+
+	return C.GoString(&buffer[0]), nil
 }
 
 // AvailableProperties returns a list of available properties. The index

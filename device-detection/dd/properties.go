@@ -60,16 +60,25 @@ func NewPropertiesRequired(
 
 // propertyIndexes maps each property name a manager was created with, as
 // given and in lower case, to its required property index, which is its place
-// among the names. A reload keeps the names, so it keeps every index.
+// among the names. A reload keeps the names, so it keeps every index, and the
+// table is built once when the manager is created. Whether the data set has a
+// property for a name is not held here, because a reload can change it.
 type propertyIndexes map[string]int
 
 // newPropertyIndexes reads the names the manager's data set was created with.
 func newPropertyIndexes(manager *ResourceManager) propertyIndexes {
-	names := requiredPropertyNames(manager)
-	indexes := make(propertyIndexes, 2*len(names))
-	for i, name := range names {
-		indexes[name] = i
-		indexes[strings.ToLower(name)] = i
+	dataSet := C.DataSetGet(manager.CPtr)
+	defer C.DataSetRelease(dataSet)
+	available := dataSet.available
+	count := int(C.PropertiesGetRequiredPropertyCount(available))
+	indexes := make(propertyIndexes, 2*count)
+	for i := 0; i < count; i++ {
+		if name := C.PropertiesGetNameFromRequiredIndex(
+			available, C.int(i)); name != nil {
+			given := C.GoString(&name.value)
+			indexes[given] = i
+			indexes[strings.ToLower(given)] = i
+		}
 	}
 	return indexes
 }
@@ -84,24 +93,6 @@ func (indexes propertyIndexes) index(name string) int {
 		return i
 	}
 	return -1
-}
-
-// requiredPropertyNames returns the names the manager's data set was created
-// with, in required property index order, including any the data set has no
-// property for.
-func requiredPropertyNames(manager *ResourceManager) []string {
-	dataSet := C.DataSetGet(manager.CPtr)
-	defer C.DataSetRelease(dataSet)
-	available := dataSet.available
-	count := int(C.PropertiesGetRequiredPropertyCount(available))
-	names := make([]string, count)
-	for i := 0; i < count; i++ {
-		if name := C.PropertiesGetNameFromRequiredIndex(
-			available, C.int(i)); name != nil {
-			names[i] = C.GoString(&name.value)
-		}
-	}
-	return names
 }
 
 // Free free the C resource and set CPtr to nil
