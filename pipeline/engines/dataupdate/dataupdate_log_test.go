@@ -2,6 +2,7 @@ package dataupdate
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -110,47 +111,84 @@ func TestLogsTheMessagesOfTheSpecification(t *testing.T) {
 			t.Errorf("missing %s in:\n%s", want, out)
 		}
 	})
-	t.Run("errors", func(t *testing.T) {
-		srv := httptest.NewServer(&requestRecorder{status: http.StatusInternalServerError})
-		url := srv.URL
-		defer srv.Close()
-		svc, out := loggedService(srv.Client())
-		defer svc.Close()
-		if err := svc.Register(&fakeEngine{}, "Eng", Config{Identifier: "a", DataUpdateURL: url}); err != nil {
-			t.Fatal(err)
-		}
-		_ = svc.CheckForUpdate("a")
-		// A check made by the caller does not promise another attempt.
-		want := "level=WARN msg=\"An error occurred while downloading a data file update for Eng from " +
-			url + ". Error detail: "
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("missing %s in:\n%s", want, out)
-		}
-		if strings.Contains(out.String(), "attempted again later") {
-			t.Errorf("a check by the caller promised another attempt:\n%s", out)
-		}
-	})
-	t.Run("automatic errors say the update will be tried again", func(t *testing.T) {
-		srv := httptest.NewServer(&requestRecorder{status: http.StatusInternalServerError})
-		defer srv.Close()
-		svc, out := loggedService(srv.Client())
-		defer svc.Close()
-		if err := svc.Register(&fakeEngine{}, "Eng", Config{
-			Identifier: "a", DataUpdateURL: srv.URL, AutomaticUpdatesEnabled: true,
-			PollingInterval: 10 * time.Millisecond,
-		}); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(300 * time.Millisecond)
-		want := "level=WARN msg=\"An error occurred while downloading a data file update for Eng from " +
-			srv.URL + ". Update will be attempted again later. Error detail: "
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("missing %s in:\n%s", want, out)
-		}
-	})
-	t.Run("integrity check", func(t *testing.T) {
-		srv := httptest.NewServer(&requestRecorder{status: http.StatusOK, body: "DATA",
-			header: http.Header{"Content-Md5": {"wrong"}}})
+}
+
+// A failed check is given the error table's message, which follows .NET. A
+// check the caller starts passes the error to the caller and logs nothing,
+// and a check the poller starts logs it at Error as "Error during check for
+// data update" with the error attached.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
+func TestFailedChecksAreReportedAsTheErrorTableGivesThem(t *testing.T) {
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refusedURL := refused.URL
+	refused.Close()
+	for _, test := range []struct {
+		name   string
+		url    string
+		server *requestRecorder
+		want   string
+	}{
+		{name: "cannot connect", url: refusedURL,
+			want: "Error accessing data update service at '%s' for engine 'Eng'. Error detail: "},
+		{name: "too many requests", server: &requestRecorder{status: http.StatusTooManyRequests},
+			want: "Too many requests to '%s' for engine 'Eng'"},
+		{name: "forbidden", server: &requestRecorder{status: http.StatusForbidden},
+			want: "Access denied to data update service at '%s' for engine 'Eng'"},
+		{name: "another status", server: &requestRecorder{status: http.StatusInternalServerError},
+			want: "HTTP status code '500' from data update service at '%s' for engine 'Eng'"},
+		{name: "integrity check", server: &requestRecorder{status: http.StatusOK, body: "DATA",
+			header: http.Header{"Content-Md5": {"wrong"}}},
+			want: "Integrity check failed. MD5 hash in HTTP response 'wrong' for 'Eng'data update does " +
+				"not match calculated hash for the downloaded file '"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			url := test.url
+			if test.server != nil {
+				srv := httptest.NewServer(test.server)
+				defer srv.Close()
+				url = srv.URL
+			}
+			want := test.want
+			if strings.Contains(want, "%s") {
+				want = fmt.Sprintf(want, url)
+			}
+
+			svc, out := loggedService(nil)
+			defer svc.Close()
+			if err := svc.Register(&fakeEngine{}, "Eng", Config{Identifier: "a", DataUpdateURL: url,
+				DataFilePath: filepath.Join(t.TempDir(), "data.bin")}); err != nil {
+				t.Fatal(err)
+			}
+			err := svc.CheckForUpdate("a")
+			if err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("CheckForUpdate gave %v, want an error starting %q", err, want)
+			}
+			if got := out.String(); strings.Contains(got, "level=ERROR") ||
+				strings.Contains(got, "level=WARN") {
+				t.Errorf("a check the caller started logged its error:\n%s", got)
+			}
+
+			polled, pollOut := loggedService(nil)
+			defer polled.Close()
+			if err := polled.Register(&fakeEngine{}, "Eng", Config{
+				Identifier: "a", DataUpdateURL: url, AutomaticUpdatesEnabled: true,
+				PollingInterval: 10 * time.Millisecond,
+				DataFilePath:    filepath.Join(t.TempDir(), "data.bin"),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			logged := `level=ERROR msg="Error during check for data update" error="` + want
+			deadline := time.Now().Add(5 * time.Second)
+			for !strings.Contains(pollOut.String(), logged) && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if !strings.Contains(pollOut.String(), logged) {
+				t.Errorf("missing %s in:\n%s", logged, pollOut)
+			}
+		})
+	}
+	t.Run("no MD5 hash", func(t *testing.T) {
+		srv := httptest.NewServer(&requestRecorder{status: http.StatusOK, body: "DATA"})
 		defer srv.Close()
 		svc, out := loggedService(srv.Client())
 		defer svc.Close()
@@ -158,21 +196,25 @@ func TestLogsTheMessagesOfTheSpecification(t *testing.T) {
 			t.Fatal(err)
 		}
 		_ = svc.CheckForUpdate("a")
-		want := "level=WARN msg=\"An error occurred during the integrity check of new data file for Eng. Error detail: "
+		want := line("WARN", "No MD5 hash included in data update response for '"+srv.URL+
+			"'. Unable to verify data integrity")
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("missing %s in:\n%s", want, out)
 		}
 	})
-	t.Run("applying the update", func(t *testing.T) {
+	t.Run("applying an update from memory", func(t *testing.T) {
 		svc, out := loggedService(nil)
 		defer svc.Close()
 		if err := svc.Register(&failingEngine{}, "Eng", Config{Identifier: "a"}); err != nil {
 			t.Fatal(err)
 		}
-		_ = svc.UpdateFromMemory("a", []byte("x"))
-		want := "level=ERROR msg=\"An error occurred while applying a data file update to Eng. Error detail: boom\""
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("missing %s in:\n%s", want, out)
+		err := svc.UpdateFromMemory("a", []byte("x"))
+		want := "An error occurred when applying a data update to engine 'Eng'. Error detail: boom"
+		if err == nil || err.Error() != want {
+			t.Errorf("UpdateFromMemory gave %v, want %q", err, want)
+		}
+		if strings.Contains(out.String(), "level=ERROR") {
+			t.Errorf("an update from memory logged its error:\n%s", out)
 		}
 	})
 }

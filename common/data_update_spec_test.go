@@ -385,51 +385,79 @@ func TestPull_LogsInformation(t *testing.T) {
 	})
 }
 
+// Each failed pull is logged as the error table gives it, which follows .NET.
+// A failure with a row of its own is logged at Error as "Error during check
+// for data update" and the row's message, and any other at Error with the
+// last row's message.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
 func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
+	const checkError = "ERROR Error during check for data update. "
 	t.Run("cannot connect", func(t *testing.T) {
 		server, _ := headerServer(http.StatusOK, "")
 		url := server.URL
 		server.Close()
 		updater, log, _ := newRecordingUpdater(t, url)
 		updater.doFilePulling(make(chan struct{}, 1))
-		want := "WARN An error occurred when connecting to " + url +
-			" in order to check for data file updates for TestEngine. " +
-			"Update will be attempted again later. Error detail: "
+		want := checkError + "Error accessing data update service at '" + url +
+			"' for engine 'TestEngine'. Error detail: "
 		if !log.hasPrefix(want) {
 			t.Errorf("missing log entry starting %q in:\n%s", want, log)
 		}
 	})
-	t.Run("download error", func(t *testing.T) {
-		server, _ := headerServer(http.StatusInternalServerError, "")
-		defer server.Close()
-		updater, log, _ := newRecordingUpdater(t, server.URL)
-		updater.doFilePulling(make(chan struct{}, 1))
-		want := "WARN An error occurred while downloading a data file update for TestEngine from " +
-			server.URL + ". Update will be attempted again later. Error detail: "
-		if !log.hasPrefix(want) {
-			t.Errorf("missing log entry starting %q in:\n%s", want, log)
-		}
-	})
+	for _, test := range []struct {
+		name   string
+		status int
+		want   string
+	}{
+		{"too many requests", http.StatusTooManyRequests, "Too many requests to '%s' for engine 'TestEngine'"},
+		{"forbidden", http.StatusForbidden, "Access denied to data update service at '%s' for engine 'TestEngine'"},
+		{"another status", http.StatusInternalServerError,
+			"HTTP status code '500' from data update service at '%s' for engine 'TestEngine'"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, _ := headerServer(test.status, "")
+			defer server.Close()
+			updater, log, _ := newRecordingUpdater(t, server.URL)
+			updater.doFilePulling(make(chan struct{}, 1))
+			want := checkError + fmt.Sprintf(test.want, server.URL)
+			if !log.has(want) {
+				t.Errorf("missing log entry %q in:\n%s", want, log)
+			}
+		})
+	}
 	t.Run("integrity check", func(t *testing.T) {
 		server := createMockServer(http.StatusOK, map[string]string{"Content-MD5": "wrong"}, []byte("new"))
 		defer server.Close()
 		updater, log, _ := newRecordingUpdater(t, server.URL)
 		updater.doFilePulling(make(chan struct{}, 1))
-		want := "WARN An error occurred during the integrity check of new data file for TestEngine. " +
-			"Update will be attempted again later. Error detail: "
+		want := checkError + "Integrity check failed. MD5 hash in HTTP response 'wrong' for " +
+			"'TestEngine'data update does not match calculated hash for the downloaded file '"
 		if !log.hasPrefix(want) {
 			t.Errorf("missing log entry starting %q in:\n%s", want, log)
 		}
 	})
-	t.Run("writing the data file", func(t *testing.T) {
+	t.Run("no MD5 hash", func(t *testing.T) {
 		server, _ := headerServer(http.StatusOK, "new data")
 		defer server.Close()
 		updater, log, _ := newRecordingUpdater(t, server.URL)
-		// The directory does not exist, so no temp file can be made.
+		updater.doFilePulling(make(chan struct{}, 1))
+		want := "WARN No MD5 hash included in data update response for '" + server.URL +
+			"'. Unable to verify data integrity"
+		if !log.has(want) {
+			t.Errorf("missing log entry %q in:\n%s", want, log)
+		}
+	})
+	t.Run("writing the download", func(t *testing.T) {
+		server, _ := headerServer(http.StatusOK, "new data")
+		defer server.Close()
+		updater, log, _ := newRecordingUpdater(t, server.URL)
+		// The directory does not exist, so no temp file can be made, which the
+		// table has no row for.
 		missingDir := filepath.Join(t.TempDir(), "missing", "data.hash")
 		updater.SetDataFile(missingDir)
 		updater.doFilePulling(make(chan struct{}, 1))
-		want := "ERROR An error occurred when writing to " + missingDir + ". Error detail: "
+		want := "ERROR An unhandled error occurred while checking for automatic updates for engine " +
+			"'TestEngine'. Error detail: "
 		if !log.hasPrefix(want) {
 			t.Errorf("missing log entry starting %q in:\n%s", want, log)
 		}
@@ -468,18 +496,17 @@ func TestPullError_KeepsTheTextAndTheCause(t *testing.T) {
 	}
 }
 
-// A data file that cannot be replaced is reported in the words of the
-// specification, which say more when the Engine reads the file itself.
+// A data file that cannot be replaced is reported in the words of the error
+// table, which follows .NET, whether or not the Engine reads the file itself.
 func TestPull_LogsAFileThatCannotBeReplaced(t *testing.T) {
+	const want = "ERROR Error during check for data update. An error occurred when copying a data file to " +
+		"replace the existing one at '"
 	cases := map[string]struct {
 		tempCopy bool
 		want     string
 	}{
-		"use temp file on": {true,
-			"ERROR An error occurred when copying a data file to replace the existing one at '"},
-		"use temp file off": {false,
-			"ERROR Unable to update data file. This is probably because the Engine was built with the " +
-				"'use temp file' option disabled."},
+		"use temp file on":  {true, want},
+		"use temp file off": {false, want},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -510,7 +537,8 @@ func TestPull_LogsAMissingTemporaryFilePath(t *testing.T) {
 	if next := updater.doFilePulling(make(chan struct{}, 1)); next != retryMs {
 		t.Errorf("next pull in %d ms, want %d", next, retryMs)
 	}
-	want := "ERROR The data file 'TestEngine' is checking for updates but does not have a temporary file path configured."
+	want := "ERROR Error during check for data update. The data file 'TestEngine' is checking for updates " +
+		"but does not have a temporary file path configured."
 	if !log.has(want) {
 		t.Errorf("missing log entry %q in:\n%s", want, log)
 	}
