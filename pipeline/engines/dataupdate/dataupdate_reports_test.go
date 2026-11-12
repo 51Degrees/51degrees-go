@@ -337,3 +337,94 @@ func TestDefaultConfigHoldsTheDefaultsOfTheSpecification(t *testing.T) {
 		t.Errorf("the randomization is %v by default, want up to 10 minutes", cfg.MaxRandomization)
 	}
 }
+
+// fileCount is how many times the Engine was refreshed from a file.
+func (f *fakeEngine) fileCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.fromFiles)
+}
+
+// wait blocks until the next report arrives.
+func (r *reports) wait(t *testing.T, what string) {
+	t.Helper()
+	select {
+	case <-r.done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("no report of %s", what)
+	}
+}
+
+// A watched file that is not newer than the file last loaded is not loaded,
+// and the check is reported as not needed.
+// See https://github.com/51Degrees/specifications/blob/a0a7008/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
+func TestAWatchedFileThatIsNotNewerIsNotLoaded(t *testing.T) {
+	path := writeFile(t, "INITIAL")
+	eng := &fakeEngine{}
+	svc := New(nil, nil)
+	defer svc.Close()
+	got := newReports()
+	if err := svc.Register(eng, "Eng", Config{
+		Identifier: "a", DataFilePath: path, OnUpdate: got.record,
+		AutomaticUpdatesEnabled: true, FileSystemWatcherEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	next := path + ".new"
+	if err := os.WriteFile(next, []byte("UPDATED"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(next, path); err != nil {
+		t.Fatal(err)
+	}
+	got.wait(t, "the replaced file")
+	if list := got.list(); list[0].Status != StatusSuccess {
+		t.Fatalf("the replaced file was reported as %q, want %q", list[0].Status, StatusSuccess)
+	}
+	loaded, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write the file again and give it the time of the file already loaded,
+	// so the watcher sees a change to a file that is not newer.
+	if err := os.WriteFile(path, []byte("NOT NEWER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, loaded.ModTime(), loaded.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	got.wait(t, "the file that is not newer")
+	list := got.list()
+	if last := list[len(list)-1].Status; last != StatusNotNeeded {
+		t.Errorf("the file that is not newer was reported as %q, want %q", last, StatusNotNeeded)
+	}
+	if eng.lastFile() != "UPDATED" || eng.fileCount() != 1 {
+		t.Errorf("the Engine loaded %q after %d refreshes, want the first file loaded once",
+			eng.lastFile(), eng.fileCount())
+	}
+}
+
+// A check on start-up that fails with no local data file to fall back to is
+// still reported before Register returns its error.
+// See https://github.com/51Degrees/specifications/blob/a0a7008/pipeline-specification/features/data-updates.md#reporting-each-check
+func TestACheckOnStartUpThatStopsRegisterIsReported(t *testing.T) {
+	srv := httptest.NewServer(&requestRecorder{status: http.StatusInternalServerError})
+	defer srv.Close()
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	got := newReports()
+	err := svc.Register(&fakeEngine{}, "Eng", Config{
+		Identifier: "a", DataFilePath: filepath.Join(t.TempDir(), "missing.bin"),
+		DataUpdateURL: srv.URL, UpdateOnStartup: true, OnUpdate: got.record,
+	})
+	if err == nil {
+		t.Fatal("Register gave no error, want the failed check on start-up")
+	}
+	list := got.list()
+	if len(list) != 1 || list[0].Status != StatusHTTPSError {
+		t.Errorf("the check on start-up was reported as %v, want one report of %q",
+			list, StatusHTTPSError)
+	}
+}
