@@ -97,6 +97,15 @@ func buildFromEnvironment(t *testing.T, log *logRecorder) {
 	}
 }
 
+// forgetTheWarning sets back the process's record of the deprecation
+// warning, now and when the test ends, so that each test starts as a new
+// process does and can tell whether its own builds logged the warning.
+func forgetTheWarning(t *testing.T) {
+	t.Helper()
+	oldEndpointLogged.Store(false)
+	t.Cleanup(func() { oldEndpointLogged.Store(false) })
+}
+
 // deprecations returns the warnings in log that name both variables.
 func deprecations(log *logRecorder) []slog.Record {
 	var found []slog.Record
@@ -117,9 +126,7 @@ func deprecations(log *logRecorder) []slog.Record {
 func TestTheOldEndpointVariableIsLoggedOnce(t *testing.T) {
 	t.Setenv(endpointVariable, "")
 	t.Setenv(oldEndpointVariable, oldNameEndpoint)
-	// The warning is logged once in the life of the process, so start as a
-	// new process does.
-	oldEndpointLogged.Store(false)
+	forgetTheWarning(t)
 	log := &logRecorder{}
 	buildFromEnvironment(t, log)
 	buildFromEnvironment(t, log)
@@ -144,6 +151,7 @@ func TestNoDeprecationIsLoggedWithoutTheOldEndpoint(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv(endpointVariable, c.newValue)
 			t.Setenv(oldEndpointVariable, c.oldValue)
+			forgetTheWarning(t)
 			log := &logRecorder{}
 			b := NewBuilder().
 				SetResourceKey(discoveryKey).
