@@ -36,6 +36,7 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/missingproperty"
 )
 
 // TestResponseJSONDistinguishesFailure verifies that when the cloud request ran
@@ -260,8 +261,9 @@ func emptyProductCloud() http.Handler {
 // nor any request. The engine has no Property metadata and logs the missing
 // product once, at error level with a link to the Configurator, with
 // nothing logged on each request. Its Element Data is empty, so reading a
-// Property gives the error that reading any Property the response does not
-// carry gives. Each case builds a new engine, which logs once of its own.
+// Property gives the missing Property error for a product the Resource Key
+// does not include. Each case builds a new engine, which logs once of its
+// own.
 func TestMissingProductBuildsAndLogsOnce(t *testing.T) {
 	clouds := []struct {
 		name  string
@@ -286,7 +288,7 @@ func checkMissingProduct(t *testing.T, cloud http.Handler, suppress bool) {
 	const missing = "location"
 	log := &recordingHandler{}
 	p, engine := buildWithLogger(t, cloud, missing, suppress, slog.New(log))
-	_, absent := engines.NewBaseAspectData().Get("town")
+	absent := missingproperty.ForProductNotInResourceKey("town", missing)
 	for i := 1; i <= 3; i++ {
 		fd := p.CreateFlowData()
 		fd.AddEvidence("header.user-agent", "ua")
