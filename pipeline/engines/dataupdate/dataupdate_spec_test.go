@@ -186,17 +186,11 @@ func TestUpdateFromMemory(t *testing.T) {
 	if err := svc.Register(eng, "memory", Config{Identifier: "memory"}); err != nil {
 		t.Fatal(err)
 	}
-	var called int32
-	svc.OnUpdate("memory", func() { atomic.AddInt32(&called, 1) })
-
 	if err := svc.UpdateFromMemory("memory", []byte("NEW DATA")); err != nil {
 		t.Fatalf("UpdateFromMemory() = %v", err)
 	}
 	if eng.bytesCount() != 1 || string(eng.fromBytes[0]) != "NEW DATA" {
 		t.Errorf("engine was refreshed with %q, want NEW DATA", eng.fromBytes)
-	}
-	if atomic.LoadInt32(&called) != 1 {
-		t.Error("the update callback did not run")
 	}
 	if err := svc.UpdateFromMemory("unknown", []byte("x")); err == nil {
 		t.Error("UpdateFromMemory() for an unknown identifier = nil, want an error")

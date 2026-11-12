@@ -241,34 +241,59 @@ func TestFailedChecksAreReportedAsTheErrorTableGivesThem(t *testing.T) {
 	})
 }
 
-// A callback that panics is logged with the error table's last row, and the
-// callbacks after it are not called, as the Errors section says. The panic
-// does not reach the caller.
+// A callback that panics stops the callbacks after it, as the Errors section
+// says. A check the caller started passes the panic to the caller, and update
+// polling logs it with the error table's last row.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
 func TestACallbackThatPanicsStopsTheCallbacksAfterIt(t *testing.T) {
-	svc, out := loggedService(nil)
-	defer svc.Close()
-	if err := svc.Register(&fakeEngine{}, "Eng", Config{Identifier: "a"}); err != nil {
-		t.Fatal(err)
-	}
-	var calls []string
-	svc.OnUpdate("a", func() {
-		calls = append(calls, "first")
-		panic("callback test panic")
-	})
-	svc.OnUpdate("a", func() { calls = append(calls, "second") })
+	t.Run("a check the caller started", func(t *testing.T) {
+		svc, out := loggedService(nil)
+		defer svc.Close()
+		if err := svc.Register(&fakeEngine{}, "Eng", Config{
+			Identifier: "a", DataFilePath: writeFile(t, "DATA")}); err != nil {
+			t.Fatal(err)
+		}
+		var calls []string
+		svc.OnComplete("a", func(Complete) {
+			calls = append(calls, "first")
+			panic("callback test panic")
+		})
+		svc.OnComplete("a", func(Complete) { calls = append(calls, "second") })
 
-	if err := svc.UpdateFromMemory("a", []byte("x")); err != nil {
-		t.Fatalf("UpdateFromMemory gave %v, want no error, as a callback's panic is not the caller's", err)
-	}
-	if got := strings.Join(calls, ","); got != "first" {
-		t.Errorf("the callbacks called were %q, want only the first", got)
-	}
-	want := `level=ERROR msg="An unhandled error occurred while checking for automatic updates for engine 'Eng'" ` +
-		`panic="callback test panic"`
-	if !strings.Contains(out.String(), want) {
-		t.Errorf("missing %s in:\n%s", want, out)
-	}
+		err := svc.CheckForUpdate("a")
+		if err == nil || !strings.Contains(err.Error(), "callback test panic") {
+			t.Fatalf("CheckForUpdate gave %v, want the callback's panic", err)
+		}
+		if got := strings.Join(calls, ","); got != "first" {
+			t.Errorf("the callbacks called were %q, want only the first", got)
+		}
+		if strings.Contains(out.String(), "level=ERROR") {
+			t.Errorf("a check the caller started logged the error:\n%s", out)
+		}
+	})
+	t.Run("a check update polling started", func(t *testing.T) {
+		srv := httptest.NewServer(&requestRecorder{status: http.StatusNotModified})
+		defer srv.Close()
+		svc, out := loggedService(srv.Client())
+		defer svc.Close()
+		if err := svc.Register(&fakeEngine{}, "Eng", Config{
+			Identifier: "a", DataUpdateURL: srv.URL,
+			AutomaticUpdatesEnabled: true, PollingInterval: 10 * time.Millisecond,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		svc.OnComplete("a", func(Complete) { panic("callback test panic") })
+
+		want := `level=ERROR msg="An unhandled error occurred while checking for automatic updates for engine 'Eng'" ` +
+			`error="panic in an update callback: callback test panic"`
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(out.String(), want) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %s in:\n%s", want, out)
+		}
+	})
 }
 
 type failingEngine struct{}

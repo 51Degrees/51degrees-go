@@ -93,7 +93,7 @@ func TestAReloadThatPanicsIsNotLoggedAsLoaded(t *testing.T) {
 	loaded := logs.count(loadedLine)
 	logs.armed.Store(true)
 
-	if err := e.reload(); err == nil ||
+	if _, err := e.reload(); err == nil ||
 		!strings.Contains(err.Error(), recoverTestPanic) {
 		t.Fatalf("reload gave %v, want the panic", err)
 	}
