@@ -30,8 +30,8 @@ import (
 )
 
 // OnUpdate takes a callback with no arguments and calls it only for a check
-// that refreshed the Engine, so a program written against it still builds and
-// still hears what it heard, while OnComplete hears every check.
+// that refreshed the Engine, so a program written against it still builds,
+// while OnComplete hears every check.
 func TestOnUpdateIsCalledOnlyForACheckThatRefreshedTheEngine(t *testing.T) {
 	var status atomic.Int32
 	status.Store(http.StatusNotModified)
