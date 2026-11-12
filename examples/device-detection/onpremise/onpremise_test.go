@@ -110,6 +110,8 @@ func withoutSettings(environment []string) []string {
 func TestWithoutSettingsDropsBothNames(t *testing.T) {
 	got := withoutSettings([]string{
 		"_51DEGREES_DD_PATH=a", "_51DEGREES_LICENSE_KEY=b",
+		"_51DEGREES_IPI_PATH=j", "_51DEGREES_EVIDENCE_YAML=k",
+		"_51DEGREES_IPI_DATA_FILE_URL=l",
 		"DATA" + "_FILE=c", "DD_DATA" + "_FILE=d", "EVIDENCE" + "_YAML=e",
 		"LICENSE" + "_KEY=f", "IPI" + "_KEY=g",
 		"DEVICE" + "_DETECTION_KEY=h", "IPI_DATA" + "_FILE_URL=i",
