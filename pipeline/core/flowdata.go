@@ -179,6 +179,9 @@ func (fd *flowData) GetOrAdd(key string, ctor func(FlowData) ElementData) Elemen
 		return raw.(ElementData)
 	}
 	d := ctor(fd)
+	if added, ok := d.(FlowDataAdded); ok {
+		added.AddedToFlowData(fd, key, d)
+	}
 	fd.data.AddString(key, d)
 	return d
 }

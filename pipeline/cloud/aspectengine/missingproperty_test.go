@@ -171,7 +171,13 @@ func TestFailedCloudRequestIsTheReason(t *testing.T) {
 	t.Cleanup(srv.Close)
 	p := cloudPipeline(t, srv,
 		&keepingEngine{NewBaseCloudAspectEngine("device", quietLogger())})
-	data := processed(t, p, "device")
+	fd := p.CreateFlowData()
+	fd.AddEvidence("header.user-agent", "ua")
+	_ = fd.Process() // the failed request is suppressed
+	data, err := fd.Get("device")
+	if err != nil {
+		t.Fatalf("no Element Data under device: %v", err)
+	}
 	checkMissing(t, data, "IsMobile",
 		missingproperty.ForCloudRequestFailed("IsMobile", "device"))
 	checkMissing(t, data, "ScreenWidth",
