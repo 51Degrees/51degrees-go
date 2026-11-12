@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"reflect"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -531,16 +530,6 @@ func (results *ResultsHash) PropertyName(
 func (results *ResultsHash) RequiredPropertyIndexFromName(
 	propertyName string) int {
 	return results.indexes.index(propertyName)
-}
-
-// PropertyType returns the type that a value of a property determined by
-// a given proprety index can have.
-//
-// TODO: To be implemeted
-func (results *ResultsHash) PropertyType(
-	requiredPropertyIndex int) reflect.Type {
-	// TODO: To be implemented
-	return nil
 }
 
 /* Detections */
