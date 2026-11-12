@@ -69,11 +69,16 @@ func TestNewBuilderReadsTheEndpointFromTheEnvironment(t *testing.T) {
 
 // TestEnvCloudAPIURLNamesTheOldVariable checks the deprecated constant holds
 // the value it was published with, so code that passes it to the environment
-// reads and sets the variable it always did.
+// reads and sets the variable it always did, and the constant that replaces
+// it names the 51Degrees variable.
 func TestEnvCloudAPIURLNamesTheOldVariable(t *testing.T) {
 	if EnvCloudAPIURL != oldEndpointVariable {
 		t.Errorf("EnvCloudAPIURL is %q, want %q",
 			EnvCloudAPIURL, oldEndpointVariable)
+	}
+	if EnvCloudEndpoint != endpointVariable {
+		t.Errorf("EnvCloudEndpoint is %q, want %q",
+			EnvCloudEndpoint, endpointVariable)
 	}
 }
 
@@ -112,6 +117,9 @@ func deprecations(log *logRecorder) []slog.Record {
 func TestTheOldEndpointVariableIsLoggedOnce(t *testing.T) {
 	t.Setenv(endpointVariable, "")
 	t.Setenv(oldEndpointVariable, oldNameEndpoint)
+	// The warning is logged once in the life of the process, so start as a
+	// new process does.
+	oldEndpointLogged.Store(false)
 	log := &logRecorder{}
 	buildFromEnvironment(t, log)
 	buildFromEnvironment(t, log)

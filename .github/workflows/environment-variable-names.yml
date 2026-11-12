@@ -39,6 +39,7 @@ jobs:
         shell: bash
         run: |
           names='TestNoFileNamesAnOldVariable TestOldVariablesAreOnlyVariables'
+          names="$names TestADeprecatedVariableIsNamedOnlyWhereItIsRead"
           pattern=$(echo $names | tr ' ' '|')
           set +e
           output=$(go test -v -run "^(${pattern})\$" ./... 2>&1)
