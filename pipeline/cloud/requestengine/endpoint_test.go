@@ -22,38 +22,135 @@
 
 package requestengine
 
-import "testing"
+import (
+	"log/slog"
+	"strings"
+	"testing"
+)
 
-// The variable the cloud endpoint is read from, and the name it had before,
-// which is written in two parts so this file does not name it.
+// The variable the cloud endpoint is read from, and the deprecated name it
+// had before, which is written in two parts so this file does not name it.
 const (
 	endpointVariable    = "_51DEGREES_CLOUD_ENDPOINT"
 	oldEndpointVariable = "FOD" + "_CLOUD_API_URL"
 )
 
-// TestNewBuilderReadsTheEndpointVariable checks the base endpoint comes from
-// the one 51Degrees name for it.
-func TestNewBuilderReadsTheEndpointVariable(t *testing.T) {
-	const endpoint = "https://cloud.example/api/v4/"
-	t.Setenv(oldEndpointVariable, "")
-	t.Setenv(endpointVariable, endpoint)
-	if got := NewBuilder().endpoint; got != endpoint {
-		t.Errorf("the endpoint is %q with %s set, want %q",
-			got, endpointVariable, endpoint)
-	}
-	if EnvCloudAPIURL != endpointVariable {
-		t.Errorf("EnvCloudAPIURL is %q, want %q",
-			EnvCloudAPIURL, endpointVariable)
+// The endpoints the tests give each variable.
+const (
+	newNameEndpoint = "https://new.example/api/v4/"
+	oldNameEndpoint = "https://old.example/api/v4/"
+)
+
+// TestNewBuilderReadsTheEndpointFromTheEnvironment checks the base endpoint
+// comes from the 51Degrees variable first, then from the deprecated variable
+// when the first is unset or empty, and is the default when neither is set.
+func TestNewBuilderReadsTheEndpointFromTheEnvironment(t *testing.T) {
+	for _, c := range []struct {
+		name, newValue, oldValue, want string
+	}{
+		{"only the new name", newNameEndpoint, "", newNameEndpoint},
+		{"only the old name", "", oldNameEndpoint, oldNameEndpoint},
+		{"both names", newNameEndpoint, oldNameEndpoint, newNameEndpoint},
+		{"neither name", "", "", DefaultEndpoint},
+		{"a blank new name", "  ", oldNameEndpoint, oldNameEndpoint},
+		{"a blank old name", "", "  ", DefaultEndpoint},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv(endpointVariable, c.newValue)
+			t.Setenv(oldEndpointVariable, c.oldValue)
+			if got := NewBuilder().endpoint; got != c.want {
+				t.Errorf("the endpoint is %q with %s as %q and %s as %q, "+
+					"want %q", got, endpointVariable, c.newValue,
+					oldEndpointVariable, c.oldValue, c.want)
+			}
+		})
 	}
 }
 
-// TestNewBuilderIgnoresTheOldEndpointVariable checks nothing stands behind
-// the one name, so the old name is not read.
-func TestNewBuilderIgnoresTheOldEndpointVariable(t *testing.T) {
+// TestEnvCloudAPIURLNamesTheOldVariable checks the deprecated constant holds
+// the value it was published with, so code that passes it to the environment
+// reads and sets the variable it always did.
+func TestEnvCloudAPIURLNamesTheOldVariable(t *testing.T) {
+	if EnvCloudAPIURL != oldEndpointVariable {
+		t.Errorf("EnvCloudAPIURL is %q, want %q",
+			EnvCloudAPIURL, oldEndpointVariable)
+	}
+}
+
+// buildFromEnvironment builds an engine from a new builder, which reads the
+// endpoint from the environment, logging to log. The discovery state means
+// the build makes no request.
+func buildFromEnvironment(t *testing.T, log *logRecorder) {
+	t.Helper()
+	_, err := NewBuilder().
+		SetResourceKey(discoveryKey).
+		SetDiscoveryState(itemState()).
+		SetLogger(slog.New(log)).
+		Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+}
+
+// deprecations returns the warnings in log that name both variables.
+func deprecations(log *logRecorder) []slog.Record {
+	var found []slog.Record
+	for _, r := range log.all() {
+		if r.Level == slog.LevelWarn &&
+			strings.Contains(r.Message, oldEndpointVariable) &&
+			strings.Contains(r.Message, endpointVariable) {
+			found = append(found, r)
+		}
+	}
+	return found
+}
+
+// TestTheOldEndpointVariableIsLoggedOnce checks an endpoint read from the
+// deprecated variable is logged through the builder's logger as a warning
+// that names the variable and the one that replaces it, and only once
+// however many engines are built.
+func TestTheOldEndpointVariableIsLoggedOnce(t *testing.T) {
 	t.Setenv(endpointVariable, "")
-	t.Setenv(oldEndpointVariable, "https://old.example/api/v4/")
-	if got := NewBuilder().endpoint; got != DefaultEndpoint {
-		t.Errorf("the endpoint is %q with only %s set, want %q",
-			got, oldEndpointVariable, DefaultEndpoint)
+	t.Setenv(oldEndpointVariable, oldNameEndpoint)
+	log := &logRecorder{}
+	buildFromEnvironment(t, log)
+	buildFromEnvironment(t, log)
+	if got := deprecations(log); len(got) != 1 {
+		t.Errorf("two builds with only %s set logged %d warnings that it "+
+			"is deprecated, want 1", oldEndpointVariable, len(got))
+	}
+}
+
+// TestNoDeprecationIsLoggedWithoutTheOldEndpoint checks nothing is logged
+// when the endpoint in use did not come from the deprecated variable.
+func TestNoDeprecationIsLoggedWithoutTheOldEndpoint(t *testing.T) {
+	for _, c := range []struct {
+		name, newValue, oldValue string
+		setEndpoint              bool
+	}{
+		{"only the new name", newNameEndpoint, "", false},
+		{"both names", newNameEndpoint, oldNameEndpoint, false},
+		{"neither name", "", "", false},
+		{"the old name behind SetEndpoint", "", oldNameEndpoint, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv(endpointVariable, c.newValue)
+			t.Setenv(oldEndpointVariable, c.oldValue)
+			log := &logRecorder{}
+			b := NewBuilder().
+				SetResourceKey(discoveryKey).
+				SetDiscoveryState(itemState()).
+				SetLogger(slog.New(log))
+			if c.setEndpoint {
+				b.SetEndpoint(newNameEndpoint)
+			}
+			if _, err := b.Build(); err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			if records := log.all(); len(records) != 0 {
+				t.Errorf("the build logged %q, want nothing",
+					records[0].Message)
+			}
+		})
 	}
 }
