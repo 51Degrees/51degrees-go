@@ -103,7 +103,7 @@ func (t propertyValueType) goType(isList bool) reflect.Type {
 // property index is read as, being its place among the names the manager was
 // created with, or with no names, among the names of the first data file
 // loaded. An index outside those names, one the data set has no property for,
-// or a property the data set cannot be read for, gives nil.
+// and a property the C library cannot read, all give nil.
 func (results *ResultsHash) PropertyType(
 	requiredPropertyIndex int) reflect.Type {
 	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
