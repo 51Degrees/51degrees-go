@@ -23,56 +23,127 @@
 package missingproperty
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
-func TestDataFileTierMessage(t *testing.T) {
-	err := ForDataFileTier("IsMobile", "device", []string{"Enterprise", "Premium"})
-	if err.PropertyName != "IsMobile" || err.ElementName != "device" {
-		t.Fatalf("fields not set: %+v", err)
+// wantPrefix is the prefix every message in the specification's table begins
+// with, for the Property and Engine these tests use.
+const wantPrefix = "Property 'IsMobile' not found in data for element 'device'. "
+
+// Each message below is a row of the table in the missing Properties section
+// of the Pipeline specification, with the Property name and the Data Key of
+// the Engine filled in. A message is compared whole, because a difference of
+// one word or one capital letter is a difference between languages.
+func TestMessagesMatchSpecification(t *testing.T) {
+	cases := []struct {
+		name string
+		err  *core.PropertyMissingError
+		want string
+	}{
+		{
+			name: "data file upgrade required",
+			err: ForDataFileTier("IsMobile", "device", "HashEngine",
+				[]string{"Premium", "Enterprise"}),
+			want: wantPrefix +
+				"This is because your license or data file does not include " +
+				"this property. It is available with the Premium,Enterprise " +
+				"license/data for the HashEngine. To upgrade, see " +
+				"https://51degrees.com/pricing.",
+		},
+		{
+			name: "data file upgrade required, data tiers not known",
+			err:  ForDataFileTier("IsMobile", "device", "HashEngine", nil),
+			want: wantPrefix +
+				"This is because your license or data file does not include " +
+				"this property. To see which licenses include it, see " +
+				"https://51degrees.com/pricing.",
+		},
+		{
+			name: "property excluded in configuration",
+			err:  ForExcludedInConfig("IsMobile", "device"),
+			want: wantPrefix +
+				"This is because the property has been excluded when " +
+				"configuring the engine.",
+		},
+		{
+			name: "product not included with Resource Key",
+			err:  ForProductNotInResourceKey("IsMobile", "device"),
+			want: wantPrefix +
+				"This is because your resource key does not include access " +
+				"to any properties under 'device'. Check or create a " +
+				"resource key with the properties you need in the " +
+				"configurator at https://configure.51degrees.com.",
+		},
+		{
+			name: "property not included with Resource Key",
+			err: ForPropertyNotInResourceKey("IsMobile", "device",
+				[]string{"HardwareVendor", "PlatformName"}),
+			want: wantPrefix +
+				"This is because your resource key does not include access " +
+				"to this property. The properties included for your key " +
+				"under 'device' are HardwareVendor,PlatformName. Check or " +
+				"change your key in the configurator at " +
+				"https://configure.51degrees.com.",
+		},
+		{
+			name: "request to the remote server failed",
+			err:  ForCloudRequestFailed("IsMobile", "device"),
+			want: wantPrefix +
+				"This is because an upstream cloud request failed, so no " +
+				"data was available to populate the property.",
+		},
+		{
+			name: "unknown",
+			err:  Generic("IsMobile", "device"),
+			want: wantPrefix +
+				"The reason for this is unknown. Please check that the " +
+				"aspect and property name are correct.",
+		},
 	}
-	if !strings.Contains(err.Message, "license and/or data file does not include") {
-		t.Fatalf("unexpected message: %s", err.Message)
-	}
-	if !strings.Contains(err.Message, "Enterprise, Premium") {
-		t.Fatalf("data tiers not listed: %s", err.Message)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.err.Message != tc.want {
+				t.Fatalf("message\n got %q\nwant %q", tc.err.Message, tc.want)
+			}
+			if tc.err.Error() != tc.want {
+				t.Fatalf("Error() = %q, want %q", tc.err.Error(), tc.want)
+			}
+			if tc.err.PropertyName != "IsMobile" ||
+				tc.err.ElementName != "device" {
+				t.Fatalf("fields not set: %+v", tc.err)
+			}
+		})
 	}
 }
 
-func TestDataFileTierEmptyTiers(t *testing.T) {
-	err := ForDataFileTier("IsMobile", "device", nil)
-	if !strings.Contains(err.Message, "the Unknown license/data") {
-		t.Fatalf("empty tiers should yield 'Unknown', got: %s", err.Message)
+// A Property with no Data Key to name, which happens when a cloud request
+// fails before any Engine has run, is named Unknown.
+func TestCloudRequestFailedWithNoEngine(t *testing.T) {
+	err := ForCloudRequestFailed("IsMobile", "")
+	want := "Property 'IsMobile' not found in data for element 'Unknown'. " +
+		"This is because an upstream cloud request failed, so no data was " +
+		"available to populate the property."
+	if err.Message != want {
+		t.Fatalf("message\n got %q\nwant %q", err.Message, want)
+	}
+	if err.ElementName != "Unknown" {
+		t.Fatalf("ElementName = %q, want %q", err.ElementName, "Unknown")
 	}
 }
 
-func TestExcludedMessage(t *testing.T) {
-	err := ForExcludedInConfig("IsMobile", "device")
-	if !strings.Contains(err.Message, "excluded when configuring the Engine") {
-		t.Fatalf("unexpected message: %s", err.Message)
-	}
-}
-
-func TestProductNotInResourceKeyMessage(t *testing.T) {
-	err := ForProductNotInResourceKey("IsMobile", "device", "device")
-	if !strings.Contains(err.Message, "does not include access to any Properties under 'device'") {
-		t.Fatalf("unexpected message: %s", err.Message)
-	}
-	if !strings.Contains(err.Message, "resource_keys.html") {
-		t.Fatalf("missing explainer link: %s", err.Message)
-	}
-}
-
-func TestPropertyNotInResourceKeyMessage(t *testing.T) {
-	err := ForPropertyNotInResourceKey("IsMobile", "device", "device", []string{"HardwareVendor", "PlatformName"})
-	if !strings.Contains(err.Message, "does not include access to this Property") {
-		t.Fatalf("unexpected message: %s", err.Message)
-	}
-	if !strings.Contains(err.Message, "HardwareVendor, PlatformName") {
-		t.Fatalf("included properties not listed: %s", err.Message)
+// An empty list of Properties included with the Resource Key leaves the names
+// out rather than writing anything in their place.
+func TestPropertyNotInResourceKeyWithNoNames(t *testing.T) {
+	err := ForPropertyNotInResourceKey("IsMobile", "device", nil)
+	want := wantPrefix +
+		"This is because your resource key does not include access to this " +
+		"property. The properties included for your key under 'device' are " +
+		". Check or change your key in the configurator at " +
+		"https://configure.51degrees.com."
+	if err.Message != want {
+		t.Fatalf("message\n got %q\nwant %q", err.Message, want)
 	}
 }
 
@@ -83,10 +154,10 @@ func TestReasonTagging(t *testing.T) {
 		reason string
 		err    *core.PropertyMissingError
 	}{
-		{ReasonDataFileTier, ForDataFileTier("p", "e", nil)},
+		{ReasonDataFileTier, ForDataFileTier("p", "e", "Engine", nil)},
 		{ReasonExcludedInConfig, ForExcludedInConfig("p", "e")},
-		{ReasonProductNotInKey, ForProductNotInResourceKey("p", "e", "d")},
-		{ReasonPropertyNotInKey, ForPropertyNotInResourceKey("p", "e", "d", nil)},
+		{ReasonProductNotInKey, ForProductNotInResourceKey("p", "e")},
+		{ReasonPropertyNotInKey, ForPropertyNotInResourceKey("p", "e", nil)},
 		{ReasonUnknown, Generic("p", "e")},
 		{ReasonCloudRequestFailed, ForCloudRequestFailed("p", "e")},
 	}

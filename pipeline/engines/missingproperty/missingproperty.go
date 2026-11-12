@@ -48,7 +48,7 @@ const (
 
 // ForDataFileTier builds the error for a Property absent from the current data
 // file. dataTiers lists the license/data file types in which it is available.
-func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
+func ForDataFileTier(property, element, engineType string, dataTiers []string) *core.PropertyMissingError {
 	tiers := strings.Join(dataTiers, ", ")
 	if tiers == "" {
 		tiers = "Unknown" // placeholder when the tier list is absent
@@ -70,25 +70,25 @@ func ForExcludedInConfig(property, element string) *core.PropertyMissingError {
 
 // ForProductNotInResourceKey builds the error for a product not included with
 // the Resource Key.
-func ForProductNotInResourceKey(property, element, product string) *core.PropertyMissingError {
+func ForProductNotInResourceKey(property, element string) *core.PropertyMissingError {
 	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
 		"This is because your Resource Key does not include access to any Properties under '%s'. "+
 		"For more details on Resource Keys, see our explainer: "+
 		"https://51degrees.com/documentation/_info__resource_keys.html",
-		property, element, product)
+		property, element, element)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonProductNotInKey}
 }
 
 // ForPropertyNotInResourceKey builds the error for a Property not included with
 // the Resource Key. includedProperties lists the Properties that are available
 // under the product for this key.
-func ForPropertyNotInResourceKey(property, element, product string, includedProperties []string) *core.PropertyMissingError {
+func ForPropertyNotInResourceKey(property, element string, includedProperties []string) *core.PropertyMissingError {
 	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
 		"This is because your Resource Key does not include access to this Property. "+
 		"Properties that are included for this key under '%s' are %s. "+
 		"For more details on Resource Keys, see our explainer: "+
 		"https://51degrees.com/documentation/_info__resource_keys.html",
-		property, element, product, strings.Join(includedProperties, ", "))
+		property, element, element, strings.Join(includedProperties, ", "))
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonPropertyNotInKey}
 }
 
