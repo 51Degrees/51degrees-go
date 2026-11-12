@@ -60,24 +60,25 @@ func TestPropertyTypeOfAStringProperty(t *testing.T) {
 	}
 }
 
-// Every property of the data file has a type, whichever file the tests found.
-// A name the manager was created with that the data set has no property for
-// keeps its place among the names, so its type is nil.
+// Every property of the data file has a type, whichever file the tests found,
+// under every performance profile, and reading the types leaves no native
+// memory behind.
 func TestPropertyTypeOfEveryAvailableProperty(t *testing.T) {
-	manager := initResourceManager("", t)
-	defer freeResourceManager(manager, t)
-	results := NewResultsHash(manager, 1, 0)
-	defer results.Free()
+	testDifferentPerformanceProfiles("", func(
+		manager *ResourceManager, t *testing.T) {
+		results := NewResultsHash(manager, 1, 0)
+		defer results.Free()
 
-	available := results.AvailableProperties()
-	if len(available) == 0 {
-		t.Fatalf("Expected the data file to have properties.\n")
-	}
-	for i, name := range available {
-		if results.PropertyType(i) == nil {
-			t.Errorf("Expected a type for %q at index %d.\n", name, i)
+		available := results.AvailableProperties()
+		if len(available) == 0 {
+			t.Fatalf("Expected the data file to have properties.\n")
 		}
-	}
+		for i, name := range available {
+			if results.PropertyType(i) == nil {
+				t.Errorf("Expected a type for %q at index %d.\n", name, i)
+			}
+		}
+	}, t)
 }
 
 // An index outside the names the manager was created with, and a name the

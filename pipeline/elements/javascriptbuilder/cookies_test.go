@@ -35,10 +35,11 @@ var whiteSpace = string([]rune{
 	0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
 })
 
-// Cookie evidence that is absent or blank, meaning empty or only white space,
-// leaves the configured default in place. A value that is not blank decides,
-// read with the white space around it removed. The script reads
-// document.cookie when cookies are on, and never when they are off.
+// Cookie evidence that is absent, blank, meaning empty or only white space, or
+// neither true nor false, leaves the configured default in place. True and
+// false decide, in any letter case and with any white space around them. The
+// script reads document.cookie when cookies are on, and never when they are
+// off.
 func TestEnableCookiesEvidence(t *testing.T) {
 	// The script either follows the configured default, or is on or off
 	// whatever the default is.
@@ -57,6 +58,9 @@ func TestEnableCookiesEvidence(t *testing.T) {
 		{"TRUE", "TRUE", true, on},
 		{"true with spaces around it", " true ", true, on},
 		{"false", "false", true, off},
+		{"FALSE with spaces around it", " FALSE ", true, off},
+		{"a word that is not a boolean", "yes", true, followsDefault},
+		{"a number", "1", true, followsDefault},
 	}
 	for _, d := range data {
 		for _, configured := range []bool{true, false} {
