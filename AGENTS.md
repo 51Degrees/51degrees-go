@@ -282,11 +282,11 @@ moves the submodule and the copy together.
 The data files come from the [data](https://github.com/51Degrees/data)
 repository, which is the `cxx/data` submodule. That repository holds a
 `<file>.link` for each file, and its `get-data-files.ps1` and
-`get-data-files.sh` scripts save the file beside the link. CI takes most files
-from common-ci's assets instead, and `ci/fetch-assets.ps1` links them into the
-folders the tests search. `ci/fetch-assets.ps1` also runs the data
-repository's script to download the Asn file that the IP Intelligence reload
-tests use.
+`get-data-files.sh` scripts save the file beside the link. CI takes every file
+from common-ci's assets instead, which each run caches once, and
+`ci/fetch-assets.ps1` copies or links them into the folders the tests search,
+so no test job downloads a data file. A file added to the data repository
+needs an entry in common-ci's `steps/fetch-assets.ps1` before CI can use it.
 
 When an example's data file is missing and the data repository links to it,
 the examples' helpers run the script for that file

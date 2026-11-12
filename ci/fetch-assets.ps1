@@ -8,7 +8,12 @@ $ErrorActionPreference = "Stop"
 
 . $PSScriptRoot/products.ps1
 $RepoPath = Join-Path $PSScriptRoot ".."
-$Products = Get-AffectedProducts $RepoPath
+# The prefetch in the Configure job fills the asset cache that every run that
+# day restores, whatever it changes, so it fetches for every product.
+$Products = $AllProducts
+if ($env:GITHUB_JOB -ne 'Configure') {
+    $Products = Get-AffectedProducts $RepoPath
+}
 $Data = Join-Path $RepoPath "cxx/data"
 
 # Device Detection: the Lite data file and the evidence the tests and examples
@@ -55,7 +60,7 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
 if ($Products -contains 'ip-intelligence') {
     $folder = Get-ProductPath $RepoPath 'ip-intelligence'
     $asn = "51Degrees-IPIV4AsnIpiV41.ipi"
-    Copy-Item "assets/$asn" (Join-Path $Data "ip-intelligence/$asn")
+    Copy-Item "$PWD/assets/$asn" (Join-Path $Data "ip-intelligence/$asn")
     New-Item -ItemType SymbolicLink -Force `
         -Target (Join-Path $Data "ip-intelligence/$asn") `
         -Path (Join-Path $folder $asn) | Out-Null
