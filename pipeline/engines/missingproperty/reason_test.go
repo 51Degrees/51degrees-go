@@ -77,14 +77,10 @@ func check(t *testing.T, got, want *core.PropertyMissingError) {
 		t.Fatal("Decide gave no error")
 	}
 	if got.Reason != want.Reason {
-		t.Errorf("reason
- got: %s
-want: %s", got.Reason, want.Reason)
+		t.Errorf("reason\n got: %s\nwant: %s", got.Reason, want.Reason)
 	}
 	if got.Error() != want.Error() {
-		t.Errorf("message
- got: %s
-want: %s", got.Error(), want.Error())
+		t.Errorf("message\n got: %s\nwant: %s", got.Error(), want.Error())
 	}
 }
 
