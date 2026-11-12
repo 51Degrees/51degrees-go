@@ -118,7 +118,7 @@ func decideForEngine(property string, e Engine, accessors []string) *core.Proper
 			}
 			listed = true
 			if !isCloud && !contains(p.DataTiersWherePresent, e.DataSourceTier()) {
-				return ForDataFileTier(property, key, typeName(e),
+				return ForDataFileUpgrade(property, key, typeName(e),
 					p.DataTiersWherePresent)
 			}
 			if !p.Available {
@@ -133,9 +133,9 @@ func decideForEngine(property string, e Engine, accessors []string) *core.Proper
 	if isCloud {
 		if loaded {
 			if len(properties) == 0 {
-				return ForProductNotInResourceKey(property, key)
+				return ForProductNotAccessible(property, key)
 			}
-			return ForPropertyNotInResourceKey(property, key,
+			return ForPropertyNotAccessible(property, key,
 				propertyNames(properties))
 		}
 		if cloud.PropertyListRequestFailed() {
@@ -148,7 +148,7 @@ func decideForEngine(property string, e Engine, accessors []string) *core.Proper
 	// the Element Data has a typed accessor for it. The data tiers are not
 	// known, so the message leaves them out.
 	if !listed && containsFold(accessors, property) {
-		return ForDataFileTier(property, key, typeName(e), nil)
+		return ForDataFileUpgrade(property, key, typeName(e), nil)
 	}
 	return Generic(property, key)
 }

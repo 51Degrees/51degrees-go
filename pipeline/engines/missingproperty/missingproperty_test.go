@@ -44,7 +44,7 @@ func TestMessagesMatchSpecification(t *testing.T) {
 	}{
 		{
 			name: "data file upgrade required",
-			err: ForDataFileTier("IsMobile", "device", "HashEngine",
+			err: ForDataFileUpgrade("IsMobile", "device", "HashEngine",
 				[]string{"Premium", "Enterprise"}),
 			want: wantPrefix +
 				"This is because your license or data file does not include " +
@@ -54,7 +54,7 @@ func TestMessagesMatchSpecification(t *testing.T) {
 		},
 		{
 			name: "data file upgrade required, data tiers not known",
-			err:  ForDataFileTier("IsMobile", "device", "HashEngine", nil),
+			err:  ForDataFileUpgrade("IsMobile", "device", "HashEngine", nil),
 			want: wantPrefix +
 				"This is because your license or data file does not include " +
 				"this property. To see which licenses include it, see " +
@@ -69,7 +69,7 @@ func TestMessagesMatchSpecification(t *testing.T) {
 		},
 		{
 			name: "product not included with Resource Key",
-			err:  ForProductNotInResourceKey("IsMobile", "device"),
+			err:  ForProductNotAccessible("IsMobile", "device"),
 			want: wantPrefix +
 				"This is because your resource key does not include access " +
 				"to any properties under 'device'. Check or create a " +
@@ -78,7 +78,7 @@ func TestMessagesMatchSpecification(t *testing.T) {
 		},
 		{
 			name: "property not included with Resource Key",
-			err: ForPropertyNotInResourceKey("IsMobile", "device",
+			err: ForPropertyNotAccessible("IsMobile", "device",
 				[]string{"HardwareVendor", "PlatformName"}),
 			want: wantPrefix +
 				"This is because your resource key does not include access " +
@@ -136,7 +136,7 @@ func TestCloudRequestFailedWithNoEngine(t *testing.T) {
 // An empty list of Properties included with the Resource Key leaves the names
 // out rather than writing anything in their place.
 func TestPropertyNotInResourceKeyWithNoNames(t *testing.T) {
-	err := ForPropertyNotInResourceKey("IsMobile", "device", nil)
+	err := ForPropertyNotAccessible("IsMobile", "device", nil)
 	want := wantPrefix +
 		"This is because your resource key does not include access to this " +
 		"property. The properties included for your key under 'device' are " +
@@ -154,10 +154,10 @@ func TestReasonTagging(t *testing.T) {
 		reason string
 		err    *core.PropertyMissingError
 	}{
-		{ReasonDataFileTier, ForDataFileTier("p", "e", "Engine", nil)},
+		{ReasonDataFileTier, ForDataFileUpgrade("p", "e", "Engine", nil)},
 		{ReasonExcludedInConfig, ForExcludedInConfig("p", "e")},
-		{ReasonProductNotInKey, ForProductNotInResourceKey("p", "e")},
-		{ReasonPropertyNotInKey, ForPropertyNotInResourceKey("p", "e", nil)},
+		{ReasonProductNotInKey, ForProductNotAccessible("p", "e")},
+		{ReasonPropertyNotInKey, ForPropertyNotAccessible("p", "e", nil)},
 		{ReasonUnknown, Generic("p", "e")},
 		{ReasonCloudRequestFailed, ForCloudRequestFailed("p", "e")},
 	}

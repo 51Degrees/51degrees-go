@@ -133,7 +133,7 @@ func TestPropertyNotInTheResourceKey(t *testing.T) {
 	p := cloudPipeline(t, srv,
 		&sectionEngine{NewBaseCloudAspectEngine("device", quietLogger())})
 	checkMissing(t, processed(t, p, "device"), "ScreenWidth",
-		missingproperty.ForPropertyNotInResourceKey("ScreenWidth", "device",
+		missingproperty.ForPropertyNotAccessible("ScreenWidth", "device",
 			[]string{"ismobile", "hardwarevendor"}))
 }
 
@@ -151,7 +151,7 @@ func TestProductNotInTheResourceKey(t *testing.T) {
 			p := cloudPipeline(t, srv, &sectionEngine{
 				NewBaseCloudAspectEngine("location", quietLogger())})
 			checkMissing(t, processed(t, p, "location"), "Country",
-				missingproperty.ForProductNotInResourceKey("Country",
+				missingproperty.ForProductNotAccessible("Country",
 					"location"))
 		})
 	}
@@ -201,7 +201,7 @@ func TestPropertyListRequestFailedUntilTheListIsFetched(t *testing.T) {
 	}
 	healthy.Store(true)
 	checkMissing(t, processed(t, p, "device"), "ScreenWidth",
-		missingproperty.ForPropertyNotInResourceKey("ScreenWidth", "device",
+		missingproperty.ForPropertyNotAccessible("ScreenWidth", "device",
 			[]string{"ismobile", "hardwarevendor"}))
 	if state.PropertyListRequestFailed() {
 		t.Error("the property list was fetched, and the engine still says " +

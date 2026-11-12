@@ -127,7 +127,7 @@ func TestOnPremiseTierNotAmongThePropertyTiers(t *testing.T) {
 	e := &onPremise{key: "device", tier: "Lite", props: []core.PropertyMetadata{
 		property("IsMobile", false, "Premium", "Enterprise")}}
 	got := Decide("ISMOBILE", []Engine{e}, Context{})
-	check(t, got, ForDataFileTier("ISMOBILE", "device", engineType,
+	check(t, got, ForDataFileUpgrade("ISMOBILE", "device", engineType,
 		[]string{"Premium", "Enterprise"}))
 }
 
@@ -137,7 +137,7 @@ func TestOnPremiseListedWithNoTiers(t *testing.T) {
 	e := &onPremise{key: "device", tier: "Lite",
 		props: []core.PropertyMetadata{property("IsMobile", true)}}
 	got := Decide("IsMobile", []Engine{e}, Context{})
-	check(t, got, ForDataFileTier("IsMobile", "device", engineType, nil))
+	check(t, got, ForDataFileUpgrade("IsMobile", "device", engineType, nil))
 }
 
 // Step 3.1. A listed Property in the Engine's tier that is not available
@@ -165,7 +165,7 @@ func TestCloudWithNoPropertiesIsProductNotAccessible(t *testing.T) {
 	e := &cloud{onPremise: onPremise{key: "device", tier: "cloud"},
 		loaded: true}
 	got := Decide("IsMobile", []Engine{e}, Context{})
-	check(t, got, ForProductNotInResourceKey("IsMobile", "device"))
+	check(t, got, ForProductNotAccessible("IsMobile", "device"))
 }
 
 // Step 3.2. A Cloud Engine whose loaded metadata lists other Properties
@@ -176,7 +176,7 @@ func TestCloudWithOtherPropertiesIsPropertyNotAccessible(t *testing.T) {
 			property("IsMobile", true), property("HardwareVendor", true)}},
 		loaded: true}
 	got := Decide("ScreenWidth", []Engine{e}, Context{})
-	check(t, got, ForPropertyNotInResourceKey("ScreenWidth", "device",
+	check(t, got, ForPropertyNotAccessible("ScreenWidth", "device",
 		[]string{"IsMobile", "HardwareVendor"}))
 }
 
@@ -207,7 +207,7 @@ func TestOnPremiseTypedAccessorWithoutMetadata(t *testing.T) {
 		property("HardwareVendor", true, "Lite")}}
 	got := Decide("ismobile", []Engine{e},
 		Context{Accessors: []string{"HardwareVendor", "IsMobile"}})
-	check(t, got, ForDataFileTier("ismobile", "device", engineType, nil))
+	check(t, got, ForDataFileUpgrade("ismobile", "device", engineType, nil))
 }
 
 // Step 3.3. The same holds for an On-premise Engine that has not loaded its
@@ -217,7 +217,7 @@ func TestOnPremiseNotLoadedTypedAccessor(t *testing.T) {
 		props: []core.PropertyMetadata{property("IsMobile", false, "Lite")}}}
 	got := Decide("IsMobile", []Engine{e},
 		Context{Accessors: []string{"IsMobile"}})
-	check(t, got, ForDataFileTier("IsMobile", "device", engineType, nil))
+	check(t, got, ForDataFileUpgrade("IsMobile", "device", engineType, nil))
 }
 
 // Step 3.4. A Property the metadata lists as available in the Engine's tier

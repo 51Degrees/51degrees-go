@@ -113,11 +113,11 @@ func checkMissing(t *testing.T, data core.ElementData, name string,
 // checkStarReasons reads each missing Property of the star data.
 func checkStarReasons(t *testing.T, data core.ElementData) {
 	t.Helper()
-	checkMissing(t, data, "planet", missingproperty.ForDataFileTier(
+	checkMissing(t, data, "planet", missingproperty.ForDataFileUpgrade(
 		"planet", "star", starEngineType, []string{"Premium", "Enterprise"}))
 	checkMissing(t, data, "ELEMENT",
 		missingproperty.ForExcludedInConfig("ELEMENT", "star"))
-	checkMissing(t, data, "starsign", missingproperty.ForDataFileTier(
+	checkMissing(t, data, "starsign", missingproperty.ForDataFileUpgrade(
 		"starsign", "star", starEngineType, nil))
 	checkMissing(t, data, "Moon", missingproperty.Generic("Moon", "star"))
 }
@@ -132,7 +132,7 @@ func TestAspectDataExplainsAMissingProperty(t *testing.T) {
 func TestTypedAccessorExplainsAMissingProperty(t *testing.T) {
 	data := starResult(t, starPipeline(t, newStarEngine())).(*starData)
 	_, err := data.StarSign()
-	want := missingproperty.ForDataFileTier("starsign", "star",
+	want := missingproperty.ForDataFileUpgrade("starsign", "star",
 		starEngineType, nil)
 	if err == nil || err.Error() != want.Error() {
 		t.Errorf("StarSign gives %v, want %v", err, want)

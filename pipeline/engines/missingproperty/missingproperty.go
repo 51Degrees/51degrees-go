@@ -53,12 +53,13 @@ const messagePrefix = "Property '%s' not found in data for element '%s'. "
 // noEngine is the name the message carries where there is no Engine to name.
 const noEngine = "Unknown"
 
-// ForDataFileTier builds the error for a Property the current license or data
-// file does not include. dataTiers names the data tiers where the Property is
-// present, from its metadata, and engineType is this implementation's own name
-// for the Engine. Where dataTiers is empty the message leaves out the sentence
-// naming the tiers, as the table's second row does.
-func ForDataFileTier(property, element, engineType string, dataTiers []string) *core.PropertyMissingError {
+// ForDataFileUpgrade builds the error for a Property the current license or
+// data file does not include. dataTiers names the data tiers where the
+// Property is present, from its metadata, and engineType is this
+// implementation's own name for the Engine. Where dataTiers is empty the
+// message leaves out the sentence naming the tiers, as the table's second row
+// does.
+func ForDataFileUpgrade(property, element, engineType string, dataTiers []string) *core.PropertyMissingError {
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		"This is because your license or data file does not include this " +
 		"property. "
@@ -73,6 +74,15 @@ func ForDataFileTier(property, element, engineType string, dataTiers []string) *
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonDataFileTier}
 }
 
+// ForDataFileTier builds the error ForDataFileUpgrade builds. It is not given
+// the Engine's type, so it names the Engine by its Data Key.
+//
+// Deprecated: use ForDataFileUpgrade, which names the Engine's type as the
+// specification's message does.
+func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
+	return ForDataFileUpgrade(property, element, element, dataTiers)
+}
+
 // ForExcludedInConfig builds the error for a Property excluded by configuration.
 func ForExcludedInConfig(property, element string) *core.PropertyMissingError {
 	msg := fmt.Sprintf(messagePrefix, property, element) +
@@ -81,29 +91,48 @@ func ForExcludedInConfig(property, element string) *core.PropertyMissingError {
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonExcludedInConfig}
 }
 
-// ForProductNotInResourceKey builds the error for a Resource Key that includes
+// ForProductNotAccessible builds the error for a Resource Key that includes
 // no Properties at all under the Engine's Data Key, which is the reason a
 // license key without the Engine's product gives. The message names that Data
 // Key as the product.
-func ForProductNotInResourceKey(property, element string) *core.PropertyMissingError {
+func ForProductNotAccessible(property, element string) *core.PropertyMissingError {
+	return ForProductNotInResourceKey(property, element, element)
+}
+
+// ForProductNotInResourceKey builds the error ForProductNotAccessible builds,
+// naming product where that message names the Data Key a second time.
+//
+// Deprecated: use ForProductNotAccessible, which names the Data Key as the
+// product, as the specification's message does.
+func ForProductNotInResourceKey(property, element, product string) *core.PropertyMissingError {
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		fmt.Sprintf("This is because your resource key does not include "+
 			"access to any properties under '%s'. Check or create a "+
 			"resource key with the properties you need in the configurator "+
-			"at https://configure.51degrees.com.", element)
+			"at https://configure.51degrees.com.", product)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonProductNotInKey}
 }
 
-// ForPropertyNotInResourceKey builds the error for a Resource Key that
-// includes the Engine's product but not this Property. includedProperties
-// names the Properties in the Engine's metadata.
-func ForPropertyNotInResourceKey(property, element string, includedProperties []string) *core.PropertyMissingError {
+// ForPropertyNotAccessible builds the error for a Resource Key that includes
+// the Engine's product but not this Property. includedProperties names the
+// Properties in the Engine's metadata.
+func ForPropertyNotAccessible(property, element string, includedProperties []string) *core.PropertyMissingError {
+	return ForPropertyNotInResourceKey(property, element, element,
+		includedProperties)
+}
+
+// ForPropertyNotInResourceKey builds the error ForPropertyNotAccessible
+// builds, naming product where that message names the Data Key a second time.
+//
+// Deprecated: use ForPropertyNotAccessible, which names the Data Key as the
+// product, as the specification's message does.
+func ForPropertyNotInResourceKey(property, element, product string, includedProperties []string) *core.PropertyMissingError {
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		fmt.Sprintf("This is because your resource key does not include "+
 			"access to this property. The properties included for your key "+
 			"under '%s' are %s. Check or change your key in the "+
 			"configurator at https://configure.51degrees.com.",
-			element, strings.Join(includedProperties, ","))
+			product, strings.Join(includedProperties, ","))
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonPropertyNotInKey}
 }
 

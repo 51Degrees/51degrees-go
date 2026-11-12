@@ -288,7 +288,7 @@ func checkMissingProduct(t *testing.T, cloud http.Handler, suppress bool) {
 	const missing = "location"
 	log := &recordingHandler{}
 	p, engine := buildWithLogger(t, cloud, missing, suppress, slog.New(log))
-	absent := missingproperty.ForProductNotInResourceKey("town", missing)
+	absent := missingproperty.ForProductNotAccessible("town", missing)
 	for i := 1; i <= 3; i++ {
 		fd := p.CreateFlowData()
 		fd.AddEvidence("header.user-agent", "ua")
