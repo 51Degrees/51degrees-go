@@ -54,12 +54,13 @@ const (
 const downloadSource = "examples-51degrees-go"
 
 // DataFile returns the path of the data file the environment variable names,
-// or of the free file when it is not set. A name that is not the path of a
-// file is looked for in the data repository's folder, from the working folder
-// up, and downloaded when the data repository links to it. Otherwise the name
-// is returned, so that the engine reports the file missing.
+// or the variable's deprecated name when the variable is not set, or of the
+// free file when neither is set. A name that is not the path of a file is
+// looked for in the data repository's folder, from the working folder up, and
+// downloaded when the data repository links to it. Otherwise the name is
+// returned, so that the engine reports the file missing.
 func DataFile(variable string, folder string, free string) string {
-	name := os.Getenv(variable)
+	name := fromEnvironment(variable)
 	if name == "" {
 		name = free
 	}

@@ -53,14 +53,19 @@ var oldName = regexp.MustCompile("(?:[\"'`=$]|\\$\\{|env[:.]|^[\t -]*)" +
 	"|LICENSE_KEY|IPI_KEY|IPI_DATA_FILE_URL|DEVICE_DETECTION_KEY" +
 	"|FOD_CLOUD_API_URL)")
 
-// stillRead holds, for a file, the one old name the file may carry, because
-// the package still reads that variable as the deprecated name of a newer one.
-var stillRead = map[string]string{
-	"pipeline/cloud/requestengine/builder.go": cloudURL,
+// stillRead holds, for a file, the old names the file may carry, because its
+// code still reads those variables as the deprecated names of newer ones.
+var stillRead = map[string][]string{
+	"pipeline/cloud/requestengine/builder.go": {cloudURL},
+	"examples/device-detection/onpremise/common/environment.go": {
+		licence, deviceKey, dataFile, evidenceYAML},
+	"examples/ip-intelligence/common/environment.go": {
+		licence, ipiKey, dataFile, evidenceYAML, "IPI_" + dataFile + "_URL"},
+	"examples/mixed/common/environment.go": {dataFile, "DD_" + dataFile},
 }
 
-// No tracked file names one of those variables, other than the file that still
-// reads a deprecated one. The cxx submodule is not read. Outside a git
+// No tracked file names one of those variables, other than a file that still
+// reads it as a deprecated name. The cxx submodule is not read. Outside a git
 // checkout, such as the module cache, there are no tracked files to read.
 func TestNoFileNamesAnOldVariable(t *testing.T) {
 	top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
@@ -114,11 +119,15 @@ func oldVariables(line []byte) []string {
 }
 
 // oldVariablesIn returns the old names in a line of the file, leaving out the
-// one name the file still reads as deprecated.
+// names the file still reads as deprecated.
 func oldVariablesIn(file string, line []byte) []string {
 	var names []string
 	for _, name := range oldVariables(line) {
-		if stillRead[file] != name {
+		allowed := false
+		for _, read := range stillRead[file] {
+			allowed = allowed || read == name
+		}
+		if !allowed {
 			names = append(names, name)
 		}
 	}
@@ -128,12 +137,13 @@ func oldVariablesIn(file string, line []byte) []string {
 // Each name below is written in two parts so that this file does not name a
 // variable itself.
 const (
-	fiftyOne  = "FIFTY" + "ONE_"
-	dataFile  = "DATA" + "_FILE"
-	licence   = "LICENSE" + "_KEY"
-	ipiKey    = "IPI" + "_KEY"
-	deviceKey = "DEVICE" + "_DETECTION_KEY"
-	cloudURL  = "FOD" + "_CLOUD_API_URL"
+	fiftyOne     = "FIFTY" + "ONE_"
+	dataFile     = "DATA" + "_FILE"
+	licence      = "LICENSE" + "_KEY"
+	ipiKey       = "IPI" + "_KEY"
+	deviceKey    = "DEVICE" + "_DETECTION_KEY"
+	cloudURL     = "FOD" + "_CLOUD_API_URL"
+	evidenceYAML = "EVIDENCE" + "_YAML"
 )
 
 // A name counts only where a variable is named, after a quote, a backtick, an
@@ -184,13 +194,31 @@ func TestOldVariablesAreOnlyVariables(t *testing.T) {
 	}
 }
 
-// A deprecated name is allowed in the one file that still reads it and in no
-// other file, and that file is allowed no other old name.
+// A deprecated name is allowed in the file that still reads it and in no
+// other file, and that file is allowed no old name it does not read.
 func TestADeprecatedVariableIsNamedOnlyWhereItIsRead(t *testing.T) {
-	const builder = "pipeline/cloud/requestengine/builder.go"
+	const (
+		builder = "pipeline/cloud/requestengine/builder.go"
+		device  = "examples/device-detection/onpremise/common/environment.go"
+		ip      = "examples/ip-intelligence/common/environment.go"
+		mixed   = "examples/mixed/common/environment.go"
+	)
 	for _, c := range []struct{ file, line, want string }{
 		{builder, `const EnvCloudAPIURL = "` + cloudURL + `"`, ""},
 		{builder, `os.Getenv("` + licence + `")`, licence},
+		{device, `{"` + licence + `", "` + deviceKey + `"},`, ""},
+		{device, `{"` + dataFile + `"}, {"` + evidenceYAML + `"},`, ""},
+		{device, `{"` + ipiKey + `"},`, ipiKey},
+		{ip, `{"` + licence + `", "` + ipiKey + `"},`, ""},
+		{ip, `{"` + dataFile + `"}, {"` + evidenceYAML + `"},`, ""},
+		{ip, `{"IPI_` + dataFile + `_URL"},`, ""},
+		{ip, `{"` + deviceKey + `"},`, deviceKey},
+		{mixed, `{"DD_` + dataFile + `"}, {"` + dataFile + `"},`, ""},
+		{mixed, `{"` + licence + `"},`, licence},
+		{"examples/mixed/getting_started_web/main.go",
+			`os.Getenv("` + dataFile + `")`, dataFile},
+		{"examples/ip-intelligence/common/example_base.go",
+			`os.Getenv("` + licence + `")`, licence},
 		{"pipeline/cloud/requestengine/requestengine.go",
 			`os.Getenv("` + cloudURL + `")`, cloudURL},
 		{"pipeline/README.md", "- " + cloudURL + " names the endpoint",

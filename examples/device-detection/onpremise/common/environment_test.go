@@ -48,7 +48,8 @@ const (
 )
 
 // setVariables gives each variable the examples read the value given for it,
-// and makes it empty when none is given, in an empty working folder.
+// and makes it empty when none is given, in an empty working folder, with no
+// old name reported yet.
 func setVariables(t *testing.T, values map[string]string) {
 	t.Helper()
 	for _, name := range []string{licenceVariable, dataVariable,
@@ -57,6 +58,7 @@ func setVariables(t *testing.T, values map[string]string) {
 		t.Setenv(name, values[name])
 	}
 	inAnEmptyFolder(t)
+	forgetReports(t)
 }
 
 // parameters returns the parameters RunExample gives an example.
@@ -128,6 +130,49 @@ func TestAnOldNameIsReportedOnce(t *testing.T) {
 		t.Errorf("two runs with only %s set reported it %d times, want 1, "+
 			"in %q", oldLicence, got, printed)
 	}
+}
+
+// TestNothingIsReportedWithoutAnOldName checks nothing is printed when no
+// value comes from a deprecated name.
+func TestNothingIsReportedWithoutAnOldName(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{"only the new names", map[string]string{
+			licenceVariable: "new-key", dataVariable: "new.hash",
+			evidenceVariable: "new.yml",
+		}},
+		{"the new and the old names", map[string]string{
+			licenceVariable: "new-key", dataVariable: "new.hash",
+			evidenceVariable: "new.yml", oldLicence: "old-key",
+			oldDeviceLicence: "device-key", oldData: "old.hash",
+			oldEvidence: "old.yml",
+		}},
+		{"no names", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			setVariables(t, c.values)
+			printed := standardError(t, func() { parameters() })
+			if printed != "" {
+				t.Errorf("the run printed %q, want nothing", printed)
+			}
+		})
+	}
+}
+
+// forgetReports makes the examples forget which old names they have
+// reported, now and when the test ends, so that each test starts as a new
+// process does.
+func forgetReports(t *testing.T) {
+	t.Helper()
+	forget := func() {
+		reportedLock.Lock()
+		defer reportedLock.Unlock()
+		reported = map[string]bool{}
+	}
+	forget()
+	t.Cleanup(forget)
 }
 
 // inAnEmptyFolder makes a new empty folder the working folder for the test,
