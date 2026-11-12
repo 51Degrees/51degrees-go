@@ -142,8 +142,8 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 // handleFileExternallyChanged handles events where a file has been externally modified, ensuring proper processing and logging.
 func (e *Engine) handleFileExternallyChanged() {
-	if err := e.reload(); err != nil {
-		e.logReloadError(err)
+	if tries, err := e.reload(); err != nil {
+		e.logReloadError(tries, err)
 	}
 
 	e.IncreaseFileExternallyChangedCount()
@@ -235,10 +235,35 @@ func (e *Engine) Stop() {
 	}
 }
 
-// reload loads the data file again. A panic is returned as a reloadPanic, so
-// the goroutine that asked for the reload carries on and a later file is
-// loaded.
-func (e *Engine) reload() (err error) {
+// How often a reload of the data file is tried, as .NET and Java do, because
+// the file can be held by another process for a moment.
+const (
+	// reloadTries is how many times a reload is tried before it is reported
+	// as failed.
+	reloadTries = 10
+	// reloadRetryWaitMilliseconds is the wait between tries.
+	reloadRetryWaitMilliseconds = 200
+)
+
+// reload loads the data file again, trying up to reloadTries times. It
+// returns the tries made and the last error. A panic ends the tries, being a
+// fault rather than a file another process holds, and is returned as a
+// reloadPanic so the goroutine that asked for the reload carries on and a
+// later file is loaded.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
+func (e *Engine) reload() (int, error) {
+	for tries := 1; ; tries++ {
+		err := e.reloadOnce()
+		var p *reloadPanic
+		if err == nil || errors.As(err, &p) || tries == reloadTries {
+			return tries, err
+		}
+		time.Sleep(reloadRetryWaitMilliseconds * time.Millisecond)
+	}
+}
+
+// reloadOnce loads the data file again, returning a panic as a reloadPanic.
+func (e *Engine) reloadOnce() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = &reloadPanic{r}
@@ -255,8 +280,8 @@ func (p *reloadPanic) Error() string { return fmt.Sprintf("panic: %v", p.value) 
 // logReloadError logs a reload of a pulled or watched file that failed, as
 // the specification's error table gives it, which follows .NET. A panic is
 // logged with the table's last row, and any other failure as a refresh that
-// failed. A reload is tried once.
-func (e *Engine) logReloadError(err error) {
+// failed after the tries made.
+func (e *Engine) logReloadError(tries int, err error) {
 	var p *reloadPanic
 	if errors.As(err, &p) {
 		e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
@@ -264,7 +289,7 @@ func (e *Engine) logReloadError(err error) {
 		return
 	}
 	e.logger.Errorf("Error during check for data update. An error occurred when applying a data update to "+
-		"engine '%s' after 1 tries. Error detail: %v", engineTypeName, err)
+		"engine '%s' after %d tries. Error detail: %v", engineTypeName, tries, err)
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -273,8 +298,8 @@ func (e *Engine) logReloadError(err error) {
 func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
-		if err := e.reload(); err != nil {
-			e.logReloadError(err)
+		if tries, err := e.reload(); err != nil {
+			e.logReloadError(tries, err)
 		}
 	}
 }

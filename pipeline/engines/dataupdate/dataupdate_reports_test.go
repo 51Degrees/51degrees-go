@@ -229,6 +229,27 @@ func TestPollingReportsItsFailures(t *testing.T) {
 	}
 }
 
+// The check made on start-up is reported like any other, to the callback the
+// configuration carries, which is registered before the check runs.
+// See https://github.com/51Degrees/specifications/blob/a0a7008/pipeline-specification/features/data-updates.md#reporting-each-check
+func TestTheCheckOnStartUpIsReported(t *testing.T) {
+	srv := httptest.NewServer(&requestRecorder{status: http.StatusOK, body: "DATA"})
+	defer srv.Close()
+	svc := New(nil, srv.Client())
+	defer svc.Close()
+	got := newReports()
+	if err := svc.Register(&fakeEngine{}, "Eng", Config{
+		Identifier: "a", DataFilePath: filepath.Join(t.TempDir(), "data.bin"),
+		DataUpdateURL: srv.URL, UpdateOnStartup: true, OnUpdate: got.record,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list := got.list()
+	if len(list) != 1 || list[0].Status != StatusSuccess {
+		t.Errorf("the check on start-up was reported as %v, want one report of %q", list, StatusSuccess)
+	}
+}
+
 // An update from memory gives its result to its caller alone, so it reports
 // nothing to the callbacks.
 // See https://github.com/51Degrees/specifications/blob/a0a7008/pipeline-specification/features/data-updates.md#reporting-each-check
