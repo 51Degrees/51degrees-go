@@ -95,18 +95,19 @@ func writeFile(t *testing.T, content string) string {
 	return path
 }
 
-// The automatic update master switch governs the file system watcher as well
-// as polling, so with automatic updates off no watcher is created and a
-// replaced file is not loaded.
-// See https://github.com/51Degrees/specifications/blob/a0a7008/pipeline-specification/features/data-updates.md#automatic-update-master-switch
-func TestTheWatcherRunsOnlyWithAutomaticUpdatesOn(t *testing.T) {
+// The file system watcher runs on its own setting. Watching a file downloads
+// nothing, so the watcher does not wait for automatic updates to be on, and
+// with its own setting off a replaced file is not loaded.
+func TestTheWatcherRunsOnItsOwnSetting(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		automatic bool
+		watcher   bool
 		wantWatch bool
 	}{
-		{name: "automatic updates on", automatic: true, wantWatch: true},
-		{name: "automatic updates off", automatic: false, wantWatch: false},
+		{name: "watcher on, automatic updates on", automatic: true, watcher: true, wantWatch: true},
+		{name: "watcher on, automatic updates off", automatic: false, watcher: true, wantWatch: true},
+		{name: "watcher off, automatic updates on", automatic: true, watcher: false, wantWatch: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := writeFile(t, "INITIAL")
@@ -116,7 +117,7 @@ func TestTheWatcherRunsOnlyWithAutomaticUpdatesOn(t *testing.T) {
 			if err := svc.Register(eng, "Eng", Config{
 				Identifier: "a", DataFilePath: path,
 				AutomaticUpdatesEnabled:  test.automatic,
-				FileSystemWatcherEnabled: true,
+				FileSystemWatcherEnabled: test.watcher,
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -366,7 +367,7 @@ func TestAWatchedFileThatIsNotNewerIsNotLoaded(t *testing.T) {
 	got := newReports()
 	if err := svc.Register(eng, "Eng", Config{
 		Identifier: "a", DataFilePath: path, OnComplete: got.record,
-		AutomaticUpdatesEnabled: true, FileSystemWatcherEnabled: true,
+		FileSystemWatcherEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}

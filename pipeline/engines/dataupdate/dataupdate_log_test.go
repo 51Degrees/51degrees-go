@@ -99,7 +99,7 @@ func TestLogsTheMessagesOfTheSpecification(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "data.bin")
 		if err := svc.Register(&fakeEngine{}, "Eng", Config{
 			Identifier: "a", DataFilePath: path, DataUpdateURL: srv.URL,
-			UpdateOnStartup: true, AutomaticUpdatesEnabled: true, FileSystemWatcherEnabled: true,
+			UpdateOnStartup: true, FileSystemWatcherEnabled: true,
 		}); err != nil {
 			t.Fatal(err)
 		}

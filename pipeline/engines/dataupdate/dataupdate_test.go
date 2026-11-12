@@ -333,7 +333,6 @@ func TestFileWatcher(t *testing.T) {
 	if err := svc.Register(eng, "watch", Config{
 		Identifier:               "watch",
 		DataFilePath:             path,
-		AutomaticUpdatesEnabled:  true,
 		FileSystemWatcherEnabled: true,
 	}); err != nil {
 		t.Fatalf("register: %v", err)
