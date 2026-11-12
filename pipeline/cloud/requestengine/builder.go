@@ -257,7 +257,7 @@ const (
 		"License Key to authenticate with, as the cloud service answers 401 " +
 		"to a request that carries neither. Set one with SetResourceKey or " +
 		"SetLicenseKey. Create a Resource Key for free at " +
-		"https://configure.51degrees.com/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-requestengine-builder.go&utm_term=no-credential"
+		"https://51degrees.com/configure/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-requestengine-builder.go&utm_term=no-credential"
 	messageLicenseKeyNeedsProperties = "CloudRequestEngine has a License " +
 		"Key and no Requested Properties. A License Key names no Properties " +
 		"of its own, so the cloud service answers 400 to every request made " +

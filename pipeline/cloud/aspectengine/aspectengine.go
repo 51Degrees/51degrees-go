@@ -39,7 +39,7 @@ import (
 )
 
 // configuratorURL is where a Resource Key with the products needed is made.
-const configuratorURL = "https://configure.51degrees.com/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-aspectengine-aspectengine.go&utm_term=missing-product"
+const configuratorURL = "https://51degrees.com/configure/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-aspectengine-aspectengine.go&utm_term=missing-product"
 
 // BaseCloudAspectEngine supplies the shared behavior for Cloud Aspect Engines.
 // Concrete engines embed it, set their data key and properties, and implement
