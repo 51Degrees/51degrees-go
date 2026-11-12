@@ -168,13 +168,14 @@ func main() {
 	defer pipeline.Close()
 
 	// Register the engine for data updates so it reloads when the file changes.
+	// The defaults watch the data file and poll an update URL, and this engine
+	// has no update URL, so nothing is downloaded.
 	updates := dataupdate.New(nil, nil)
 	defer updates.Close()
-	if err := updates.Register(engine, "StarSignEngine", dataupdate.Config{
-		Identifier:               "starsign",
-		DataFilePath:             dataFile,
-		FileSystemWatcherEnabled: true,
-	}); err != nil {
+	cfg := dataupdate.DefaultConfig()
+	cfg.Identifier = "starsign"
+	cfg.DataFilePath = dataFile
+	if err := updates.Register(engine, "StarSignEngine", cfg); err != nil {
 		log.Fatal(err)
 	}
 

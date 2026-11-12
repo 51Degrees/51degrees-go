@@ -110,6 +110,26 @@ func (e *BaseCloudAspectEngine) PropertiesLoaded() bool {
 	return e.cloudProperties.Load() != nil || e.noRequestEngine.Load()
 }
 
+// PropertyListRequestFailed reports whether the Cloud Request Engine's
+// request for the engine's property list failed, leaving the product's
+// Properties unknown. Having it marks the engine as a Cloud Engine when the
+// reason for a missing Property is decided.
+func (e *BaseCloudAspectEngine) PropertyListRequestFailed() bool {
+	cre := e.requestEngine.Load()
+	return cre != nil && cre.PublicPropertiesRequestFailed()
+}
+
+// CloudRequestFailed reports whether the Cloud Request Engine has no
+// response for fd because its request to the cloud service failed.
+func (e *BaseCloudAspectEngine) CloudRequestFailed(fd core.FlowData) bool {
+	data, err := fd.Get(requestengine.DataKey)
+	if err != nil {
+		return false
+	}
+	crd, ok := data.(*requestengine.CloudRequestData)
+	return ok && crd.Failed()
+}
+
 // loadCloudProperties returns the product's Property metadata, building it
 // once the Cloud Request Engine knows the Properties.
 func (e *BaseCloudAspectEngine) loadCloudProperties() []core.PropertyMetadata {

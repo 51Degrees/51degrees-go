@@ -120,6 +120,9 @@ func (b *BaseAspectEngine) Execute(fd core.FlowData, compute func() (AspectData,
 		if data == nil {
 			return core.NewDataError("engine compute returned no data and no error")
 		}
+		// The data is told its Engine before the cache can serve it to
+		// another Flow Data.
+		attach(fd, b.DataKey(), data)
 		b.cache.Set(key, data)
 		b.store(fd, data)
 		return nil
@@ -147,6 +150,14 @@ func (c cacheHitView) CacheHit() bool { return true }
 // concrete Aspect Data behind the view.
 func (c cacheHitView) UnwrapElementData() core.ElementData { return c.AspectData }
 
+// attach tells data the Flow Data and key it is held under, where the Flow
+// Data holds a view of data or has not stored it yet.
+func attach(fd core.FlowData, key string, data core.ElementData) {
+	if added, ok := data.(core.FlowDataAdded); ok {
+		added.AddedToFlowData(fd, key, data)
+	}
+}
+
 func (b *BaseAspectEngine) store(fd core.FlowData, data AspectData) {
 	fd.GetOrAdd(b.DataKey(), func(core.FlowData) core.ElementData { return data })
 }
@@ -162,6 +173,9 @@ func (b *BaseAspectEngine) executeLazy(fd core.FlowData, compute func() (AspectD
 			}
 		}()
 		lz.data, lz.err = compute()
+		if lz.data != nil {
+			attach(fd, b.DataKey(), lz.data)
+		}
 	}()
 	return nil
 }
