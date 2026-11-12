@@ -3,8 +3,8 @@
  * Copyright 2025 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -26,7 +26,8 @@
 
 The example shows how to use 51Degrees on-premise IP intelligence to determine the IP parameters
 (IpRangeStart, IpRangeEnd, RegisteredCountry, RegisteredName, Longitude, Latitude, Areas, Mcc) of a given IP address
-in golang wrapper integration.
+in golang wrapper integration. It runs with the free Lite data file, and shows the properties that only the
+Enterprise data file has as needing it.
 
 This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/ip-intelligence/getting_started).
 
@@ -101,51 +102,24 @@ For MCC property (weighted):
 val, weight, _ := result.GetValueWeightByProperty(property)
 ```
 <br/>
-<br/>
-### Expected output:
+### Output
+
+Each property the data file does not have is shown as needing the Enterprise
+data file, and the example then says where to ask for a copy. The free Lite
+data file has RegisteredCountry, RegisteredName and RegisteredOwner, and the
+Enterprise data file has them all.
 
 ```
-2025/06/10 09:45:06 Expected result for 185.28.167.77:
-Expected & Actual:
-IpRangeStart: 185.28.167.0:1.00
-IpRangeEnd: 185.28.167.127:1.00
-RegisteredCountry: GB:1.00
-RegisteredName: CUSTOMERS-Subnet9:1.00
-Longitude: 0.5273598437452315:1.00
-Latitude: 51.34617145298623:1.00
-Areas: POLYGON((-6.372 49.745,-6.416 49.753,-6.46 49.764,-6.499 49.781,-6.532 49.803,-6.554 49.83,-6.57 49.857,-8.311 54.381,-8.317 54.409,-8.317 54.48,-8.311 54.497,-7.625 57.584,-7.614 57.609,-7.592 57.631,-6.867 58.298,-6.839 58.32,-6.806 58.334,-6.762 58.347,-6.312 58.457,-3.301 59.166,-3.263 59.171,-3.225 59.174,-3.186 59.174,-3.148 59.171,-3.109 59.163,-2.84 59.092,-2.807 59.081,-2.774 59.07,-2.752 59.053,-2.736 59.034,-1.56 57.556,1.928 52.733,1.934 52.72,1.956 52.681,1.967 52.651,1.983 52.5,1.983 52.489,1.983 52.481,1.983 52.456,1.621 51.157,1.61 51.126,1.588 51.096,1.566 51.069,1.533 51.047,1.121 50.805,1.088 50.789,1.049 50.778,0.33 50.607,0.297 50.602,-5.153 49.83,-5.175 49.827,-6.328 49.745,-6.372 49.745)):1.00
-Mcc: N/A:1.00
-
-2025/06/10 09:45:06 Expected result for fdaa:bbcc:ddee:0:995f:d63a:f2a1:f189:
-Expected & Actual:
-IpRangeStart: fc00:0000:0000:0000:0000:0000:0000:0000:1.00
-IpRangeEnd: fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff:1.00
-RegisteredCountry: EU:1.00
-RegisteredName: IANA-BLK:1.00
-Longitude: -0.005493331705679495:1.00
-Latitude: -0.0027466658528397473:1.00
-Areas: POLYGON EMPTY:1.00
-Mcc: N/A:1.00
-
-2025/06/10 09:45:06 Not expected result for 127.0.0.1:
-Expected:
-
-Actual:
-IpRangeStart: 127.0.0.0:1.00
-IpRangeEnd: 127.255.255.255:1.00
-RegisteredCountry: US:1.00
-RegisteredName: SPECIAL-IPV4-LOOPBACK-IANA-RESERVED:1.00
-Longitude: :0.00
-Latitude: :0.00
-Areas: POLYGON EMPTY:1.00
-Mcc: N/A:1.00
+IP address 185.28.167.77:
+	IpRangeStart: needs the Enterprise data file
+	...
+	RegisteredCountry: <the country code> (weight 1.00)
 ```
 */
 
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 
@@ -154,81 +128,46 @@ import (
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
-// gettingStartedTests defines test cases with IPs, their expected properties, and validation for working examples.
-var gettingStartedTests = []*common.TestIpi{
-	{
-		IpAddress: "185.28.167.77",
-		Expected: `IpRangeStart: 255.255.255.255
-IpRangeEnd: 255.255.255.255
-AccuracyRadiusMin: 0
-AccuracyRadiusMax: 0
-RegisteredCountry: Unknown
-RegisteredName: Unknown
-Longitude: 0
-Latitude: 0
-Areas: POLYGON EMPTY
-Mcc: Unknown:1.00`,
-		IsWorkingExample: true,
-	},
-	{
-		IpAddress: "fdaa:bbcc:ddee:0:995f:d63a:f2a1:f189",
-		Expected: `IpRangeStart: 255.255.255.255
-IpRangeEnd: 255.255.255.255
-AccuracyRadiusMin: 0
-AccuracyRadiusMax: 0
-RegisteredCountry: Unknown
-RegisteredName: Unknown
-Longitude: 0
-Latitude: 0
-Areas: POLYGON EMPTY
-Mcc: Unknown:1.00`},
-	{
-		IpAddress:        "127.0.0.1",
-		Expected:         ``,
-		IsWorkingExample: false,
-	},
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-getting_started-main.go&utm_term=enterprise-data-file"
+
+// addresses are an IPv4 address, an IPv6 address and the loopback address.
+var addresses = []string{
+	"185.28.167.77",
+	"fdaa:bbcc:ddee:0:995f:d63a:f2a1:f189",
+	"127.0.0.1",
 }
 
-// testIpi processes and validates IP address information using the provided engine and test data.
-// It logs errors, actual results, and discrepancies compared to expected results for working or non-working examples.
-func testIpi(engine *ipi_onpremise.Engine, ipiItem *common.TestIpi) {
-	// Process IP address with engine
-	result, err := engine.Process(ipiItem.IpAddress)
+// printProperties writes each property's value for the address, with its
+// weight. With a free data file, a property that only the Enterprise data
+// file has values for is shown as needing it.
+func printProperties(
+	engine *ipi_onpremise.Engine,
+	free bool,
+	address string) {
+	values, err := engine.Process(address)
 	if err != nil {
-		log.Printf("Error processing Getting Started Example: %v", err)
-		return
+		log.Fatalf("Failed to process %s: %v", address, err)
 	}
 
-	var actual bytes.Buffer
-	// Getting property from a result
+	fmt.Printf("IP address %s:\n", address)
 	for _, property := range common.Properties {
-		if property == "Mcc" {
-			// Only Mcc property has weight
-			val, weight, _ := result.GetValueWeightByProperty(property)
-			fmt.Fprintf(&actual, "%s: %+v:%.2f\n", property, val, weight)
-		} else {
-			// All other properties are non-weighted
-			val, _ := result.GetValueByProperty(property)
-			fmt.Fprintf(&actual, "%s: %+v\n", property, val)
+		value, weight, found := values.GetValueWeightByProperty(property)
+		switch {
+		case found:
+			fmt.Printf("\t%s: %v (weight %.2f)\n", property, value, weight)
+		case free && !common.FreeProperties[property]:
+			fmt.Printf("\t%s: %s\n", property, common.NeedsEnterprise)
+		default:
+			fmt.Printf("\t%s: no value for this address\n", property)
 		}
 	}
-
-	log.Printf("IP Address %s:\nActual result:\n%s\n", ipiItem.IpAddress, actual.String())
-
-	if (ipiItem.IsWorkingExample && actual.String() != ipiItem.Expected) || (!ipiItem.IsWorkingExample && actual.String() == ipiItem.Expected) {
-		log.Printf("\nExpected result:\n%s\n", ipiItem.Expected)
-		return
-	}
+	fmt.Println()
 }
 
-// runGettingStarted executes the "Getting Started" example tests, processing IP data for validation using the provided engine.
-func runGettingStarted(engine *ipi_onpremise.Engine) {
-	for _, test := range gettingStartedTests {
-		testIpi(engine, test)
-	}
-}
-
-// main initializes and runs the main example logic for demonstrating IP processing using an on-premise engine configuration.
+// main creates the engine with the data file, looks up each address and
+// prints the results.
 func main() {
 	common.RunExample(
 		func(params *common.ExampleParams) error {
@@ -244,7 +183,8 @@ func main() {
 				// Enable automatic updates.
 				ipi_onpremise.WithAutoUpdate(false),
 				ipi_onpremise.WithTempDataCopy(false),
-				// Defined list of properties
+				// The properties to return. Those the data file does not
+				// have are left out of the results.
 				ipi_onpremise.WithProperties(common.Properties),
 			)
 			if err != nil {
@@ -254,8 +194,13 @@ func main() {
 			// stops it however this function returns.
 			defer engine.Stop()
 
-			// Run example
-			runGettingStarted(engine)
+			free := common.IsFreeDataFile(engine, common.Properties)
+			for _, address := range addresses {
+				printProperties(engine, free, address)
+			}
+			if free {
+				common.PrintEnterpriseNote(contactUs)
+			}
 
 			return nil
 		})

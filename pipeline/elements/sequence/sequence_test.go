@@ -76,21 +76,169 @@ func TestExistingSession(t *testing.T) {
 	}
 }
 
-// TestHostileSessionIDReplaced verifies a non-GUID (e.g. an injection payload)
-// session id is discarded and replaced with a freshly generated GUID, so it
-// cannot break out of the JS string literal it is later rendered into.
-func TestHostileSessionIDReplaced(t *testing.T) {
-	hostile := `"; alert('xss'); var z="`
-	data := run(t, map[string]any{EvidenceSessionID: hostile})
-	sid, _ := data.Get(SessionIDProperty)
-	if s, _ := sid.(string); s == hostile || !guidRe.MatchString(s) {
-		t.Fatalf("hostile session id not replaced with a GUID: %v", sid)
-	}
-}
-
 func TestSequenceFromInt(t *testing.T) {
 	data := run(t, map[string]any{EvidenceSequence: 2})
 	if seq, _ := data.Get(SequenceProperty); seq != 3 {
 		t.Fatalf("expected 3, got %v", seq)
+	}
+}
+
+// The specification asks for both outputs in Evidence as well as in Element
+// Data, so that later Flow Elements and the caller read them from Evidence.
+func TestOutputsWrittenToEvidence(t *testing.T) {
+	const guid = "12345678-1234-4234-8234-1234567890ab"
+	p, err := core.NewPipelineBuilder().AddFlowElement(New(nil)).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	fd.AddEvidence(EvidenceSessionID, guid)
+	fd.AddEvidence(EvidenceSequence, "4")
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	if v, _ := fd.Evidence().Get(EvidenceSessionID); v != guid {
+		t.Errorf("Evidence %s = %v, want %s", EvidenceSessionID, v, guid)
+	}
+	if v, _ := fd.Evidence().Get(EvidenceSequence); v != 5 {
+		t.Errorf("Evidence %s = %v, want 5", EvidenceSequence, v)
+	}
+	data, err := fd.Get(DataKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if v, _ := data.Get(SequenceProperty); v != 5 {
+		t.Errorf("Element Data sequence = %v, want 5", v)
+	}
+}
+
+func TestNewSessionWrittenToEvidence(t *testing.T) {
+	p, err := core.NewPipelineBuilder().AddFlowElement(New(nil)).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	data, err := fd.Get(DataKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	sid, _ := data.Get(SessionIDProperty)
+	if v, ok := fd.Evidence().Get(EvidenceSessionID); !ok || v != sid {
+		t.Errorf("Evidence session id = %v (present %v), want %v", v, ok, sid)
+	}
+	if v, ok := fd.Evidence().Get(EvidenceSequence); !ok || v != 1 {
+		t.Errorf("Evidence sequence = %v (present %v), want 1", v, ok)
+	}
+}
+
+// The session id and the sequence are taken independently.
+func TestSessionIDAndSequenceAreIndependent(t *testing.T) {
+	const supplied = "any non-empty text"
+	cases := []struct {
+		name     string
+		evidence map[string]any
+		wantID   string // empty means a new id
+		wantSeq  int
+	}{
+		{"sequence with no session id counts up with a new id",
+			map[string]any{EvidenceSequence: "4"}, "", 5},
+		{"session id with no sequence gives 1",
+			map[string]any{EvidenceSessionID: supplied}, supplied, 1},
+		{"an id of 0 is kept", map[string]any{EvidenceSessionID: "0"}, "0", 1},
+		{"any non-empty string is kept as the id",
+			map[string]any{EvidenceSessionID: `"; x="`}, `"; x="`, 1},
+		{"an empty id is absent", map[string]any{EvidenceSessionID: ""}, "", 1},
+		{"an id that is not a string is absent", map[string]any{EvidenceSessionID: 7}, "", 1},
+		{"an id given as bytes is absent",
+			map[string]any{EvidenceSessionID: []byte("abc")}, "", 1},
+		{"sequence 0 gives 1", map[string]any{EvidenceSequence: "0"}, "", 1},
+		{"sequence as an int", map[string]any{EvidenceSequence: 2}, "", 3},
+		{"sequence as a whole float", map[string]any{EvidenceSequence: float64(2)}, "", 3},
+		{"sequence as a fraction is absent", map[string]any{EvidenceSequence: 2.5}, "", 1},
+		{"sequence as negative text is absent", map[string]any{EvidenceSequence: "-1"}, "", 1},
+		{"sequence as negative number is absent", map[string]any{EvidenceSequence: -1}, "", 1},
+		{"sequence with a sign is absent", map[string]any{EvidenceSequence: "+1"}, "", 1},
+		{"sequence with spaces is absent", map[string]any{EvidenceSequence: " 1"}, "", 1},
+		{"sequence as words is absent", map[string]any{EvidenceSequence: "one"}, "", 1},
+		{"sequence as empty text is absent", map[string]any{EvidenceSequence: ""}, "", 1},
+		{"sequence out of range is absent",
+			map[string]any{EvidenceSequence: "99999999999999999999"}, "", 1},
+		{"the largest sequence that can be counted up",
+			map[string]any{EvidenceSequence: "2147483646"}, "", 2147483647},
+		{"one more than that is absent",
+			map[string]any{EvidenceSequence: "2147483647"}, "", 1},
+		{"leading zeros are allowed",
+			map[string]any{EvidenceSequence: "007"}, "", 8},
+		{"the largest sequence with leading zeros",
+			map[string]any{EvidenceSequence: "0002147483646"}, "", 2147483647},
+		{"sequence with a trailing space is absent",
+			map[string]any{EvidenceSequence: "1 "}, "", 1},
+		{"sequence with a trailing newline is absent",
+			map[string]any{EvidenceSequence: "1\n"}, "", 1},
+		{"digits other than 0 to 9 are absent",
+			map[string]any{EvidenceSequence: "٣"}, "", 1},
+		{"sequence 0 as a number gives 1",
+			map[string]any{EvidenceSequence: 0}, "", 1},
+		{"the largest sequence as a number",
+			map[string]any{EvidenceSequence: int64(2147483646)}, "", 2147483647},
+		{"one more than that as a number is absent",
+			map[string]any{EvidenceSequence: int64(2147483647)}, "", 1},
+		{"one more than that as a float is absent",
+			map[string]any{EvidenceSequence: float64(2147483647)}, "", 1},
+		{"a large unsigned number is absent",
+			map[string]any{EvidenceSequence: uint64(1 << 40)}, "", 1},
+		{"sequence as an int8", map[string]any{EvidenceSequence: int8(2)}, "", 3},
+		{"sequence as an int16", map[string]any{EvidenceSequence: int16(2)}, "", 3},
+		{"sequence as a uint8", map[string]any{EvidenceSequence: uint8(2)}, "", 3},
+		{"sequence as a uint16", map[string]any{EvidenceSequence: uint16(2)}, "", 3},
+		{"sequence as a whole float32",
+			map[string]any{EvidenceSequence: float32(2)}, "", 3},
+		{"sequence as a float32 fraction is absent",
+			map[string]any{EvidenceSequence: float32(2.5)}, "", 1},
+		{"sequence as a negative int8 is absent",
+			map[string]any{EvidenceSequence: int8(-1)}, "", 1},
+		{"both supplied",
+			map[string]any{EvidenceSessionID: supplied, EvidenceSequence: "9"}, supplied, 10},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, err := core.NewPipelineBuilder().AddFlowElement(New(nil)).Build()
+			if err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			defer p.Close()
+			fd := p.CreateFlowData()
+			for k, v := range c.evidence {
+				fd.AddEvidence(k, v)
+			}
+			if err := fd.Process(); err != nil {
+				t.Fatalf("process: %v", err)
+			}
+			data, _ := fd.Get(DataKey)
+			sid, _ := data.Get(SessionIDProperty)
+			seq, _ := data.Get(SequenceProperty)
+			if c.wantID != "" && sid != c.wantID {
+				t.Errorf("session id = %v, want %q", sid, c.wantID)
+			}
+			if c.wantID == "" && (sid == "" || sid == nil || len(sid.(string)) != 36) {
+				t.Errorf("session id = %v, want a new GUID", sid)
+			}
+			if seq != c.wantSeq {
+				t.Errorf("sequence = %v, want %d", seq, c.wantSeq)
+			}
+			// Evidence holds the same values as the Element Data.
+			if v, _ := fd.Evidence().Get(EvidenceSessionID); v != sid {
+				t.Errorf("Evidence session id = %v, Element Data %v", v, sid)
+			}
+			if v, _ := fd.Evidence().Get(EvidenceSequence); v != seq {
+				t.Errorf("Evidence sequence = %v, Element Data %v", v, seq)
+			}
+		})
 	}
 }

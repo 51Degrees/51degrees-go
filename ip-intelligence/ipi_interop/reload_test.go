@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -155,5 +155,35 @@ func TestReloadFromFileFreesReplacedDataSet(t *testing.T) {
 			t.Errorf("%d files open after %d reloads, %d before",
 				after, reloadTestReloads, before)
 		}
+	}
+}
+
+// A reload from a file keeps the configuration and the property names the
+// manager was created with, so names and a configuration given to
+// ReloadFromFile change nothing, and the required properties stay those of
+// the first data file.
+func TestReloadFromFileKeepsTheManagersNames(t *testing.T) {
+	good := readReloadTestFile(t)
+	dir := t.TempDir()
+	first := filepath.Join(dir, "data0.ipi")
+	writeReloadTestFile(t, first, good)
+	manager := NewResourceManager()
+	defer manager.Free()
+	if err := InitManagerFromFile(manager, *NewConfigIpi(Balanced), "", first); err != nil {
+		t.Fatal(err)
+	}
+	want := GetAvailablePropertyNames(manager)
+	if len(want) < 2 {
+		t.Fatalf("%s has %d properties, want at least 2", reloadTestDataFile, len(want))
+	}
+
+	next := filepath.Join(dir, "data1.ipi")
+	writeReloadTestFile(t, next, good)
+	if err := manager.ReloadFromFile(*NewConfigIpi(InMemory), want[0], next); err != nil {
+		t.Fatal(err)
+	}
+	got := GetAvailablePropertyNames(manager)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("after a reload given %q the properties are %v, want %v", want[0], got, want)
 	}
 }

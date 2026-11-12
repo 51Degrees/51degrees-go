@@ -18,15 +18,17 @@ instead, run `../../ci/create-workspace.ps1` first.
 
 ## Data files
 
-| Product | Env variable | Data file |
+| Product | Env variable | Data file when it is not set |
 |---|---|---|
-| IP Intelligence | `DATA_FILE` | `51Degrees-EnterpriseIpiV41.ipi` (or Lite equivalent) |
-| Device Detection | `DD_DATA_FILE` | a `.hash` file, e.g. `51Degrees-LiteV4.1.hash` or `TAC-HashV41.hash` |
+| IP Intelligence | `_51DEGREES_IPI_PATH` | `51Degrees-LiteV41.ipi` |
+| Device Detection | `_51DEGREES_DD_PATH` | `51Degrees-LiteV4.1.hash` |
 
 The [data](https://github.com/51Degrees/data) repository, which is the
-`cxx/data` submodule of this repository, links to the free Lite files. Its
-scripts download them into `cxx/data/device-detection` and
-`cxx/data/ip-intelligence`. From the repository root, run
+`cxx/data` submodule of this repository, links to the free Lite files, and the
+examples download a missing one the first time they run. They also show the
+properties only the Enterprise data files have, as needing them, and say where
+to ask for a copy. To download the Lite files yourself, from the repository
+root, run
 
 ```bash
 sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash 51Degrees-LiteV41.ipi
@@ -42,8 +44,11 @@ or, in PowerShell,
 
 ```bash
 cd examples/mixed
-DATA_FILE=../../51Degrees-EnterpriseIpiV41.ipi \
-DD_DATA_FILE=../../cxx/data/device-detection/51Degrees-LiteV4.1.hash \
+go run ./getting_started_console
+
+# or with paid data files
+_51DEGREES_IPI_PATH=../../51Degrees-EnterpriseIpiV41.ipi \
+_51DEGREES_DD_PATH=../../TAC-HashV41.hash \
 go run ./getting_started_console
 
 # or the web example, then: curl http://localhost:8080/

@@ -1,0 +1,35 @@
+name: JavaScript templates check
+
+on:
+  pull_request:
+    paths:
+      - 'javascript-templates'
+      - 'pipeline/elements/javascriptbuilder/javascript-templates/**'
+      - '.gitmodules'
+      - 'ci/check-javascript-templates.ps1'
+      - '.github/workflows/javascript-templates-check.yml'
+  push:
+    branches:
+      - main
+      - rc
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  javascript-templates:
+    name: The committed templates match the javascript-templates submodule
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout javascript-templates
+        run: git submodule update --init javascript-templates
+
+      - name: Compare the copy with the submodule
+        shell: pwsh
+        run: ./ci/check-javascript-templates.ps1

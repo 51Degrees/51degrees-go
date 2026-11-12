@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -65,6 +65,7 @@ import (
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 // Evidence where all fields are in string format
@@ -322,16 +323,11 @@ func main() {
 	manager = dd.NewResourceManager()
 	config = dd.NewConfigHash(dd.Balanced)
 	config.SetUseUpperPrefixHeaders(false)
-	fileNames := []string{"51Degrees-LiteV4.1.hash"}
-	filePath, err := dd.GetFilePath(
-		"..",
-		fileNames)
-	if err != nil {
-		log.Fatalf("Could not find any file that matches any of \"%s\".\n",
-			strings.Join(fileNames, ", "))
-	}
+	// The data file is found by searching up from here, and when it is
+	// missing it is downloaded from the data repository, which links to it.
+	filePath := examples.GetFilePathByName([]string{"51Degrees-LiteV4.1.hash"})
 	// Init manager
-	err = dd.InitManagerFromFile(
+	err := dd.InitManagerFromFile(
 		manager,
 		*config,
 		"",

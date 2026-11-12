@@ -149,8 +149,22 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.StringParam(params, "FixedLanguage"); ok {
 		b.SetFixedLanguage(v)
 	}
-	if v, ok := core.StringParam(params, "MissingTranslationBehaviour"); ok {
-		b.SetMissingTranslationBehavior(ParseMissingBehavior(v))
+	// The specification spells the option MissingTranslationBehavior, and that
+	// spelling wins. MissingTranslationBehaviour is a deprecated alias, still
+	// read so that existing files work.
+	key := "MissingTranslationBehavior"
+	v, ok := core.StringParam(params, key)
+	if !ok {
+		key = "MissingTranslationBehaviour"
+		v, ok = core.StringParam(params, key)
+	}
+	if ok {
+		mb, known := lookupMissingBehavior(v)
+		if !known {
+			return nil, core.NewConfigurationError("unknown "+key+" '"+v+
+				"', expected Original, EmptyString or FlowError", nil)
+		}
+		b.SetMissingTranslationBehavior(mb)
 	}
 	if raw, ok := core.Param(params, "Translations"); ok {
 		if list, ok := raw.([]any); ok {

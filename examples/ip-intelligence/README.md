@@ -1,6 +1,6 @@
 # 51Degrees Ip Intelligence API Examples
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-readme.md&utm_term=51degrees-ip-intelligence-api-examples "Data rewards the curious")
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious")
 **IP Intelligence Go Examples**
 
 ## Introduction
@@ -9,8 +9,11 @@ This directory contains usage examples of the [ip-intelligence-go](https://githu
 
 ## Pre-requisites
 
-To run these examples you will need a data file and example evidence. The examples use `51Degrees-EnterpriseIpiV41.ipi`
-and `20000_ipi_evidence_records.yml` unless `DATA_FILE` and `EVIDENCE_YAML` name other files, as shown below.
+The examples run with the free Lite data file, `51Degrees-LiteV41.ipi`, and the example evidence in
+`cxx/data/ip-intelligence/evidence.yml`, unless `_51DEGREES_IPI_PATH` and `_51DEGREES_EVIDENCE_YAML` name other files, as shown below. The
+Lite file has RegisteredCountry, RegisteredName and RegisteredOwner. The performance, reload and update examples use
+the free Asn data file, `51Degrees-IPIV4AsnIpiV41.ipi`, which has Asn and AsnName and is far smaller to download. The
+examples also show properties only the Enterprise data file has, as needing it, and say where to ask for a copy.
 
 The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to
 the free Lite and Asn data files and holds example evidence in `cxx/data/ip-intelligence/evidence.yml`. To download the
@@ -24,7 +27,7 @@ sh cxx/data/get-data-files.sh ip-intelligence
 ./cxx/data/get-data-files.ps1 ip-intelligence
 ```
 
-When `DATA_FILE` names a file that the data repository links to and the file is missing, the examples download it by
+When `_51DEGREES_IPI_PATH` names a file that the data repository links to and the file is missing, the examples download it by
 running the same script for that file.
 
 ### Software
@@ -56,12 +59,13 @@ Below is a table that describes the examples:
 | performance                   | A benchmarking example to measure the speed of data processing in single and multi-threaded modes                         |
 | reload_from_file              | An example that demonstrates how a data file can be reloaded while serving IP Intelligence requests                       |
 | update_polling_interval       | An example doing periodic polling for the updated data file                                                               |
+| getting_started_cloud         | The getting started example using the 51Degrees cloud service and a Resource Key, rather than a data file                 |
 | mixed/getting_started_console | A command line example featuring both device detection and IP intelligence                                                |
 | mixed/getting_started_web     | A web example featuring both device detection and IP intelligence                                                |
 
 The `mixed` examples intentionally combine Device Detection and IP Intelligence
-and live in their own Go module — see [mixed/README.md](mixed/README.md) for how
-to run them (they cannot be run with `go run` from the repository root).
+and live in their own Go module. See [mixed/README.md](../mixed/README.md) for
+how to run them, as they cannot be run with `go run` from the repository root.
 
 ## Run examples
 
@@ -72,7 +76,7 @@ For further details of how to run each example, please read more in the comment 
 
 To provide a different path to a data file or evidence file use environment variables, e.g.
 ```bash
-DATA_FILE=<path>/51Degrees-EnterpriseIpiV41.ipi go run ./getting_started
-DATA_FILE=<path>/51Degrees-EnterpriseIpiV41.ipi EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./offline_processing
-DATA_FILE=<path>/51Degrees-EnterpriseIpiV41.ipi EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./update_polling_interval
+_51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi go run ./getting_started
+_51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./offline_processing
+_51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./update_polling_interval
 ```

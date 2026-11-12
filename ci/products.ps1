@@ -95,3 +95,20 @@ function Test-UnreleasedLibraryChange([string]$RepoPath) {
     $changed = git -C $RepoPath diff --name-only $release HEAD -- @LibraryPaths
     return [bool]$changed
 }
+
+# Returns a go mod edit -replace argument for each requirement of the module in
+# the folder on a module of this repository at a version not released yet. Such
+# a version is the one the next release publishes, from the same commit, so
+# the module's folder here is what that version will hold.
+function Get-UnreleasedRequirementReplaces([string]$RepoPath, [string]$ModuleFolder) {
+    $mod = go mod edit -json (Join-Path $RepoPath $ModuleFolder 'go.mod') | ConvertFrom-Json
+    foreach ($require in $mod.Require) {
+        foreach ($library in $LibraryPaths) {
+            if ($require.Path -like "github.com/51Degrees/51degrees-go/$library/v*" -and
+                !(git -C $RepoPath tag --list "$library/$($require.Version)")) {
+                $folder = (Resolve-Path (Join-Path $RepoPath $library)).Path
+                "-replace=$($require.Path)@$($require.Version)=$folder"
+            }
+        }
+    }
+}
