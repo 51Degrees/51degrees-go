@@ -338,7 +338,7 @@ func TestFileWatcher(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	svc.OnUpdate("watch", func(Complete) {
+	svc.OnComplete("watch", func(Complete) {
 		select {
 		case updated <- struct{}{}:
 		default:

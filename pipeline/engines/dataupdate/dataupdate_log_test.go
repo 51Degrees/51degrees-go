@@ -254,11 +254,11 @@ func TestACallbackThatPanicsStopsTheCallbacksAfterIt(t *testing.T) {
 			t.Fatal(err)
 		}
 		var calls []string
-		svc.OnUpdate("a", func(Complete) {
+		svc.OnComplete("a", func(Complete) {
 			calls = append(calls, "first")
 			panic("callback test panic")
 		})
-		svc.OnUpdate("a", func(Complete) { calls = append(calls, "second") })
+		svc.OnComplete("a", func(Complete) { calls = append(calls, "second") })
 
 		err := svc.CheckForUpdate("a")
 		if err == nil || !strings.Contains(err.Error(), "callback test panic") {
@@ -282,7 +282,7 @@ func TestACallbackThatPanicsStopsTheCallbacksAfterIt(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		svc.OnUpdate("a", func(Complete) { panic("callback test panic") })
+		svc.OnComplete("a", func(Complete) { panic("callback test panic") })
 
 		want := `level=ERROR msg="An unhandled error occurred while checking for automatic updates for engine 'Eng'" ` +
 			`error="panic in an update callback: callback test panic"`

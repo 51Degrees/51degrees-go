@@ -184,7 +184,7 @@ func TestEachCheckIsReportedWithItsStatus(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := newReports()
-			svc.OnUpdate("a", got.record)
+			svc.OnComplete("a", got.record)
 
 			_ = svc.CheckForUpdate("a")
 
@@ -217,7 +217,7 @@ func TestPollingReportsItsFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := newReports()
-	svc.OnUpdate("a", got.record)
+	svc.OnComplete("a", got.record)
 
 	select {
 	case <-got.done:
@@ -240,7 +240,7 @@ func TestTheCheckOnStartUpIsReported(t *testing.T) {
 	got := newReports()
 	if err := svc.Register(&fakeEngine{}, "Eng", Config{
 		Identifier: "a", DataFilePath: filepath.Join(t.TempDir(), "data.bin"),
-		DataUpdateURL: srv.URL, UpdateOnStartup: true, OnUpdate: got.record,
+		DataUpdateURL: srv.URL, UpdateOnStartup: true, OnComplete: got.record,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestAnUpdateFromMemoryReportsOnlyToItsCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := newReports()
-	svc.OnUpdate("a", got.record)
+	svc.OnComplete("a", got.record)
 
 	if err := svc.UpdateFromMemory("a", []byte("NEW DATA")); err != nil {
 		t.Fatalf("UpdateFromMemory gave %v, want no error", err)
@@ -365,7 +365,7 @@ func TestAWatchedFileThatIsNotNewerIsNotLoaded(t *testing.T) {
 	defer svc.Close()
 	got := newReports()
 	if err := svc.Register(eng, "Eng", Config{
-		Identifier: "a", DataFilePath: path, OnUpdate: got.record,
+		Identifier: "a", DataFilePath: path, OnComplete: got.record,
 		AutomaticUpdatesEnabled: true, FileSystemWatcherEnabled: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -417,7 +417,7 @@ func TestACheckOnStartUpThatStopsRegisterIsReported(t *testing.T) {
 	got := newReports()
 	err := svc.Register(&fakeEngine{}, "Eng", Config{
 		Identifier: "a", DataFilePath: filepath.Join(t.TempDir(), "missing.bin"),
-		DataUpdateURL: srv.URL, UpdateOnStartup: true, OnUpdate: got.record,
+		DataUpdateURL: srv.URL, UpdateOnStartup: true, OnComplete: got.record,
 	})
 	if err == nil {
 		t.Fatal("Register gave no error, want the failed check on start-up")

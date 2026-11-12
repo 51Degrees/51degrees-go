@@ -122,11 +122,11 @@ type Config struct {
 	// Operational file config.
 	TempDir string
 
-	// OnUpdate, if set, is told how each check for an update on this data
+	// OnComplete, if set, is told how each check for an update on this data
 	// source ended, the update on start-up included. It is the only way to
-	// hear the check made on start-up, because the service's OnUpdate can
+	// hear the check made on start-up, because the service's OnComplete can
 	// only be called once the data source is registered.
-	OnUpdate func(Complete)
+	OnComplete func(Complete)
 }
 
 // The settings a data source has when its configuration says nothing else.
@@ -228,7 +228,7 @@ type registration struct {
 
 	updateMu   sync.Mutex // serializes a whole HTTP update (download + replace + refresh)
 	refreshMu  sync.Mutex // serializes refresh; keeps refresh thread-safe
-	callbackMu sync.Mutex // guards onUpdate
+	callbackMu sync.Mutex // guards onComplete
 	watcher    *fsnotify.Watcher
 	stop       chan struct{}
 	wg         sync.WaitGroup
@@ -237,7 +237,12 @@ type registration struct {
 	// the next conditional request. Accessed only under updateMu (httpUpdate).
 	lastModified time.Time
 
-	onUpdate []func(Complete)
+	// loadedFileTime is the modification time of the data file the Engine
+	// was last refreshed from, which a watched file has to be newer than to
+	// be loaded. Guarded by refreshMu.
+	loadedFileTime time.Time
+
+	onComplete []func(Complete)
 }
 
 // recoverGoroutine logs and swallows a panic in a background goroutine so a
@@ -268,30 +273,32 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 		cfg:        cfg,
 		stop:       make(chan struct{}),
 	}
-	if cfg.OnUpdate != nil {
-		reg.onUpdate = append(reg.onUpdate, cfg.OnUpdate)
+	if cfg.OnComplete != nil {
+		reg.onComplete = append(reg.onComplete, cfg.OnComplete)
 	}
 
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
 		s.logger.Info("Updating on start-up")
 		status, err := reg.httpUpdate()
+		// The update on start-up is a check, so it is reported like any other,
+		// whether or not start-up carries on, and an error a callback raises
+		// reaches the caller rather than the log.
+		reported := reg.report(status)
 		if err != nil {
 			// A failed start-up update falls back to the local data file, and
 			// fails when there is none.
 			if cfg.DataFilePath != "" {
 				if _, statErr := os.Stat(cfg.DataFilePath); statErr != nil {
-					return fmt.Errorf("data update: start-up update failed and there is no local "+
-						"data file at %q: %w", cfg.DataFilePath, err)
+					return errors.Join(fmt.Errorf("data update: start-up update failed and "+
+						"there is no local data file at %q: %w", cfg.DataFilePath, err), reported)
 				}
 			}
 			// The caller does not get this error, as the start-up carries on
 			// with the local data file, so it is logged.
 			reg.logCheckFailure(err)
 		}
-		// The update on start-up is a check, so it is reported like any other,
-		// and an error a callback raises reaches the caller rather than the log.
-		if err := reg.report(status); err != nil {
-			return err
+		if reported != nil {
+			return reported
 		}
 	}
 
@@ -332,12 +339,12 @@ func (r *registration) stopAndWait() {
 	r.wg.Wait()
 }
 
-// OnUpdate registers a callback that every check for an update on the named
+// OnComplete registers a callback that every check for an update on the named
 // data source reports to once the check ends, with the status it ended with.
 // An update from memory gives its result to its caller alone and reports
 // nothing here.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
-func (s *Service) OnUpdate(identifier string, fn func(Complete)) {
+func (s *Service) OnComplete(identifier string, fn func(Complete)) {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
 	s.mu.Unlock()
@@ -345,8 +352,19 @@ func (s *Service) OnUpdate(identifier string, fn func(Complete)) {
 		return
 	}
 	reg.callbackMu.Lock()
-	reg.onUpdate = append(reg.onUpdate, fn)
+	reg.onComplete = append(reg.onComplete, fn)
 	reg.callbackMu.Unlock()
+}
+
+// OnUpdate registers a callback that is called after a check that refreshed
+// the Engine of the named data source with new data. It hears no other check
+// and is told no status, which OnComplete gives.
+func (s *Service) OnUpdate(identifier string, fn func()) {
+	s.OnComplete(identifier, func(complete Complete) {
+		if complete.Status == StatusSuccess {
+			fn()
+		}
+	})
 }
 
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP
@@ -550,9 +568,11 @@ func (r *registration) startWatcher() error {
 			case <-timerC:
 				timerC = nil
 				status := StatusSuccess
-				if err := r.refreshFromFile(); err != nil {
+				if loaded, err := r.refreshFromNewerFile(); err != nil {
 					status = StatusRefreshFailed
 					r.logCheckFailure(err)
+				} else if !loaded {
+					status = StatusNotNeeded
 				}
 				if err := r.report(status); err != nil {
 					r.logCheckFailure(err)
@@ -585,6 +605,29 @@ const (
 func (r *registration) refreshFromFile() error {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
+	return r.loadDataFile()
+}
+
+// refreshFromNewerFile reloads the Engine from its data file when the file is
+// newer than the one last loaded, and says whether it was loaded. A watched
+// file that is not newer is left alone, as .NET leaves it.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
+func (r *registration) refreshFromNewerFile() (bool, error) {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	if modified, ok := r.currentDataTime(); ok && !modified.After(r.loadedFileTime) {
+		return false, nil
+	}
+	return true, r.loadDataFile()
+}
+
+// loadDataFile makes the tries of a refresh from the data file. It records the
+// file's modification time first, so a file that would not load is not tried
+// again by the watcher and one written later is. The caller holds refreshMu.
+func (r *registration) loadDataFile() error {
+	if modified, ok := r.currentDataTime(); ok {
+		r.loadedFileTime = modified
+	}
 	r.svc.logger.Info(fmt.Sprintf("Attempting to refresh Engine '%s' with new data", r.engineName))
 	var err error
 	for tries := 1; tries <= refreshTries; tries++ {
@@ -838,7 +881,7 @@ func (r *registration) currentDataTime() (time.Time, bool) {
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
 func (r *registration) report(status Status) error {
 	r.callbackMu.Lock()
-	callbacks := r.onUpdate
+	callbacks := r.onComplete
 	r.callbackMu.Unlock()
 	complete := Complete{Identifier: r.cfg.Identifier, Status: status}
 	for _, fn := range callbacks {
