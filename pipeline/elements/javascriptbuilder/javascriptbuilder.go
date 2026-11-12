@@ -438,8 +438,13 @@ func (e *Element) queryParameters(fd core.FlowData) string {
 	return string(encoded)
 }
 
+// cookiesEnabled reports whether the script retains results in cookies. The
+// query.fod-js-enable-cookies Evidence value decides, and when it is absent or
+// blank, meaning empty or only white space, the configured default stands.
+// The value is read with the white space around it removed.
 func (e *Element) cookiesEnabled(fd core.FlowData) bool {
-	if v := evidenceString(fd, EvidenceEnableCookies); v != "" {
+	if v := strings.TrimSpace(
+		evidenceString(fd, EvidenceEnableCookies)); v != "" {
 		return strings.EqualFold(v, "true")
 	}
 	return e.enableCookies

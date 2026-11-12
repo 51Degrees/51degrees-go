@@ -103,3 +103,29 @@ func TestPropertyTypeOutsideTheNamesGiven(t *testing.T) {
 			"for but got %v.\n", got)
 	}
 }
+
+// The Go type each value type a Hash data file holds is read as, which is the
+// mapping the C library's own names for those types describe.
+func TestPropertyValueTypeGoType(t *testing.T) {
+	data := []struct {
+		valueType propertyValueType
+		isList    bool
+		expected  reflect.Type
+	}{
+		{stringValueType, false, reflect.TypeOf("")},
+		{stringValueType, true, reflect.TypeOf([]string(nil))},
+		{integerValueType, false, reflect.TypeOf(int(0))},
+		{doubleValueType, false, reflect.TypeOf(float64(0))},
+		{booleanValueType, false, reflect.TypeOf(false)},
+		{javaScriptValueType, false, reflect.TypeOf("")},
+		// A type no Hash data file holds, which the C library names a
+		// string.
+		{propertyValueType(200), false, reflect.TypeOf("")},
+	}
+	for _, d := range data {
+		if got := d.valueType.goType(d.isList); got != d.expected {
+			t.Errorf("Expected value type %d with isList %v to be read as "+
+				"%v but got %v.\n", d.valueType, d.isList, d.expected, got)
+		}
+	}
+}
