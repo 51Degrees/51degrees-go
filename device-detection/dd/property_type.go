@@ -94,8 +94,8 @@ func (t propertyValueType) goType(isList bool) reflect.Type {
 		// A script, which the data file holds as text.
 		return reflect.TypeOf("")
 	}
-	// A type no Hash data file holds, which the C library also names a
-	// string.
+	// A type no Hash data file holds, read as a string, as .NET reads a type
+	// name it does not know.
 	return reflect.TypeOf("")
 }
 

@@ -119,8 +119,7 @@ func TestPropertyValueTypeGoType(t *testing.T) {
 		{doubleValueType, false, reflect.TypeOf(float64(0))},
 		{booleanValueType, false, reflect.TypeOf(false)},
 		{javaScriptValueType, false, reflect.TypeOf("")},
-		// A type no Hash data file holds, which the C library names a
-		// string.
+		// A type no Hash data file holds, read as a string.
 		{propertyValueType(200), false, reflect.TypeOf("")},
 	}
 	for _, d := range data {
