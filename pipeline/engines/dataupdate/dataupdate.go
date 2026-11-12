@@ -102,12 +102,13 @@ type Config struct {
 	// UpdateOnStartup indicates whether an update check should be performed as
 	// soon as the data source is registered, before normal polling begins.
 	UpdateOnStartup bool
-	// AutomaticUpdatesEnabled indicates whether updates to the data file are
-	// checked for and applied to the Engine automatically.
+	// AutomaticUpdatesEnabled indicates whether DataUpdateURL is polled for a
+	// newer data file, which is then applied to the Engine.
 	AutomaticUpdatesEnabled bool
 	// FileSystemWatcherEnabled indicates whether a watcher is created for the
 	// file at DataFilePath. When the file is modified the Engine is notified so
-	// it can refresh its internal data structures.
+	// it can refresh its internal data structures. The watcher runs on this
+	// setting alone, whatever AutomaticUpdatesEnabled is.
 	FileSystemWatcherEnabled bool
 
 	// Polling config.
@@ -306,9 +307,9 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 	// before publishing the registration, so a concurrent Close cannot observe a
 	// half-initialized registration and race wg.Add/Wait or the watcher field.
 	//
-	// AutomaticUpdatesEnabled is the master switch for every automatic update
-	// mechanism, so the watcher runs only when it is on, as polling does.
-	if cfg.AutomaticUpdatesEnabled && cfg.FileSystemWatcherEnabled {
+	// The watcher runs on its own setting, because watching a file downloads
+	// nothing. AutomaticUpdatesEnabled governs polling alone.
+	if cfg.FileSystemWatcherEnabled {
 		if err := reg.startWatcher(); err != nil {
 			s.logger.Warn("could not create file system watcher", "engine", engineName, "error", err)
 		}
