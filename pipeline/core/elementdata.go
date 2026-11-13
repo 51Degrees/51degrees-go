@@ -45,6 +45,17 @@ type ElementData interface {
 	AsMap() map[string]any
 }
 
+// FlowDataAdded is implemented by Element Data that needs to know where it
+// is held, such as Aspect Data, which explains a missing Property from the
+// Engine that populates it. A Flow Data calls it when it stores the Element
+// Data.
+type FlowDataAdded interface {
+	// AddedToFlowData is given the Flow Data, the key the Element Data is
+	// stored under, and the Element Data as stored, which is the type that
+	// embeds the implementation.
+	AddedToFlowData(fd FlowData, key string, data ElementData)
+}
+
 // BaseElementData is the default ElementData implementation that concrete
 // Element Data types embed. It stores Property values in a typed map.
 type BaseElementData struct {

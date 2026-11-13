@@ -22,10 +22,6 @@
 
 package common
 
-import (
-	"os"
-)
-
 // LiteDataFile is the free data file the examples use when
 // _51DEGREES_IPI_PATH names no other. The data repository links it, so an
 // example downloads it the first time it runs.
@@ -61,19 +57,19 @@ func RunExample(exampleFunc ExampleFunc) {
 // RunExampleWithDataFile runs the example with the data file
 // _51DEGREES_IPI_PATH names, or the free data file given.
 func RunExampleWithDataFile(free string, exampleFunc ExampleFunc) {
-	licenseKey := os.Getenv("_51DEGREES_LICENSE_KEY")
+	licenseKey := fromEnvironment("_51DEGREES_LICENSE_KEY")
 
-	dataFile := os.Getenv("_51DEGREES_IPI_PATH")
+	dataFile := fromEnvironment("_51DEGREES_IPI_PATH")
 	if dataFile == "" {
 		dataFile = free
 	}
 
-	evidenceYaml := os.Getenv("_51DEGREES_EVIDENCE_YAML")
+	evidenceYaml := fromEnvironment("_51DEGREES_EVIDENCE_YAML")
 	if evidenceYaml == "" {
 		evidenceYaml = GetDataFolderFile(EvidenceFile)
 	}
 
-	dataFileUrl := os.Getenv("_51DEGREES_IPI_DATA_FILE_URL")
+	dataFileUrl := fromEnvironment("_51DEGREES_IPI_DATA_FILE_URL")
 
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,

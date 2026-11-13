@@ -168,6 +168,10 @@ type CloudRequestEngine struct {
 	products     atomic.Pointer[map[string]ProductMeta]
 	evidenceKeys atomic.Pointer[core.WhitelistFilter]
 
+	// productsFailed is true from a failed request for the accessible
+	// Properties until one succeeds.
+	productsFailed atomic.Bool
+
 	// Recovery mode state.
 	failuresToEnterRecovery int
 	failureWindow           time.Duration
@@ -194,6 +198,12 @@ func (e *CloudRequestEngine) KnownPublicProperties() (map[string]ProductMeta, bo
 		return cloneProducts(*p), true
 	}
 	return nil, false
+}
+
+// PublicPropertiesRequestFailed reports whether the last request for the
+// accessible Properties failed, leaving them unknown. It makes no request.
+func (e *CloudRequestEngine) PublicPropertiesRequestFailed() bool {
+	return e.products.Load() == nil && e.productsFailed.Load()
 }
 
 // PublicProperties returns the accessible Properties, keyed by product, which
@@ -537,9 +547,11 @@ func (e *CloudRequestEngine) retryDiscovery() error {
 func (e *CloudRequestEngine) loadProducts() error {
 	products, err := e.fetchAccessibleProperties()
 	if err != nil {
+		e.productsFailed.Store(true)
 		e.recordFailure(err)
 		return err
 	}
+	e.productsFailed.Store(false)
 	e.recordSuccess()
 	e.keepProducts(products)
 	return nil

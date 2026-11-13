@@ -438,9 +438,18 @@ func (e *Element) queryParameters(fd core.FlowData) string {
 	return string(encoded)
 }
 
+// cookiesEnabled reports whether the script retains results in cookies. The
+// query.fod-js-enable-cookies Evidence value decides when it is true or
+// false, in any letter case and with any white space around it. When it is
+// absent, blank, meaning empty or only white space, or anything else, the
+// configured default stands.
 func (e *Element) cookiesEnabled(fd core.FlowData) bool {
-	if v := evidenceString(fd, EvidenceEnableCookies); v != "" {
-		return strings.EqualFold(v, "true")
+	v := strings.TrimSpace(evidenceString(fd, EvidenceEnableCookies))
+	switch {
+	case strings.EqualFold(v, "true"):
+		return true
+	case strings.EqualFold(v, "false"):
+		return false
 	}
 	return e.enableCookies
 }

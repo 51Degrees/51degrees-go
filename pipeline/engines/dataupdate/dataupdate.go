@@ -102,12 +102,13 @@ type Config struct {
 	// UpdateOnStartup indicates whether an update check should be performed as
 	// soon as the data source is registered, before normal polling begins.
 	UpdateOnStartup bool
-	// AutomaticUpdatesEnabled indicates whether updates to the data file are
-	// checked for and applied to the Engine automatically.
+	// AutomaticUpdatesEnabled indicates whether DataUpdateURL is polled for a
+	// newer data file, which is then applied to the Engine.
 	AutomaticUpdatesEnabled bool
 	// FileSystemWatcherEnabled indicates whether a watcher is created for the
 	// file at DataFilePath. When the file is modified the Engine is notified so
-	// it can refresh its internal data structures.
+	// it can refresh its internal data structures. The watcher runs on this
+	// setting alone, whatever AutomaticUpdatesEnabled is.
 	FileSystemWatcherEnabled bool
 
 	// Polling config.
@@ -121,6 +122,76 @@ type Config struct {
 
 	// Operational file config.
 	TempDir string
+
+	// OnComplete, if set, is told how each check for an update on this data
+	// source ended, the update on start-up included. It is the only way to
+	// hear the check made on start-up, because the service's OnComplete can
+	// only be called once the data source is registered.
+	OnComplete func(Complete)
+}
+
+// The settings a data source has when its configuration says nothing else.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#defaults
+const (
+	// DefaultPollingInterval is the time between checks for an update.
+	DefaultPollingInterval = 30 * time.Minute
+	// DefaultMaxRandomization is the most that is added at random to each
+	// interval, so several instances do not all ask at once.
+	DefaultMaxRandomization = 10 * time.Minute
+)
+
+// DefaultConfig returns the settings of the Defaults table, which the file
+// updater the native Engines use starts with too. Set Identifier,
+// DataFilePath and, where the data is downloaded, DataUpdateURL on the result.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#defaults
+func DefaultConfig() Config {
+	return Config{
+		AutomaticUpdatesEnabled:  true,
+		FileSystemWatcherEnabled: true,
+		UpdateOnStartup:          false,
+		UseIfModifiedSince:       true,
+		PollingInterval:          DefaultPollingInterval,
+		MaxRandomization:         DefaultMaxRandomization,
+	}
+}
+
+// Status is how a check for an update ended. The names are those of the .NET
+// data update service, so a status means the same in every language.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
+type Status string
+
+const (
+	// StatusSuccess is a check that refreshed the Engine with new data.
+	StatusSuccess Status = "AUTO_UPDATE_SUCCESS"
+	// StatusNotNeeded is a check that applied no update because none was
+	// needed, such as a 304 (Not modified) response.
+	StatusNotNeeded Status = "AUTO_UPDATE_NOT_NEEDED"
+	// StatusHTTPSError is a request to the update URL that failed, or a
+	// response that was neither a success nor a 304 (Not modified).
+	StatusHTTPSError Status = "AUTO_UPDATE_HTTPS_ERR"
+	// StatusTooManyRequests is a 429 (Too many requests) response.
+	StatusTooManyRequests Status = "AUTO_UPDATE_ERR_429_TOO_MANY_ATTEMPTS"
+	// StatusForbidden is a 403 (Forbidden) response.
+	StatusForbidden Status = "AUTO_UPDATE_ERR_403_FORBIDDEN"
+	// StatusMD5ValidationFailed is downloaded data whose MD5 hash does not
+	// match the one the response gave.
+	StatusMD5ValidationFailed Status = "AUTO_UPDATE_ERR_MD5_VALIDATION_FAILED"
+	// StatusCannotRename is downloaded data that could not replace the
+	// operational data file.
+	StatusCannotRename Status = "AUTO_UPDATE_NEW_FILE_CANT_RENAME"
+	// StatusRefreshFailed is new data the Engine would not load.
+	StatusRefreshFailed Status = "AUTO_UPDATE_REFRESH_FAILED"
+	// StatusUnknownError is a failure none of the others name.
+	StatusUnknownError Status = "AUTO_UPDATE_UNKNOWN_ERROR"
+)
+
+// Complete is the report a check makes once it ends.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
+type Complete struct {
+	// Identifier names the data source the check was for.
+	Identifier string
+	// Status is how the check ended.
+	Status Status
 }
 
 // Service manages data updates for one or more registered Engines.
@@ -156,17 +227,23 @@ type registration struct {
 	engineName string
 	cfg        Config
 
-	updateMu  sync.Mutex // serializes a whole HTTP update (download + replace + refresh)
-	refreshMu sync.Mutex // serializes refresh; keeps refresh thread-safe
-	watcher   *fsnotify.Watcher
-	stop      chan struct{}
-	wg        sync.WaitGroup
+	updateMu   sync.Mutex // serializes a whole HTTP update (download + replace + refresh)
+	refreshMu  sync.Mutex // serializes refresh; keeps refresh thread-safe
+	callbackMu sync.Mutex // guards onComplete
+	watcher    *fsnotify.Watcher
+	stop       chan struct{}
+	wg         sync.WaitGroup
 
 	// lastModified is the server's Last-Modified for the current data; used for
 	// the next conditional request. Accessed only under updateMu (httpUpdate).
 	lastModified time.Time
 
-	onUpdate []func()
+	// loadedFileTime is the modification time of the data file the Engine
+	// was last refreshed from, which a watched file has to be newer than to
+	// be loaded. Guarded by refreshMu.
+	loadedFileTime time.Time
+
+	onComplete []func(Complete)
 }
 
 // recoverGoroutine logs and swallows a panic in a background goroutine so a
@@ -197,27 +274,41 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 		cfg:        cfg,
 		stop:       make(chan struct{}),
 	}
+	if cfg.OnComplete != nil {
+		reg.onComplete = append(reg.onComplete, cfg.OnComplete)
+	}
 
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
 		s.logger.Info("Updating on start-up")
-		if err := reg.httpUpdate(); err != nil {
+		status, err := reg.httpUpdate()
+		// The update on start-up is a check, so it is reported like any other,
+		// whether or not start-up carries on, and an error a callback raises
+		// reaches the caller rather than the log.
+		reported := reg.report(status)
+		if err != nil {
 			// A failed start-up update falls back to the local data file, and
 			// fails when there is none.
 			if cfg.DataFilePath != "" {
 				if _, statErr := os.Stat(cfg.DataFilePath); statErr != nil {
-					return fmt.Errorf("data update: start-up update failed and there is no local "+
-						"data file at %q: %w", cfg.DataFilePath, err)
+					return errors.Join(fmt.Errorf("data update: start-up update failed and "+
+						"there is no local data file at %q: %w", cfg.DataFilePath, err), reported)
 				}
 			}
 			// The caller does not get this error, as the start-up carries on
 			// with the local data file, so it is logged.
 			reg.logCheckFailure(err)
 		}
+		if reported != nil {
+			return reported
+		}
 	}
 
 	// Start the background goroutines (which call wg.Add and assign the watcher)
 	// before publishing the registration, so a concurrent Close cannot observe a
 	// half-initialized registration and race wg.Add/Wait or the watcher field.
+	//
+	// The watcher runs on its own setting, because watching a file downloads
+	// nothing. AutomaticUpdatesEnabled governs polling alone.
 	if cfg.FileSystemWatcherEnabled {
 		if err := reg.startWatcher(); err != nil {
 			s.logger.Warn("could not create file system watcher", "engine", engineName, "error", err)
@@ -249,37 +340,60 @@ func (r *registration) stopAndWait() {
 	r.wg.Wait()
 }
 
-// OnUpdate registers a callback invoked after a successful refresh of the named
-// data source.
-func (s *Service) OnUpdate(identifier string, fn func()) {
+// OnComplete registers a callback that every check for an update on the named
+// data source reports to once the check ends, with the status it ended with.
+// An update from memory gives its result to its caller alone and reports
+// nothing here.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
+func (s *Service) OnComplete(identifier string, fn func(Complete)) {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
-	// onUpdate is read by fireCallbacks under refreshMu, so append under the same
-	// lock to avoid a data race with a concurrent refresh.
-	reg.refreshMu.Lock()
-	reg.onUpdate = append(reg.onUpdate, fn)
-	reg.refreshMu.Unlock()
+	reg.callbackMu.Lock()
+	reg.onComplete = append(reg.onComplete, fn)
+	reg.callbackMu.Unlock()
+}
+
+// OnUpdate registers a callback that is called after a check that refreshed
+// the Engine of the named data source with new data. It hears no other check
+// and is told no status, which OnComplete gives.
+func (s *Service) OnUpdate(identifier string, fn func()) {
+	s.OnComplete(identifier, func(complete Complete) {
+		if complete.Status == StatusSuccess {
+			fn()
+		}
+	})
 }
 
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP
 // polling is configured it polls the remote server; otherwise it refreshes from
-// the configured file if it is newer.
+// the configured file if it is newer. The check is reported to the callbacks
+// and its error is passed to the caller rather than logged.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#programmatic-update
 func (s *Service) CheckForUpdate(identifier string) error {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
 	s.mu.Unlock()
 	if !ok {
+		// A data file the service has no configuration for is the caller's to
+		// deal with, and nothing is reported.
 		return fmt.Errorf("data update: no registration for identifier %q", identifier)
 	}
+	status := StatusSuccess
+	var err error
 	if reg.cfg.DataUpdateURL != "" {
-		return reg.httpUpdate()
+		status, err = reg.httpUpdate()
+	} else if err = reg.refreshFromFile(); err != nil {
+		status = StatusRefreshFailed
 	}
-	return reg.refreshFromFile()
+	reported := reg.report(status)
+	if err != nil {
+		return err
+	}
+	return reported
 }
 
 // UpdateFromMemory refreshes the named data source's Engine from data held in
@@ -341,7 +455,8 @@ func (r *registration) startPolling() {
 				return
 			case <-timer.C:
 			}
-			if err := r.httpUpdate(); err != nil {
+			status, err := r.httpUpdate()
+			if err != nil {
 				// A check the poller starts is logged here, and is never fatal.
 				r.logCheckFailure(err)
 				var rle *RateLimitError
@@ -350,6 +465,9 @@ func (r *registration) startPolling() {
 					override = rle.RetryAfter
 				}
 			}
+			if err := r.report(status); err != nil {
+				r.logCheckFailure(err)
+			}
 		}
 	}()
 }
@@ -357,7 +475,7 @@ func (r *registration) startPolling() {
 func (r *registration) nextInterval() time.Duration {
 	d := r.cfg.PollingInterval
 	if d <= 0 {
-		d = 30 * time.Minute
+		d = DefaultPollingInterval
 	}
 	return d + r.randomExtra()
 }
@@ -450,7 +568,14 @@ func (r *registration) startWatcher() error {
 				}
 			case <-timerC:
 				timerC = nil
-				if err := r.refreshFromFile(); err != nil {
+				status := StatusSuccess
+				if loaded, err := r.refreshFromNewerFile(); err != nil {
+					status = StatusRefreshFailed
+					r.logCheckFailure(err)
+				} else if !loaded {
+					status = StatusNotNeeded
+				}
+				if err := r.report(status); err != nil {
 					r.logCheckFailure(err)
 				}
 			case err, ok := <-w.Errors:
@@ -464,20 +589,58 @@ func (r *registration) startWatcher() error {
 	return nil
 }
 
-// refreshFromFile reloads the Engine from its configured data file. The watcher
-// and polling are implicitly paused for the duration because refresh is
-// serialized by refreshMu.
+// How often a refresh from the data file is tried, as .NET and Java do,
+// because the file can be held by another process for a moment.
+const (
+	// refreshTries is how many times the refresh is tried before it is
+	// reported as failed.
+	refreshTries = 10
+	// refreshRetryWaitMilliseconds is the wait between tries.
+	refreshRetryWaitMilliseconds = 200
+)
+
+// refreshFromFile reloads the Engine from its configured data file, trying up
+// to refreshTries times. The watcher and polling are implicitly paused for the
+// duration because refresh is serialized by refreshMu.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
 func (r *registration) refreshFromFile() error {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
-	r.svc.logger.Info(fmt.Sprintf("Attempting to refresh Engine '%s' with new data", r.engineName))
-	if err := r.engine.RefreshFromFile(r.cfg.DataFilePath); err != nil {
-		// The refresh is made once, so the table's "after <tries> tries" is 1.
-		return &CheckError{fmt.Sprintf("An error occurred when applying a data update to engine '%s' "+
-			"after 1 tries.", r.engineName), err}
+	return r.loadDataFile()
+}
+
+// refreshFromNewerFile reloads the Engine from its data file when the file is
+// newer than the one last loaded, and says whether it was loaded. A watched
+// file that is not newer is left alone, as .NET leaves it.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
+func (r *registration) refreshFromNewerFile() (bool, error) {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	if modified, ok := r.currentDataTime(); ok && !modified.After(r.loadedFileTime) {
+		return false, nil
 	}
-	r.fireCallbacks()
-	return nil
+	return true, r.loadDataFile()
+}
+
+// loadDataFile makes the tries of a refresh from the data file. It records the
+// file's modification time first, so a file that would not load is not tried
+// again by the watcher and one written later is. The caller holds refreshMu.
+func (r *registration) loadDataFile() error {
+	if modified, ok := r.currentDataTime(); ok {
+		r.loadedFileTime = modified
+	}
+	r.svc.logger.Info(fmt.Sprintf("Attempting to refresh Engine '%s' with new data", r.engineName))
+	var err error
+	for tries := 1; tries <= refreshTries; tries++ {
+		if err = r.engine.RefreshFromFile(r.cfg.DataFilePath); err == nil {
+			return nil
+		}
+		if tries < refreshTries {
+			time.Sleep(refreshRetryWaitMilliseconds * time.Millisecond)
+		}
+	}
+	return &CheckError{fmt.Sprintf("An error occurred when applying a data update to engine '%s' "+
+		"after %d tries.", r.engineName, refreshTries), err}
 }
 
 // httpUpdate checks the remote server for a newer data file and, if found,
@@ -490,9 +653,10 @@ func (r *registration) refreshFromFile() error {
 // poller and load an older of two concurrent downloads.
 //
 // A failure the error table has a row for is returned as a CheckError with
-// the row's message. Nothing is logged here for a failure, so a check the
-// caller starts passes its error to the caller, and the poller logs its own.
-func (r *registration) httpUpdate() error {
+// the row's message, and with the status of that row. Nothing is logged here
+// for a failure, so a check the caller starts passes its error to the caller,
+// and the poller logs its own.
+func (r *registration) httpUpdate() (Status, error) {
 	r.updateMu.Lock()
 	defer r.updateMu.Unlock()
 
@@ -509,7 +673,7 @@ func (r *registration) httpUpdate() error {
 
 	req, err := http.NewRequest(http.MethodGet, target, nil)
 	if err != nil {
-		return core.MaskLicenseKeysInError(err, keys)
+		return StatusHTTPSError, core.MaskLicenseKeysInError(err, keys)
 	}
 	// When enabled, send If-Modified-Since so a server that honors it returns
 	// 304 instead of re-sending an unchanged file. Prefer the Last-Modified the
@@ -524,7 +688,8 @@ func (r *registration) httpUpdate() error {
 
 	resp, err := r.svc.httpClient.Do(req)
 	if err != nil {
-		return &CheckError{fmt.Sprintf("Error accessing data update service at '%s' for engine '%s'",
+		return StatusHTTPSError, &CheckError{fmt.Sprintf(
+			"Error accessing data update service at '%s' for engine '%s'",
 			url, r.engineName), core.MaskLicenseKeysInError(err, keys)}
 	}
 	defer resp.Body.Close()
@@ -533,23 +698,25 @@ func (r *registration) httpUpdate() error {
 	case http.StatusNotModified:
 		r.svc.logger.Info(fmt.Sprintf("No data newer than %s found at '%s' for Engine '%s'",
 			r.sinceText(), url, r.engineName))
-		return nil
+		return StatusNotNeeded, nil
 	case http.StatusTooManyRequests:
 		retry := resp.Header.Get("Retry-After")
-		return &RateLimitError{URL: url, Engine: r.engineName, RetryAfter: parseRetryAfter(retry)}
+		return StatusTooManyRequests, &RateLimitError{URL: url, Engine: r.engineName,
+			RetryAfter: parseRetryAfter(retry)}
 	case http.StatusForbidden:
-		return &CheckError{fmt.Sprintf("Access denied to data update service at '%s' for engine '%s'",
-			url, r.engineName), nil}
+		return StatusForbidden, &CheckError{fmt.Sprintf(
+			"Access denied to data update service at '%s' for engine '%s'", url, r.engineName), nil}
 	case http.StatusOK:
 		// proceed
 	default:
-		return &CheckError{fmt.Sprintf("HTTP status code '%d' from data update service at '%s' for engine '%s'",
+		return StatusHTTPSError, &CheckError{fmt.Sprintf(
+			"HTTP status code '%d' from data update service at '%s' for engine '%s'",
 			resp.StatusCode, url, r.engineName), nil}
 	}
 
 	raw, err := readBody(resp)
 	if err != nil {
-		return err
+		return StatusUnknownError, err
 	}
 	// Validate integrity against the server's Content-MD5 (the 51Degrees
 	// Distributor sends it) before the bytes are written or loaded, so a corrupt
@@ -558,22 +725,22 @@ func (r *registration) httpUpdate() error {
 		r.svc.logger.Warn(fmt.Sprintf("No MD5 hash included in data update response for '%s'. "+
 			"Unable to verify data integrity", url))
 	} else if err := verifyContentMD5(resp, raw, r.engineName); err != nil {
-		return err
+		return StatusMD5ValidationFailed, err
 	}
 	body, err := maybeDecompress(raw)
 	if err != nil {
-		return err
+		return StatusUnknownError, err
 	}
 
 	if r.cfg.DataFilePath != "" {
-		if err := r.writeDataFile(body); err != nil {
-			return err
+		if status, err := r.writeDataFile(body); err != nil {
+			return status, err
 		}
 		if err := r.refreshFromFile(); err != nil {
-			return err
+			return StatusRefreshFailed, err
 		}
 	} else if err := r.refreshFromBytes(body); err != nil {
-		return err
+		return StatusRefreshFailed, err
 	}
 
 	// Persist the server's Last-Modified so the next conditional request is
@@ -584,7 +751,7 @@ func (r *registration) httpUpdate() error {
 		}
 	}
 	r.svc.logger.Info(fmt.Sprintf("Downloaded new data from '%s' for Engine '%s'", url, r.engineName))
-	return nil
+	return StatusSuccess, nil
 }
 
 // conditionalSince returns the timestamp to use for If-Modified-Since: the
@@ -604,7 +771,8 @@ func (r *registration) conditionalSince() (time.Time, bool) {
 }
 
 // refreshFromBytes reloads the Engine from an in-memory buffer, serialized by
-// refreshMu, and fires the update callbacks on success.
+// refreshMu. The refresh is made once, as the error table's row for data held
+// in memory names no tries.
 func (r *registration) refreshFromBytes(body []byte) error {
 	r.refreshMu.Lock()
 	defer r.refreshMu.Unlock()
@@ -613,37 +781,37 @@ func (r *registration) refreshFromBytes(body []byte) error {
 		return &CheckError{fmt.Sprintf("An error occurred when applying a data update to engine '%s'.",
 			r.engineName), err}
 	}
-	r.fireCallbacks()
 	return nil
 }
 
 // writeDataFile writes body to a temporary file and atomically renames it over
 // the operational data file, so the Engine never sees a partial file.
-func (r *registration) writeDataFile(body []byte) error {
+func (r *registration) writeDataFile(body []byte) (Status, error) {
 	dir := r.cfg.TempDir
 	if dir == "" {
 		dir = filepath.Dir(r.cfg.DataFilePath)
 	}
 	tmp, err := os.CreateTemp(dir, filepath.Base(r.cfg.DataFilePath)+".tmp-*")
 	if err != nil {
-		return err
+		return StatusUnknownError, err
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(body); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
-		return err
+		return StatusUnknownError, err
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
-		return err
+		return StatusUnknownError, err
 	}
 	if err := os.Rename(tmpName, r.cfg.DataFilePath); err != nil {
 		os.Remove(tmpName)
-		return &CheckError{fmt.Sprintf("An error occurred when copying a data file to replace the existing "+
-			"one at '%s'.", r.cfg.DataFilePath), err}
+		return StatusCannotRename, &CheckError{fmt.Sprintf(
+			"An error occurred when copying a data file to replace the existing one at '%s'.",
+			r.cfg.DataFilePath), err}
 	}
-	return nil
+	return StatusSuccess, nil
 }
 
 // sinceText writes the date a check asked for newer data than.
@@ -708,26 +876,41 @@ func (r *registration) currentDataTime() (time.Time, bool) {
 	return info.ModTime(), true
 }
 
-// fireCallbacks calls each update callback in turn. A callback that panics is
-// logged with the error table's last row and the callbacks after it are not
-// called, as the specification says. The panic is not passed to the caller.
-func (r *registration) fireCallbacks() {
-	for _, fn := range r.onUpdate {
-		if !r.callback(fn) {
-			return
+// report tells each callback that a check has ended with the status given. A
+// callback that panics stops the callbacks after it, and its panic is returned
+// for the caller to log or to pass on, as the error table's last row says.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
+func (r *registration) report(status Status) error {
+	r.callbackMu.Lock()
+	callbacks := r.onComplete
+	r.callbackMu.Unlock()
+	complete := Complete{Identifier: r.cfg.Identifier, Status: status}
+	for _, fn := range callbacks {
+		if err := r.callback(fn, complete); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-// callback calls fn, and reports whether it returned rather than panicked.
-func (r *registration) callback(fn func()) (returned bool) {
+// callback calls fn, returning the panic it raised, if any.
+func (r *registration) callback(fn func(Complete), complete Complete) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			r.svc.logger.Error(r.unhandledMessage(), "panic", rec)
+			err = &callbackPanic{rec}
 		}
 	}()
-	fn()
-	return true
+	fn(complete)
+	return nil
+}
+
+// callbackPanic is a panic an update callback raised, as an error. The error
+// table has no row of its own for it, so logCheckFailure logs it with the
+// last row's message.
+type callbackPanic struct{ value any }
+
+func (p *callbackPanic) Error() string {
+	return fmt.Sprintf("panic in an update callback: %v", p.value)
 }
 
 // RateLimitError is returned when the update server responds with HTTP 429.

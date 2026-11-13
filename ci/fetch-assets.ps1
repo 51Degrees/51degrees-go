@@ -8,81 +8,61 @@ $ErrorActionPreference = "Stop"
 
 . $PSScriptRoot/products.ps1
 $RepoPath = Join-Path $PSScriptRoot ".."
-$Products = Get-AffectedProducts $RepoPath
-
-# How long one attempt at downloading a data file may take. The download
-# script's own limit covers only the wait for the server's first answer, so a
-# transfer that stalls part way would otherwise hold the job until its own
-# timeout.
-$DownloadAttemptMinutes = 10
-$DownloadAttempts = 2
-
-# Downloads a data file with the script in the data submodule of cxx, in a
-# process of its own so that an attempt can be stopped when it runs too long.
-# A failed or stopped attempt is tried once more.
-function Get-DataFile([string]$Name) {
-    $script = Join-Path $RepoPath "cxx/data/get-data-files.ps1"
-    $shell = (Get-Process -Id $PID).Path
-    for ($attempt = 1; $attempt -le $DownloadAttempts; $attempt++) {
-        $process = Start-Process -FilePath $shell -NoNewWindow -PassThru `
-            -ArgumentList "-NoProfile -File `"$script`" $Name"
-        # Reading the handle keeps the exit code once the process ends.
-        $null = $process.Handle
-        if ($process.WaitForExit($DownloadAttemptMinutes * 60000)) {
-            if ($process.ExitCode -eq 0) {
-                return
-            }
-            Write-Warning "Attempt $attempt to download $Name failed"
-        } else {
-            $process.Kill($true)
-            $process.WaitForExit()
-            Write-Warning "Attempt $attempt to download $Name took more than $DownloadAttemptMinutes minutes"
-        }
-    }
-    throw "$Name was not downloaded"
+# The prefetch in the Configure job fills the asset cache that every run that
+# day restores, whatever it changes, so it fetches for every product.
+$Products = $AllProducts
+if ($env:GITHUB_JOB -ne 'Configure') {
+    $Products = Get-AffectedProducts $RepoPath
 }
+$Data = Join-Path $RepoPath "cxx/data"
 
 # Device Detection: the Lite data file and the evidence the tests and examples
 # use. IP Intelligence: the Enterprise data file and its evidence, and the
 # Device Detection TAC file for the mixed examples, which combine both
-# products.
+# products. Both: the free Lite data files the examples default to. IP
+# Intelligence also needs the small Asn data file for its reload tests.
 $Assets = @()
 if ($Products -contains 'device-detection') {
     $Assets += "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml"
 }
 if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
     $Assets += "51Degrees-EnterpriseIpiV41.ipi", "ip-intelligence-evidence.yml", "TAC-HashV41.hash"
+    $Assets += "51Degrees-LiteV4.1.hash", "51Degrees-LiteIpiV41.ipi"
 }
+if ($Products -contains 'ip-intelligence') {
+    $Assets += "51Degrees-IPIV4AsnIpiV41.ipi"
+}
+$Assets = @($Assets | Select-Object -Unique)
 if (!$Assets) {
     Write-Host "No assets needed"
     exit
 }
 
+# The assets are kept in ./assets, which the run caches once, so a test job
+# restores them rather than downloading them.
 ./steps/fetch-assets.ps1 -Assets $Assets `
     -DeviceDetection:$DeviceDetection -DeviceDetectionUrl:$DeviceDetectionUrl `
     -IpIntelligence:$IpIntelligence -IpIntelligenceUrl:$IpIntelligenceUrl
 
 # The examples default to the free Lite data files in cxx/data, and an example
-# downloads a file when it is missing. Several example packages run at once
-# and use the same files, so they are fetched once here, before any test runs,
-# rather than by the examples while their tests run.
+# downloads a file when it is missing, so the assets are linked there.
 if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
-    foreach ($lite in "51Degrees-LiteV4.1.hash", "51Degrees-LiteV41.ipi") {
-        Get-DataFile $lite
-    }
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/51Degrees-LiteV4.1.hash" `
+        -Path (Join-Path $Data "device-detection/51Degrees-LiteV4.1.hash") | Out-Null
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/51Degrees-LiteIpiV41.ipi" `
+        -Path (Join-Path $Data "ip-intelligence/51Degrees-LiteV41.ipi") | Out-Null
 }
 
 # The IP Intelligence reload tests use the small Asn data file and the
 # Enterprise data file, which has different properties, and look for both in
-# the module folder. The script in the data submodule of cxx downloads the Asn
-# file.
+# the module folder. The Asn file is copied into cxx/data, where it is found
+# by the data repository's name.
 if ($Products -contains 'ip-intelligence') {
     $folder = Get-ProductPath $RepoPath 'ip-intelligence'
-    $data = Join-Path $RepoPath "cxx/data"
     $asn = "51Degrees-IPIV4AsnIpiV41.ipi"
-    Get-DataFile $asn
+    Copy-Item "$PWD/assets/$asn" (Join-Path $Data "ip-intelligence/$asn")
     New-Item -ItemType SymbolicLink -Force `
-        -Target (Join-Path $data "ip-intelligence/$asn") `
+        -Target (Join-Path $Data "ip-intelligence/$asn") `
         -Path (Join-Path $folder $asn) | Out-Null
     $enterprise = "51Degrees-EnterpriseIpiV41.ipi"
     New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$enterprise" `
