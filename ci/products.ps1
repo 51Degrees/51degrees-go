@@ -76,3 +76,25 @@ function Invoke-GoTests {
         Pop-Location
     }
 }
+
+# The folders of the published modules, from packages.json, which also gives
+# each module's version and what it requires (see packages.ps1).
+$LibraryPaths = @((Get-Content -Raw (Join-Path $PSScriptRoot 'packages.json') |
+    ConvertFrom-Json) | Where-Object Publish | ForEach-Object Path)
+
+# Returns a go mod edit -replace argument for each requirement of the module in
+# the folder on a module of this repository at a version with no tag yet. Such
+# a version is the one the next release publishes for that module, from its
+# folder here, so the folder is what that version will hold.
+function Get-UnreleasedRequirementReplaces([string]$RepoPath, [string]$ModuleFolder) {
+    $mod = go mod edit -json (Join-Path $RepoPath $ModuleFolder 'go.mod') | ConvertFrom-Json
+    foreach ($require in $mod.Require) {
+        foreach ($library in $LibraryPaths) {
+            if ($require.Path -like "github.com/51Degrees/51degrees-go/$library/v*" -and
+                !(git -C $RepoPath tag --list "$library/$($require.Version)")) {
+                $folder = (Resolve-Path (Join-Path $RepoPath $library)).Path
+                "-replace=$($require.Path)@$($require.Version)=$folder"
+            }
+        }
+    }
+}

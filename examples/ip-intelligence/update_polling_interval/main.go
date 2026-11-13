@@ -3,8 +3,8 @@
  * Copyright 2025 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -39,9 +39,11 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 ### 1. Specify config for engine:
 
 This setting specifies the performance profile that will be used when initializing the C library.
+LowMemory reads the data file as it is needed, because updates download the
+Enterprise data file, which is several gigabytes.
 
 ```
-config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
+config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 ```
 <br/>
 ### 2. Initialization of the engine with the following parameters:
@@ -66,17 +68,19 @@ config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
 		// WithAutoUpdate enables or disables auto update
 		ipi_onpremise.WithAutoUpdate(true),
 
-		// Set the frequency in minutes that the pipeline should
-		// check for updates to data files. A recommended
-		// polling interval in a production environment is
-		// around 30 minutes.
+		// Set the frequency in seconds that the pipeline should
+		// check for updates to data files. The example checks every
+		// few seconds so that an update can arrive while it waits
+		// between its two sets of lookups. A recommended polling
+		// interval in a production environment is around 30
+		// minutes, which is 1800 seconds.
 		ipi_onpremise.WithPollingInterval(3),
 
-		// Set the max amount of time in seconds that should be
-		// added to the polling interval. This is useful in datacenter
-		// applications where multiple instances may be polling for
-		// updates at the same time. A recommended amount in production
-		// environments is 600 seconds.
+		// Set the maximum random time in seconds added to each polling
+		// interval. A new time from 0 up to this maximum is drawn for
+		// each interval, so that multiple instances in a datacenter do
+		// not poll for updates at the same time. A recommended amount
+		// in production environments is 600 seconds.
 		ipi_onpremise.WithRandomization(1),
 
 		// Enable update on startup, the auto update system
@@ -87,8 +91,9 @@ config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
 		// Optionally provide your own file URL
 		ipi_onpremise.WithDataUpdateUrl("<custom URL>"),
 
-		// By default a temp copy should be created, unless you are using InMemory performance profile
-		// ipi_onpremise.WithTempDataCopy(false),
+		// LowMemory keeps the data file open, so the engine reads a
+		// temp copy and an update can replace the original.
+		ipi_onpremise.WithTempDataCopy(true),
 
 		// File System Watcher is by default enabled
 		// ipi_onpremise.WithFileWatch(false),
@@ -175,9 +180,9 @@ func runWithoutUpdates(params *common.ExampleParams) {
 	processEvidence(engine, free, evidences[1])
 
 	fmt.Printf("\nAutomatic updates download the Enterprise data file with a "+
-		"licence key, which IPI_KEY gives, or from a copy you host, whose "+
-		"address IPI_DATA_FILE_URL gives. Contact us for a key and a copy "+
-		"at %s\n", contactUs)
+		"licence key, which _51DEGREES_LICENSE_KEY gives, or from a copy "+
+		"you host, whose address _51DEGREES_IPI_DATA_FILE_URL gives. "+
+		"Contact us for a key and a copy at %s\n", contactUs)
 }
 
 func main() {
@@ -188,7 +193,10 @@ func main() {
 				return nil
 			}
 
-			config := ipi_interop.NewConfigIpi(ipi_interop.InMemory)
+			// LowMemory reads the data file as it is needed rather than
+			// loading it all, because updates download the Enterprise data
+			// file, which is several gigabytes.
+			config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 
 			//Create on-premise engine
 			engine, err := ipi_onpremise.New(
@@ -209,17 +217,19 @@ func main() {
 				// Enable automatic updates.
 				ipi_onpremise.WithAutoUpdate(true),
 
-				// Set the frequency in minutes that the pipeline should
-				// check for updates to data files. A recommended
-				// polling interval in a production environment is
-				// around 30 minutes.
+				// Set the frequency in seconds that the pipeline should
+				// check for updates to data files. The example checks every
+				// few seconds so that an update can arrive while it waits
+				// between its two sets of lookups. A recommended polling
+				// interval in a production environment is around 30
+				// minutes, which is 1800 seconds.
 				ipi_onpremise.WithPollingInterval(3),
 
-				// Set the max amount of time in seconds that should be
-				// added to the polling interval. This is useful in datacenter
-				// applications where multiple instances may be polling for
-				// updates at the same time. A recommended amount in production
-				// environments is 600 seconds.
+				// Set the maximum random time in seconds added to each polling
+				// interval. A new time from 0 up to this maximum is drawn for
+				// each interval, so that multiple instances in a datacenter do
+				// not poll for updates at the same time. A recommended amount
+				// in production environments is 600 seconds.
 				ipi_onpremise.WithRandomization(1),
 
 				// Enable update on startup, the auto update system
@@ -230,8 +240,9 @@ func main() {
 				// Optionally provide your own file URL
 				ipi_onpremise.WithDataUpdateUrl(params.DataFileUrl),
 
-				// By default a temp copy should be created, unless you are using InMemory performance profile
-				ipi_onpremise.WithTempDataCopy(false),
+				// LowMemory keeps the data file open, so the engine reads a
+				// temp copy and an update can replace the original.
+				ipi_onpremise.WithTempDataCopy(true),
 
 				// File System Watcher is by default enabled
 				// ipi_onpremise.WithFileWatch(false),

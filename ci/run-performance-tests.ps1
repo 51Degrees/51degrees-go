@@ -37,7 +37,7 @@ if ($Products -contains 'device-detection') {
 if ($Products -contains 'ip-intelligence') {
     $output = Join-Path $rootDir "summary-ip-intelligence.json"
     Remove-Item $output -ErrorAction SilentlyContinue
-    $env:DATA_FILE = "$rootDir/assets/51Degrees-EnterpriseIpiV41.ipi"
+    $env:_51DEGREES_IPI_PATH = "$rootDir/assets/51Degrees-EnterpriseIpiV41.ipi"
     Push-Location (Join-Path $RepoName 'examples/ip-intelligence')
     try {
         Write-Host "Running the IP Intelligence performance example..."

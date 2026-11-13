@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -35,6 +35,10 @@ type ResourceManager struct {
 	setHeaders     map[string]([]string) // Headers to be set in a Http response
 	HttpHeaderKeys []EvidenceKey         // Http header keys required by this engine
 	CPtr           *C.ResourceManager    // Pointer to C resource
+	// indexes holds the required property index of each property name the
+	// manager was created with, or with no names, of each name of the first
+	// data file it loaded, built once when it is created.
+	indexes propertyIndexes
 }
 
 // Finalizer function for Resource Manager
@@ -48,7 +52,7 @@ func resourceFinalizer(m *ResourceManager) {
 // NewResourceManager creats a new object of ResourceManager
 func NewResourceManager() *ResourceManager {
 	cManager := new(C.ResourceManager)
-	manager := &ResourceManager{nil, nil, cManager}
+	manager := &ResourceManager{CPtr: cManager}
 	runtime.SetFinalizer(manager, resourceFinalizer)
 	return manager
 }

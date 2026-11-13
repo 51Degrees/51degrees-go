@@ -45,16 +45,26 @@ type ParallelElements struct {
 // NewParallelElements groups children to be executed in parallel.
 func NewParallelElements(logger *slog.Logger, children ...FlowElement) *ParallelElements {
 	keys := make([]string, len(children))
-	var props []PropertyMetadata
 	filters := make([]EvidenceKeyFilter, 0, len(children))
 	for i, c := range children {
 		keys[i] = c.DataKey()
-		props = append(props, c.Properties()...)
 		filters = append(filters, c.EvidenceKeyFilter())
 	}
 	base := NewBaseElement("parallel["+strings.Join(keys, "+")+"]", NewAggregateFilter(filters...), logger)
-	base.SetProperties(props)
 	return &ParallelElements{BaseElement: base, children: children}
+}
+
+// Properties returns the children's Property metadata as it is now, so a
+// child whose Properties arrive later is seen once they have.
+func (pe *ParallelElements) Properties() []PropertyMetadata {
+	props, _ := gatherProperties(pe.children)
+	return props
+}
+
+// PropertiesLoaded reports whether every child has loaded its Properties.
+func (pe *ParallelElements) PropertiesLoaded() bool {
+	_, loaded := gatherProperties(pe.children)
+	return loaded
 }
 
 // IsConcurrent reports that this element processes its children on multiple
@@ -72,6 +82,12 @@ func (pe *ParallelElements) Children() []FlowElement {
 // Errors and panics from children are recorded against the Flow Data rather
 // than aborting the others.
 func (pe *ParallelElements) Process(data FlowData) error {
+	// The children read Evidence at the same time, so none of them may add to
+	// it.
+	if fd, ok := data.(*flowData); ok {
+		fd.enterParallel()
+		defer fd.leaveParallel()
+	}
 	var wg sync.WaitGroup
 	for _, c := range pe.children {
 		wg.Add(1)

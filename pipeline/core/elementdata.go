@@ -27,7 +27,14 @@ import "github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
 // ElementData is a container, within Flow Data, for the Property values relating
 // to a particular Flow Element. Values are set by the Element during processing
 // and retrieved using the string key of the Property.
+//
+// An instance is not safe for writing from several goroutines at once, nor for
+// reading while it is being written. Only the Flow Element that creates it
+// writes it, while that Flow Element processes. Once that Flow Element has
+// finished, the instance may be read from several goroutines at once, as the
+// members of a parallel group read it, so an implementation must allow that.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#element-data
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
 type ElementData interface {
 	// Get returns the value of a Property by its (case-insensitive) string name.
 	// It returns an error if the Property is not present.
@@ -38,16 +45,28 @@ type ElementData interface {
 	AsMap() map[string]any
 }
 
+// FlowDataAdded is implemented by Element Data that needs to know where it
+// is held, such as Aspect Data, which explains a missing Property from the
+// Engine that populates it. A Flow Data calls it when it stores the Element
+// Data.
+type FlowDataAdded interface {
+	// AddedToFlowData is given the Flow Data, the key the Element Data is
+	// stored under, and the Element Data as stored, which is the type that
+	// embeds the implementation.
+	AddedToFlowData(fd FlowData, key string, data ElementData)
+}
+
 // BaseElementData is the default ElementData implementation that concrete
 // Element Data types embed. It stores Property values in a typed map.
 type BaseElementData struct {
 	values typedmap.Map
 }
 
-// NewBaseElementData creates a BaseElementData. Element Data is accessed by a
-// single thread per the thread-safety specification, so a non-concurrent map is
-// used.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md
+// NewBaseElementData creates a BaseElementData. Its values are held in a map
+// that is not safe for writing from several goroutines at once, because only
+// the Flow Element that creates the instance writes it. Once that Flow Element
+// has finished, several goroutines can read the instance at once.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
 func NewBaseElementData() *BaseElementData {
 	return &BaseElementData{values: typedmap.NewMap()}
 }

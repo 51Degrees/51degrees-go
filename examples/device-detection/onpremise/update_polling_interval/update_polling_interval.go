@@ -1,3 +1,25 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
 package main
 
 import (
@@ -62,8 +84,8 @@ func runWithoutUpdates(params common.ExampleParams) {
 	processExampleEvidence(engine, common.ExampleEvidenceMobile)
 
 	fmt.Printf("Automatic updates download the Enterprise data file with a "+
-		"licence key, which LICENSE_KEY gives. Contact us for a key and a "+
-		"copy at %s\n", contactUs)
+		"licence key, which _51DEGREES_LICENSE_KEY gives. Contact us for a "+
+		"key and a copy at %s\n", contactUs)
 }
 
 func main() {
@@ -86,17 +108,19 @@ func main() {
 				// Enable automatic updates.
 				onpremise.WithAutoUpdate(true),
 
-				// Set the frequency in minutes that the pipeline should
-				// check for updates to data files. A recommended
-				// polling interval in a production environment is
-				// around 30 minutes.
+				// Set the frequency in seconds that the pipeline should
+				// check for updates to data files. The example checks every
+				// few seconds so that an update can arrive while it waits
+				// between its two sets of lookups. A recommended polling
+				// interval in a production environment is around 30
+				// minutes, which is 1800 seconds.
 				onpremise.WithPollingInterval(3),
 
-				// Set the max amount of time in seconds that should be
-				// added to the polling interval. This is useful in datacenter
-				// applications where multiple instances may be polling for
-				// updates at the same time. A recommended amount in production
-				// environments is 600 seconds.
+				// Set the maximum random time in seconds added to each polling
+				// interval. A new time from 0 up to this maximum is drawn for
+				// each interval, so that multiple instances in a datacenter do
+				// not poll for updates at the same time. A recommended amount
+				// in production environments is 600 seconds.
 				onpremise.WithRandomization(1),
 
 				// Enable update on startup, the auto update system

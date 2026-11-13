@@ -1,3 +1,25 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
 package ipi_onpremise
 
 import (
@@ -13,16 +35,11 @@ import (
 
 type EngineOptions func(cfg *Engine) error
 
-// WithDataFile sets the path to the local data file, this parameter is required to start the engine
+// WithDataFile sets the path to the local data file, this parameter is required to start the engine.
+// The file must exist unless WithUpdateOnStart is enabled, which downloads it before the engine loads it.
 func WithDataFile(path string) EngineOptions {
 	return func(cfg *Engine) error {
-		path := filepath.Join(path)
-		_, err := os.Stat(path)
-		if err != nil {
-			return fmt.Errorf("failed to get file path: %w", err)
-		}
-
-		cfg.SetDataFile(path)
+		cfg.SetDataFile(filepath.Join(path))
 		return nil
 	}
 }
@@ -175,10 +192,11 @@ func WithTempDataDir(dir string) EngineOptions {
 	}
 }
 
-// WithRandomization sets the randomization time in seconds
-// default is 10 minutes
-// if set, when scheduling the file pulling, it will add randomization time to the interval
-// this is useful to avoid multiple engines pulling the data file at the same time in case of multiple engines/instances
+// WithRandomization sets the maximum random time in seconds added to each
+// interval between data file pulls. A new time from 0 up to this maximum is
+// drawn for each interval, so that several servers with the same setting do
+// not pull the data file at the same time. The default is 10 minutes, and 0
+// adds nothing.
 func WithRandomization(seconds int) EngineOptions {
 	return func(cfg *Engine) error {
 		cfg.SetRandomization(seconds * 1000)

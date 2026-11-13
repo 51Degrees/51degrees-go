@@ -3,8 +3,8 @@
  * Copyright 2025 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -37,8 +37,8 @@
 // gives the properties that need the Enterprise data files as needing them.
 // These environment variables give other data files:
 //
-//	DATA_FILE    Path to an IP Intelligence .ipi data file
-//	DD_DATA_FILE Path to a Device Detection .hash data file
+//	_51DEGREES_IPI_PATH    Path to an IP Intelligence .ipi data file
+//	_51DEGREES_DD_PATH Path to a Device Detection .hash data file
 //
 // Run (from the examples/mixed directory — the mixed examples are a separate
 // Go module, so they cannot be run from the repository root):
@@ -252,9 +252,9 @@ func buildResponse(
 // variables name, or from the free ones.
 func newEngines() (*ddOnpremise.Engine, *ipi_onpremise.Engine, error) {
 	ipiDataFile := common.DataFile(
-		"DATA_FILE", common.IpIntelligenceFolder, common.IpIntelligenceDataFile)
+		"_51DEGREES_IPI_PATH", common.IpIntelligenceFolder, common.IpIntelligenceDataFile)
 	ddDataFile := common.DataFile(
-		"DD_DATA_FILE", common.DeviceDetectionFolder, common.DeviceDetectionDataFile)
+		"_51DEGREES_DD_PATH", common.DeviceDetectionFolder, common.DeviceDetectionDataFile)
 
 	ddConfig := dd.NewConfigHash(dd.LowMemory)
 	ddEngine, err := ddOnpremise.New(

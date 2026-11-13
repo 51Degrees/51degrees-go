@@ -1,6 +1,6 @@
 # 51Degrees Device Detection Engines Examples
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-readme.md&utm_term=51degrees-device-detection-engines-examples "Data rewards the curious") **Examples for Device Detection in Go**
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **Examples for Device Detection in Go**
 
 ## Introduction
 

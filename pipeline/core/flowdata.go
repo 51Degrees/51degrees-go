@@ -23,6 +23,7 @@
 package core
 
 import (
+	"maps"
 	"sync"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
@@ -34,9 +35,15 @@ import (
 // once.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#flow-data
 type FlowData interface {
-	// AddEvidence adds a single Evidence key-value pair. It must be called before
-	// processing; calls after processing has started are ignored (and logged), as
-	// Evidence is immutable once created. Returns the Flow Data for chaining.
+	// AddEvidence adds a single Evidence key-value pair, replacing any value held
+	// under the same key when the case is ignored. The caller adds Evidence
+	// before processing, and a Flow Element may add Evidence while it processes,
+	// for the Flow Elements after it and the caller to read. A call while a
+	// parallel group runs, or after processing has finished, is ignored and
+	// logged. The caller must not add Evidence while processing runs, because
+	// such a call cannot be told apart from one made by a Flow Element.
+	// Returns the Flow Data for chaining.
+	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md#adding-evidence-values
 	AddEvidence(key string, value any) FlowData
 	// AddEvidenceMap adds multiple Evidence values.
 	AddEvidenceMap(values map[string]any) FlowData
@@ -76,9 +83,14 @@ type flowData struct {
 	evidence *evidence
 	data     typedmap.Map
 
-	mu      sync.Mutex
-	errs    []FlowError
-	started bool
+	mu       sync.Mutex
+	errs     []FlowError
+	started  bool
+	finished bool
+	// parallel counts the parallel groups running, which take no Evidence.
+	parallel int
+	// supplied is the Evidence as it was when processing started.
+	supplied map[string]any
 
 	goaMu sync.Mutex // serializes GetOrAdd so it is atomic under parallel processing
 }
@@ -94,13 +106,16 @@ func newFlowData(p *pipeline) *flowData {
 }
 
 func (fd *flowData) AddEvidence(key string, value any) FlowData {
-	// Hold the lock across the started-check and the write so the
-	// "evidence is immutable once processing starts" guarantee actually holds
-	// and concurrent adds do not race the underlying map.
+	// Hold the lock across the state checks and the write so a group starting
+	// or processing finishing cannot slip between them.
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	if fd.started {
-		fd.pipeline.logger.Warn("evidence added after processing started; ignoring", "key", key)
+	if fd.finished {
+		fd.pipeline.logger.Warn("evidence added after processing finished; ignoring", "key", key)
+		return fd
+	}
+	if fd.parallel > 0 {
+		fd.pipeline.logger.Warn("evidence added while a parallel group is running; ignoring", "key", key)
 		return fd
 	}
 	fd.evidence.put(key, value)
@@ -125,7 +140,21 @@ func (fd *flowData) Process() error {
 	if !fd.markStarted() {
 		return ErrAlreadyProcessed
 	}
+	fd.supplied = fd.evidence.AsMap()
+	defer fd.markFinished()
 	return fd.pipeline.process(fd)
+}
+
+// SuppliedEvidence returns the Evidence as it was when processing of the Flow
+// Data started, without the values that Flow Elements added while processing.
+// Before processing starts it returns the Evidence held now. Each call returns
+// a new map. It is for work that depends on the request alone, such as a cache
+// validator.
+func SuppliedEvidence(fd FlowData) map[string]any {
+	if f, ok := fd.(*flowData); ok && f.supplied != nil {
+		return maps.Clone(f.supplied)
+	}
+	return fd.Evidence().AsMap()
 }
 
 func (fd *flowData) Pipeline() Pipeline { return fd.pipeline }
@@ -150,6 +179,9 @@ func (fd *flowData) GetOrAdd(key string, ctor func(FlowData) ElementData) Elemen
 		return raw.(ElementData)
 	}
 	d := ctor(fd)
+	if added, ok := d.(FlowDataAdded); ok {
+		added.AddedToFlowData(fd, key, d)
+	}
 	fd.data.AddString(key, d)
 	return d
 }
@@ -193,6 +225,28 @@ func (fd *flowData) markStarted() bool {
 	}
 	fd.started = true
 	return true
+}
+
+// markFinished records that processing is complete, after which Evidence takes
+// no more values.
+func (fd *flowData) markFinished() {
+	fd.mu.Lock()
+	fd.finished = true
+	fd.mu.Unlock()
+}
+
+// enterParallel and leaveParallel bracket a parallel group, during which
+// Evidence takes no values.
+func (fd *flowData) enterParallel() {
+	fd.mu.Lock()
+	fd.parallel++
+	fd.mu.Unlock()
+}
+
+func (fd *flowData) leaveParallel() {
+	fd.mu.Lock()
+	fd.parallel--
+	fd.mu.Unlock()
 }
 
 func (fd *flowData) isStarted() bool {

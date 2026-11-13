@@ -46,7 +46,7 @@ import (
 // Default intercepted URL paths.
 const (
 	DefaultJavaScriptURL = "/51Degrees.core.js"
-	DefaultJSONURL       = "/51dpipeline/json"
+	DefaultJSONURL       = javascriptbuilder.DefaultEndpoint
 	DefaultMaxAge        = 30 * time.Minute
 )
 
@@ -127,7 +127,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		fd := m.process(r)
+		fd, _ := m.process(r)
 		m.applyResponseHeaders(w, fd)
 		ctx := context.WithValue(r.Context(), flowDataKey, fd)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -136,9 +136,10 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 
 // process creates a Flow Data, populates Evidence from the request, and runs the
 // Pipeline. Errors are guarded so that a processing failure cannot take down the
-// host application.
-func (m *Middleware) process(r *http.Request) core.FlowData {
-	fd := m.pipeline.CreateFlowData()
+// host application. failed reports whether processing recorded or returned an
+// error, or panicked.
+func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
+	fd = m.pipeline.CreateFlowData()
 	m.populateEvidence(fd, r)
 	// The web integration MUST NOT take down the host site, so any processing
 	// error or panic is contained here. Errors remain available via fd.Errors();
@@ -146,10 +147,11 @@ func (m *Middleware) process(r *http.Request) core.FlowData {
 	defer func() {
 		if rec := recover(); rec != nil {
 			m.logger().Warn("panic recovered during pipeline processing", "error", rec)
+			failed = true
 		}
 	}()
-	_ = fd.Process()
-	return fd
+	err := fd.Process()
+	return fd, err != nil || fd.HasErrors()
 }
 
 // logger returns a logger for the middleware: slog.Default, since the Pipeline
@@ -157,7 +159,8 @@ func (m *Middleware) process(r *http.Request) core.FlowData {
 func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
-// cookies, query and form parameters, client IP, host and protocol.
+// cookies, query and form parameters, client IP, host and protocol, and the
+// request itself as core.EvidenceHTTPRequest.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
 func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
@@ -206,8 +209,14 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 		}
 	}
 
-	fd.AddEvidence("server.client-ip", m.clientIP(r))
-	fd.AddEvidence("header.protocol", m.requestProtocol(r))
+	clientIP, protocol := m.clientIP(r), m.requestProtocol(r)
+	fd.AddEvidence("server.client-ip", clientIP)
+	fd.AddEvidence("header.protocol", protocol)
+
+	// The request itself, whether or not an element accepts it, so that the
+	// Usage Sharing Element can share headers no element accepts.
+	fd.AddEvidence(core.EvidenceHTTPRequest,
+		core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol))
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
@@ -235,60 +244,88 @@ func (m *Middleware) applyResponseHeaders(w http.ResponseWriter, fd core.FlowDat
 }
 
 func (m *Middleware) serveJavaScript(w http.ResponseWriter, r *http.Request) {
-	fd := m.process(r)
+	fd, failed := m.process(r)
 	js := ""
 	if data, err := fd.Get(javascriptbuilder.DataKey); err == nil {
 		if d, ok := data.(*javascriptbuilder.Data); ok {
 			js = d.JavaScript()
 		}
 	}
-	m.serveCacheable(w, r, fd, "application/x-javascript", []byte(js))
+	m.serveCacheable(w, r, fd, failed, "application/x-javascript", []byte(js))
 }
 
 func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
-	fd := m.process(r)
+	fd, failed := m.process(r)
 	jsonStr := "{}"
 	if data, err := fd.Get(jsonbuilder.DataKey); err == nil {
 		if d, ok := data.(*jsonbuilder.Data); ok {
 			jsonStr = d.JSON()
 		}
 	}
-	m.serveCacheable(w, r, fd, "application/json", []byte(jsonStr))
+	m.serveCacheable(w, r, fd, failed, "application/json", []byte(jsonStr))
 }
 
+// failedCacheControl is the Cache-Control of a response to a request whose
+// processing failed. A browser may keep the response but must ask again
+// before using it, and as the response has no ETag, asking again gets a full
+// response rather than a 304 that keeps the faulty one.
+const failedCacheControl = "private, no-cache"
+
 // serveCacheable writes the body with the cache-control, Vary, ETag,
-// Content-Type and Content-Length headers required by the specification, and
-// returns 304 Not Modified when the request's If-None-Match matches.
+// Content-Type and Content-Length headers required by the specification.
+// When the request's If-None-Match matches, a GET or HEAD gets 304 Not
+// Modified with the cache-control, Vary, ETag and CORS headers the 200 would
+// carry, and any other method gets 412 Precondition Failed with only the CORS
+// header (RFC 9110 sections 13.1.2 and 15.4.5). When processing failed the
+// response has failedCacheControl and no ETag, while a matching If-None-Match
+// still gets its 304, so a browser that holds a good response keeps it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#cache-header-detail
-func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, contentType string, body []byte) {
+func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, failed bool, contentType string, body []byte) {
 	etag := m.etag(fd)
-	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(m.maxAge.Seconds())))
-	if vary := m.varyHeader(); vary != "" {
-		w.Header().Set("Vary", vary)
-	}
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Content-Type", contentType)
+	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
-	// endpoints is permitted. The literal "null" origin is not reflected.
+	// endpoints is permitted, and can read a 304 or 412. The literal "null"
+	// origin is not reflected.
 	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}
+	if matched && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	}
 
-	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+	if failed {
+		w.Header().Set("Cache-Control", failedCacheControl)
+	} else {
+		w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(m.maxAge.Seconds())))
+		w.Header().Set("ETag", etag)
+	}
+	if vary := m.varyHeader(); vary != "" {
+		w.Header().Set("Vary", vary)
+	}
+	if matched {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
 
 // etag computes a hash over the Evidence values that the Pipeline's filter
-// accepts, so that the cached content is revalidated when relevant Evidence
-// changes.
+// accepts, as the request supplied them, so that the cached content is
+// revalidated when relevant Evidence changes. Values that Flow Elements add
+// while processing, such as a new session id, are left out. FNV-1a over the
+// sorted keys and their values has no per-process seed, so the same Evidence
+// gives the same ETag in every process, as a browser revalidating after a
+// restart or against another server needs.
+// The ETag is weak, W/"...", because a data file update can change the
+// content for the same Evidence without changing the hash (RFC 9110 sections
+// 8.8.1 and 8.8.3).
 func (m *Middleware) etag(fd core.FlowData) string {
 	filter := m.pipeline.EvidenceKeyFilter()
-	all := fd.Evidence().AsMap()
+	all := core.SuppliedEvidence(fd)
 	keys := make([]string, 0, len(all))
 	for k := range all {
 		if filter == nil || filter.Include(k) {
@@ -303,7 +340,63 @@ func (m *Middleware) etag(fd core.FlowData) string {
 		h.Write([]byte(fmt.Sprintf("%v", all[k])))
 		h.Write([]byte{0x1e})
 	}
-	return fmt.Sprintf(`"%x"`, h.Sum64())
+	return fmt.Sprintf(`W/"%x"`, h.Sum64())
+}
+
+// ifNoneMatchMatches reports whether the If-None-Match field lines match
+// etag, with the weak comparison RFC 9110 section 13.1.2 requires. The field
+// is "*", which matches because the endpoints always have content, or a list
+// of entity tags, one of which matches when its quoted part equals etag's,
+// with or without W/ on either (section 8.8.3.2). A field that is neither "*"
+// nor a comma separated list of entity tags does not match (section 13.1.2,
+// step 3).
+func ifNoneMatchMatches(lines []string, etag string) bool {
+	field := strings.TrimSpace(strings.Join(lines, ","))
+	if field == "*" {
+		return true
+	}
+	want := strings.TrimPrefix(etag, "W/")
+	matched, needComma := false, false
+	for {
+		field = strings.TrimLeft(field, " \t")
+		if field == "" {
+			return matched
+		}
+		if field[0] == ',' {
+			field, needComma = field[1:], false
+			continue
+		}
+		if needComma {
+			return false
+		}
+		opaque, rest, ok := scanEntityTag(field)
+		if !ok {
+			return false
+		}
+		matched = matched || opaque == want
+		field, needComma = rest, true
+	}
+}
+
+// scanEntityTag reads the entity tag at the start of s, as RFC 9110 section
+// 8.8.3 defines it, and returns its quoted part without W/ and the text after
+// it. ok is false when s does not start with an entity tag.
+func scanEntityTag(s string) (opaque, rest string, ok bool) {
+	s = strings.TrimPrefix(s, "W/")
+	if !strings.HasPrefix(s, `"`) {
+		return "", "", false
+	}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return s[:i+1], s[i+1:], true
+		case c == 0x21 || c >= 0x23 && c != 0x7f:
+			// etagc, a visible character other than '"', or obs-text.
+		default:
+			return "", "", false
+		}
+	}
+	return "", "", false
 }
 
 // varyHeader lists the HTTP headers in the Pipeline's Evidence key filter that

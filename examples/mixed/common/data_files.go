@@ -3,8 +3,8 @@
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -35,8 +35,8 @@ import (
 	"strings"
 )
 
-// The free data files the examples use when DD_DATA_FILE and DATA_FILE name
-// no others.
+// The free data files the examples use when _51DEGREES_DD_PATH and
+// _51DEGREES_IPI_PATH name no others.
 const (
 	DeviceDetectionDataFile = "51Degrees-LiteV4.1.hash"
 	IpIntelligenceDataFile  = "51Degrees-LiteV41.ipi"
@@ -54,12 +54,13 @@ const (
 const downloadSource = "examples-51degrees-go"
 
 // DataFile returns the path of the data file the environment variable names,
-// or of the free file when it is not set. A name that is not the path of a
-// file is looked for in the data repository's folder, from the working folder
-// up, and downloaded when the data repository links to it. Otherwise the name
-// is returned, so that the engine reports the file missing.
+// or the variable's deprecated name when the variable is not set, or of the
+// free file when neither is set. A name that is not the path of a file is
+// looked for in the data repository's folder, from the working folder up, and
+// downloaded when the data repository links to it. Otherwise the name is
+// returned, so that the engine reports the file missing.
 func DataFile(variable string, folder string, free string) string {
-	name := os.Getenv(variable)
+	name := fromEnvironment(variable)
 	if name == "" {
 		name = free
 	}
