@@ -5,7 +5,10 @@ Creates a go.work at the repository root that uses every module in it.
 .DESCRIPTION
 Each module requires the others at a published version, so an example copied
 out of the repository works as a customer's code would. The workspace makes
-them use the modules in this repository instead. go.work is not committed.
+them use the modules in this repository instead. go.work is committed, so a
+fresh clone builds every example against the modules here with no settings.
+Run this script after changing a requirement between these modules and commit
+go.work, because CI fails when the committed one differs from what it makes.
 
 The go line is the highest of the modules', so the workspace doesn't ask for a
 newer Go than they do.

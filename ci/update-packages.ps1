@@ -63,9 +63,18 @@ foreach ($module in 'common', 'device-detection', 'ip-intelligence', 'pipeline',
             }
         }
         # The go line stays as it is, so an update never asks for a newer Go
-        # than CI tests with. When the latest versions would, only patch
-        # versions are taken.
+        # than CI tests with, except that an example's go line moves with the
+        # published modules it requires, so it can take their latest release.
+        # When the latest versions need a newer Go still, only patch versions
+        # are taken.
         $goVersion = (go mod edit -json | ConvertFrom-Json).Go
+        if ($module -like 'examples/*') {
+            $needed = Get-ReleaseGoVersion $repoRoot $module
+            if ($needed -and (ConvertTo-GoVersion $needed) -gt (ConvertTo-GoVersion $goVersion)) {
+                Write-Output "Raising the go line of $module from $goVersion to $needed, as the published modules it requires ask"
+                $goVersion = $needed
+            }
+        }
         Write-Output "Updating the dependencies of $module"
         $PSNativeCommandUseErrorActionPreference = $false
         go get -u ./... "go@$goVersion" toolchain@none
@@ -84,3 +93,6 @@ foreach ($module in 'common', 'device-detection', 'ip-intelligence', 'pipeline',
         Pop-Location
     }
 }
+
+# The committed go.work follows the requirements updated above.
+& $PSScriptRoot/create-workspace.ps1
