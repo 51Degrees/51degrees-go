@@ -33,10 +33,13 @@ function Move-ExampleToRelease([string]$Folder, [string]$Release) {
 $repo = Join-Path $PSScriptRoot ".."
 
 # A fresh clone builds the examples with the committed go.work, so it must be
-# what create-workspace.ps1 makes from the go.mod files.
+# what create-workspace.ps1 makes from the go.mod files. git status, not git
+# diff, so that a go.work missing from the commit, or ignored, fails as well.
 & $PSScriptRoot/create-workspace.ps1
-git -C $repo diff --exit-code -- go.work
-if ($LASTEXITCODE -ne 0) {
+$status = git -C $repo status --porcelain --ignored -- go.work
+if ($status) {
+    Write-Host $status
+    git -C $repo --no-pager diff -- go.work | Out-Host
     throw "The committed go.work isn't what ci/create-workspace.ps1 makes, so run it and commit go.work"
 }
 

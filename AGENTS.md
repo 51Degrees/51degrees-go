@@ -236,6 +236,15 @@ differs from what the script makes (`ci/setup-environment.ps1`). The nightly
 package update runs the script as well. Nothing else may add a `replace` to a
 `go.mod`, as it would be published with the module.
 
+Go's [modules reference](https://go.dev/ref/mod#workspaces) calls committing
+`go.work` "generally inadvisable", and allows it for modules "developed
+exclusively with each other" when "the module author should ensure the
+individual modules are tested and released properly". These modules are
+developed only with each other, so CI does that in two ways. It builds each
+published module without the workspace (`GOWORK=off` in
+`ci/build-project.ps1`), and after each release it tests the examples against
+the published modules with `go.work` removed (`ci/setup-environment.ps1`).
+
 CI tests with the workspace when a folder of a published module (`common`,
 `device-detection`, `ip-intelligence`, `pipeline`) has changed since the
 latest release, that is when it tests the next release. Otherwise CI tests the
