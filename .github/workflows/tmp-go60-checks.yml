@@ -98,6 +98,7 @@ jobs:
           function Save-Case([string]$Message) {
             git -C $repo add -A
             git -C $repo commit --quiet -m $Message
+            if ($LASTEXITCODE -ne 0) { throw "Nothing to commit for $Message" }
           }
 
           $head = git -C $repo rev-parse HEAD
@@ -130,7 +131,9 @@ jobs:
 
           git -C $repo reset --quiet --hard $r1
           Push-Location (Join-Path $repo ip-intelligence)
-          go mod edit -require=github.com/51Degrees/51degrees-go/pipeline/v4@v4.5.174
+          # Quoted, as PowerShell splits an unquoted -name=value at its first dot.
+          go mod edit "-require=github.com/51Degrees/51degrees-go/pipeline/v4@v4.5.174"
+          if ($LASTEXITCODE -ne 0) { throw 'go mod edit failed' }
           Pop-Location
           Save-Case 'R5'
           Invoke-Case 'R5 R1 and ip-intelligence requiring pipeline v4.5.174 alone' 'stopped: ip-intelligence/go.mod requires github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.174, which has no tag pipeline/v4.5.174, and this publish does not release pipeline.'
