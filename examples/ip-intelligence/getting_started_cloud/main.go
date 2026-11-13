@@ -38,7 +38,7 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 
 The cloud service needs a Resource Key that includes IP Intelligence
 properties. Create one for free with the
-[Configurator](https://configure.51degrees.com/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-getting_started_cloud-main.go&utm_term=resource-key),
+[configuration page](https://51degrees.com/configure/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-getting_started_cloud-main.go&utm_term=resource-key),
 then put it in the `_51DEGREES_RESOURCE_KEY` environment variable, or give it
 as the example's first argument.
 
@@ -69,7 +69,7 @@ import (
 const resourceKeyVariable = "_51DEGREES_RESOURCE_KEY"
 
 // configuratorURL is where a Resource Key can be created for free.
-const configuratorURL = "https://configure.51degrees.com/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-getting_started_cloud-main.go&utm_term=resource-key-required"
+const configuratorURL = "https://51degrees.com/configure/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-getting_started_cloud-main.go&utm_term=resource-key-required"
 
 // findOutMore is printed when the example finishes.
 const findOutMore = `
