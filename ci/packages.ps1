@@ -46,11 +46,9 @@ function Read-GoMod([string]$RepoPath, $Package) {
     }
 }
 
-# Stops when a module's go.mod and packages.json disagree about which of these
-# modules it requires, because the plan would then leave out a module that
-# must be released with another, or when it requires one at a version with no
-# tag, which nobody could download.
-function Assert-ModuleRequirements([string]$RepoPath, $Packages) {
+# The requirements of each published module on the others, one entry for each
+# with the module, the one it requires, its module path and the version.
+function Get-ModuleRequirements([string]$RepoPath, $Packages) {
     $published = @($Packages | Where-Object { $_.Publish -eq $true })
     $mods = @{}
     $byModule = @{}
@@ -60,18 +58,28 @@ function Assert-ModuleRequirements([string]$RepoPath, $Packages) {
     }
     foreach ($package in $published) {
         $requires = $mods[$package.Name].Requires
-        $required = @(foreach ($path in $requires.Keys) {
-            if ($byModule.ContainsKey($path) -eq $false) {
-                continue
+        foreach ($path in $requires.Keys) {
+            if ($byModule.ContainsKey($path) -eq $true) {
+                [pscustomobject]@{
+                    Package = $package
+                    Dependency = $byModule[$path]
+                    ModulePath = $path
+                    Version = $requires[$path].TrimStart('v')
+                }
             }
-            $dependency = $byModule[$path]
-            $tag = Get-GoTag $dependency $requires[$path].TrimStart('v')
-            if (-not (git -C $RepoPath tag --list $tag)) {
-                throw "$($package.Path)/go.mod requires $path " +
-                    "$($requires[$path]), which has no tag $tag."
-            }
-            $dependency.Name
-        })
+        }
+    }
+}
+
+# Stops when a module's go.mod and packages.json disagree about which of these
+# modules it requires, because the plan would then leave out a module that
+# must be released with another.
+function Assert-ModuleRequirements([string]$RepoPath, $Packages) {
+    $requirements = @(Get-ModuleRequirements $RepoPath $Packages)
+    foreach ($package in @($Packages | Where-Object { $_.Publish -eq $true })) {
+        $required = @($requirements |
+            Where-Object { $_.Package.Name -eq $package.Name } |
+            ForEach-Object { $_.Dependency.Name })
         $inGoMod = (@($required | Sort-Object) -join ', ')
         $inPackages = (@($package.DependsOn | Sort-Object) -join ', ')
         if ($inGoMod -ne $inPackages) {
@@ -147,5 +155,36 @@ function Get-ModuleReleasePlan([string]$RepoPath) {
     $packages = Get-Packages $RepoPath
     Assert-ModuleRequirements $RepoPath $packages
     Sync-PlanTags $RepoPath $packages
-    return @(Get-ReleasePlan $RepoPath $packages)
+    $plan = @(Get-ReleasePlan $RepoPath $packages)
+    Assert-RequiredVersions $RepoPath $packages $plan
+    return $plan
+}
+
+# Stops when a module's go.mod requires one of these modules at a version with
+# no tag that this publish does not release, which nobody could download. A
+# module that needs a change to another in the same release requires the
+# version the plan releases of it (see Get-UnreleasedRequirementReplaces in
+# products.ps1), and the publish tags it on a commit with go.sum to match.
+function Assert-RequiredVersions([string]$RepoPath, $Packages, $Plan) {
+    $planned = @{}
+    foreach ($release in $Plan) {
+        $planned[$release.Name] = "$($release.Version)"
+    }
+    foreach ($requirement in @(Get-ModuleRequirements $RepoPath $Packages)) {
+        $tag = Get-GoTag $requirement.Dependency $requirement.Version
+        if (git -C $RepoPath tag --list $tag) {
+            continue
+        }
+        $name = $requirement.Dependency.Name
+        if ($planned[$name] -eq $requirement.Version) {
+            continue
+        }
+        $releases = "does not release $name"
+        if ($planned.ContainsKey($name) -eq $true) {
+            $releases = "releases $name $($planned[$name])"
+        }
+        throw "$($requirement.Package.Path)/go.mod requires " +
+            "$($requirement.ModulePath) v$($requirement.Version), which has " +
+            "no tag $tag, and this publish $releases."
+    }
 }

@@ -299,8 +299,10 @@ CI also builds each published module without the workspace (`GOWORK=off`), to
 check the module as it is published.
 
 When an engine needs a change to `common` or `pipeline` in the same release,
-its `go.mod` requires that module at the version the next release publishes,
-because the release tags every module at the same commit. That version is not
+its `go.mod` requires that module at the version the release plan gives it,
+the module's last version with one more patch. Any other version with no tag
+stops the plan (`Assert-RequiredVersions` in `ci/packages.ps1`), and the
+publish tags the engine on a commit whose `go.sum` matches. That version is not
 published until then, so the build without the workspace takes it from the
 module's folder through a copy of `go.mod`, and the nightly package update
 leaves the module alone (`Get-UnreleasedRequirementReplaces` in
