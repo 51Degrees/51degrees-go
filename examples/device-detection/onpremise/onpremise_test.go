@@ -27,19 +27,49 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-func test(t *testing.T, name string) {
+// run runs an example in the environment given, or in this process's when
+// that is nil, prints what it printed and returns it.
+func run(t *testing.T, name string, environment []string) string {
 	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	cmd.Env = environment
+	output, err := cmd.CombinedOutput()
+	os.Stdout.Write(output)
+	if err != nil {
 		t.Error(err)
+	}
+	return string(output)
+}
+
+func test(t *testing.T, name string) {
+	run(t, name, nil)
+}
+
+// testEnterprise runs an example and checks that it shows the properties only
+// the Enterprise data file has, with the link to ask for a copy when the data
+// file in use lacks them.
+func testEnterprise(t *testing.T, name string) {
+	checkEnterprise(t, name, run(t, name, nil))
+}
+
+// testFree runs an example as a fresh clone would, without the settings CI
+// gives the other tests, so that it uses the free data files and evidence,
+// and checks it shows the properties only the Enterprise data file has.
+func testFree(t *testing.T, name string) {
+	checkEnterprise(t, name, run(t, name, withoutSettings(os.Environ())))
+}
+
+func checkEnterprise(t *testing.T, name, output string) {
+	if err := dd_example.CheckEnterprise(output); err != nil {
+		t.Errorf("%s: %v", name, err)
 	}
 }
 
 func TestGettingStarted(t *testing.T) {
-	test(t, "getting_started")
+	testEnterprise(t, "getting_started")
 }
 
 func TestGettingStartedFreeDataFile(t *testing.T) {
@@ -51,35 +81,27 @@ func TestUpdatePollingIntervalFreeDataFile(t *testing.T) {
 }
 
 func TestMatchDeviceId(t *testing.T) {
-	test(t, "match_device_id")
+	testEnterprise(t, "match_device_id")
 }
 
 func TestMatchMetrics(t *testing.T) {
-	test(t, "match_metrics")
+	testEnterprise(t, "match_metrics")
 }
 
 func TestOfflineProcessing(t *testing.T) {
-	test(t, "offline_processing")
+	testEnterprise(t, "offline_processing")
+}
+
+func TestPerformance(t *testing.T) {
+	testEnterprise(t, "performance")
 }
 
 func TestReloadFromFile(t *testing.T) {
-	test(t, "reload_from_file")
+	testEnterprise(t, "reload_from_file")
 }
 
-func TestStronglyTyped(t *testing.T) {
+func TestUpdatePollingInterval(t *testing.T) {
 	test(t, "update_polling_interval")
-}
-
-// testFree runs an example as a fresh clone would, without the settings CI
-// gives the other tests, so that it uses the free data files and evidence.
-func testFree(t *testing.T, name string) {
-	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Env = withoutSettings(os.Environ())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Error(err)
-	}
 }
 
 // withoutSettings returns the environment without the variables that name a

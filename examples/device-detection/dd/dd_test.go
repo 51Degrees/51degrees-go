@@ -28,33 +28,47 @@ import (
 	"testing"
 )
 
-func test(t *testing.T, name string) {
-	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+// test runs an example, prints what it printed and returns it.
+func test(t *testing.T, name string) string {
+	output, err := exec.Command("go", "run", "./"+name).CombinedOutput()
+	os.Stdout.Write(output)
+	if err != nil {
 		t.Error(err)
+	}
+	return string(output)
+}
+
+// testEnterprise runs an example and checks that it shows the properties only
+// the Enterprise data file has, with the link to ask for a copy when the data
+// file in use lacks them.
+func testEnterprise(t *testing.T, name string) {
+	if err := CheckEnterprise(test(t, name)); err != nil {
+		t.Errorf("%s: %v", name, err)
 	}
 }
 
 func TestGettingStarted(t *testing.T) {
-	test(t, "getting_started")
+	testEnterprise(t, "getting_started")
 }
 
 func TestMatchDeviceId(t *testing.T) {
-	test(t, "match_device_id")
+	testEnterprise(t, "match_device_id")
 }
 
 func TestMatchMetrics(t *testing.T) {
-	test(t, "match_metrics")
+	testEnterprise(t, "match_metrics")
 }
 
 func TestOfflineProcessing(t *testing.T) {
-	test(t, "offline_processing")
+	testEnterprise(t, "offline_processing")
+}
+
+func TestPerformance(t *testing.T) {
+	testEnterprise(t, "performance")
 }
 
 func TestReloadFromFile(t *testing.T) {
-	test(t, "reload_from_file")
+	testEnterprise(t, "reload_from_file")
 }
 
 func TestReloadFromMemory(t *testing.T) {

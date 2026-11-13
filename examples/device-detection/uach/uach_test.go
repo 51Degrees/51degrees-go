@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 /*
@@ -324,5 +325,26 @@ func TestHandler(t *testing.T) {
 			// Make sure manager object will be freed after the function execution
 			manager.Free()
 		}
+	}
+}
+
+// TestHandlerShowsEnterprise checks the page shows the properties only the
+// Enterprise data file has, with the link to ask for a copy when the data file
+// lacks them.
+func TestHandlerShowsEnterprise(t *testing.T) {
+	manager = dd.NewResourceManager()
+	defer manager.Free()
+	config = dd.NewConfigHash(dd.Balanced)
+	config.SetUseUpperPrefixHeaders(false)
+	filePath := examples.GetFilePathByName([]string{examples.LiteDataFile})
+	if err := dd.InitManagerFromFile(manager, *config, "", filePath); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("User-Agent", chromeUA)
+	rr := httptest.NewRecorder()
+	http.HandlerFunc(handler).ServeHTTP(rr, r)
+	if err := examples.CheckEnterprise(rr.Body.String()); err != nil {
+		t.Error(err)
 	}
 }

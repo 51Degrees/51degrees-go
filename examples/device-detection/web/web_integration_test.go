@@ -38,6 +38,7 @@ import (
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 func TestMain(m *testing.M) {
@@ -120,5 +121,21 @@ func TestHandler(t *testing.T) {
 			"\"\n"+
 			"%s\n"+
 			"\"\n", exp, act)
+	}
+}
+
+// TestHandlerShowsEnterprise checks the page shows the properties only the
+// Enterprise data file has, with the link to ask for a copy when the data file
+// lacks them.
+func TestHandlerShowsEnterprise(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("User-Agent",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) "+
+			"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 "+
+			"Safari/9537.53")
+	rr := httptest.NewRecorder()
+	http.HandlerFunc(handler).ServeHTTP(rr, r)
+	if err := examples.CheckEnterprise(rr.Body.String()); err != nil {
+		t.Error(err)
 	}
 }
