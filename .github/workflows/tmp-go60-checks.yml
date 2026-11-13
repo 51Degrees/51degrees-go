@@ -1,0 +1,144 @@
+name: Temporary release plan checks for pull request 60
+
+# Throwaway, on tmp/go60-* branches only. Runs the release plan tests, then
+# the plan and a publish dry run on this repository's real tags, for each case
+# below, made as local commits that are never pushed. Reads no secret.
+
+on:
+  push:
+    branches:
+      - 'tmp/go60-*'
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Release plan tests - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: 51degrees-go
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: 51Degrees/common-ci
+          path: common-ci
+          persist-credentials: false
+      - name: Run the tests
+        shell: pwsh
+        run: |
+          $env:COMMON_CI = (Resolve-Path common-ci).Path
+          $result = Invoke-Pester 51degrees-go/ci/packages.Tests.ps1 `
+            -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed' -or $result.PassedCount -eq 0) {
+            exit 1
+          }
+
+  plan:
+    name: Plan and publish dry run on the real tags
+    runs-on: ubuntu-latest
+    steps:
+      # Laid out as common-ci's publish lays it out, common-ci at the root and
+      # this repository inside it.
+      - uses: actions/checkout@v4
+        with:
+          repository: 51Degrees/common-ci
+          path: common-ci
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: common-ci/51degrees-go
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Each case
+        shell: pwsh
+        working-directory: common-ci
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = '51degrees-go'
+          git -C $repo config user.name 'Plan check'
+          git -C $repo config user.email 'plan-check@example.com'
+          $original = @(git -C $repo tag --list)
+          $results = [Collections.Generic.List[string]]::new()
+
+          function Invoke-Case([string]$Name, [string]$Expect) {
+            Write-Host "::group::$Name"
+            $planned = ''
+            try {
+              . "./$repo/ci/packages.ps1"
+              $plan = @(Get-ModuleReleasePlan $repo)
+              Remove-PlanTags $repo (Get-Packages $repo)
+              $planned = ($plan | ForEach-Object { "$($_.Name) $($_.Version)" }) -join ', '
+              & "./$repo/ci/package-update-required.ps1" -RepoName $repo
+              $global:LASTEXITCODE = 0
+              & "./$repo/ci/publish-package.ps1" -RepoName $repo -OrgName 51Degrees -DryRun $true
+            } catch {
+              $planned = "stopped: $($_.Exception.Message)"
+              Write-Host $planned
+            }
+            foreach ($tag in @(git -C $repo tag --list)) {
+              if ($original -notcontains $tag) { git -C $repo tag -d $tag | Out-Null }
+            }
+            Write-Host "::endgroup::"
+            if (!$planned) { $planned = 'nothing' }
+            $ok = $planned -like $Expect
+            $results.Add("$($ok ? 'PASS' : 'FAIL') | $Name | $planned | expected $Expect")
+          }
+
+          function Edit-File([string]$File, [string]$Text) {
+            Add-Content -Path (Join-Path $repo $File) -Value $Text
+          }
+          function Save-Case([string]$Message) {
+            git -C $repo add -A
+            git -C $repo commit --quiet -m $Message
+          }
+
+          $head = git -C $repo rev-parse HEAD
+          Invoke-Case 'R0 the branch as it is' 'device-detection 4.5.174, ip-intelligence 4.5.174'
+
+          # The requirements the nightly raised after 4.5.173, put back as
+          # they were at the 4.5.173 tags, so nothing else differs.
+          git -C $repo checkout common/v4.5.173 -- device-detection/go.mod `
+            device-detection/go.sum ip-intelligence/go.mod ip-intelligence/go.sum
+          Save-Case 'R1 requirements as at 4.5.173'
+          $r1 = git -C $repo rev-parse HEAD
+          Invoke-Case 'R1 requirements as at the 4.5.173 tags' 'nothing'
+
+          Edit-File 'pipeline/core/config.go' '// plan check'
+          Save-Case 'R2'
+          Invoke-Case 'R2 R1 and a pipeline source file' 'pipeline 4.5.174, ip-intelligence 4.5.174'
+
+          git -C $repo reset --quiet --hard $r1
+          Edit-File 'common/errors.go' '// plan check'
+          Save-Case 'R3'
+          Invoke-Case 'R3 R1 and a common source file' 'common 4.5.174, device-detection 4.5.174, ip-intelligence 4.5.174'
+
+          git -C $repo reset --quiet --hard $r1
+          Edit-File 'device-detection/dd/evidence_test.go' '// plan check'
+          Edit-File 'pipeline/README.md' 'plan check'
+          Edit-File 'examples/pipeline/starsign/starsign.go' '// plan check'
+          Edit-File 'ci/products.ps1' '# plan check'
+          Save-Case 'R4'
+          Invoke-Case 'R4 R1 and a test, a readme, an example and CI' 'nothing'
+
+          git -C $repo reset --quiet --hard $r1
+          Push-Location (Join-Path $repo ip-intelligence)
+          go mod edit -require=github.com/51Degrees/51degrees-go/pipeline/v4@v4.5.174
+          Pop-Location
+          Save-Case 'R5'
+          Invoke-Case 'R5 R1 and ip-intelligence requiring pipeline v4.5.174 alone' 'stopped: ip-intelligence/go.mod requires github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.174, which has no tag pipeline/v4.5.174, and this publish does not release pipeline.'
+
+          Edit-File 'pipeline/core/config.go' '// plan check'
+          Save-Case 'R6'
+          Invoke-Case 'R6 R5 and a pipeline source file' 'pipeline 4.5.174, ip-intelligence 4.5.174'
+
+          git -C $repo reset --quiet --hard $head
+          Write-Host ($results -join "`n")
+          if ($results | Where-Object { $_ -like 'FAIL*' }) { exit 1 }
