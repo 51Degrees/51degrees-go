@@ -1,0 +1,17 @@
+name: Temporary Enterprise example tests
+
+on: push
+
+jobs:
+  test:
+    name: Device Detection example tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Go version
+        run: go version
+      - name: Example tests, with no settings, as a fresh clone
+        working-directory: examples/device-detection
+        run: go test -v -count=1 -timeout 40m ./...
