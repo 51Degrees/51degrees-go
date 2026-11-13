@@ -25,6 +25,7 @@ package dd
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -75,6 +76,16 @@ func TestReloadFromMemory(t *testing.T) {
 	test(t, "reload_from_memory")
 }
 
+// TestStronglyTyped runs the example and checks that it reads values as their
+// Go types and shows the properties only the Enterprise data file has.
 func TestStronglyTyped(t *testing.T) {
-	test(t, "strongly_typed")
+	output := test(t, "strongly_typed")
+	if err := CheckEnterprise(output); err != nil {
+		t.Errorf("strongly_typed: %v", err)
+	}
+	for _, typed := range []string{"IsMobile: true (bool)", " (int)"} {
+		if !strings.Contains(output, typed) {
+			t.Errorf("strongly_typed does not show %q", typed)
+		}
+	}
 }
