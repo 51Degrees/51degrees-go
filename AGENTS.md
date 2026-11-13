@@ -234,11 +234,14 @@ CI makes the workspace only when a folder of a published module (`common`,
 `device-detection`, `ip-intelligence`, `pipeline`) has changed since the
 latest release, that is when it tests the next release
 (`ci/setup-environment.ps1`). The examples then run against that code, as the
-.NET repository's CI does with its projects. Otherwise they run against the published modules their go.mod files
-name. The same check decides whether there is a release at all
-(`ci/get-next-package-version.ps1`), so a change to the examples, the
-documentation or CI alone releases nothing. The nightly package update moves
-the examples to the latest release.
+.NET repository's CI does with its projects. Otherwise CI tests the latest
+release, so the examples run against the published modules at that version.
+An example's `go.mod` can name an earlier release, because the nightly package
+update moves the examples to the latest release on `rc`, and `main` has the
+move only after its next release. So CI moves those requirements first, in its
+own checkout, and commits nothing. The same check decides whether there is a
+release at all (`ci/get-next-package-version.ps1`), so a change to the
+examples, the documentation or CI alone releases nothing.
 
 CI also builds each published module without the workspace (`GOWORK=off`), to
 check the module as it is published.
