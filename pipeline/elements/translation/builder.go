@@ -35,6 +35,7 @@ import (
 type Builder struct {
 	logger          *slog.Logger
 	sourceKey       string
+	elementDataKey  string
 	patterns        []string
 	contents        map[string]string
 	translations    []mapping
@@ -52,6 +53,11 @@ func (b *Builder) SetLogger(l *slog.Logger) *Builder { b.logger = l; return b }
 
 // SetSourceElementDataKey sets the Element Data key whose values are translated.
 func (b *Builder) SetSourceElementDataKey(key string) *Builder { b.sourceKey = key; return b }
+
+// SetElementDataKey sets the Element Data key under which this Engine stores its
+// translated Properties. It defaults to DataKey, which is shared by all
+// Translation Engines; set a distinct key to keep an Engine's output separate.
+func (b *Builder) SetElementDataKey(key string) *Builder { b.elementDataKey = key; return b }
 
 // AddSource adds a translation source file path or glob pattern.
 func (b *Builder) AddSource(pattern string) *Builder {
@@ -87,21 +93,8 @@ func (b *Builder) Build() (*Engine, error) {
 	if b.sourceKey == "" {
 		return nil, core.NewConfigurationError("a SourceElementDataKey is required for a TranslationEngine", nil)
 	}
-	lookups := map[string]map[string]string{}
 
-	add := func(name, content string) {
-		locale := localeFromName(name)
-		if locale == "" {
-			return
-		}
-		if lookups[locale] == nil {
-			lookups[locale] = map[string]string{}
-		}
-		for k, v := range parseFlatYAML(content) {
-			lookups[locale][k] = v
-		}
-	}
-
+	sources := map[string]string{}
 	for _, pattern := range b.patterns {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
@@ -112,20 +105,45 @@ func (b *Builder) Build() (*Engine, error) {
 			if err != nil {
 				return nil, core.NewConfigurationError("could not read translation source '"+path+"'", err)
 			}
-			add(filepath.Base(path), string(data))
+			sources[filepath.Base(path)] = string(data)
 		}
 	}
 	for name, content := range b.contents {
-		add(name, content)
+		sources[name] = content
+	}
+
+	// Validate the configuration up front rather than silently building a
+	// no-op engine.
+	if len(b.translations) == 0 {
+		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation (AddTranslation)", nil)
+	}
+	if len(sources) == 0 {
+		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation source", nil)
+	}
+	for name := range sources {
+		if localeFromName(name) == "" {
+			return nil, core.NewConfigurationError("translation source '"+name+"' does not encode a valid locale", nil)
+		}
+	}
+
+	elementDataKey := b.elementDataKey
+	if elementDataKey == "" {
+		elementDataKey = DataKey
 	}
 
 	e := &Engine{
-		BaseElement:     core.NewBaseElement(DataKey, core.NewWhitelistFilter(EvidenceTranslation, EvidenceAcceptLanguage), b.logger),
+		BaseElement: core.NewBaseElement(
+			elementDataKey,
+			core.NewWhitelistFilter(
+				EvidenceTranslation,
+				EvidenceQueryAcceptLanguage,
+				EvidenceAcceptLanguage),
+			b.logger),
 		sourceKey:       b.sourceKey,
 		translations:    b.translations,
 		fixedLanguage:   b.fixedLanguage,
 		missingBehavior: b.missingBehavior,
-		lookups:         lookups,
+		languages:       NewLanguages(BuildLookups(sources)),
 	}
 	props := make([]core.PropertyMetadata, 0, len(b.translations))
 	for _, m := range b.translations {
@@ -180,6 +198,29 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 		}
 	}
 	return b.Build()
+}
+
+// BuildLookups parses translation source contents (each keyed by a filename that
+// encodes the locale, e.g. "countries.fr_FR.yml") into a map of normalized
+// locale -> (source value -> translated value). Sources whose name does not
+// encode a locale are ignored, and sources for the same locale are merged.
+// It is exported so callers embedding their own YAML (e.g. an IP Intelligence
+// translation engine) build lookups exactly as the Builder does.
+func BuildLookups(sources map[string]string) map[string]map[string]string {
+	lookups := map[string]map[string]string{}
+	for name, content := range sources {
+		locale := localeFromName(name)
+		if locale == "" {
+			continue
+		}
+		if lookups[locale] == nil {
+			lookups[locale] = map[string]string{}
+		}
+		for k, v := range parseFlatYAML(content) {
+			lookups[locale][k] = v
+		}
+	}
+	return lookups
 }
 
 // localeFromName extracts the locale from a source file name. It supports the
