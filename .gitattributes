@@ -2,3 +2,7 @@
 # endings are kept as they are.
 device-detection/dd/device-detection-cxx.[ch] -text
 ip-intelligence/ipi_interop/ip-intelligence-cxx.[ch] -text
+
+# Made by ci/create-workspace.ps1, which Go writes with LF endings. CI checks
+# the committed copy with git status, which reports a CRLF checkout as changed.
+go.work text eol=lf
