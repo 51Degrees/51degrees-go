@@ -206,6 +206,19 @@ the service that the example starts itself, with the placeholder key
   through `go test`, with the Lite file linked into `examples/device-detection`
   (`ci/fetch-assets.ps1`) rather than read from `cxx`.
 
+## Environment variable names
+
+[common-ci's list of environment variable names](https://github.com/51Degrees/common-ci/blob/18f9a570ed862a0b7e1ecb1c55a8319f35f02491/environment-variables.md)
+holds every environment variable name that the packages, tests, examples and
+CI scripts of every language read, with what each name holds and the
+deprecated names each replaced. The list decides. Use the names it gives, and
+when a change needs a new name, or reads an old name again, change
+[`environment-variables.json`](https://github.com/51Degrees/common-ci/blob/18f9a570ed862a0b7e1ecb1c55a8319f35f02491/environment-variables.json)
+in common-ci in the same piece of work. This repository's own name
+check, [`common/variable_names_test.go`](common/variable_names_test.go), still keeps a
+list of its own. Where the two differ, common-ci's list is the one to
+follow.
+
 ## Module paths and tags
 
 Each module's path is the repository path plus its folder, such as
