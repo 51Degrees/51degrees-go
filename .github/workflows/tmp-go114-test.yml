@@ -1,0 +1,25 @@
+name: Temporary missing property message test for pull request 114
+
+# Throwaway, on tmp/go114-* branches only.
+
+on:
+  push:
+    branches:
+      - 'tmp/go114-*'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Missing property message tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+        run: go test -v ./engines/missingproperty/...
