@@ -17,15 +17,17 @@ otherwise.
 
 Each folder under `examples` is a Go module of its own that requires the
 published modules at the version in its `go.mod`, as a customer's code would.
-So `go run` downloads those modules and compiles their C code through cgo, and
-nothing in this repository needs building first. `pwsh ci/create-workspace.ps1`
-makes the examples use the code in this repository instead, as the README says.
+In a clone, the committed `go.work` at the root makes the examples use the
+modules in this repository instead, so `go run` compiles their C code through
+cgo with no settings, and nothing needs building first. Copied out of the
+repository, an example downloads the published modules its `go.mod` names.
 
 ### Prerequisites
 
 - Git.
-- Go 1.21 or later, because the IP Intelligence modules ask for 1.21.0. CI
-  tests Go 1.23 and 1.24 (`ci/options.json`).
+- Go 1.22 or later, because the IP Intelligence and Pipeline modules ask for
+  1.22. The Device Detection module on its own asks for 1.19. CI tests Go 1.23
+  and 1.24 (`ci/options.json`).
 - A C compiler for cgo, being GCC on Linux, Clang on macOS and MinGW-x64 on
   Windows, with `libatomic`, which usually comes with GCC and Clang.
 - On Windows, the MinGW-x64 `bin` folder on the `PATH` (by default
@@ -35,8 +37,8 @@ makes the examples use the code in this repository instead, as the README says.
   go env -w CGO_ENABLED=1
   ```
 
-- Network access to GitHub, to the Go module proxy for the published modules,
-  and to `distributor.51degrees.com` for the data files.
+- Network access to GitHub, to the Go module proxy for the modules the
+  examples use, and to `distributor.51degrees.com` for the data files.
 - For the data files, `curl`, `gzip` and `md5sum` (`md5` on macOS) on Linux
   and macOS, where the examples download with the shell script, and Windows
   PowerShell 5.1 or PowerShell 7 on Windows, where they use the PowerShell
@@ -98,7 +100,7 @@ The Device Detection example finds `51Degrees-LiteV4.1.hash` by searching
 every folder below the folder two above the one it runs in, and takes the
 first file with that name in lexical order (`GetFilePathByName` in
 `examples/device-detection/dd/example_base.go`, which calls `dd.GetFilePath`
-in the published module). From `examples/device-detection` that is the
+in the Device Detection module). From `examples/device-detection` that is the
 repository root, so the search reaches `cxx/data/device-detection`. The
 example downloads the file only when the search finds no file with that name
 at all, so download it first, as "Data files" says.
@@ -223,25 +225,35 @@ The repository has one version, and only the patch number moves
 ## The workspace
 
 Each module requires the others at a published version, so the examples work
-as a customer's code would when copied out. `ci/create-workspace.ps1` makes a
-`go.work` that uses every module here instead. Go still looks for a required
-version that isn't published even when that module is in the workspace, so the
-script also adds a `replace` for each requirement between these modules.
-`go.work` is never committed, and nothing else may add a `replace` to a
+as a customer's code would when copied out. The committed `go.work` at the root
+uses every module here instead, so a fresh clone builds every example against
+the code in this repository with no settings. `ci/create-workspace.ps1` makes
+it. Go still looks for a required version that isn't published even when that
+module is in the workspace, so the script also adds a `replace` for each
+requirement between these modules. Run the script after changing such a
+requirement and commit `go.work`, because CI fails when the committed one
+differs from what the script makes (`ci/setup-environment.ps1`). The nightly
+package update runs the script as well. Nothing else may add a `replace` to a
 `go.mod`, as it would be published with the module.
 
-CI makes the workspace only when a folder of a published module (`common`,
+CI tests with the workspace when a folder of a published module (`common`,
 `device-detection`, `ip-intelligence`, `pipeline`) has changed since the
-latest release, that is when it tests the next release
-(`ci/setup-environment.ps1`). The examples then run against that code, as the
-.NET repository's CI does with its projects. Otherwise CI tests the latest
-release, so the examples run against the published modules at that version.
-An example's `go.mod` can name an earlier release, because the nightly package
-update moves the examples to the latest release on `rc`, and `main` has the
-move only after its next release. So CI moves those requirements first, in its
-own checkout, and commits nothing. The same check decides whether there is a
-release at all (`ci/get-next-package-version.ps1`), so a change to the
-examples, the documentation or CI alone releases nothing.
+latest release, that is when it tests the next release. Otherwise CI tests the
+latest release, so it removes `go.work` from its own checkout and the examples
+run against the published modules at that version. An example's `go.mod` can
+name an earlier release, because the nightly package update moves the examples
+to the latest release on `rc`, and `main` has the move only after its next
+release. So CI moves those requirements first, in its own checkout, and
+commits nothing. The same check decides whether there is a release at all
+(`ci/get-next-package-version.ps1`), so a change to the examples, the
+documentation or CI alone releases nothing.
+
+An example's `go` line is at least the highest `go` line of the published
+modules it requires, because Go won't take a module that asks for a newer Go
+than the example does. The nightly package update raises it to that line at the
+latest release (`Get-ReleaseGoVersion` in `ci/products.ps1`). When a published
+module raises its `go` line, the minimum Go version under "Prerequisites" and
+in that module's README moves with it.
 
 CI also builds each published module without the workspace (`GOWORK=off`), to
 check the module as it is published.

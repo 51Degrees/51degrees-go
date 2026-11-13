@@ -18,7 +18,7 @@ This Go version contains the following packages:
 - `ipi_onpremise` - a higher level Engine API providing IP Intelligence library and file update functions
 
 ### Minimum Go Version
-- Go 1.19
+- Go 1.22
 
 ## Setup Instructions
 

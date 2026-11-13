@@ -30,18 +30,25 @@ function Move-ExampleToRelease([string]$Folder, [string]$Release) {
     }
 }
 
-# When a published module has changed since the latest release, the tests are
-# of the next release, so the examples use the modules in this repository.
-# Otherwise they are of the latest release, so the examples use the published
-# modules at that version, as a customer's code does when it takes the release.
-# An example's go.mod can name an earlier release, because the nightly package
-# update moves the examples on rc and main has the move only after its next
-# release, so such a requirement is moved first. Nothing is committed.
 $repo = Join-Path $PSScriptRoot ".."
-Remove-Item (Join-Path $repo go.work), (Join-Path $repo go.work.sum) -ErrorAction SilentlyContinue
-if (Test-UnreleasedLibraryChange $repo) {
-    & $PSScriptRoot/create-workspace.ps1
-} else {
+
+# A fresh clone builds the examples with the committed go.work, so it must be
+# what create-workspace.ps1 makes from the go.mod files.
+& $PSScriptRoot/create-workspace.ps1
+git -C $repo diff --exit-code -- go.work
+if ($LASTEXITCODE -ne 0) {
+    throw "The committed go.work isn't what ci/create-workspace.ps1 makes, so run it and commit go.work"
+}
+
+# When a published module has changed since the latest release, the tests are
+# of the next release, so the examples use the workspace. Otherwise they are of
+# the latest release, so the examples use the published modules at that
+# version, as a customer's code does when it takes the release. An example's
+# go.mod can name an earlier release, because the nightly package update moves
+# the examples on rc and main has the move only after its next release, so such
+# a requirement is moved first. Nothing is committed.
+if (!(Test-UnreleasedLibraryChange $repo)) {
+    Remove-Item (Join-Path $repo go.work), (Join-Path $repo go.work.sum) -ErrorAction SilentlyContinue
     $release = Get-LatestRelease $repo
     Write-Host "No published module has changed since $release, so the examples use the published modules at $release"
     $env:GOWORK = 'off'

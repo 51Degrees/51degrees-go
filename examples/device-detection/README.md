@@ -58,7 +58,7 @@ Below is a table that describes the examples:
 | onpremise/performance/performance.go                         | Performance tests implemented using onpremise Engine API                                                                                                                                                                                                                                                                       |
 ## Run examples
 
-The examples use the published module, as your own code would. To run them against the code in this repository instead, run `../../ci/create-workspace.ps1` first.
+In a clone of this repository, the `go.work` at its root makes the examples use the code in the repository, so they run with no settings. Copied out of it, they use the published module their `go.mod` names, as your own code would.
 
 ```
 go run ./[dd/onpremise]/example_dir
