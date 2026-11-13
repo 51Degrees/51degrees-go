@@ -530,6 +530,12 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 		if !log.hasPrefix(want) {
 			t.Errorf("missing log entry starting %q in:\n%s", want, log)
 		}
+		// The file arrived and was written, so the failure is the
+		// decompression, not the write.
+		if got := log.String(); !strings.Contains(got, "failed to decompress file") ||
+			strings.Contains(got, "failed to write temp file") {
+			t.Errorf("the corrupt file is not reported as a decompression failure in:\n%s", got)
+		}
 		assertNoPartFile(t, dataFile)
 	})
 	t.Run("integrity check", func(t *testing.T) {
