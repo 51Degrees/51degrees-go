@@ -9,9 +9,10 @@ deliberate — they belong to the device-detection half of each example.
 ## A separate Go module
 
 This directory is its own Go module (see [go.mod](go.mod)), so neither engine
-depends on the other. Like the other examples, it uses the published engines,
-as your own code would. To build it against the engines in this repository
-instead, run `../../ci/create-workspace.ps1` first.
+depends on the other. In a clone of this repository, the `go.work` at its root
+makes it use the engines in the repository, as it does the other examples.
+Copied out of it, it uses the published engines its `go.mod` names, as your
+own code would.
 
 - Run and test the examples **from this directory**.
 - This module is never published or tagged; it exists only for the examples.
