@@ -123,6 +123,32 @@ function Get-ReleaseGoVersion([string]$RepoPath, [string]$ModuleFolder) {
     $versions | Sort-Object { ConvertTo-GoVersion $_ } | Select-Object -Last 1
 }
 
+# Returns a go line's version in a form that compares correctly, as 1.22 and
+# 1.22.0 name the same release.
+function ConvertTo-GoVersion([string]$Version) {
+    $parts = @($Version.Split('.'))
+    while ($parts.Count -lt 3) { $parts += '0' }
+    [version]($parts[0..2] -join '.')
+}
+
+# Returns the highest go line of the published modules that the module in the
+# folder requires, as they are at the latest release, or nothing.
+function Get-ReleaseGoVersion([string]$RepoPath, [string]$ModuleFolder) {
+    $release = Get-LatestRelease $RepoPath
+    if (!$release) { return }
+    $mod = go mod edit -json (Join-Path $RepoPath $ModuleFolder 'go.mod') | ConvertFrom-Json
+    $versions = foreach ($require in $mod.Require) {
+        foreach ($library in $LibraryPaths) {
+            if ($require.Path -like "github.com/51Degrees/51degrees-go/$library/v*") {
+                $line = git -C $RepoPath show "${release}:$library/go.mod" |
+                    Select-String '^go (\S+)'
+                $line.Matches[0].Groups[1].Value
+            }
+        }
+    }
+    $versions | Sort-Object { ConvertTo-GoVersion $_ } | Select-Object -Last 1
+}
+
 # Returns a go mod edit -replace argument for each requirement of the module in
 # the folder on a module of this repository at a version with no tag yet. Such
 # a version is the one the next release publishes for that module, from its
