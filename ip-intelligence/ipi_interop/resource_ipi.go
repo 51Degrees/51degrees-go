@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -26,7 +26,6 @@ package ipi_interop
 //#include "ip-intelligence-cxx.h"
 import "C"
 import (
-	"errors"
 	"time"
 	"unsafe"
 )
@@ -65,11 +64,19 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 	return nil
 }
 
-// ReloadFromFile replaces the data set being used by the resource manager with
-// one loaded from the specified data file, using the configuration and
-// properties given. It calls the C API fiftyoneDegreesIpiInitManagerFromFile,
-// which checks the status and the exception before it makes the new data set
-// active, so a file that fails to load leaves the data set in use unchanged.
+// ReloadFromFile reloads the data set of the manager from the data file at
+// filePath, through fiftyoneDegreesIpiReloadManagerFromFile. The new data set
+// keeps the configuration and the property names the manager was created
+// with, or with no names, those of the first data file it loaded, as a reload
+// of the original file does, so each index names the same property
+// afterwards. The C reload makes the new data set active through
+// fiftyoneDegreesResourceReplace, which frees the data set it replaced once the
+// last lookup using it has finished, so nothing is held here. A failed reload
+// keeps the data set in use and returns an error.
+//
+// Deprecated: config and properties are ignored, because a reload keeps the
+// manager's configuration and names. Pass the values the manager was created
+// with.
 func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties string, filePath string) error {
 	exp := NewException()
 	defer exp.Free()
@@ -77,22 +84,7 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 	cPath := C.CString(filePath)
 	defer C.free(unsafe.Pointer(cPath))
 
-	propsRequired := NewPropertiesRequired(properties)
-	defer propsRequired.Free()
-
-	// The init function makes the new data set active without releasing the
-	// one it replaces. Holding that one across the call and releasing it
-	// afterwards frees it once the last lookup using it has finished.
-	previous := C.DataSetGet(manager.CPtr)
-	defer C.DataSetRelease(previous)
-
-	s := C.IpiInitManagerFromFile(
-		manager.CPtr,
-		config.CPtr,
-		propsRequired.CPtr,
-		cPath,
-		exp.CPtr,
-	)
+	s := C.IpiReloadManagerFromFile(manager.CPtr, cPath, exp.CPtr)
 	return reloadError(s, exp, cPath)
 }
 
@@ -121,14 +113,10 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 // are checked.
 func reloadError(s C.StatusCode, exp *Exception, fileName *C.char) error {
 	if !exp.IsOkay() {
-		cMessage := C.ExceptionGetMessage(exp.CPtr)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return errors.New(C.GoString(cMessage))
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
 	}
 	if s != C.SUCCESS {
-		cMessage := C.StatusGetMessage(s, fileName)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return errors.New(C.GoString(cMessage))
+		return messageError(C.StatusGetMessage(s, fileName))
 	}
 	return nil
 }
@@ -139,4 +127,21 @@ func GetPublishedDate(manager *ResourceManager) time.Time {
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 	published := cDataSet.header.published
 	return time.Date(int(published.year), time.Month(published.month), int(published.day), 0, 0, 0, 0, time.UTC)
+}
+
+// GetNextUpdateDate returns the date after which the loaded data file expects
+// a new data file to be available, or the zero time when the data file gives
+// no date.
+func GetNextUpdateDate(manager *ResourceManager) time.Time {
+	cDataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	if cDataSet == nil {
+		return time.Time{}
+	}
+	// Release the dataset
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+	next := cDataSet.header.nextUpdate
+	if next.year == 0 {
+		return time.Time{}
+	}
+	return time.Date(int(next.year), time.Month(next.month), int(next.day), 0, 0, 0, 0, time.UTC)
 }

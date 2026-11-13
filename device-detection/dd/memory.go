@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -29,9 +29,14 @@ import "C"
 // returns the bytes the library allocated during f that are still allocated.
 // Tests use it to check that calls release what the library allocates. f must
 // only free library memory allocated inside f, because the tracker knows
-// nothing of earlier allocations.
-func allocatedDuring(f func()) uint64 {
+// nothing of earlier allocations, and must not call SizeManagerFromFile, which
+// switches the tracking off itself. Tracking is switched off even when f stops
+// the test early, so it is not left on for the tests that follow.
+func allocatedDuring(f func()) (left uint64) {
 	C.fiftyoneDegreesSetUpMemoryTracking()
+	defer func() {
+		left = uint64(C.fiftyoneDegreesUnsetMemoryTracking())
+	}()
 	f()
-	return uint64(C.fiftyoneDegreesUnsetMemoryTracking())
+	return left
 }

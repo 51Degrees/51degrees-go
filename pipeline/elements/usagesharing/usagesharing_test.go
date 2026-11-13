@@ -70,13 +70,12 @@ func (c *capture) waitFor(t *testing.T, n int) {
 	t.Fatalf("timed out waiting for %d payloads (got %d)", n, c.count())
 }
 
-func TestIncludeEvidenceFilter(t *testing.T) {
+func TestShareRules(t *testing.T) {
 	e := NewBuilder().
 		SetBlockedHTTPHeaders("cookies").
 		SetIncludedQueryStringParameters("myparam").
 		Build()
 	defer e.Close()
-	f := e.EvidenceKeyFilter()
 
 	cases := map[string]bool{
 		"header.user-agent": true,
@@ -89,8 +88,8 @@ func TestIncludeEvidenceFilter(t *testing.T) {
 		"server.client-ip":  true,
 	}
 	for key, want := range cases {
-		if got := f.Include(key); got != want {
-			t.Errorf("Include(%q) = %v, want %v", key, got, want)
+		if got := e.isShared(key); got != want {
+			t.Errorf("isShared(%q) = %v, want %v", key, got, want)
 		}
 	}
 }
@@ -156,9 +155,9 @@ func TestUsageSharingSendsXML(t *testing.T) {
 		t.Fatalf("user-agent header not shared: %s", body)
 	}
 	// Schema shape: lower-case category element, Name attribute, and
-	// a CDATA-wrapped value.
-	if !strings.Contains(body, `<header Name="user-agent"><![CDATA[test-agent]]></header>`) {
-		t.Fatalf("header not in the expected lower-case CDATA form: %s", body)
+	// the value as plain text.
+	if !strings.Contains(body, `<header Name="user-agent">test-agent</header>`) {
+		t.Fatalf("header not in the expected lower-case form: %s", body)
 	}
 	// Sequence is always present (even 0) and ServerIP is populated.
 	if devices.Device[0].Sequence == "" {
@@ -180,6 +179,8 @@ func TestUsageSharingCleanupFlush(t *testing.T) {
 		SetTakeTimeout(time.Hour). // avoid periodic flush during the test
 		Build()
 	p, _ := core.NewPipelineBuilder().AddFlowElement(sequence.New(nil)).AddFlowElement(e).Build()
+	// Closes the pipeline if the test stops before the Close below.
+	defer p.Close()
 
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "agent")
@@ -195,10 +196,10 @@ func TestUsageSharingCleanupFlush(t *testing.T) {
 func TestTrackerDedup(t *testing.T) {
 	tr := newTracker(time.Hour)
 	h := uint64(12345)
-	if tr.seenRecently(h) {
-		t.Fatal("first sighting should not be 'recently seen'")
+	if shared, _ := tr.share(h); !shared {
+		t.Fatal("first sighting should be shared")
 	}
-	if !tr.seenRecently(h) {
-		t.Fatal("second sighting within window should be 'recently seen'")
+	if shared, _ := tr.share(h); shared {
+		t.Fatal("second sighting within the interval should not be shared")
 	}
 }

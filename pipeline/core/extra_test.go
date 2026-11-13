@@ -182,6 +182,9 @@ func TestPipelinePropertiesAreCopied(t *testing.T) {
 	}
 }
 
+// A weighted value serializes with the lower case keys the specification's
+// example shows.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/weighted-values.md#serializing
 func TestWeightedValueMarshalJSON(t *testing.T) {
 	w := NewWeightedValue("london", 32768)
 	b, err := w.MarshalJSON()
@@ -189,7 +192,7 @@ func TestWeightedValueMarshalJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(b)
-	if got != `{"RawWeighting":32768,"Value":"london"}` {
+	if got != `{"rawweighting":32768,"value":"london"}` {
 		t.Fatalf("unexpected JSON: %s", got)
 	}
 }
@@ -243,3 +246,76 @@ func TestBuildRollbackRecursesParallelChildren(t *testing.T) {
 type passthroughElement struct{ *BaseElement }
 
 func (e *passthroughElement) Process(FlowData) error { return nil }
+
+// closeCountingElement records how many times it has been closed.
+type closeCountingElement struct {
+	*BaseElement
+	closes int
+}
+
+func (e *closeCountingElement) Process(FlowData) error { return nil }
+
+func (e *closeCountingElement) Close() error {
+	e.closes++
+	return nil
+}
+
+func TestCloseClosesElementsByDefault(t *testing.T) {
+	el := &closeCountingElement{BaseElement: NewBaseElement("device", nil, nil)}
+	p, err := NewPipelineBuilder().AddFlowElement(el).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Close()
+	if el.closes != 1 {
+		t.Fatalf("closing the pipeline closed the element %d times", el.closes)
+	}
+}
+
+func TestSharedElementOutlivesPipelinesThatLeaveItOpen(t *testing.T) {
+	el := &closeCountingElement{BaseElement: NewBaseElement("device", nil, nil)}
+	p1, err := NewPipelineBuilder().
+		SetAutoCloseElements(false).AddFlowElement(el).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := NewPipelineBuilder().
+		SetAutoCloseElements(false).AddFlowElement(el).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1.Close()
+	fd := p2.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatalf("the second pipeline failed after the first closed: %v", err)
+	}
+	p2.Close()
+	if el.closes != 0 {
+		t.Fatalf("the pipelines closed the shared element %d times", el.closes)
+	}
+	el.Close()
+}
+
+func TestBuildFromConfigurationClosesBuiltElementsOnFailure(t *testing.T) {
+	first := &closeCountingElement{BaseElement: NewBaseElement("first", nil, nil)}
+	cause := errors.New("the second element cannot be built")
+	r := NewBuilderRegistry()
+	r.Register("FirstBuilder", func(map[string]any, *slog.Logger) (FlowElement, error) {
+		return first, nil
+	})
+	r.Register("FailingBuilder", func(map[string]any, *slog.Logger) (FlowElement, error) {
+		return nil, cause
+	})
+	_, err := r.BuildFromConfiguration(PipelineOptions{
+		Elements: []ElementOptions{
+			{BuilderName: "FirstBuilder"},
+			{BuilderName: "FailingBuilder"},
+		},
+	}, nil)
+	if !errors.Is(err, cause) {
+		t.Fatalf("expected the second element's error, got %v", err)
+	}
+	if first.closes != 1 {
+		t.Fatalf("the first element was closed %d times", first.closes)
+	}
+}

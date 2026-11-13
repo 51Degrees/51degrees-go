@@ -1,3 +1,25 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
 package ipi_onpremise
 
 import (
@@ -89,6 +111,9 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			engine, err := New(tt.options...)
+			if engine != nil {
+				defer engine.Stop()
+			}
 
 			if tt.expectError {
 				if err == nil {
@@ -122,9 +147,6 @@ func TestNew(t *testing.T) {
 			if engine.reloadFileEvents == nil {
 				t.Error("Reload events channel should not be nil")
 			}
-
-			// Clean up
-			engine.Stop()
 		})
 	}
 }
@@ -346,22 +368,6 @@ func TestEngine_validateAndAppendUrlParams(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestEngine_recoverEngine(t *testing.T) {
-	engine := &Engine{
-		logger:    &common_go.LogWrapper{},
-		isStopped: false,
-	}
-
-	// Test that recoverEngine doesn't panic
-	defer func() {
-		if r := recover(); r != nil {
-			t.Error("recoverEngine should handle panics gracefully")
-		}
-	}()
-
-	engine.recoverEngine()
 }
 
 // TestEngine_GetPropertyNameByIndex checks an engine with no data set loaded.

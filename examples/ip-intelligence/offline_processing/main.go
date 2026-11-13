@@ -3,8 +3,8 @@
  * Copyright 2025 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -145,6 +145,10 @@ import (
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 	"github.com/goccy/go-yaml"
 )
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-offline_processing-main.go&utm_term=enterprise-data-file"
 
 // PropertiesData represents a structured data type containing various property fields commonly associated with network or location data.
 type PropertiesData struct {
@@ -332,11 +336,16 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
+			// Stopping the engine frees its data set. Deferring the call
+			// stops it however this function returns.
+			defer engine.Stop()
 
 			// Run example
 			runOfflineProcessing(engine, params)
 
-			engine.Stop()
+			if common.IsFreeDataFile(engine, common.Properties) {
+				common.PrintEnterpriseNote(contactUs)
+			}
 
 			return nil
 		})

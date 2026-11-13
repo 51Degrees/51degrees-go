@@ -4,7 +4,7 @@
 
 **Go modules for Device Detection and IP Intelligence**
 
-Our User-Agent parser for Go supports Device Detection, browser detection, mobile detection, and crawler detection on-premise. IP Intelligence adds IP geolocation, including IP to country data.
+Our User-Agent parser for Go supports Device Detection, browser detection, mobile detection, and crawler detection on-premise, as an alternative to UAParser.js, DeviceAtlas, and WURFL. IP Intelligence adds IP geolocation, including IP to country data, as an alternative to MaxMind and IPinfo.
 
 It reads User-Agent and User-Agent Client Hints, HTTP request headers that carry browser and device information.
 
@@ -47,6 +47,7 @@ Each repository is brought in with its full history, so commit SHAs match the or
 | `pipeline` | `github.com/51Degrees/51degrees-go/pipeline/v4` |
 | `examples/device-detection`, `examples/ip-intelligence`, `examples/mixed`, `examples/pipeline` | The examples, each a module of its own that isn't published |
 | `cxx` | The [51degrees-cxx](https://github.com/51Degrees/51degrees-cxx) submodule, which the engines' C sources are made from |
+| `javascript-templates` | The [javascript-templates](https://github.com/51Degrees/javascript-templates) submodule, which the JavaScript Builder Element's template is copied from |
 | `ci` | The scripts the shared 51Degrees CI workflows call |
 
 A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`, so it is installed with, for example:
@@ -65,15 +66,25 @@ Clone with the submodules:
 git clone --recurse-submodules https://github.com/51Degrees/51degrees-go.git
 ```
 
-Each module requires the others at a published version, as your own code would. To build and test them against each other instead, create a Go workspace:
+The tests and examples use the free data files that the [data](https://github.com/51Degrees/data) repository links to. The data repository is the `cxx/data` submodule, and its scripts download the files into `cxx/data/device-detection` and `cxx/data/ip-intelligence`.
+
+```sh
+sh cxx/data/get-data-files.sh
+```
+
+In PowerShell, run `./cxx/data/get-data-files.ps1` instead.
+
+Each module requires the others at a published version, as your own code would. The `go.work` at the root makes them build and test against each other in a clone, so the examples run with no settings. After changing a requirement between the modules, run this script and commit `go.work`, because CI fails when the committed `go.work` is out of date.
 
 ```sh
 pwsh ci/create-workspace.ps1
 ```
 
-`go.work` isn't committed. CI uses the workspace only when a published module has changed since the latest release, so the next release is tested with the examples. Otherwise the examples are tested against the published modules, and nothing is released.
+CI tests with the workspace when a published module has changed since the latest release, so the next release is tested with the examples. Otherwise the examples are tested against the published modules of the latest release, and nothing is released.
 
 The engines compile C sources made from the `cxx` submodule. After moving the submodule to another 51degrees-cxx release, run `pwsh ci/update-amalgamation.ps1` and commit the result. The build fails when they don't match.
+
+The JavaScript Builder Element embeds a copy of the `javascript-templates` submodule's `.mustache` files from `pipeline/elements/javascriptbuilder/javascript-templates`. After moving the submodule, copy its `.mustache` files there and commit them. The JavaScript templates check (`pwsh ci/check-javascript-templates.ps1`) fails when the copy doesn't match.
 
 ## Find out more
 

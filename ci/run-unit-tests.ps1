@@ -13,13 +13,13 @@ $Results = Join-Path $RepoName "test-results/unit"
 $Packages = @{
     'common' = @('./...')
     'device-detection' = @('./dd', './onpremise')
-    'ip-intelligence' = @('./ipi_interop', './ipi_onpremise')
+    'ip-intelligence' = @('./ipi_interop', './ipi_onpremise', './ipi_cloud')
     'pipeline' = @('./...')
 }
 $failed = 0
 
 foreach ($product in Get-AffectedProducts $RepoName $Branch) {
-    $env:DATA_FILE = $product -eq 'ip-intelligence' ? "$PWD/assets/51Degrees-EnterpriseIpiV41.ipi" : $null
+    $env:_51DEGREES_IPI_PATH = $product -eq 'ip-intelligence' ? "$PWD/assets/51Degrees-EnterpriseIpiV41.ipi" : $null
     $code = Invoke-GoTests -ModulePath (Get-ProductPath $RepoName $product) `
         -Packages $Packages[$product] -JUnitPath "$Results/$Name-$product.xml"
     if ($code -ne 0) {

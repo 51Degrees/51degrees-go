@@ -1,3 +1,25 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
 package common_go
 
 import (
@@ -38,6 +60,16 @@ type fileUpdater struct {
 
 	lastModificationTimestamp *time.Time
 
+	// engineName names the engine in log messages.
+	engineName string
+	// publishedDate and nextUpdate read the dates held in the data file the
+	// engine has loaded. They are nil when the engine offers neither.
+	publishedDate func() time.Time
+	nextUpdate    func() time.Time
+	// startUpPullDone is set once PullOnStart has run, so that the polling
+	// does not repeat the start-up pull.
+	startUpPullDone bool
+
 	fileWatcher fileWatcher
 	logger      *LogWrapper
 }
@@ -55,7 +87,7 @@ func NewFileUpdater(dataFileUrl string) *FileUpdater {
 		fileSynced:                  false,
 
 		dataFilePullEveryMs: 30 * 60 * 1000, // default 30 minutes
-		randomization:       10 * 60 * 1000, // default 10 minutes
+		randomization:       10 * 60 * 1000, // default up to 10 minutes
 
 		logger: &LogWrapper{
 			logger:  DefaultLogger,
@@ -114,9 +146,32 @@ func (e *FileUpdater) SetUpdateOnStartEnabled(isUpdateOnStartEnabled bool) {
 	e.isUpdateOnStartEnabled = isUpdateOnStartEnabled
 }
 
-// SetRandomization sets the randomization interval in milliseconds to be added to the file pull schedule.
+// SetRandomization sets the maximum random time in milliseconds added to each
+// interval between pulls. A new time from 0 up to this maximum is drawn for
+// each interval, and 0 adds nothing.
 func (e *FileUpdater) SetRandomization(randomization int) {
 	e.randomization = randomization
+}
+
+// SetEngineName sets the engine type name used in the data update log
+// messages.
+func (e *FileUpdater) SetEngineName(engineName string) {
+	e.engineName = engineName
+}
+
+// SetPublishedDateFunc sets the function that returns the publication date of
+// the data file the engine has loaded. The date is sent as If-Modified-Since,
+// and the file system modification time is used only when the function is
+// not set or returns no date.
+func (e *FileUpdater) SetPublishedDateFunc(publishedDate func() time.Time) {
+	e.publishedDate = publishedDate
+}
+
+// SetNextUpdateFunc sets the function that returns the date after which the
+// engine's data file expects an update to be available. Polling does not
+// start before that date.
+func (e *FileUpdater) SetNextUpdateFunc(nextUpdate func() time.Time) {
+	e.nextUpdate = nextUpdate
 }
 
 // SetLoggerEnabled enables or disables the logger for the FileUpdater instance and returns the updated LogWrapper.
@@ -250,6 +305,7 @@ func (e *FileUpdater) copyToTempFile() (string, string, error) {
 
 // InitFileWatcher initializes the file watcher to monitor changes in the data file and set up a callback for file updates.
 func (e *FileUpdater) InitFileWatcher(logger *LogWrapper, stopCh chan *sync.WaitGroup) error {
+	logger.Infof("Creating file system watcher")
 	watcher, err := newWatcher(e.dataFile, time.Second, time.Second)
 	if err != nil {
 		return err

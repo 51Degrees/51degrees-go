@@ -33,6 +33,7 @@ type PipelineBuilder struct {
 	logger                    *slog.Logger
 	concurrent                bool
 	suppressProcessExceptions bool
+	keepElementsOpen          bool
 }
 
 // NewPipelineBuilder creates an empty PipelineBuilder.
@@ -66,9 +67,20 @@ func (b *PipelineBuilder) SetSuppressProcessExceptions(v bool) *PipelineBuilder 
 	return b
 }
 
-// Build creates the immutable Pipeline. It aggregates Property metadata and the
-// Evidence key filter across all elements, then notifies each element that it
-// has been added to the Pipeline.
+// SetAutoCloseElements configures whether closing the Pipeline also closes its
+// elements, which it does by default. Pass false when an element is shared
+// with other Pipelines, and close the element once every Pipeline using it has
+// been closed.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/resource-cleanup.md#pipeline
+func (b *PipelineBuilder) SetAutoCloseElements(v bool) *PipelineBuilder {
+	b.keepElementsOpen = !v
+	return b
+}
+
+// Build creates the immutable Pipeline. It aggregates the Evidence key filter
+// across all elements, then notifies each element that it has been added to
+// the Pipeline. The Pipeline gathers the elements' Property metadata when it
+// is first asked for, once every element knows the Pipeline it is in.
 func (b *PipelineBuilder) Build() (Pipeline, error) {
 	logger := b.logger
 	if logger == nil {
@@ -78,7 +90,6 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 	elements := make([]FlowElement, len(b.elements))
 	copy(elements, b.elements)
 
-	var properties []PropertyMetadata
 	filters := make([]EvidenceKeyFilter, 0, len(elements))
 	// Flow Data must use thread-safe storage if it was explicitly requested or if
 	// any element processes concurrently (e.g. ParallelElements). Deriving this
@@ -86,7 +97,6 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 	// remembering to enable concurrency.
 	concurrent := b.concurrent
 	for _, e := range elements {
-		properties = append(properties, e.Properties()...)
 		filters = append(filters, e.EvidenceKeyFilter())
 		if e.IsConcurrent() {
 			concurrent = true
@@ -112,7 +122,7 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		logger:                    logger,
 		concurrent:                concurrent,
 		suppressProcessExceptions: b.suppressProcessExceptions,
-		properties:                properties,
+		closeElements:             !b.keepElementsOpen,
 		filter:                    NewAggregateFilter(filters...),
 	}
 

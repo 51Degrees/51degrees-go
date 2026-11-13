@@ -1,22 +1,23 @@
 # 51Degrees Device Detection Engines Examples
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-readme.md&utm_term=51degrees-device-detection-engines-examples "Data rewards the curious") **Examples for Device Detection in Go**
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **Examples for Device Detection in Go**
 
 ## Introduction
 
 This directory contains examples of how to use module [device-detection-go](https://github.com/51Degrees/51degrees-go/tree/main/device-detection)
 
 ## Pre-requisites
-To run these examples you will need a data file and example evidence for some of the tests.  To fetch these assets please run (from the repository root):
+To run these examples you will need a data file and example evidence for some of the tests. The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to both. To download them into `cxx/data/device-detection`, run one of these from the repository root.
 
 ```
-pwsh ci/fetch-assets.ps1 .
+sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash "20000 Evidence Records.yml"
 ```
 
-or alternatively you can download them from [device-detection-data](https://github.com/51Degrees/device-detection-data) repo (the links are below) and put in the root of this repository.
+```
+./cxx/data/get-data-files.ps1 51Degrees-LiteV4.1.hash "20000 Evidence Records.yml"
+```
 
-- [51Degrees-LiteV4.1.hash](https://github.com/51Degrees/device-detection-data/blob/main/51Degrees-LiteV4.1.hash)
-- [20000 Evidence Records.yml](https://github.com/51Degrees/device-detection-data/blob/main/20000%20Evidence%20Records.yml)
+The examples under `dd` and `onpremise` also download a file that is missing, by running the same script for that file.
 
 ### Software
 
@@ -57,7 +58,7 @@ Below is a table that describes the examples:
 | onpremise/performance/performance.go                         | Performance tests implemented using onpremise Engine API                                                                                                                                                                                                                                                                       |
 ## Run examples
 
-The examples use the published module, as your own code would. To run them against the code in this repository instead, run `../../ci/create-workspace.ps1` first.
+In a clone of this repository, the `go.work` at its root makes the examples use the code in the repository, so they run with no settings. Copied out of it, they use the published module their `go.mod` names, as your own code would.
 
 ```
 go run ./[dd/onpremise]/example_dir

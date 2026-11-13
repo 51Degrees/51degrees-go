@@ -61,6 +61,7 @@ func newFlowDataWith(t *testing.T, ev map[string]any) core.FlowData {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
+	t.Cleanup(func() { p.Close() })
 	fd := p.CreateFlowData()
 	for k, v := range ev {
 		fd.AddEvidence(k, v)

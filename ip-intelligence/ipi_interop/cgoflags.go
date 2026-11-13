@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -27,8 +27,9 @@ package ipi_interop
 * centralize the specifications of these flags.
 *
 * Large data file support reads files past 2 GiB with fseeko and ftello, which
-* take an off_t. _FILE_OFFSET_BITS=64 makes off_t 64 bit where it is not
-* already, as on Windows with the MinGW compiler cgo uses.
+* take an off_t, and with _fseeki64 and _ftelli64 on Windows.
+* _FILE_OFFSET_BITS=64 makes off_t 64 bit where it is not already, as on 32 bit
+* Linux.
  */
 
 /*

@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -85,26 +85,34 @@ func performMultiPerfProfiles(perfFunc PerfProfileFunc, t *testing.T) {
 // different performance profile
 func testDifferentPerformanceProfiles(properties string, testFunc TestFunc, t *testing.T) {
 	f := func(perf PerformanceProfile, t *testing.T) {
-		// Setup a resource manager
-		manager := NewResourceManager()
-		// Create config per performance
-		config := NewConfigHash(perf)
-		config.SetAllowUnmatched(false)
-		err := InitManagerFromFile(
-			manager,
-			*config,
-			properties,
-			testDataFilePath,
-		)
-		if err != nil {
-			log.Fatalf("Failed to initialize resource manager from file \"%s\"\n.",
-				testDataFilePath)
+		// The C library's memory tracking is on while the test runs, so
+		// anything made from the manager that the test does not free fails
+		// it.
+		left := allocatedDuring(func() {
+			// Setup a resource manager, freed even if the test function
+			// stops early.
+			manager := NewResourceManager()
+			defer manager.Free()
+			// Create config per performance
+			config := NewConfigHash(perf)
+			config.SetAllowUnmatched(false)
+			err := InitManagerFromFile(
+				manager,
+				*config,
+				properties,
+				testDataFilePath,
+			)
+			if err != nil {
+				log.Fatalf("Failed to initialize resource manager from file \"%s\"\n.",
+					testDataFilePath)
+			}
+			// Run the test
+			testFunc(manager, t)
+		})
+		if left != 0 {
+			t.Errorf("%d bytes of native memory were not freed with "+
+				"performance profile %d.", left, perf)
 		}
-		// Run the test
-		testFunc(manager, t)
-
-		// Free the resource manager
-		manager.Free()
 	}
 	performMultiPerfProfiles(f, t)
 }

@@ -25,21 +25,23 @@ function Test-Examples([string]$Product, [string]$ModulePath, [string]$JUnitName
     }
 }
 
-# The examples of each engine are a module of their own.
+# The examples of each engine are a module of their own. Each block sets the
+# licence key of the product it runs, because the examples of both read the one
+# name, and a block's run happens before the next block sets it again.
 if ($Products -contains 'device-detection') {
-    $env:LICENSE_KEY = $DeviceDetection
-    $env:DATA_FILE = "$PWD/assets/51Degrees-LiteV4.1.hash"
-    $env:EVIDENCE_YAML = "$PWD/assets/20000 Evidence Records.yml"
+    $env:_51DEGREES_LICENSE_KEY = $DeviceDetection
+    $env:_51DEGREES_DD_PATH = "$PWD/assets/51Degrees-LiteV4.1.hash"
+    $env:_51DEGREES_EVIDENCE_YAML = "$PWD/assets/20000 Evidence Records.yml"
     Test-Examples 'device-detection' (Join-Path $RepoName 'examples/device-detection') 'device-detection'
 }
 
 if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
-    $env:IPI_KEY = $IpIntelligence
-    $env:IPI_DATA_FILE_URL = $IpIntelligenceUrl
-    $env:DATA_FILE = "$PWD/assets/51Degrees-EnterpriseIpiV41.ipi"
-    $env:EVIDENCE_YAML = "$PWD/assets/ip-intelligence-evidence.yml"
+    $env:_51DEGREES_LICENSE_KEY = $IpIntelligence
+    $env:_51DEGREES_IPI_DATA_FILE_URL = $IpIntelligenceUrl
+    $env:_51DEGREES_IPI_PATH = "$PWD/assets/51Degrees-EnterpriseIpiV41.ipi"
+    $env:_51DEGREES_EVIDENCE_YAML = "$PWD/assets/ip-intelligence-evidence.yml"
     # Used only by the mixed examples, which combine both products.
-    $env:DD_DATA_FILE = "$PWD/assets/TAC-HashV41.hash"
+    $env:_51DEGREES_DD_PATH = "$PWD/assets/TAC-HashV41.hash"
     if ($Products -contains 'ip-intelligence') {
         Test-Examples 'ip-intelligence' (Join-Path $RepoName 'examples/ip-intelligence') 'ip-intelligence'
     }

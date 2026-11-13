@@ -1,13 +1,13 @@
-// The Device Detection examples. They aren't published. Like a customer's code,
-// they use the published module; ci/create-workspace.ps1 makes them use the one
-// in this repository.
+// The Device Detection examples. They aren't published. Copied out of the
+// repository they use the published module, as a customer's code does. In a
+// clone, the go.work at the root makes them use the one in this repository.
 module github.com/51Degrees/51degrees-go/examples/device-detection
 
 go 1.19
 
 require (
-	github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.168
+	github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.173
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/51Degrees/51degrees-go/common/v4 v4.5.168 // indirect
+require github.com/51Degrees/51degrees-go/common/v4 v4.5.173 // indirect

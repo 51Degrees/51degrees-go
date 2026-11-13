@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -27,7 +27,6 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 import (
-	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -39,6 +38,11 @@ import (
 // InitFromFile initializes a resource manager based on a given data file path.
 // The input properties is a comma separated string list. This matches the C API
 // fiftyoneDegreesHashInitManagerFromFile.
+//
+// The manager keeps the required property index of each name, so a read by
+// name costs a map lookup rather than a search of the data set. The index is
+// the name's place among the names given, or with no names, among the names
+// of the first data file loaded, and a reload does not change it.
 func InitManagerFromFile(
 	manager *ResourceManager,
 	config ConfigHash,
@@ -67,6 +71,10 @@ func InitManagerFromFile(
 	if s != C.SUCCESS {
 		return messageError(C.StatusGetMessage(s, cPath))
 	}
+
+	// Keep the index of each name, so a read by name does not search the data
+	// set. The C library keeps the names across a reload, so the table holds.
+	manager.indexes = newPropertyIndexes(manager)
 
 	// Construct the Set Headers list
 	manager.setHeaders = constructResponseHeaders(manager)
@@ -130,14 +138,10 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 // are checked.
 func reloadError(s C.StatusCode, exp *Exception, fileName *C.char) error {
 	if !exp.IsOkay() {
-		cMessage := C.ExceptionGetMessage(exp.CPtr)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return errors.New(C.GoString(cMessage))
+		return messageError(C.ExceptionGetMessage(exp.CPtr))
 	}
 	if s != C.SUCCESS {
-		cMessage := C.StatusGetMessage(s, fileName)
-		defer C.MemoryStandardFree(unsafe.Pointer(cMessage))
-		return errors.New(C.GoString(cMessage))
+		return messageError(C.StatusGetMessage(s, fileName))
 	}
 	return nil
 }
@@ -275,4 +279,21 @@ func GetPublishedDate(manager *ResourceManager) time.Time {
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 	published := cDataSet.header.published
 	return time.Date(int(published.year), time.Month(published.month), int(published.day), 0, 0, 0, 0, time.UTC)
+}
+
+// GetNextUpdateDate returns the date after which the loaded data file expects
+// a new data file to be available, or the zero time when the data file gives
+// no date.
+func GetNextUpdateDate(manager *ResourceManager) time.Time {
+	cDataSet := (*C.DataSetHash)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	if cDataSet == nil {
+		return time.Time{}
+	}
+	// Release the dataset
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+	next := cDataSet.header.nextUpdate
+	if next.year == 0 {
+		return time.Time{}
+	}
+	return time.Date(int(next.year), time.Month(next.month), int(next.day), 0, 0, 0, 0, time.UTC)
 }

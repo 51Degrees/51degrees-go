@@ -46,65 +46,117 @@ const (
 	ReasonCloudRequestFailed = "cloudrequestfailed"
 )
 
-// ForDataFileTier builds the error for a Property absent from the current data
-// file. dataTiers lists the license/data file types in which it is available.
-func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
-	tiers := strings.Join(dataTiers, ", ")
-	if tiers == "" {
-		tiers = "Unknown" // placeholder when the tier list is absent
+// messagePrefix begins every message in the table, naming the Property and the
+// Data Key of the Engine. Each builder adds the sentence for its reason.
+const messagePrefix = "Property '%s' not found in data for element '%s'. "
+
+// noEngine is the name the message carries where there is no Engine to name.
+const noEngine = "Unknown"
+
+// ForDataFileUpgrade builds the error for a Property the current license or
+// data file does not include. dataTiers names the data tiers where the
+// Property is present, from its metadata, and engineType is this
+// implementation's own name for the Engine. Where dataTiers is empty the
+// message leaves out the sentence naming the tiers, as the table's second row
+// does.
+func ForDataFileUpgrade(property, element, engineType string, dataTiers []string) *core.PropertyMissingError {
+	msg := fmt.Sprintf(messagePrefix, property, element) +
+		"This is because your license or data file does not include this " +
+		"property. "
+	if len(dataTiers) == 0 {
+		msg += "To see which licenses include it, see " +
+			"https://51degrees.com/pricing."
+	} else {
+		msg += fmt.Sprintf("It is available with the %s license/data for "+
+			"the %s. To upgrade, see https://51degrees.com/pricing.",
+			strings.Join(dataTiers, ","), engineType)
 	}
-	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
-		"This is because your license and/or data file does not include this Property. "+
-		"The Property is available with the %s license/data.",
-		property, element, tiers)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonDataFileTier}
+}
+
+// ForDataFileTier builds the error ForDataFileUpgrade builds. It is not given
+// the Engine's type, so it names the Engine by its Data Key.
+//
+// Deprecated: use ForDataFileUpgrade, which names the Engine's type as the
+// specification's message does.
+func ForDataFileTier(property, element string, dataTiers []string) *core.PropertyMissingError {
+	return ForDataFileUpgrade(property, element, element, dataTiers)
 }
 
 // ForExcludedInConfig builds the error for a Property excluded by configuration.
 func ForExcludedInConfig(property, element string) *core.PropertyMissingError {
-	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
-		"This is because the Property has been excluded when configuring the Engine.",
-		property, element)
+	msg := fmt.Sprintf(messagePrefix, property, element) +
+		"This is because the property has been excluded when configuring " +
+		"the engine."
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonExcludedInConfig}
 }
 
-// ForProductNotInResourceKey builds the error for a product not included with
-// the Resource Key.
+// ForProductNotAccessible builds the error for a Resource Key that includes
+// no Properties at all under the Engine's Data Key, which is the reason a
+// license key without the Engine's product gives. The message names that Data
+// Key as the product.
+func ForProductNotAccessible(property, element string) *core.PropertyMissingError {
+	return ForProductNotInResourceKey(property, element, element)
+}
+
+// ForProductNotInResourceKey builds the error ForProductNotAccessible builds,
+// naming product where that message names the Data Key a second time.
+//
+// Deprecated: use ForProductNotAccessible, which names the Data Key as the
+// product, as the specification's message does.
 func ForProductNotInResourceKey(property, element, product string) *core.PropertyMissingError {
-	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
-		"This is because your Resource Key does not include access to any Properties under '%s'. "+
-		"For more details on Resource Keys, see our explainer: "+
-		"https://51degrees.com/documentation/_info__resource_keys.html",
-		property, element, product)
+	msg := fmt.Sprintf(messagePrefix, property, element) +
+		fmt.Sprintf("This is because your resource key does not include "+
+			"access to any properties under '%s'. Check or create a "+
+			"resource key with the properties you need in the configurator "+
+			"at https://configure.51degrees.com.", product)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonProductNotInKey}
 }
 
-// ForPropertyNotInResourceKey builds the error for a Property not included with
-// the Resource Key. includedProperties lists the Properties that are available
-// under the product for this key.
+// ForPropertyNotAccessible builds the error for a Resource Key that includes
+// the Engine's product but not this Property. includedProperties names the
+// Properties in the Engine's metadata.
+func ForPropertyNotAccessible(property, element string, includedProperties []string) *core.PropertyMissingError {
+	return ForPropertyNotInResourceKey(property, element, element,
+		includedProperties)
+}
+
+// ForPropertyNotInResourceKey builds the error ForPropertyNotAccessible
+// builds, naming product where that message names the Data Key a second time.
+//
+// Deprecated: use ForPropertyNotAccessible, which names the Data Key as the
+// product, as the specification's message does.
 func ForPropertyNotInResourceKey(property, element, product string, includedProperties []string) *core.PropertyMissingError {
-	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
-		"This is because your Resource Key does not include access to this Property. "+
-		"Properties that are included for this key under '%s' are %s. "+
-		"For more details on Resource Keys, see our explainer: "+
-		"https://51degrees.com/documentation/_info__resource_keys.html",
-		property, element, product, strings.Join(includedProperties, ", "))
+	msg := fmt.Sprintf(messagePrefix, property, element) +
+		fmt.Sprintf("This is because your resource key does not include "+
+			"access to this property. The properties included for your key "+
+			"under '%s' are %s. Check or change your key in the "+
+			"configurator at https://configure.51degrees.com.",
+			product, strings.Join(includedProperties, ","))
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonPropertyNotInKey}
 }
 
-// Generic builds a non-specific missing-property error.
+// Generic builds the error for a Property whose reason is unknown, which is
+// the reason where none of the others applies.
 func Generic(property, element string) *core.PropertyMissingError {
-	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'.", property, element)
+	msg := fmt.Sprintf(messagePrefix, property, element) +
+		"The reason for this is unknown. Please check that the aspect and " +
+		"property name are correct."
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonUnknown}
 }
 
-// ForCloudRequestFailed builds the error for a Property that is missing because
-// the cloud request failed, as opposed to the Property not being accessible
-// with the Resource Key.
+// ForCloudRequestFailed builds the error for a Property that is missing
+// because the request to the remote server failed, as opposed to the Property
+// not being accessible with the Resource Key. element is the Data Key of the
+// first Engine that populates the Element Data, and an empty element is named
+// Unknown, which is the case where there is no such Engine.
 func ForCloudRequestFailed(property, element string) *core.PropertyMissingError {
-	msg := fmt.Sprintf("Property '%s' not found in data for element '%s'. "+
-		"This is because the request to the cloud service failed.",
-		property, element)
+	if element == "" {
+		element = noEngine
+	}
+	msg := fmt.Sprintf(messagePrefix, property, element) +
+		"This is because an upstream cloud request failed, so no data was " +
+		"available to populate the property."
 	return &core.PropertyMissingError{
 		PropertyName: property, ElementName: element, Message: msg,
 		Reason: ReasonCloudRequestFailed,

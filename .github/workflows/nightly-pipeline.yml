@@ -13,8 +13,9 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  # The publish builds main, which the pull requests into rc do not change, so
-  # it runs first and has the runners before the pull request builds do.
+  # Releases main when it has changed since the last release. The publish
+  # builds main, which the pull requests into rc do not change, so it runs
+  # first and has the runners before the pull request builds do.
   Publish:
     name: Nightly Publish
     uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@main
@@ -31,8 +32,9 @@ jobs:
       IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
       IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
 
-  # Moves cxx to the latest 51degrees-cxx release, remakes the engines' C
-  # sources from it and updates Go dependencies, in a pull request.
+  # Moves cxx to the latest 51degrees-cxx release and javascript-templates to
+  # the head of its default branch, remakes the files made from them and
+  # updates Go dependencies, in a pull request.
   PackageUpdate:
     name: Nightly Package Update
     uses: 51Degrees/common-ci/.github/workflows/nightly-package-update.yml@main
@@ -65,5 +67,3 @@ jobs:
       DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
       IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
       IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
-
-  # Releases main when it has changed since the last release.

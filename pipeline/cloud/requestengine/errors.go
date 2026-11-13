@@ -33,7 +33,7 @@ import (
 // can inspect or log it, and, for a response-level failure, the HTTP status
 // code and response headers so a caller can inspect them (for example a 429
 // Retry-After).
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md#cloud-request-exception
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/exception-handling.md#cloud-request-exception
 type CloudRequestError struct {
 	// Message describes the failure.
 	Message string
@@ -72,7 +72,7 @@ func NewCloudResponseError(message string, status int, headers http.Header) *Clo
 // TemporarilyUnavailableError is returned while the engine is in its recovery
 // period, signalling that the element (and Pipeline) are temporarily
 // unavailable so that requests are bypassed rather than piling up.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
 type TemporarilyUnavailableError struct {
 	// RecoveryUntil is the time at which the engine will resume making requests.
 	RecoveryUntil time.Time

@@ -1,6 +1,12 @@
-github.com/51Degrees/51degrees-go/common/v4 v4.5.168 h1:DuHN6RIJqgstGNaW5enhYHoutgr3OBSi42FccjRlbaM=
-github.com/51Degrees/51degrees-go/common/v4 v4.5.168/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
-github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.168 h1:s+krxMnTUIrdiRHbz3SDOAULl99/m3fB9rgRA4hnEps=
-github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.168/go.mod h1:hCv9wNOLAImdruVPRsoSj8tsWxdxrPpANHDUzM3OdKg=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.173 h1:E7rKJzVEsdCVXdNyDn4wxBQNop+c653wVNBNUmQY4oc=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.173/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
+github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.173 h1:qVvcnaWP3dMbScuXa94H+Efa2JBr8EjN+w0NkssU8nQ=
+github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.173/go.mod h1:FHA5UQBNYwwbPoNQ3ygVcuALI8Tr8GJtZ+Tc8ax6ai8=
+github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173 h1:qOwnCggePNj1wzzeC1k6i07jFlu0Zl7a5apaP9EZbgk=
+github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173/go.mod h1:jQ3iSnvK0bfTL8Imyuwbsv1+sgRT55fRjbnUAy9wyYw=
+github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
+github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
 github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=
+golang.org/x/sys v0.13.0 h1:Af8nKPmuFypiUBjVoU9V20FiaFXOcuZI21p0ycVYYGE=
+golang.org/x/sys v0.13.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
