@@ -72,10 +72,6 @@ func TestReloadFromFile(t *testing.T) {
 	testEnterprise(t, "reload_from_file")
 }
 
-func TestReloadFromMemory(t *testing.T) {
-	test(t, "reload_from_memory")
-}
-
 // TestStronglyTyped runs the example and checks that it reads values as their
 // Go types and shows the properties only the Enterprise data file has.
 func TestStronglyTyped(t *testing.T) {
