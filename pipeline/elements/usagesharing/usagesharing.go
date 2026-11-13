@@ -164,9 +164,7 @@ func (e *Element) Process(fd core.FlowData) error {
 	rec := &record{
 		dateSent: time.Now().UTC(),
 		evidence: ev,
-	}
-	if ip, ok := fd.Evidence().Get("server.client-ip"); ok {
-		rec.clientIP = fmt.Sprintf("%v", ip)
+		clientIP: foundClientIP(fd),
 	}
 	if data, err := fd.Get(sequence.DataKey); err == nil {
 		if v, err := data.Get(sequence.SessionIDProperty); err == nil {
@@ -219,6 +217,23 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 		}
 	}
 	return out
+}
+
+// foundClientIP returns the client IP address the element finds, from the
+// Evidence server.client-ip or else from the web request the Evidence holds
+// as core.EvidenceHTTPRequest. A value in both places is taken from the
+// Evidence, as for every value the element finds.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
+func foundClientIP(fd core.FlowData) string {
+	ev := fd.Evidence()
+	if ip, ok := ev.Get("server.client-ip"); ok {
+		return fmt.Sprintf("%v", ip)
+	}
+	request, _ := ev.Get(core.EvidenceHTTPRequest)
+	if w, ok := request.(core.WebRequest); ok {
+		return w.ClientIP()
+	}
+	return ""
 }
 
 // isSessionCookie reports whether key is the session cookie's Evidence key,
