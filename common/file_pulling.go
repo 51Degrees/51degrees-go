@@ -381,7 +381,7 @@ func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
 	}
 	url, engine := e.maskedDataFileUrl(), e.engineLabel()
 	switch pe.kind {
-	case pullConnect:
+	case pullConnect, pullRead:
 		return fmt.Sprintf("Error accessing data update service at '%s' for engine '%s'. Error detail: %v",
 			url, engine, pe.err), true
 	case pullTooManyRequests:
@@ -404,6 +404,9 @@ type pullErrorKind int
 
 const (
 	pullConnect pullErrorKind = iota
+	// pullRead is a download that ended before the whole file arrived, which
+	// the table gives the same row as pullConnect, as .NET does.
+	pullRead
 	pullDownload
 	pullTooManyRequests
 	pullForbidden
@@ -504,7 +507,8 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 
 	// the MD5 header covers the raw body, compressed or not, so hash everything read from it
 	hash := md5.New()
-	body := bufio.NewReader(io.TeeReader(resp.Body, hash))
+	received := &readRecorder{r: resp.Body}
+	body := bufio.NewReader(io.TeeReader(received, hash))
 
 	// check if the response is compressed
 	// if it is, decompress it
@@ -512,6 +516,9 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	var fileBytes io.Reader = body
 	if isGzip(http.DetectContentType(head)) {
 		fileBytes, err = gzip.NewReader(body)
+		if received.err != nil {
+			return nil, newPullError(pullRead, received.err)
+		}
 		if err != nil {
 			return nil, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
 		}
@@ -521,7 +528,7 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	if err != nil {
 		return nil, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
 	}
-	size, err := writeDataFile(tempFile, fileBytes, body, dataFile)
+	size, err := writeDataFile(tempFile, fileBytes, body, received, dataFile)
 	if err == nil {
 		contentMD5 := resp.Header.Get("Content-MD5")
 		if len(contentMD5) > 0 {
@@ -552,16 +559,21 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 
 // writeDataFile copies the uncompressed data into the temp file, drains the rest of the body so the MD5 hash
 // covers it, flushes the file to disk and gives it the data file's permissions (0644 for a new data file).
-func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, dataFile string) (int64, error) {
+// received says whether a failed copy stopped on reading the response, rather than on writing the file.
+func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, received *readRecorder,
+	dataFile string) (int64, error) {
 	size, err := io.Copy(tempFile, data)
 	if err != nil {
 		tempFile.Close()
+		if received.err != nil {
+			return 0, newPullError(pullRead, received.err)
+		}
 		return 0, newPullError(pullWrite, fmt.Errorf("failed to write temp file: %v", err))
 	}
 	// the gzip reader stops before any trailing bytes
 	if _, err = io.Copy(io.Discard, body); err != nil {
 		tempFile.Close()
-		return 0, newPullError(pullDownload, fmt.Errorf("failed to read response: %v", err))
+		return 0, newPullError(pullRead, err)
 	}
 	// a rename after a power loss must not leave an empty data file behind
 	if err = tempFile.Sync(); err != nil {
@@ -579,6 +591,22 @@ func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, dataFile s
 		return 0, newPullError(pullWrite, fmt.Errorf("failed to set temp file permissions: %v", err))
 	}
 	return size, nil
+}
+
+// readRecorder keeps the first error, other than the end of the data, that
+// reading the response gave, so a download cut short is told apart from a
+// file that could not be written or decompressed.
+type readRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (rr *readRecorder) Read(p []byte) (int, error) {
+	n, err := rr.r.Read(p)
+	if err != nil && err != io.EOF && rr.err == nil {
+		rr.err = err
+	}
+	return n, err
 }
 
 // removeStaleTempFiles deletes temp files a previous pull of this data file left behind, for example after
