@@ -168,4 +168,77 @@ Describe 'Get-ModuleReleasePlan' {
 
         Get-Planned $script:Repo | Should -BeNullOrEmpty
     }
+
+    # A module that needs a change to another in the same release requires
+    # the version the plan releases of it, which has no tag yet.
+    It 'releases a module that requires the version the plan releases of another' {
+        $script:Repo = New-Repo
+        Set-GoMods $script:Repo '4.5.180' '4.5.181'
+        $null = Add-Commit $script:Repo @('pipeline/core/util.go')
+        Get-Planned $script:Repo | Should -Be @(
+            'pipeline 4.5.181', 'ip-intelligence 4.5.181')
+    }
+
+    It 'stops when a module requires a version with no tag that <What>' -ForEach @(
+        @{ What = 'the plan does not release'; Pipeline = '4.5.181'
+            Files = @(); Planned = 'does not release pipeline' }
+        @{ What = 'is after the one planned'; Pipeline = '4.5.182'
+            Files = @('pipeline/core/util.go'); Planned = 'releases pipeline 4.5.181' }
+    ) {
+        $script:Repo = New-Repo
+        Set-GoMods $script:Repo '4.5.180' $Pipeline
+        $null = Add-Commit $script:Repo $Files
+        { Get-Planned $script:Repo } | Should -Throw ("ip-intelligence/go.mod " +
+            "requires $script:ModulePrefix/pipeline/v4 v$Pipeline, which has no " +
+            "tag pipeline/v$Pipeline, and this publish $Planned.")
+    }
+}
+
+Describe 'The latest release of each module' {
+
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'products.ps1')
+    }
+
+    AfterEach {
+        if ($script:Repo -and (Test-Path $script:Repo)) {
+            Remove-Item -Recurse -Force $script:Repo
+        }
+        $script:Repo = $null
+    }
+
+    It 'is the highest version of the module''s own Go tags' {
+        $script:Repo = New-Repo
+        foreach ($tag in 'common/v4.5.99', 'common/v4.5.181',
+                'common/4.5.200', 'common/v4.5.182-alpha.1',
+                'common-extra/v4.5.190', 'pipeline/v4.5.183', '4.5.184') {
+            git -C $script:Repo tag $tag
+        }
+        Get-ModuleRelease $script:Repo 'common' | Should -Be '4.5.181'
+        Get-ModuleRelease $script:Repo 'pipeline' | Should -Be '4.5.183'
+        Get-ModuleRelease $script:Repo 'device-detection' | Should -Be '4.5.180'
+    }
+
+    It 'is nothing for a module with no Go tag' {
+        $script:Repo = New-Repo
+        git -C $script:Repo tag -d 'common/v4.5.180' | Out-Null
+        Get-ModuleRelease $script:Repo 'common' | Should -BeNullOrEmpty
+    }
+
+    # The go line an example needs is the highest of the modules it requires,
+    # each read from its go.mod at its own latest tag.
+    It 'gives the go line of each required module at its own latest tag' {
+        $script:Repo = New-Repo
+        Write-File $script:Repo 'pipeline/go.mod' `
+            ((Get-GoModText 'pipeline') -replace 'go 1\.22', 'go 1.23')
+        $null = Save-Commit $script:Repo
+        git -C $script:Repo tag 'pipeline/v4.5.181'
+        Write-File $script:Repo 'pipeline/go.mod' `
+            ((Get-GoModText 'pipeline') -replace 'go 1\.22', 'go 1.25')
+        Write-File $script:Repo 'examples/pipeline/go.mod' ((Get-GoModText `
+            'pipeline' @{ common = '4.5.180'; pipeline = '4.5.180' }) -replace
+            'module \S+', "module $script:ModulePrefix/examples/pipeline")
+        $null = Save-Commit $script:Repo
+        Get-ReleaseGoVersion $script:Repo 'examples/pipeline' | Should -Be '1.23'
+    }
 }
