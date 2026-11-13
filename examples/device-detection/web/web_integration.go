@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example web/web_integration.go
+This example shows how to perform device detection on the User-Agent of a
+web request, in a web application at localhost:8000.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/web).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*

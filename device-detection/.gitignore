@@ -1,3 +1,6 @@
 .idea
 assets
 51Degrees-LiteV4.1.hash
+
+# Doxygen writes the reference to docs/<version>
+4.**/
