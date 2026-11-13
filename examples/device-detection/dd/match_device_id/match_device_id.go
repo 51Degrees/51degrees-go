@@ -24,7 +24,8 @@ package main
 
 /*
  This example illustrates how to perform simple device detections using
- Device IDs.
+ Device IDs. It runs with the free Lite data file, and shows the properties
+ that only the Enterprise data file has as needing it.
 */
 
 import (
@@ -36,17 +37,22 @@ import (
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-dd-match_device_id-match_device_id.go&utm_term=enterprise-data-file"
+
 // function match performs a match on an input User-Agent, obtain the device id
 // and perform a second match using the obtained device-id. Then from the
 // returned result of the second match, determin if the device is a mobile
-// device. Returns output string.
+// device. Returns that output, a line for each property only the Enterprise
+// data file has, and whether the data file lacks any of them.
 // This function use two ResultsHash inputs so that two matches can be performed
 // independently to guarantee the result of the second match is not impacted by
 // the result of the first match.
 func matchDeviceId(
 	results *dd.ResultsHash,
 	devIdResults *dd.ResultsHash,
-	ua string) string {
+	ua string) (string, string, bool) {
 	// Perform detection
 	err := results.MatchUserAgent(ua)
 	if err != nil {
@@ -86,7 +92,8 @@ func matchDeviceId(
 
 		returnStr = fmt.Sprintf("\tIsMobile: %s\n", value)
 	}
-	return returnStr
+	enterprise, missing := dd_example.EnterpriseValues(devIdResults, "\t")
+	return returnStr, enterprise, missing
 }
 
 func runMatchDeviceId(perf dd.PerformanceProfile) string {
@@ -127,17 +134,27 @@ func runMatchDeviceId(perf dd.PerformanceProfile) string {
 	// User-Agent string of a MediaHub device.
 	const uaMediaHub = "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36"
 
-	// Perform detection on mobile User-Agent
-	actual := fmt.Sprintf("Mobile User-Agent: %s\n", uaMobile)
-	actual += matchDeviceId(results, devIdResults, uaMobile)
-
-	// Perform detection on desktop User-Agent
-	actual += fmt.Sprintf("\nDesktop User-Agent: %s\n", uaDesktop)
-	actual += matchDeviceId(results, devIdResults, uaDesktop)
-
-	// Perform detection on MediaHub User-Agent
-	actual += fmt.Sprintf("\nMediaHub User-Agent: %s\n", uaMediaHub)
-	actual += matchDeviceId(results, devIdResults, uaMediaHub)
+	// Perform detection on each User-Agent. The IsMobile values are checked
+	// below. The properties only the Enterprise data file has are shown too,
+	// with values that depend on the data file in use.
+	actual := ""
+	shown := ""
+	missing := false
+	for i, device := range []struct{ name, ua string }{
+		{"Mobile", uaMobile},
+		{"Desktop", uaDesktop},
+		{"MediaHub", uaMediaHub},
+	} {
+		heading := fmt.Sprintf("%s User-Agent: %s\n", device.name, device.ua)
+		if i > 0 {
+			heading = "\n" + heading
+		}
+		isMobile, enterprise, needs := matchDeviceId(
+			results, devIdResults, device.ua)
+		actual += heading + isMobile
+		shown += heading + isMobile + enterprise
+		missing = missing || needs
+	}
 
 	// Expected output
 	expected := "Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53\n"
@@ -156,18 +173,31 @@ func runMatchDeviceId(perf dd.PerformanceProfile) string {
 		log.Println(actual)
 		log.Fatalln("Output does not match expected.")
 	}
-	return actual
+	if missing {
+		shown += dd_example.EnterpriseNote(contactUs)
+	}
+	return shown
 }
 
 func main() {
 	dd_example.PerformExample(dd.Default, runMatchDeviceId)
-	// Output:
+	// Output, with the free Lite data file:
 	// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
 	// 	IsMobile: True
+	// 	HardwareVendor: needs the Enterprise data file
+	// 	HardwareName: needs the Enterprise data file
+	// 	DeviceType: needs the Enterprise data file
 	//
 	// Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0
 	// 	IsMobile: False
+	// 	HardwareVendor: needs the Enterprise data file
+	// 	HardwareName: needs the Enterprise data file
+	// 	DeviceType: needs the Enterprise data file
 	//
 	// MediaHub User-Agent: Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36
 	// 	IsMobile: False
+	// 	HardwareVendor: needs the Enterprise data file
+	// 	HardwareName: needs the Enterprise data file
+	// 	DeviceType: needs the Enterprise data file
+	// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>
 }

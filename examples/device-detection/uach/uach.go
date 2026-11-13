@@ -55,6 +55,9 @@ package main
  You should see the html text returned with `Platform Name` set to `Windows`, and
  `Platform Version` set to `11.0`.
 
+ With the free Lite data file, HardwareVendor, HardwareName and DeviceType,
+ which only the Enterprise data file has, are shown as needing it, with a link
+ to ask for a copy.
 */
 
 import (
@@ -87,7 +90,14 @@ type Page struct {
 	BrowserVendor   string
 	BrowserName     string
 	BrowserVersion  string
+	// ContactUs is set when the data file lacks a property only the
+	// Enterprise data file has.
+	ContactUs string
 }
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-uach-uach.go&utm_term=enterprise-data-file"
 
 var manager *dd.ResourceManager
 var config *dd.ConfigHash
@@ -174,15 +184,16 @@ var templ = `<!DOCTYPE HTML>
 	   <div id=description></div>
 	   <div id="content">
 	      <strong>Detection results:</strong></br></br>
-	      <b>Hardware Vendor:</b> {{.HardwareVendor}}<br />
-	      <b>Hardware Name:</b> {{.HardwareName}}<br />
-	      <b>Device Type:</b> {{.DeviceType}}<br />
+	      <b>HardwareVendor:</b> {{.HardwareVendor}}<br />
+	      <b>HardwareName:</b> {{.HardwareName}}<br />
+	      <b>DeviceType:</b> {{.DeviceType}}<br />
 	      <b>Platform Vendor:</b> {{.PlatformVendor}}<br />
 	      <b>Platform Name:</b> {{.PlatformName}}<br />
 	      <b>Platform Version:</b> {{.PlatformVersion}}<br />
 	      <b>Browser Vendor:</b> {{.BrowserVendor}}<br />
 	      <b>Browser Name:</b> {{.BrowserName}}<br />
 	      <b>Browser Version:</b> {{.BrowserVersion}}<br />
+	      {{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>{{end}}
 	   </div>
    </body>
 </html>`
@@ -290,9 +301,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// requests.
 	results.SetResponseHeaders(w, manager)
 
-	hardwareVendor := getValue(results, "HardwareVendor")
-	hardwareName := getValue(results, "HardwareName")
-	deviceType := getValue(results, "DeviceType")
+	// The properties only the Enterprise data file has, each with its value
+	// or as needing that file.
+	enterprise, missing := examples.Enterprise(results)
+	shown := make(map[string]string)
+	for _, property := range enterprise {
+		shown[property.Name] = property.Value
+	}
+	hardwareVendor := shown["HardwareVendor"]
+	hardwareName := shown["HardwareName"]
+	deviceType := shown["DeviceType"]
 	platformVendor := getValue(results, "PlatformVendor")
 	platformName := getValue(results, "PlatformName")
 	platformVersion := getValue(results, "PlatformVersion")
@@ -310,6 +328,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		browserVendor,
 		browserName,
 		browserVersion,
+		"",
+	}
+	if missing {
+		p.ContactUs = contactUs
 	}
 
 	// Construct the template

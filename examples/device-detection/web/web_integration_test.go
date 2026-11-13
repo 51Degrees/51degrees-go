@@ -72,10 +72,16 @@ func TestMain(m *testing.M) {
 // Test if the web integration handler handles the request
 // correctly.
 func TestHandler(t *testing.T) {
-	// Expected response body
+	// Expected response body, with the Lite data file, which has none of the
+	// properties only the Enterprise data file has.
 	p := &Page{
-		"Mobile Safari",
-		"640",
+		BrowserName:       "Mobile Safari",
+		ScreenPixelsWidth: "640",
+		ContactUs:         contactUs,
+	}
+	for _, property := range examples.EnterpriseProperties {
+		p.Enterprise = append(p.Enterprise,
+			examples.Property{Name: property, Value: examples.NeedsEnterprise})
 	}
 
 	// Construct the template

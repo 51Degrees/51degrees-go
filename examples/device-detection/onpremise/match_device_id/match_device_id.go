@@ -24,29 +24,36 @@ package main
 
 /*
  This example illustrates how to perform simple device detections using
- Device IDs.
+ Device IDs. It runs with the free Lite data file, and shows the properties
+ that only the Enterprise data file has as needing it.
 */
 
 import (
 	"fmt"
 	"log"
 
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 	"github.com/51Degrees/51degrees-go/examples/device-detection/onpremise/common"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 )
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-match_device_id-match_device_id.go&utm_term=enterprise-data-file"
+
 // function match performs a match on an input User-Agent, obtain the device id
 // and perform a second match using the obtained device-id. Then from the
 // returned result of the second match, determin if the device is a mobile
-// device. Returns output string.
+// device. Returns that output, a line for each property only the Enterprise
+// data file has, and whether the data file lacks any of them.
 // This function use two ResultsHash inputs so that two matches can be performed
 // independently to guarantee the result of the second match is not impacted by
 // the result of the first match.
 func matchDeviceId(
 	engine *onpremise.Engine,
-	evidence []onpremise.Evidence) string {
+	evidence []onpremise.Evidence) (string, string, bool) {
 	// Perform detection. There are no results to free when it fails.
 	results, err := engine.Process(evidence)
 	if err != nil {
@@ -95,21 +102,35 @@ func matchDeviceId(
 
 		returnStr = fmt.Sprintf("\tIsMobile: %s\n", value)
 	}
-	return returnStr
+	enterprise, missing := dd_example.EnterpriseValues(devIdResults, "\t")
+	return returnStr, enterprise, missing
 }
 
 func runMatchDeviceId(engine *onpremise.Engine) {
-	// Perform detection on mobile Evidence
-	actual := fmt.Sprintf("Mobile User-Agent: %s\n", common.GetEvidenceUserAgent(common.ExampleEvidenceMobile))
-	actual += matchDeviceId(engine, common.ExampleEvidenceMobile)
-
-	// Perform detection on desktop Evidence
-	actual += fmt.Sprintf("\nDesktop User-Agent: %v\n", common.GetEvidenceUserAgent(common.ExampleEvidenceDesktop))
-	actual += matchDeviceId(engine, common.ExampleEvidenceDesktop)
-
-	// Perform detection on MediaHub Evidence
-	actual += fmt.Sprintf("\nMediaHub User-Agent: %v\n", common.GetEvidenceUserAgent(common.ExampleEvidenceMediaHub))
-	actual += matchDeviceId(engine, common.ExampleEvidenceMediaHub)
+	// Perform detection on each Evidence. The IsMobile values are checked
+	// below. The properties only the Enterprise data file has are shown too,
+	// with values that depend on the data file in use.
+	actual := ""
+	shown := ""
+	missing := false
+	for i, device := range []struct {
+		name     string
+		evidence []onpremise.Evidence
+	}{
+		{"Mobile", common.ExampleEvidenceMobile},
+		{"Desktop", common.ExampleEvidenceDesktop},
+		{"MediaHub", common.ExampleEvidenceMediaHub},
+	} {
+		heading := fmt.Sprintf("%s User-Agent: %s\n",
+			device.name, common.GetEvidenceUserAgent(device.evidence))
+		if i > 0 {
+			heading = "\n" + heading
+		}
+		isMobile, enterprise, needs := matchDeviceId(engine, device.evidence)
+		actual += heading + isMobile
+		shown += heading + isMobile + enterprise
+		missing = missing || needs
+	}
 
 	// Expected output
 	expected := "Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1.2 Mobile/15E148 Safari/604.1\n"
@@ -128,7 +149,10 @@ func runMatchDeviceId(engine *onpremise.Engine) {
 		log.Println(actual)
 		log.Fatalln("Output does not match expected.")
 	}
-	log.Println(actual)
+	if missing {
+		shown += dd_example.EnterpriseNote(contactUs)
+	}
+	log.Println(shown)
 }
 
 func main() {
@@ -163,12 +187,22 @@ func main() {
 	)
 }
 
-// Output:
-// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
+// Output, with the free Lite data file:
+// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1.2 Mobile/15E148 Safari/604.1
 // 	IsMobile: True
+// 	HardwareVendor: needs the Enterprise data file
+// 	HardwareName: needs the Enterprise data file
+// 	DeviceType: needs the Enterprise data file
 //
-// Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0
+// Desktop User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36
 // 	IsMobile: False
+// 	HardwareVendor: needs the Enterprise data file
+// 	HardwareName: needs the Enterprise data file
+// 	DeviceType: needs the Enterprise data file
 //
-// MediaHub User-Agent: Mozilla/5.0 (Linux; Android 4.4.2; X7 Quad Core Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/30.0.0.0 Safari/537.36
-// 	IsMobile: False
+// MediaHub User-Agent: Mozilla/5.0 (Linux; U; Android 4.4.2; en-us; A464BG Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Mobile Safari/537.36
+// 	IsMobile: True
+// 	HardwareVendor: needs the Enterprise data file
+// 	HardwareName: needs the Enterprise data file
+// 	DeviceType: needs the Enterprise data file
+// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>

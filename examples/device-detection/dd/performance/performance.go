@@ -42,6 +42,10 @@ IsMobile Evidence Records: 58076
 Processed Evidence Records: 80000
 Number of CPUs: 2
 ```
+
+The detections it measures ask for IsMobile alone. Afterwards it shows the
+properties that only the Enterprise data file has, as needing that file when
+the data file in use is the free Lite one.
 */
 
 import ( //	"runtime"
@@ -63,6 +67,10 @@ import ( //	"runtime"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-dd-performance-performance.go&utm_term=enterprise-data-file"
 
 // File to output the performance report
 const reportFile = "performance_report.log"
@@ -303,11 +311,12 @@ func runPerformance(perf dd.PerformanceProfile, options dd_example.Options) stri
 		log.Fatalln(err)
 	}
 
-	// Make sure manager object will be freed after the function execution
-	defer manager.Free()
-
-	// Run the performance tests
-	return run(manager, options)
+	// Run the performance tests, then free the manager before the properties
+	// only the Enterprise data file has are shown, so that the data file is
+	// never loaded twice at once.
+	output := run(manager, options)
+	manager.Free()
+	return output + dd_example.ShowEnterprise(dataFilePath, contactUs)
 }
 
 func main() {
@@ -321,6 +330,11 @@ func main() {
 	//   Processed Evidence Records: 20000
 	//   Number of CPUs: 2
 
-	// Output:
+	// Output, with the free Lite data file:
 	// Output report to file "performance_report.log".
+	// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
+	//	HardwareVendor: needs the Enterprise data file
+	//	HardwareName: needs the Enterprise data file
+	//	DeviceType: needs the Enterprise data file
+	// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>
 }

@@ -23,7 +23,9 @@
 package main
 
 /*
-This example illustrates how match metrics can be accessed.
+This example illustrates how match metrics can be accessed. It runs with the
+free Lite data file, and shows the properties that only the Enterprise data
+file has as needing it.
 */
 
 import (
@@ -31,17 +33,23 @@ import (
 	"log"
 	"regexp"
 
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 	"github.com/51Degrees/51degrees-go/examples/device-detection/onpremise/common"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 )
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-match_metrics-match_metrics.go&utm_term=enterprise-data-file"
+
 // matchMetrics performs a device detection on the input Evidence and
-// return the match metrics.
+// return the match metrics, a line for each property only the Enterprise data
+// file has, and whether the data file lacks any of them.
 func matchMetrics(
 	engine *onpremise.Engine,
-	evidence []onpremise.Evidence) string {
+	evidence []onpremise.Evidence) (string, string, bool) {
 	// Perform detection. There are no results to free when it fails.
 	results, err := engine.Process(evidence)
 	if err != nil {
@@ -104,7 +112,8 @@ func matchMetrics(
 		returnStr += fmt.Sprintf("\tMethod: %s\n", methodStr)
 		returnStr += fmt.Sprintf("\tSub Strings: %s\n", matchedUserAgent)
 	}
-	return returnStr
+	enterprise, missing := dd_example.EnterpriseValues(results, "\t")
+	return returnStr, enterprise, missing
 }
 
 // Expected output format for match metrics report
@@ -138,21 +147,30 @@ func verifyOutputFormat(matchReport string) string {
 }
 
 func runMatchMetrics(engine *onpremise.Engine) {
-	// Perform detection on mobile Evidence
-	report := fmt.Sprintf("Mobile User-Agent: %s\n", common.GetEvidenceUserAgent(common.ExampleEvidenceMobile))
-	actual := matchMetrics(engine, common.ExampleEvidenceMobile)
-	report += verifyOutputFormat(actual)
-
-	// Perform detection on desktop Evidence
-	report += fmt.Sprintf("\nDesktop User-Agent: %v\n", common.GetEvidenceUserAgent(common.ExampleEvidenceDesktop))
-	actual = matchMetrics(engine, common.ExampleEvidenceDesktop)
-	report += verifyOutputFormat(actual)
-
-	// Perform detection on MediaHub Evidence
-	report += fmt.Sprintf("\nMediaHub User-Agent: %v\n", common.GetEvidenceUserAgent(common.ExampleEvidenceMediaHub))
-	actual = matchMetrics(engine, common.ExampleEvidenceMediaHub)
-	report += verifyOutputFormat(actual)
-
+	// Perform detection on each Evidence, check the format of its match
+	// metrics, and show the properties only the Enterprise data file has.
+	report := ""
+	missing := false
+	for i, device := range []struct {
+		name     string
+		evidence []onpremise.Evidence
+	}{
+		{"Mobile", common.ExampleEvidenceMobile},
+		{"Desktop", common.ExampleEvidenceDesktop},
+		{"MediaHub", common.ExampleEvidenceMediaHub},
+	} {
+		if i > 0 {
+			report += "\n"
+		}
+		report += fmt.Sprintf("%s User-Agent: %s\n",
+			device.name, common.GetEvidenceUserAgent(device.evidence))
+		actual, enterprise, needs := matchMetrics(engine, device.evidence)
+		report += verifyOutputFormat(actual) + enterprise
+		missing = missing || needs
+	}
+	if missing {
+		report += dd_example.EnterpriseNote(contactUs)
+	}
 	log.Println(report)
 }
 
@@ -168,12 +186,12 @@ func main() {
 				// Optimized config provided
 				onpremise.WithConfigHash(config),
 				// List of selected properties for detection
-				onpremise.WithProperties([]string{
+				onpremise.WithProperties(append([]string{
 					"ScreenPixelsWidth",
 					"HardwareModel",
 					"IsMobile",
 					"BrowserName",
-					"Id"}),
+					"Id"}, dd_example.EnterpriseProperties...)),
 				// Path to your data file
 				onpremise.WithDataFile(params.DataFile),
 				// Enable automatic updates.
@@ -225,3 +243,9 @@ func main() {
 //	Iterations: [number]
 //	Method: [PERFORMANCE|COMBINED|PREDICTIVE|NONE]
 //	Sub strings: [string]
+//
+// With the free Lite data file, each device is followed by
+//	HardwareVendor: needs the Enterprise data file
+//	HardwareName: needs the Enterprise data file
+//	DeviceType: needs the Enterprise data file
+// and the output ends with where to ask for a copy of that file.

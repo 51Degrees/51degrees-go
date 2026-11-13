@@ -37,7 +37,10 @@ go test -run Example_offline_processing
 
 This example will output to a file next to the evidence file, named
 "20000 Evidence Records.processed.yml".
-This contains IsMobile, BrowserName, BrowserVersion, PlatformName, PlatformVersion, DeviceId
+This contains IsMobile, BrowserName, BrowserVersion, PlatformName, PlatformVersion, DeviceId,
+and HardwareVendor, HardwareName and DeviceType, which only the Enterprise data
+file has. With the free Lite data file, the example says those need the
+Enterprise data file, and where to ask for a copy.
 */
 
 import (
@@ -54,11 +57,16 @@ import (
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-dd-offline_processing-offline_processing.go&utm_term=enterprise-data-file"
+
 // function match performs a match on an input Evidence, calulates
-// configured properties and returns them as yaml entry
+// configured properties and returns them as yaml entry, with the properties
+// only the Enterprise data file has that the data file in use lacks.
 func processEvidence(
 	manager *dd.ResourceManager,
-	evidence *dd.Evidence) map[string]string {
+	evidence *dd.Evidence) (map[string]string, []string) {
 	defer evidence.Free()
 	// Create results
 	results := dd.NewResultsHash(manager, uint32(evidence.Count()), 0)
@@ -72,9 +80,20 @@ func processEvidence(
 		log.Fatal("ERROR: Failed to perform detection.")
 	}
 
+	lacks := make([]string, 0)
+	for _, property := range dd_example.EnterpriseProperties {
+		if !dd_example.HasProperty(results, property) {
+			lacks = append(lacks, property)
+		}
+	}
+
 	// Get the values in string
 	res := make(map[string]string)
 	for i := 0; i < len(available); i++ {
+		// A name given that the data file does not have has no type.
+		if results.PropertyType(i) == nil {
+			continue
+		}
 		hasValues, err := results.HasValuesByIndex(i)
 		if err != nil {
 			log.Fatalln(err)
@@ -95,13 +114,16 @@ func processEvidence(
 	if err != nil {
 		log.Fatalf("ERROR: Failed to get unique DeviceID: %v", err)
 	}
-	return res
+	return res, lacks
 }
 
+// process writes the values of each Evidence Record to the output file, and
+// returns the properties only the Enterprise data file has that the data file
+// in use lacks.
 func process(
 	manager *dd.ResourceManager,
 	evidenceFilePath string,
-	outputFilePath string) {
+	outputFilePath string) []string {
 	outFile, err := os.Create(outputFilePath)
 	if err != nil {
 		log.Fatalf("ERROR: Failed to create file %s.\n", outputFilePath)
@@ -125,6 +147,7 @@ func process(
 
 	enc := yaml.NewEncoder(outFile)
 	dec := yaml.NewDecoder(file)
+	var lacks []string
 	for {
 		// Decode Evidence file by line
 		var doc map[string]string
@@ -138,7 +161,8 @@ func process(
 		filteredEvidence := dd_example.ConvertEvidenceMap(doc)
 		evidence := dd_example.ExtractEvidence(filteredEvidence)
 
-		values := processEvidence(manager, evidence)
+		var values map[string]string
+		values, lacks = processEvidence(manager, evidence)
 
 		err = enc.Encode(values)
 		if err != nil {
@@ -152,6 +176,27 @@ func process(
 	if err != nil {
 		log.Fatalf("ERROR: Failed to write end for file \"%s\". %v\n", outputFilePath, err)
 	}
+	return lacks
+}
+
+// enterpriseOutput returns a line for each property only the Enterprise data
+// file has, saying it is in the output file or needs the Enterprise data file,
+// and where to ask for a copy when the data file lacks any of them.
+func enterpriseOutput(lacks []string) string {
+	output := ""
+	for _, property := range dd_example.EnterpriseProperties {
+		shown := "in the output file"
+		for _, lacked := range lacks {
+			if lacked == property {
+				shown = dd_example.NeedsEnterprise
+			}
+		}
+		output += fmt.Sprintf("\t%s: %s\n", property, shown)
+	}
+	if len(lacks) > 0 {
+		output += dd_example.EnterpriseNote(contactUs)
+	}
+	return output
 }
 
 func runOfflineProcessing(perf dd.PerformanceProfile) string {
@@ -177,10 +222,18 @@ func runOfflineProcessing(perf dd.PerformanceProfile) string {
 	relOutputFilePath = filepath.ToSlash(relOutputFilePath)
 
 	config.SetUpdateMatchedUserAgent(true)
+	// The properties to detect, with those only the Enterprise data file has.
+	properties := append([]string{
+		"IsMobile",
+		"BrowserName",
+		"BrowserVersion",
+		"PlatformName",
+		"PlatformVersion",
+	}, dd_example.EnterpriseProperties...)
 	err = dd.InitManagerFromFile(
 		manager,
 		*config,
-		"IsMobile,BrowserName,BrowserVersion,PlatformName,PlatformVersion",
+		strings.Join(properties, ","),
 		filePath)
 	if err != nil {
 		log.Fatalln(err)
@@ -189,12 +242,17 @@ func runOfflineProcessing(perf dd.PerformanceProfile) string {
 	// Make sure manager object will be freed after the function execution
 	defer manager.Free()
 
-	process(manager, evidenceFilePath, outputFilePath)
-	return fmt.Sprintf("Output to \"%s\".\n", relOutputFilePath)
+	lacks := process(manager, evidenceFilePath, outputFilePath)
+	return fmt.Sprintf("Output to \"%s\".\n", relOutputFilePath) +
+		enterpriseOutput(lacks)
 }
 
 func main() {
 	dd_example.PerformExample(dd.Default, runOfflineProcessing)
-	// Output:
+	// Output, with the free Lite data file:
 	// Output to "../20000 Evidence Records.processed.yml".
+	//	HardwareVendor: needs the Enterprise data file
+	//	HardwareName: needs the Enterprise data file
+	//	DeviceType: needs the Enterprise data file
+	// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>
 }

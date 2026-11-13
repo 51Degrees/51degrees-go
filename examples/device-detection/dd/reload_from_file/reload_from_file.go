@@ -23,7 +23,9 @@
 package main
 
 /*
-Illustrates how dataset can be reloaded while detections are performed.
+Illustrates how dataset can be reloaded while detections are performed. It runs
+with the free Lite data file, and then shows the properties that only the
+Enterprise data file has as needing it.
 */
 
 import (
@@ -32,6 +34,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,6 +44,33 @@ import (
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-dd-reload_from_file-reload_from_file.go&utm_term=enterprise-data-file"
+
+// uaMobile is the User-Agent of an iPhone, which the properties only the
+// Enterprise data file has are shown for.
+const uaMobile = "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
+	"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 " +
+	"Safari/9537.53"
+
+// showEnterprise detects uaMobile and returns the properties only the
+// Enterprise data file has, with where to ask for a copy of that file when the
+// data file in use lacks any of them.
+func showEnterprise(manager *dd.ResourceManager) string {
+	results := dd.NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		log.Fatalln(err)
+	}
+	values, missing := dd_example.EnterpriseValues(results, "\t")
+	output := "Mobile User-Agent: " + uaMobile + "\n" + values
+	if missing {
+		output += dd_example.EnterpriseNote(contactUs)
+	}
+	return output
+}
 
 // Number of iterations to perform over the Evidence Records.
 const fIterationCount = 4
@@ -223,7 +253,8 @@ func runReloadFromFile(perf dd.PerformanceProfile) string {
 	err := dd.InitManagerFromFile(
 		manager,
 		*config,
-		"IsMobile,BrowserName,DeviceType",
+		strings.Join(append([]string{"IsMobile", "BrowserName"},
+			dd_example.EnterpriseProperties...), ","),
 		dataFilePath)
 	if err != nil {
 		log.Fatalln(err)
@@ -234,7 +265,7 @@ func runReloadFromFile(perf dd.PerformanceProfile) string {
 
 	// Run the performance tests
 	report := runReloadFromFileSub(manager, evidenceFilePath)
-	return report
+	return report + "\n" + showEnterprise(manager)
 }
 
 func main() {
@@ -248,6 +279,11 @@ func main() {
 	// 2021/11/10 11:42:05 Hashcode '4217895257' for iteration '2'.
 	// 2021/11/10 11:42:05 Hashcode '4217895257' for iteration '3'.
 
-	// Output:
+	// Output, with the free Lite data file:
 	// Program execution complete.
+	// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
+	//	HardwareVendor: needs the Enterprise data file
+	//	HardwareName: needs the Enterprise data file
+	//	DeviceType: needs the Enterprise data file
+	// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>
 }
