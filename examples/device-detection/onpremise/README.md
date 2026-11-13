@@ -13,7 +13,6 @@ _51DEGREES_LICENSE_KEY=my_license_key go run onpremise/update_polling_interval.g
 ```
 
 # onpremise API Usage
-```bash
 
 #### Create config
 ```go
