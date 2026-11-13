@@ -528,7 +528,7 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	if err != nil {
 		return nil, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
 	}
-	size, err := writeDataFile(tempFile, fileBytes, body, received, dataFile)
+	size, err := writeDataFile(tempFile, fileBytes, received, dataFile)
 	if err == nil {
 		contentMD5 := resp.Header.Get("Content-MD5")
 		if len(contentMD5) > 0 {
@@ -557,23 +557,24 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	}, nil
 }
 
-// writeDataFile copies the uncompressed data into the temp file, drains the rest of the body so the MD5 hash
-// covers it, flushes the file to disk and gives it the data file's permissions (0644 for a new data file).
-// received says whether a failed copy stopped on reading the response, rather than on writing the file.
-func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, received *readRecorder,
+// writeDataFile copies the uncompressed data into the temp file, flushes the file to disk and gives it the
+// data file's permissions (0644 for a new data file). The copy reads the response to its end, as the gzip
+// reader reads every gzip stream up to the end of its input, so the MD5 hash covers the whole body.
+// received says whether a failed copy stopped on reading the response, rather than on decompressing the
+// data or writing the file.
+func writeDataFile(tempFile *os.File, data io.Reader, received *readRecorder,
 	dataFile string) (int64, error) {
-	size, err := io.Copy(tempFile, data)
+	unpacked := &readRecorder{r: data}
+	size, err := io.Copy(tempFile, unpacked)
 	if err != nil {
 		tempFile.Close()
 		if received.err != nil {
 			return 0, newPullError(pullRead, received.err)
 		}
+		if unpacked.err != nil {
+			return 0, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", unpacked.err))
+		}
 		return 0, newPullError(pullWrite, fmt.Errorf("failed to write temp file: %v", err))
-	}
-	// the gzip reader stops before any trailing bytes
-	if _, err = io.Copy(io.Discard, body); err != nil {
-		tempFile.Close()
-		return 0, newPullError(pullRead, err)
 	}
 	// a rename after a power loss must not leave an empty data file behind
 	if err = tempFile.Sync(); err != nil {
