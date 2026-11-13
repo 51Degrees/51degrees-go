@@ -82,6 +82,47 @@ function Invoke-GoTests {
 $LibraryPaths = @((Get-Content -Raw (Join-Path $PSScriptRoot 'packages.json') |
     ConvertFrom-Json) | Where-Object Publish | ForEach-Object Path)
 
+# Returns a go line's version in a form that compares correctly, as 1.22 and
+# 1.22.0 name the same release.
+function ConvertTo-GoVersion([string]$Version) {
+    $parts = @($Version.Split('.'))
+    while ($parts.Count -lt 3) { $parts += '0' }
+    [version]($parts[0..2] -join '.')
+}
+
+# Returns the newest version a published module was released at, such as
+# 4.5.173, from its Go tags such as common/v4.5.173, or nothing. Tags are read
+# by prefix, as PowerShell on Linux and macOS would expand a '*' in an argument
+# into file names.
+function Get-ModuleRelease([string]$RepoPath, [string]$Library) {
+    $versions = foreach ($tag in @(git -C $RepoPath for-each-ref `
+            '--format=%(refname:strip=2)' "refs/tags/$Library/")) {
+        if ($tag -match "^$([regex]::Escape($Library))/v(\d+\.\d+\.\d+)$") {
+            [version]$Matches[1]
+        }
+    }
+    $latest = $versions | Sort-Object | Select-Object -Last 1
+    if ($latest) { "$latest" }
+}
+
+# Returns the highest go line of the published modules that the module in the
+# folder requires, each as it is at its latest release, or nothing.
+function Get-ReleaseGoVersion([string]$RepoPath, [string]$ModuleFolder) {
+    $mod = go mod edit -json (Join-Path $RepoPath $ModuleFolder 'go.mod') | ConvertFrom-Json
+    $versions = foreach ($require in $mod.Require) {
+        foreach ($library in $LibraryPaths) {
+            if ($require.Path -like "github.com/51Degrees/51degrees-go/$library/v*") {
+                $release = Get-ModuleRelease $RepoPath $library
+                if (!$release) { continue }
+                $line = git -C $RepoPath show "$library/v${release}:$library/go.mod" |
+                    Select-String '^go (\S+)'
+                $line.Matches[0].Groups[1].Value
+            }
+        }
+    }
+    $versions | Sort-Object { ConvertTo-GoVersion $_ } | Select-Object -Last 1
+}
+
 # Returns a go mod edit -replace argument for each requirement of the module in
 # the folder on a module of this repository at a version with no tag yet. Such
 # a version is the one the next release publishes for that module, from its
