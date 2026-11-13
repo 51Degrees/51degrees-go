@@ -56,6 +56,21 @@ func (r *requestRecorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(r.body))
 }
 
+// cutShortServer answers 200 with a Content-Length longer than the body it
+// sends, then closes the connection, so the download ends part way through
+// the file.
+type cutShortServer struct{}
+
+func (cutShortServer) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	conn, buf, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\npartial")
+	buf.Flush()
+}
+
 func (r *requestRecorder) requests() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -147,11 +162,13 @@ func TestFailedChecksAreReportedAsTheErrorTableGivesThem(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		url    string
-		server *requestRecorder
+		server http.Handler
 		want   string
 	}{
 		{name: "cannot connect", url: refusedURL,
 			want: "Error accessing data update service at '%s' for engine 'Eng'. Error detail: "},
+		{name: "download cut short", server: cutShortServer{},
+			want: "Error accessing data update service at '%s' for engine 'Eng'. Error detail: unexpected EOF"},
 		{name: "too many requests", server: &requestRecorder{status: http.StatusTooManyRequests},
 			want: "Too many requests to '%s' for engine 'Eng'"},
 		{name: "forbidden", server: &requestRecorder{status: http.StatusForbidden},
