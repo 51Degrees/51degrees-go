@@ -189,16 +189,21 @@ func TestMaxAgeCanBeConfigured(t *testing.T) {
 }
 
 // The JSON endpoint gives the JSON the JavaScript embeds for the same
-// Evidence (javascript-builder.md, SetEndpoint).
+// Evidence (javascript-builder.md, SetEndpoint). Both requests carry one
+// session id and sequence, which the JSON holds.
 func TestJSONEndpointGivesTheJSONTheJavaScriptEmbeds(t *testing.T) {
+	const session = "?session-id=example-session&sequence=1"
 	p := buildWebPipeline(t)
 	defer p.Close()
 	srv := httptest.NewServer(NewMiddleware(p).Handler(http.NotFoundHandler()))
 	defer srv.Close()
 
-	_, js := fetchFrom(t, srv, http.MethodGet, DefaultJavaScriptURL, "", "")
-	_, jsonText := fetchFrom(t, srv, http.MethodPost, DefaultJSONURL, "", "")
-	if len(jsonText) < len(`{"device":{}}`) {
+	_, js := fetchFrom(t, srv, http.MethodGet, DefaultJavaScriptURL+session,
+		"", "")
+	_, jsonText := fetchFrom(t, srv, http.MethodPost, DefaultJSONURL+session,
+		"", "")
+	if !strings.Contains(jsonText, `"device":{`) ||
+		!strings.Contains(jsonText, "example-session") {
 		t.Fatalf("the JSON endpoint gave %q, want the JSON Builder's JSON",
 			jsonText)
 	}
