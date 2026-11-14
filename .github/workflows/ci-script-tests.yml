@@ -45,9 +45,15 @@ jobs:
         shell: pwsh
         run: |
           $env:COMMON_CI = (Resolve-Path common-ci).Path
-          $result = Invoke-Pester -Output Detailed -PassThru -Path @(
+          $paths = @(
             '51degrees-go/ci/packages.Tests.ps1',
             '51degrees-go/ci/select-options.Tests.ps1')
+          # Pester passes over a path that does not exist, so a test file that
+          # was renamed or removed would otherwise go untested.
+          foreach ($path in $paths) {
+            if (!(Test-Path $path)) { throw "$path does not exist" }
+          }
+          $result = Invoke-Pester -Output Detailed -PassThru -Path $paths
           if ($result.Result -ne 'Passed' -or $result.PassedCount -eq 0) {
             exit 1
           }
