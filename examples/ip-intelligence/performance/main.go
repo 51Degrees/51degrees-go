@@ -39,8 +39,6 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 
 @include{doc} example-require-datafile-ipi.txt
 
-@include{doc} example-how-to-run-ipi.txt
-
 ## Usage
 ```
 # Multi-threaded mode (default)
