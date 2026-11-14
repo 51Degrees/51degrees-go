@@ -224,6 +224,26 @@ func GetFilePathByName(names []string) string {
 	return ""
 }
 
+// DataFilePath returns the data file an example uses, being the file the
+// _51DEGREES_DD_PATH environment variable names, as for the on-premise
+// examples, and otherwise the free Lite file, found or downloaded.
+func DataFilePath() string {
+	if path := fromEnvironment("_51DEGREES_DD_PATH"); path != "" {
+		return path
+	}
+	return GetFilePathByName([]string{LiteDataFile})
+}
+
+// EvidenceFilePath returns the Evidence file an example uses, being the file
+// the _51DEGREES_EVIDENCE_YAML environment variable names, and otherwise the
+// free Evidence file, found or downloaded.
+func EvidenceFilePath() string {
+	if path := fromEnvironment("_51DEGREES_EVIDENCE_YAML"); path != "" {
+		return path
+	}
+	return GetFilePathByName([]string{EvidenceFileYaml})
+}
+
 // Returns a full path to a file to be used for examples by path to a file. A
 // file that isn't found is downloaded when the data repository links to it.
 func GetFilePathByPath(path string) string {
@@ -518,10 +538,18 @@ type Options struct {
 func ParseOptions() Options {
 	options := Options{}
 
-	flag.StringVar(&options.DataFilePath, "data-file", "../"+LiteDataFile, "Path to a 51Degrees Hash data file")
+	dataFile, evidenceFile := "../"+LiteDataFile, "../"+EvidenceFileYaml
+	if path := fromEnvironment("_51DEGREES_DD_PATH"); path != "" {
+		dataFile = path
+	}
+	if path := fromEnvironment("_51DEGREES_EVIDENCE_YAML"); path != "" {
+		evidenceFile = path
+	}
+
+	flag.StringVar(&options.DataFilePath, "data-file", dataFile, "Path to a 51Degrees Hash data file")
 	flag.StringVar(&options.DataFilePath, "d", options.DataFilePath, "Alias for -data-file")
 
-	flag.StringVar(&options.EvidenceFilePath, "evidence-file", "../"+EvidenceFileYaml, "Path to a Evidence Records YAML file")
+	flag.StringVar(&options.EvidenceFilePath, "evidence-file", evidenceFile, "Path to a Evidence Records YAML file")
 	flag.StringVar(&options.EvidenceFilePath, "e", options.EvidenceFilePath, "Alias for -evidence-file")
 
 	flag.StringVar(&options.LogOutputPath, "log-output", "", "Path to a output log file")
