@@ -242,7 +242,8 @@ documentation outside the module folders releases nothing, and neither does a
 change inside them only to tests (`*_test.go`), their data (`mock_hash.gz`),
 Markdown files, `docs` folders or licences. Run the tests of the plan with
 `Invoke-Pester ci/packages.Tests.ps1`, with `COMMON_CI` naming a checkout of
-common-ci.
+common-ci. The CI script tests workflow runs these and the build selection
+tests on every pull request that changes `ci/`.
 
 A module that requires one released in the same publish is tagged on a commit
 that raises its `go.mod` to the new version, because Go reads the requirement
@@ -358,10 +359,14 @@ pointer files.
 The workflows call the shared workflows in
 [common-ci](https://github.com/51Degrees/common-ci), which run the scripts in
 `ci/`. `ci/products.ps1` works out which modules a change affects, measured
-from the branch the pull request merges into, `rc`. `ci/select-options.ps1`
-leaves macOS and performance to the builds of `rc` itself and of the release
-pull request, which `.github/workflows/release-pull-request.yml` builds on
-every entry.
+from the branch the pull request merges into, `rc`, and adds each module that
+requires one of them (`DependsOn` in `ci/packages.json`), because the workspace
+builds a module against the folders of the modules it requires.
+`ci/select-options.ps1` leaves macOS and performance to the builds of `rc`
+itself and of the release pull request, which
+`.github/workflows/release-pull-request.yml` builds on every entry. Run the
+tests of both with `Invoke-Pester ci/select-options.Tests.ps1`, with
+`COMMON_CI` naming a checkout of common-ci.
 
 The Pull Requests workflow is started by hand. A run that passes squash-merges
 the pull request unless `dryrun` is ticked, which loses the pull request's own
