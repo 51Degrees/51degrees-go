@@ -257,7 +257,11 @@ func main() {
 			defer engine.Stop()
 
 			//Process evidence
-			runReloadFromFileSub(engine, params.EvidenceYaml, params.DataFile)
+			// The evidence file is found as offline processing finds it, so
+			// a fresh clone with no settings downloads it.
+			runReloadFromFileSub(engine,
+				dd_example.GetFilePathByPath(params.EvidenceYaml),
+				params.DataFile)
 
 			// Show the properties only the Enterprise data file has.
 			fmt.Print(showEnterprise(engine))

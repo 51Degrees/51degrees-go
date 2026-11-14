@@ -34,7 +34,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
@@ -45,14 +44,10 @@ func TestMain(m *testing.M) {
 	// Initialise manager
 	manager = dd.NewResourceManager()
 	config = dd.NewConfigHash(dd.Balanced)
-	dataFiles := []string{"51Degrees-LiteV4.1.hash"}
-	filePath, err := dd.GetFilePath("../..", dataFiles)
-	if err != nil {
-		log.Fatalf("Cannot find file that matches any of \"%s\".\n",
-			strings.Join(dataFiles, ", "))
-	}
+	// Found as the example finds it, so a fresh clone downloads it.
+	filePath := examples.GetFilePathByName([]string{examples.LiteDataFile})
 
-	err = dd.InitManagerFromFile(
+	err := dd.InitManagerFromFile(
 		manager,
 		*config,
 		"",

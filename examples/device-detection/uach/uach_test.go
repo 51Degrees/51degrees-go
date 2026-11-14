@@ -254,15 +254,11 @@ func TestHandler(t *testing.T) {
 			manager = dd.NewResourceManager()
 			config = dd.NewConfigHash(dd.Balanced)
 			config.SetUseUpperPrefixHeaders(false)
-			dataFiles := []string{"51Degrees-LiteV4.1.hash"}
-			filePath, err := dd.GetFilePath("../..", dataFiles)
-			if err != nil {
-				manager.Free()
-				log.Fatalf("Cannot find file that matches any of \"%s\".\n",
-					strings.Join(dataFiles, ", "))
-			}
+			// Found as the example finds it, so a fresh clone downloads it.
+			filePath := examples.GetFilePathByName(
+				[]string{examples.LiteDataFile})
 
-			err = dd.InitManagerFromFile(
+			err := dd.InitManagerFromFile(
 				manager,
 				*config,
 				data.properties,
