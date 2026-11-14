@@ -1,6 +1,12 @@
-name: Temporary Find out more tests
+name: Temporary example tests
 
 on: push
+
+defaults:
+  run:
+    # bash with -eo pipefail, so a failing go test fails its step even
+    # though its output goes through grep.
+    shell: bash
 
 jobs:
   test:
