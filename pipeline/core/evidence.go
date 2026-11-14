@@ -107,15 +107,26 @@ const (
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/web-integration.md#populating-evidence
 const EvidenceHTTPRequest = PrefixServer + ".http-request"
 
+// The Evidence keys of the request line's method, path and query string,
+// each exactly as the request line carried it, with no decoding. The web
+// integration adds each only when an element in the Pipeline accepts it.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/web-integration.md#populating-evidence
+const (
+	EvidenceRequestMethod = PrefixServer + ".request-method"
+	EvidenceRequestPath   = PrefixServer + ".request-path"
+	EvidenceRequestQuery  = PrefixServer + ".request-query"
+)
+
 // webRequestPlaceholder is what formatting a WebRequest prints.
 const webRequestPlaceholder = "[web request]"
 
 // WebRequest is the read-only view of the request added as
 // EvidenceHTTPRequest. Its named parts are the headers, cookies, query, session,
-// client IP address, protocol, method and path. Each part is returned as a
-// copy, so changing it never changes the request. Formatting a WebRequest with
-// any fmt verb, or calling String, gives a fixed placeholder, so printing or
-// logging the Evidence never writes out the request's headers and cookies.
+// client IP address, protocol, method, path and raw query string. Each part is
+// returned as a copy, so changing it never changes the request. Formatting a
+// WebRequest with any fmt verb, or calling String, gives a fixed placeholder,
+// so printing or logging the Evidence never writes out the request's headers
+// and cookies.
 type WebRequest struct {
 	request  *http.Request
 	clientIP string
@@ -196,22 +207,42 @@ func (w WebRequest) Method() string {
 }
 
 // Path returns the path of the request line exactly as it was sent, with no
-// decoding and without the query string.
+// decoding and without the query string. It is empty for a request that a
+// server did not read, as such a request has no request line.
 func (w WebRequest) Path() string {
-	r := w.request
-	if r == nil {
-		return ""
+	path, _ := w.requestTarget()
+	return path
+}
+
+// RawQuery returns the query string of the request line exactly as it was
+// sent, with no decoding and without the "?", or nothing when it has none.
+func (w WebRequest) RawQuery() string {
+	_, query := w.requestTarget()
+	return query
+}
+
+// requestTarget splits the request line's target into its path and query
+// string. An absolute-form target, which a client sends to a proxy, gives the
+// path after its authority. The asterisk form is its own path and the
+// authority form has none (RFC 9112 section 3.2).
+func (w WebRequest) requestTarget() (path, query string) {
+	if w.request == nil {
+		return "", ""
 	}
-	if uri := r.RequestURI; strings.HasPrefix(uri, "/") {
-		if i := strings.IndexByte(uri, '?'); i >= 0 {
-			return uri[:i]
+	target := w.request.RequestURI
+	if i := strings.IndexByte(target, '?'); i >= 0 {
+		target, query = target[:i], target[i+1:]
+	}
+	if strings.HasPrefix(target, "/") || target == "*" {
+		return target, query
+	}
+	if i := strings.Index(target, "://"); i >= 0 {
+		authorityAndPath := target[i+len("://"):]
+		if j := strings.IndexByte(authorityAndPath, '/'); j >= 0 {
+			return authorityAndPath[j:], query
 		}
-		return uri
 	}
-	if r.URL == nil {
-		return ""
-	}
-	return r.URL.EscapedPath()
+	return "", query
 }
 
 func copyStringMap(m map[string]string) map[string]string {
