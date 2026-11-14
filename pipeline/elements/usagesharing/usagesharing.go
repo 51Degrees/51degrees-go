@@ -74,6 +74,11 @@ const (
 	maxValueLength         = 10000
 )
 
+// DefaultShareAllQueryStringParameters shares every query string and form
+// parameter unless a user turns it off.
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L80-L81
+const DefaultShareAllQueryStringParameters = true
+
 type config struct {
 	includedQueryParams map[string]struct{}
 	shareAllQueryParams bool
@@ -236,23 +241,15 @@ func foundClientIP(fd core.FlowData) string {
 	return ""
 }
 
-// isSessionCookie reports whether key is the session cookie's Evidence key,
-// compared without regard to case.
-func (e *Element) isSessionCookie(key string) bool {
-	prefix, field := core.SplitEvidenceKey(key)
-	return prefix == core.PrefixCookie &&
-		strings.EqualFold(field, e.cfg.sessionCookieName)
-}
-
 // trackedSession returns the session cookie to compare along with the
-// Evidence, which is only when track session is on and not all Evidence is
-// shared, as a shared cookie is compared already. It is read from the
-// Evidence and from the web request, and the Evidence value counts when
+// Evidence when track session is on, whether or not all Evidence is shared,
+// as a cookie whose name does not start 51D_ is never shared. It is read from
+// the Evidence and from the web request, and the Evidence value counts when
 // both hold it. Both are read by key, as Evidence keys are compared without
 // regard to case, so the Evidence is not copied for each request.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
 func (e *Element) trackedSession(fd core.FlowData) (string, bool) {
-	if !e.cfg.trackSession || e.cfg.shareAllEvidence {
+	if !e.cfg.trackSession {
 		return "", false
 	}
 	ev := fd.Evidence()
