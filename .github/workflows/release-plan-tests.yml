@@ -1,0 +1,50 @@
+name: Release plan tests
+
+# ci/packages.ps1 decides which modules a publish tags and at which version. A
+# mistake there releases a module that did not change, or leaves out one that
+# must move with another, and a published version can never be taken back. So
+# its tests run on every pull request that changes ci/, against common-ci's
+# main, which is the common-ci the publish runs. Go and Pester are the ones the
+# runner has.
+
+on:
+  pull_request:
+    paths:
+      - 'ci/**'
+      - '.github/workflows/release-plan-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-plan-tests:
+    name: Release plan tests - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: 51degrees-go
+          persist-credentials: false
+
+      - name: Checkout common-ci
+        uses: actions/checkout@v4
+        with:
+          repository: 51Degrees/common-ci
+          path: common-ci
+          persist-credentials: false
+
+      - name: Run the tests
+        shell: pwsh
+        run: |
+          $env:COMMON_CI = (Resolve-Path common-ci).Path
+          $result = Invoke-Pester 51degrees-go/ci/packages.Tests.ps1 `
+            -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed' -or $result.PassedCount -eq 0) {
+            exit 1
+          }
