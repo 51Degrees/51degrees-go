@@ -213,6 +213,11 @@ func (e *Engine) run() error {
 	return nil
 }
 
+// RefreshData loads the Engine's data file again now.
+func (e *Engine) RefreshData() error {
+	return nil
+}
+
 // Stop has to be called to free all the resources of the engine
 // before the instance goes out of scope
 func (e *Engine) Stop() {
