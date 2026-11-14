@@ -1,0 +1,13 @@
+{
+  "elements": [
+    {
+      "builderName": "SessionElement"
+    },
+    {
+      "builderName": "DerivedPropertyElement",
+      "buildParameters": {
+        "ScriptFiles": "ReaderEngagement.yaml"
+      }
+    }
+  ]
+}
