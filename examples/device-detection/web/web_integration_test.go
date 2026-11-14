@@ -136,6 +136,9 @@ func TestHandlerShowsEnterprise(t *testing.T) {
 			"Safari/9537.53")
 	rr := httptest.NewRecorder()
 	http.HandlerFunc(handler).ServeHTTP(rr, r)
+	if err := examples.CheckFindOutMore(rr.Body.String()); err != nil {
+		t.Error(err)
+	}
 	if err := examples.CheckEnterprise(rr.Body.String()); err != nil {
 		t.Error(err)
 	}

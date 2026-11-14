@@ -29,12 +29,16 @@ import (
 	"testing"
 )
 
-// test runs an example, prints what it printed and returns it.
+// test runs an example, prints what it printed, checks that it ends with a
+// Find out more section, and returns what it printed.
 func test(t *testing.T, name string) string {
 	output, err := exec.Command("go", "run", "./"+name).CombinedOutput()
 	os.Stdout.Write(output)
 	if err != nil {
 		t.Error(err)
+	}
+	if err := CheckFindOutMore(string(output)); err != nil {
+		t.Errorf("%s: %v", name, err)
 	}
 	return string(output)
 }

@@ -340,6 +340,9 @@ func TestHandlerShowsEnterprise(t *testing.T) {
 	r.Header.Set("User-Agent", chromeUA)
 	rr := httptest.NewRecorder()
 	http.HandlerFunc(handler).ServeHTTP(rr, r)
+	if err := examples.CheckFindOutMore(rr.Body.String()); err != nil {
+		t.Error(err)
+	}
 	if err := examples.CheckEnterprise(rr.Body.String()); err != nil {
 		t.Error(err)
 	}
