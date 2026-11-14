@@ -51,6 +51,9 @@ func TestCloseStopsSendingAfterTheCleanupLimit(t *testing.T) {
 	var abandoned atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			// The server sees the client stop the request only once the
+			// body has been read.
+			io.Copy(io.Discard, r.Body)
 			select {
 			case <-r.Context().Done():
 				abandoned.Store(true)
