@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example dd/offline_processing/offline_processing.go
+This example shows how to process a list of Evidence Records from a file
+with the dd package, writing the detection metrics and properties of each
+record to another file for further evaluation.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/dd/offline_processing).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*

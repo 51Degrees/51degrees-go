@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example onpremise/reload_from_file/reload_from_file.go
+This example shows the onpremise Engine's file watcher, which reloads the
+data file when it changes on disk, while other goroutines perform device
+detections.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/onpremise/reload_from_file).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 import (

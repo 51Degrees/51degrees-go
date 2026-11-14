@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example uach/uach.go
+This example shows how to ask for User-Agent Client Hints with the
+Accept-CH response header, and use them as evidence for device detection,
+in a web application at localhost:3001.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/uach).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*

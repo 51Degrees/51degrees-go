@@ -150,7 +150,7 @@ func TestTheWatcherRunsOnItsOwnSetting(t *testing.T) {
 func TestEachCheckIsReportedWithItsStatus(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		server *requestRecorder
+		server http.Handler
 		engine Refreshable
 		want   Status
 	}{
@@ -164,6 +164,7 @@ func TestEachCheckIsReportedWithItsStatus(t *testing.T) {
 			want: StatusForbidden},
 		{name: "another status", server: &requestRecorder{status: http.StatusInternalServerError},
 			want: StatusHTTPSError},
+		{name: "download cut short", server: cutShortServer{}, want: StatusHTTPSError},
 		{name: "integrity check", server: &requestRecorder{status: http.StatusOK, body: "DATA",
 			header: http.Header{"Content-Md5": {"wrong"}}},
 			want: StatusMD5ValidationFailed},

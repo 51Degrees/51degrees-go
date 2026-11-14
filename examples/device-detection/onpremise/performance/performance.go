@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example onpremise/performance/performance.go
+This example measures the performance of 51Degrees device detection with
+the onpremise Engine, and writes a report to performance_report.log.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/onpremise/performance).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*

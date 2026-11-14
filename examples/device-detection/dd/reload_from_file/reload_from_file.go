@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example dd/reload_from_file/reload_from_file.go
+This example shows how a data set can be reloaded from its file while
+detections are performed, with the dd package.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/dd/reload_from_file).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*

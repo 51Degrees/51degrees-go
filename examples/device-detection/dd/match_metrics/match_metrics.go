@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example dd/match_metrics/match_metrics.go
+This example shows how to read the match metrics of a result, with the
+dd package.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/dd/match_metrics).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*
