@@ -166,8 +166,9 @@ const (
 	// StatusNotNeeded is a check that applied no update because none was
 	// needed, such as a 304 (Not modified) response.
 	StatusNotNeeded Status = "AUTO_UPDATE_NOT_NEEDED"
-	// StatusHTTPSError is a request to the update URL that failed, or a
-	// response that was neither a success nor a 304 (Not modified).
+	// StatusHTTPSError is a request to the update URL that failed, a
+	// download that ended before the whole file arrived, or a response that
+	// was neither a success nor a 304 (Not modified).
 	StatusHTTPSError Status = "AUTO_UPDATE_HTTPS_ERR"
 	// StatusTooManyRequests is a 429 (Too many requests) response.
 	StatusTooManyRequests Status = "AUTO_UPDATE_ERR_429_TOO_MANY_ATTEMPTS"
@@ -688,9 +689,7 @@ func (r *registration) httpUpdate() (Status, error) {
 
 	resp, err := r.svc.httpClient.Do(req)
 	if err != nil {
-		return StatusHTTPSError, &CheckError{fmt.Sprintf(
-			"Error accessing data update service at '%s' for engine '%s'",
-			url, r.engineName), core.MaskLicenseKeysInError(err, keys)}
+		return StatusHTTPSError, r.accessError(url, err, keys)
 	}
 	defer resp.Body.Close()
 
@@ -714,9 +713,14 @@ func (r *registration) httpUpdate() (Status, error) {
 			resp.StatusCode, url, r.engineName), nil}
 	}
 
-	raw, err := readBody(resp)
+	// A download cut short fails here, and is the same row as a failed
+	// request, because .NET reads the whole response inside the request.
+	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return StatusUnknownError, err
+		return StatusHTTPSError, r.accessError(url, err, keys)
+	}
+	if len(raw) == 0 {
+		return StatusUnknownError, errors.New("data update: empty response body")
 	}
 	// Validate integrity against the server's Content-MD5 (the 51Degrees
 	// Distributor sends it) before the bytes are written or loaded, so a corrupt
@@ -948,16 +952,12 @@ func parseRetryAfter(v string) time.Duration {
 // gzipMagic is the two-byte signature at the start of every gzip stream.
 var gzipMagic = []byte{0x1f, 0x8b}
 
-// readBody reads the entire response body, rejecting an empty payload.
-func readBody(resp *http.Response) ([]byte, error) {
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) == 0 {
-		return nil, errors.New("data update: empty response body")
-	}
-	return data, nil
+// accessError is the error table's first row, for a request to the update
+// URL that failed or a download that ended before the whole file arrived.
+func (r *registration) accessError(url string, err error, keys []string) error {
+	return &CheckError{fmt.Sprintf(
+		"Error accessing data update service at '%s' for engine '%s'",
+		url, r.engineName), core.MaskLicenseKeysInError(err, keys)}
 }
 
 // verifyContentMD5 checks the downloaded bytes against the server's Content-MD5

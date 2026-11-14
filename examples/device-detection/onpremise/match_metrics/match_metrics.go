@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example onpremise/match_metrics/match_metrics.go
+This example shows how to read the match metrics of a result, with the
+onpremise Engine.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/onpremise/match_metrics).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*
