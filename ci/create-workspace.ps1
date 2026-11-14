@@ -37,6 +37,10 @@ $version = $modules | ForEach-Object {
 } | Sort-Object { [version]$_ } | Select-Object -Last 1
 
 Push-Location $root
+# go work looks for a go.work in the folders above too, and a CI job can hold
+# another checkout of this repository there, so the file to make is named.
+$previousWorkspace = $env:GOWORK
+$env:GOWORK = Join-Path $root 'go.work'
 try {
     Remove-Item go.work, go.work.sum -ErrorAction SilentlyContinue
     go work init @($modules | ForEach-Object { "./$_" })
@@ -54,5 +58,6 @@ try {
     }
     Write-Host "Created go.work (go $version) using: $($modules -join ', ')"
 } finally {
+    $env:GOWORK = $previousWorkspace
     Pop-Location
 }
