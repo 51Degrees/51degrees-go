@@ -126,13 +126,7 @@ func TestTheWatcherRunsOnItsOwnSetting(t *testing.T) {
 				t.Errorf("a file system watcher was created = %v, want %v", created, test.wantWatch)
 			}
 
-			next := path + ".new"
-			if err := os.WriteFile(next, []byte("REPLACED"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Rename(next, path); err != nil {
-				t.Fatal(err)
-			}
+			replace(t, path, "REPLACED", time.Now().Add(time.Hour))
 			deadline := time.Now().Add(3 * time.Second)
 			for eng.lastFile() != "REPLACED" && time.Now().Before(deadline) {
 				time.Sleep(20 * time.Millisecond)
@@ -285,10 +279,12 @@ func TestARefreshFromTheDataFileIsTriedTenTimes(t *testing.T) {
 		eng := &countingEngine{failures: refreshTries - 1}
 		svc := New(nil, nil)
 		defer svc.Close()
+		path := writeFile(t, "DATA")
 		if err := svc.Register(eng, "Eng", Config{
-			Identifier: "a", DataFilePath: writeFile(t, "DATA")}); err != nil {
+			Identifier: "a", DataFilePath: path}); err != nil {
 			t.Fatal(err)
 		}
+		replace(t, path, "NEWER", time.Now().Add(time.Hour))
 		if err := svc.CheckForUpdate("a"); err != nil {
 			t.Errorf("CheckForUpdate gave %v, want no error after a refresh that worked", err)
 		}
@@ -300,10 +296,12 @@ func TestARefreshFromTheDataFileIsTriedTenTimes(t *testing.T) {
 		eng := &countingEngine{failures: refreshTries + 1}
 		svc := New(nil, nil)
 		defer svc.Close()
+		path := writeFile(t, "DATA")
 		if err := svc.Register(eng, "Eng", Config{
-			Identifier: "a", DataFilePath: writeFile(t, "DATA")}); err != nil {
+			Identifier: "a", DataFilePath: path}); err != nil {
 			t.Fatal(err)
 		}
+		replace(t, path, "NEWER", time.Now().Add(time.Hour))
 		err := svc.CheckForUpdate("a")
 		want := "An error occurred when applying a data update to engine 'Eng' after 10 tries."
 		if err == nil || !strings.HasPrefix(err.Error(), want) {
@@ -373,13 +371,7 @@ func TestAWatchedFileThatIsNotNewerIsNotLoaded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	next := path + ".new"
-	if err := os.WriteFile(next, []byte("UPDATED"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(next, path); err != nil {
-		t.Fatal(err)
-	}
+	replace(t, path, "UPDATED", time.Now().Add(time.Hour))
 	got.wait(t, "the replaced file")
 	if list := got.list(); list[0].Status != StatusSuccess {
 		t.Fatalf("the replaced file was reported as %q, want %q", list[0].Status, StatusSuccess)
