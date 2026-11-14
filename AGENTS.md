@@ -112,24 +112,14 @@ cd ../..
 ```
 
 The IP Intelligence example reads the data file named by the `_51DEGREES_IPI_PATH`
-environment variable, and otherwise looks for `51Degrees-EnterpriseIpiV41.ipi`
-in the folder it runs in, without searching
-(`examples/ip-intelligence/common/example_base.go`). So name the Lite file.
-When that file is missing, the example downloads it first, because the data
-repository links to it (`GetDataFile` in
-`examples/ip-intelligence/common/file.go`).
+environment variable, and otherwise the free Lite file `51Degrees-LiteV41.ipi`
+(`LiteDataFile` in `examples/ip-intelligence/common/example_base.go`). It uses
+that file where it runs when the file is there, and otherwise the data
+repository's copy in `cxx/data/ip-intelligence`, which it downloads first when
+it is missing (`GetDataFile` in `examples/ip-intelligence/common/file.go`).
 
 ```
 cd examples/ip-intelligence
-_51DEGREES_IPI_PATH=../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi go run ./getting_started
-cd ../..
-```
-
-In PowerShell, set the variable first.
-
-```
-cd examples/ip-intelligence
-$env:_51DEGREES_IPI_PATH = '../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi'
 go run ./getting_started
 cd ../..
 ```
@@ -140,19 +130,44 @@ When an example downloads its data file, it first logs
 `<file> is missing, so it is being downloaded by running` with the command on
 the next line, and the script's `Downloading` and `Saved` lines follow.
 
-The Device Detection example prints these lines. It compares its output with
-this text itself, and stops with `Output does not match expected.` and exit
-code 1 when the two differ. CI runs it with the Lite file.
+The Device Detection example prints these lines with the Lite file. The
+properties only the Enterprise data file has are shown as needing it, with a
+link to ask for a copy, and the exit code is 0. CI runs it with the Lite file,
+and its test checks those lines (`CheckEnterprise` in
+`examples/device-detection/dd/enterprise_check.go`).
 
 ```
 Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
 	IsMobile: True
+	PlatformName: iOS
+	PlatformVersion: 7.1
+	BrowserName: Mobile Safari
+	BrowserVersion: 7.0
+	HardwareVendor: needs the Enterprise data file
+	HardwareName: needs the Enterprise data file
+	DeviceType: needs the Enterprise data file
 
 Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0
 	IsMobile: False
+	PlatformName: Windows
+	PlatformVersion: 8.1
+	BrowserName: Firefox
+	BrowserVersion: 41.0
+	HardwareVendor: needs the Enterprise data file
+	HardwareName: needs the Enterprise data file
+	DeviceType: needs the Enterprise data file
 
 MediaHub User-Agent: Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36
 	IsMobile: False
+	PlatformName: Tizen
+	PlatformVersion: 5.0
+	BrowserName: Samsung Browser
+	BrowserVersion: 9.2
+	HardwareVendor: needs the Enterprise data file
+	HardwareName: needs the Enterprise data file
+	DeviceType: needs the Enterprise data file
+
+Some of these properties need the Enterprise data file. Contact us for a copy at <the contact us link>
 ```
 
 The IP Intelligence example looks up `185.28.167.77`,
@@ -173,11 +188,14 @@ describes.
 
 ### Cloud examples
 
-No example here calls the 51Degrees cloud service, so none needs a resource
-key. The Go modules work on-premise, with a data file. The Pipeline API's
-`examples/pipeline/4_cloud_engine` shows a cloud engine against a stand-in for
-the service that the example starts itself, with the placeholder key
-`example-resource-key`.
+One example calls the 51Degrees cloud service,
+`examples/ip-intelligence/getting_started_cloud`, which needs a Resource Key in
+the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument,
+and stops with a message saying where to create one when it has none
+(`main.go` lines 113 to 123). The other examples work on-premise, with a data
+file. The Pipeline API's `examples/pipeline/4_cloud_engine` shows a cloud
+engine against a stand-in for the service that the example starts itself,
+with the placeholder key `example-resource-key`.
 
 ### Pitfalls
 
@@ -192,9 +210,7 @@ the service that the example starts itself, with the placeholder key
   file sizes as above.
 - **Running from the wrong folder.** There is no `go.mod` at the repository
   root, and each examples folder is a module of its own, so run `go run` from
-  that folder. Without `_51DEGREES_IPI_PATH`, the IP Intelligence example finds no data
-  file wherever it runs, unless a paid file named
-  `51Degrees-EnterpriseIpiV41.ipi` is in that folder.
+  that folder.
 - **cgo turned off or no C compiler.** The engines are C code built through
   cgo, so Go needs `CGO_ENABLED=1` and a C compiler on the `PATH`, as the
   READMEs say.
@@ -202,11 +218,14 @@ the service that the example starts itself, with the placeholder key
   than once. The warning is harmless (`ci/products.ps1`).
 - **Memory.** The IP Intelligence example loads the whole data file into
   memory (`ipi_interop.InMemory`), so it needs about 0.5 GB free.
-- **What CI does not test.** CI runs the IP Intelligence examples only with a
-  paid data file (`ci/run-integration-tests.ps1`), never the Lite file, and
-  runs the Device Detection examples from `examples/device-detection/dd`
-  through `go test`, with the Lite file linked into `examples/device-detection`
-  (`ci/fetch-assets.ps1`) rather than read from `cxx`.
+- **What CI runs.** CI runs the IP Intelligence examples with the paid data
+  file `ci/run-integration-tests.ps1` names, and again with no settings on the
+  free files (the `FreeDataFile` tests in
+  `examples/ip-intelligence/integration_test.go`). It runs the Device Detection
+  examples through `go test` in `examples/device-detection`, with the Lite
+  file linked into that folder (`ci/fetch-assets.ps1`) rather than read from
+  `cxx`, and the on-premise ones again with no settings (the `FreeDataFile`
+  tests in `examples/device-detection/onpremise/onpremise_test.go`).
 
 ## Environment variable names
 

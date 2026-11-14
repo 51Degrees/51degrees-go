@@ -55,6 +55,12 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
     New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/51Degrees-LiteIpiV41.ipi" `
         -Path (Join-Path $Data "ip-intelligence/51Degrees-LiteV41.ipi") | Out-Null
 }
+# The on-premise examples run with no settings read the evidence file from
+# there too, so no test downloads it from the distributor.
+if ($Products -contains 'device-detection') {
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/20000 Evidence Records.yml" `
+        -Path (Join-Path $Data "device-detection/20000 Evidence Records.yml") | Out-Null
+}
 
 # The IP Intelligence reload tests use the small Asn data file and the
 # Enterprise data file, which has different properties, and look for both in

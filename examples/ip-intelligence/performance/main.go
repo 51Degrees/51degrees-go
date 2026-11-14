@@ -105,6 +105,18 @@ ipi_onpremise.WithProperties(performanceProperties),
 report, err := runPerformance(engine, params)
 ```
 <br/>
+### 4. Show the properties only the Enterprise data file has
+
+The lookups it measures ask for RegisteredName and AsnName alone. Afterwards
+it stops the engine, opens the data file again with the properties only the
+Enterprise data file has, and shows them for one address, as needing that
+file when the data file in use is a free one, so the measurement is unchanged.
+
+```
+engine.Stop()
+common.ShowEnterprise(params.DataFile, contactUs, enterpriseProperties)
+```
+<br/>
 ### Expected output (performance_report.log):
 
 Multi-threaded mode (default):
@@ -152,6 +164,19 @@ import (
 // Asn data file it uses has AsnName, and the Lite and Enterprise data files
 // have RegisteredName, so the example runs with any of them.
 var performanceProperties = []string{"RegisteredName", "AsnName"}
+
+// enterpriseProperties are shown after the measurement. Only the Enterprise
+// data file has values for Latitude, Longitude and Areas.
+var enterpriseProperties = []string{
+	"AsnName",
+	"Latitude",
+	"Longitude",
+	"Areas",
+}
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-performance-main.go&utm_term=enterprise-data-file"
 
 // hasValue reports whether the results have a value for one of the
 // properties the example processes.
@@ -404,9 +429,6 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
-			// Stopping the engine frees its data set. Deferring the call
-			// stops it however this function returns.
-			defer engine.Stop()
 
 			// Run example
 			report, err := runPerformance(engine, params, numThreads)
@@ -436,6 +458,12 @@ func main() {
 					log.Fatalf("Failed to write the performance results: %v", err)
 				}
 			}
+
+			// Stopping the engine frees its data set, so the data file is
+			// never loaded twice at once when the properties only the
+			// Enterprise data file has are shown.
+			engine.Stop()
+			common.ShowEnterprise(params.DataFile, contactUs, enterpriseProperties)
 
 			return nil
 		})

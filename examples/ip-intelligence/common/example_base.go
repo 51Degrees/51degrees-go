@@ -22,6 +22,11 @@
 
 package common
 
+import (
+	"fmt"
+	"runtime"
+)
+
 // LiteDataFile is the free data file the examples use when
 // _51DEGREES_IPI_PATH names no other. The data repository links it, so an
 // example downloads it the first time it runs.
@@ -51,12 +56,20 @@ type ExampleFunc func(params *ExampleParams) error
 // RunExample runs the example with the data file _51DEGREES_IPI_PATH names,
 // or the free Lite data file.
 func RunExample(exampleFunc ExampleFunc) {
-	RunExampleWithDataFile(LiteDataFile, exampleFunc)
+	_, file, _, _ := runtime.Caller(1)
+	runExample(LiteDataFile, exampleFunc, file)
 }
 
 // RunExampleWithDataFile runs the example with the data file
 // _51DEGREES_IPI_PATH names, or the free data file given.
 func RunExampleWithDataFile(free string, exampleFunc ExampleFunc) {
+	_, file, _, _ := runtime.Caller(1)
+	runExample(free, exampleFunc, file)
+}
+
+// runExample runs the example whose source file is file, then prints where
+// to find out more.
+func runExample(free string, exampleFunc ExampleFunc, file string) {
 	licenseKey := fromEnvironment("_51DEGREES_LICENSE_KEY")
 
 	dataFile := fromEnvironment("_51DEGREES_IPI_PATH")
@@ -82,4 +95,7 @@ func RunExampleWithDataFile(free string, exampleFunc ExampleFunc) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Every example ends with where to find out more, tagged with its file.
+	fmt.Print(FindOutMore(ExampleContent(file)))
 }

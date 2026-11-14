@@ -30,11 +30,25 @@ import (
 )
 
 func test(t *testing.T, name string) {
+	run(t, name, nil)
+}
+
+// run runs an example in the environment given, or in this process's when
+// that is nil, prints what it printed, and checks that it ends with a Find out
+// more section naming this repository.
+func run(t *testing.T, name string, environment []string) {
 	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	cmd.Env = environment
+	output, err := cmd.CombinedOutput()
+	os.Stdout.Write(output)
+	if err != nil {
 		t.Error(err)
+	}
+	at := strings.LastIndex(string(output), "Find out more")
+	if at < 0 || !strings.Contains(string(output[at:]),
+		"https://github.com/51Degrees/51degrees-go") {
+		t.Errorf("%s does not end with a Find out more section naming "+
+			"this repository", name)
 	}
 }
 
@@ -49,13 +63,7 @@ func TestMixedGettingStartedConsoleFreeDataFiles(t *testing.T) {
 // testFree runs an example as a fresh clone would, without the settings CI
 // gives the other tests, so that it uses the free data files and evidence.
 func testFree(t *testing.T, name string) {
-	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Env = withoutSettings(os.Environ())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Error(err)
-	}
+	run(t, name, withoutSettings(os.Environ()))
 }
 
 // withoutSettings returns the environment without the variables that name a
