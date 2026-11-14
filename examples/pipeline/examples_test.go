@@ -39,6 +39,7 @@ var examples = []string{
 	"4_cloud_engine",
 	"5_usage_sharing",
 	"6_caching",
+	"7_derived_property",
 }
 
 func TestExamplesEndWithFindOutMore(t *testing.T) {
