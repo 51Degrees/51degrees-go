@@ -1,0 +1,94 @@
+name: Temporary usage sharing package tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Usage sharing package tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The submodules the Pipeline tests read
+        run: git submodule update --init --depth 1 derived-properties javascript-templates
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format
+        if: always() && runner.os == 'Linux'
+        working-directory: pipeline
+        run: |
+          unformatted=$(gofmt -l elements/usagesharing || true)
+          echo "gofmt: ${unformatted:-none}"
+          test -z "$unformatted"
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        run: go vet ./elements/usagesharing/
+      - name: The new tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v -run 'TestPackagesAreThe51DegreesModulesBuiltIn|TestTheProgramIsNotAPackageItUses|TestEachRecordNamesEveryPackageInUse' ./elements/usagesharing/
+      - name: Every Pipeline test
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 ./...
+      - name: A program built in the workspace names the modules it uses
+        if: always()
+        working-directory: examples/pipeline
+        run: |
+          mkdir -p packagescheck
+          cat > packagescheck/main.go <<'GO'
+          package main
+
+          import (
+          	"compress/gzip"
+          	"fmt"
+          	"io"
+          	"net/http"
+          	"net/http/httptest"
+          	"regexp"
+
+          	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+          	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/usagesharing"
+          )
+
+          func main() {
+          	got := make(chan string, 1)
+          	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+          		zr, err := gzip.NewReader(r.Body)
+          		if err == nil {
+          			b, _ := io.ReadAll(zr)
+          			got <- string(b)
+          		}
+          	}))
+          	defer srv.Close()
+          	e := usagesharing.NewBuilder().SetShareUsageURL(srv.URL).
+          		SetMinimumEntriesPerMessage(1).Build()
+          	p, err := core.NewPipelineBuilder().AddFlowElement(e).Build()
+          	if err != nil {
+          		panic(err)
+          	}
+          	fd := p.CreateFlowData()
+          	fd.AddEvidence("header.user-agent", "ua")
+          	if err := fd.Process(); err != nil {
+          		panic(err)
+          	}
+          	p.Close()
+          	body := <-got
+          	found := regexp.MustCompile(`<Package Name="[^"]*">[^<]*</Package>`).FindAllString(body, -1)
+          	fmt.Printf("%d Package elements\n", len(found))
+          	for _, m := range found {
+          		fmt.Println(m)
+          	}
+          }
+          GO
+          go run ./packagescheck
