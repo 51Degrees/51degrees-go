@@ -575,6 +575,9 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []strin
 	for _, name := range flowNames {
 		writeElement(b, "FlowElement", name)
 	}
+	for _, p := range e.packages {
+		writePackage(b, p)
+	}
 	writeElement(b, "Language", "Go")
 	writeElement(b, "LanguageVersion", runtime.Version())
 	writeElement(b, "ServerIP", serverIP())
