@@ -35,6 +35,7 @@ package usagesharing
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"hash/fnv"
@@ -123,6 +124,13 @@ type Element struct {
 	discarded atomic.Int64
 	// clock times the back-off and the waits of the sending goroutine.
 	clock clock
+	// sendCtx is the context of every send, which Close cancels once the
+	// cleanup limit has passed.
+	sendCtx     context.Context
+	cancelSends context.CancelFunc
+	// cut is the number of entries in a message whose send Close stopped. Only
+	// the sending goroutine uses it.
+	cut int
 }
 
 type record struct {
@@ -402,7 +410,14 @@ func (e *Element) consume() {
 			}
 			continue
 		}
-		ok := e.send(e.takeMessage())
+		batch := e.takeMessage()
+		ok := e.send(batch)
+		if !ok && e.sendCtx.Err() != nil {
+			// Close stopped the send at the cleanup limit.
+			e.cut = len(batch)
+			e.finish(b)
+			return
+		}
 		switch b.record(ok, e.clock.now()) {
 		case backOffPaused:
 			e.Logger().Warn("usage sharing paused sending after failed sends",
@@ -452,8 +467,10 @@ func (e *Element) takeMessage() []*record {
 
 // finish ends sending when the element is closed. While sending is paused it
 // sends nothing and discards what is queued, logging how many. Otherwise it
-// sends whatever is left in one final message.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
+// sends whatever is left in one final message. When the cleanup limit passes
+// first, Close stops the send, and what was being sent and what is left are
+// discarded with a warning.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
 func (e *Element) finish(b *backOff) {
 	var rest []*record
 	for drained := false; !drained; {
@@ -464,6 +481,10 @@ func (e *Element) finish(b *backOff) {
 			drained = true
 		}
 	}
+	if e.sendCtx.Err() != nil {
+		e.warnDiscarded(e.cut + len(rest))
+		return
+	}
 	if len(rest) == 0 {
 		return
 	}
@@ -472,7 +493,17 @@ func (e *Element) finish(b *backOff) {
 			"the queued entries were discarded", "discarded", len(rest))
 		return
 	}
-	e.send(rest)
+	if !e.send(rest) && e.sendCtx.Err() != nil {
+		e.warnDiscarded(len(rest))
+	}
+}
+
+// warnDiscarded logs that the cleanup limit passed before sending ended, and
+// how many entries were discarded.
+func (e *Element) warnDiscarded(discarded int) {
+	e.Logger().Warn("usage sharing had not finished sending when the cleanup "+
+		"limit passed, so the entries left were discarded",
+		"discarded", discarded, "limit", cleanupLimitSeconds*time.Second)
 }
 
 // send sends one message and reports whether it succeeded. It fails when the
@@ -497,7 +528,8 @@ func (e *Element) send(batch []*record) bool {
 		e.Logger().Error("usage sharing: failed to finalize payload", "error", err)
 		return false
 	}
-	req, err := http.NewRequest(http.MethodPost, e.cfg.shareURL, &buf)
+	req, err := http.NewRequestWithContext(e.sendCtx, http.MethodPost,
+		e.cfg.shareURL, &buf)
 	if err != nil {
 		e.Logger().Error("usage sharing: failed to create request", "error", err)
 		return false
@@ -523,14 +555,34 @@ func (e *Element) send(batch []*record) bool {
 // read for the log.
 const maxLoggedResponseBytes = 64 << 10
 
+// cleanupLimitSeconds is how long Close waits for the data waiting to be
+// sent before it stops sending.
+const cleanupLimitSeconds = 5
+
 // Close sends any remaining data, unless sending is paused, then stops the
-// background goroutine.
+// background goroutine. If sending has not ended within the cleanup limit,
+// Close stops the send in progress, and the entries left are discarded with
+// a warning, so that closing does not hold up the process that closes it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
 func (e *Element) Close() error {
 	e.closeOnce.Do(func() {
 		// Ensure the consumer was started so the final flush runs.
 		e.startOne.Do(e.startConsumer)
 		close(e.stop)
-		e.wg.Wait()
+		finished := make(chan struct{})
+		go func() {
+			e.wg.Wait()
+			close(finished)
+		}()
+		limit := time.NewTimer(cleanupLimitSeconds * time.Second)
+		defer limit.Stop()
+		select {
+		case <-finished:
+		case <-limit.C:
+			e.cancelSends()
+			<-finished
+		}
+		e.cancelSends()
 	})
 	return nil
 }
