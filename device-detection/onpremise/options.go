@@ -164,6 +164,7 @@ func WithUpdateCallback(fn func(common_go.UpdateComplete)) EngineOptions {
 		return nil
 	}
 }
+
 // WithAutoUpdate enables or disables auto update
 // default is true
 // if enabled, engine will automatically pull the data file from the distributor or custom URL
