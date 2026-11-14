@@ -44,10 +44,12 @@ const (
 )
 
 // failingEngine is an engine whose processing fails while fail is set, as a
-// cloud engine's does when the cloud service cannot be reached.
+// cloud engine's does when the cloud service cannot be reached. calls counts
+// the requests it processes.
 type failingEngine struct {
 	*core.BaseElement
-	fail atomic.Bool
+	fail  atomic.Bool
+	calls atomic.Int64
 }
 
 func newFailingEngine() *failingEngine {
@@ -60,6 +62,7 @@ func newFailingEngine() *failingEngine {
 }
 
 func (e *failingEngine) Process(fd core.FlowData) error {
+	e.calls.Add(1)
 	if e.fail.Load() {
 		return errors.New("the engine could not process the request")
 	}
@@ -182,9 +185,9 @@ func TestFailedResponseIsNotKeptOnceProcessingRecovers(t *testing.T) {
 }
 
 // A browser that holds a good response keeps it while processing fails,
-// because a matching If-None-Match still gets its 304. The 304 carries the
-// Cache-Control and ETag a 200 to the same request would carry (RFC 9110
-// section 15.4.5), so it has no ETag and the browser asks again next time.
+// because a matching If-None-Match gets its 304 without the Pipeline
+// running. The 304 carries the headers of a 200 whose processing recorded no
+// errors, so the browser's cache keeps the ETag and max-age.
 func TestGoodResponseIsKeptWhileProcessingFails(t *testing.T) {
 	for _, path := range clientSidePaths {
 		t.Run(path, func(t *testing.T) {
@@ -203,11 +206,13 @@ func TestGoodResponseIsKeptWhileProcessingFails(t *testing.T) {
 				t.Fatalf("status while processing fails = %d, want 304",
 					during.StatusCode)
 			}
-			if got := during.Header.Get("Cache-Control"); got != failedControl {
-				t.Errorf("304 Cache-Control = %q, want %q", got, failedControl)
+			if got := during.Header.Get("Cache-Control"); got != cacheableControl {
+				t.Errorf("304 Cache-Control = %q, want %q", got,
+					cacheableControl)
 			}
-			if got := during.Header.Get("ETag"); got != "" {
-				t.Errorf("304 carries the ETag %s, want none", got)
+			if got := during.Header.Get("ETag"); got != etag {
+				t.Errorf("304 ETag = %q, want the one the browser holds, %q",
+					got, etag)
 			}
 		})
 	}
