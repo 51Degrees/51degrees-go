@@ -35,7 +35,7 @@
 //
 // Run with: go run ./examples/3_clientside_evidence
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/required-examples.md
 package main
 
 import (
