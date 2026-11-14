@@ -40,11 +40,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/aspectengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 const aspectKey = "starsign"
@@ -113,6 +114,7 @@ func main() {
 		sign, _ := apv.(engines.AspectPropertyValue[string]).Value()
 		fmt.Printf("%s -> %s (via cloud)\n", dob, sign)
 	}
+	fmt.Print(findoutmore.Section("examples-pipeline-4_cloud_engine-main.go"))
 }
 
 // mockCloud is a minimal stand-in for the 51Degrees cloud service.

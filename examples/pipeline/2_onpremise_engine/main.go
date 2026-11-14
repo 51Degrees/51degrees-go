@@ -41,10 +41,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/dataupdate"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 const evidenceDateOfBirth = "query.date-of-birth"
@@ -203,6 +204,7 @@ func main() {
 	}
 	fmt.Println("After refreshing with a custom data file (renames Aries to 'The Ram'):")
 	lookup("1992-04-15")
+	fmt.Print(findoutmore.Section("examples-pipeline-2_onpremise_engine-main.go"))
 }
 
 func defaultData() []byte {

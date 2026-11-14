@@ -77,6 +77,7 @@ type Page struct {
 	ScreenPixelsWidth string
 	Enterprise        []examples.Property
 	ContactUs         string
+	FindOutMore       []examples.Property
 }
 
 var manager *dd.ResourceManager
@@ -94,7 +95,8 @@ var templ = `<!DOCTYPE HTML>
     <p id=screenpixelswidth>Screen Pixels Width: <b>{{.ScreenPixelsWidth}}</b></p>
     {{range .Enterprise}}<p>{{.Name}}: <b>{{.Value}}</b></p>
     {{end}}{{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>
-    {{end}}
+    {{end}}<h3>Find out more</h3>
+    <ul>{{range .FindOutMore}}<li>{{.Name}}: <a href="{{.Value}}">{{.Value}}</a></li>{{end}}</ul>
   </body>
 </html>`
 
@@ -158,6 +160,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if missing {
 		p.ContactUs = contactUs
 	}
+	p.FindOutMore = examples.FindOutMoreLinks(
+		"examples-device-detection-web-web_integration.go")
 
 	// Construct the template
 	t := template.Must(template.New("dd").Parse(templ))

@@ -73,6 +73,8 @@ func TestHandler(t *testing.T) {
 		BrowserName:       "Mobile Safari",
 		ScreenPixelsWidth: "640",
 		ContactUs:         contactUs,
+		FindOutMore: examples.FindOutMoreLinks(
+			"examples-device-detection-web-web_integration.go"),
 	}
 	for _, property := range examples.EnterpriseProperties {
 		p.Enterprise = append(p.Enterprise,

@@ -70,6 +70,19 @@ import (
 // have the properties the free data files leave out.
 const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-mixed-getting_started_web-main.go&utm_term=enterprise-data-file"
 
+// findOutMore lists the pages to follow up and this repository, which every
+// response gives, from the section the console examples end with.
+var findOutMore = func() []string {
+	section := common.FindOutMore("examples-mixed-getting_started_web-main.go")
+	links := make([]string, 0)
+	for _, line := range strings.Split(section, "\n") {
+		if line = strings.TrimSpace(line); line != "" && line != "Find out more" {
+			links = append(links, line)
+		}
+	}
+	return links
+}()
+
 // ddResponseProperties lists device detection properties included in the JSON
 // response. The free data file has the platform and browser ones, and the
 // hardware ones need the Enterprise data file.
@@ -101,6 +114,8 @@ type MixedResponse struct {
 	DeviceDetection    map[string]string `json:"deviceDetection"`
 	IpIntelligence     map[string]string `json:"ipIntelligence"`
 	EnterpriseDataFile string            `json:"enterpriseDataFile,omitempty"`
+	// FindOutMore lists the pages to follow up and this repository.
+	FindOutMore []string `json:"findOutMore"`
 }
 
 // mixedHandler holds references to both engines and implements http.Handler.
@@ -241,6 +256,7 @@ func buildResponse(
 		ClientIP:        clientIP,
 		DeviceDetection: ddMap,
 		IpIntelligence:  ipiMap,
+		FindOutMore:     findOutMore,
 	}
 	if missing {
 		resp.EnterpriseDataFile = contactUs

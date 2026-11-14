@@ -466,6 +466,7 @@ func PerformExample(perf dd.PerformanceProfile, eFunc ExampleFunc) {
 			fmt.Print(output)
 		}
 	}
+	fmt.Print(FindOutMore(callerContent()))
 }
 
 // Same as PerformExample with additional support for command line options
@@ -499,6 +500,7 @@ func PerformExampleOptions(perf dd.PerformanceProfile, eFunc ExampleOptFunc) {
 			fmt.Print(output)
 		}
 	}
+	fmt.Print(FindOutMore(callerContent()))
 }
 
 type Options struct {

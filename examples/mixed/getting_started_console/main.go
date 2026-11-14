@@ -273,4 +273,5 @@ func main() {
 	if missing {
 		fmt.Printf("\n"+common.EnterpriseNote+"\n", contactUs)
 	}
+	fmt.Print(common.FindOutMore("examples-mixed-getting_started_console-main.go"))
 }

@@ -35,8 +35,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
 	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
 
 // EvidenceDateOfBirth is the Evidence key the element reads.
@@ -89,4 +90,5 @@ func main() {
 		sign, _ := data.Get("starsign")
 		fmt.Printf("%s -> %s\n", dob, sign)
 	}
+	fmt.Print(findoutmore.Section("examples-pipeline-1_simple_element-main.go"))
 }

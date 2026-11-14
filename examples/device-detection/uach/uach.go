@@ -93,6 +93,8 @@ type Page struct {
 	// ContactUs is set when the data file lacks a property only the
 	// Enterprise data file has.
 	ContactUs string
+	// FindOutMore lists the pages to follow up and this repository.
+	FindOutMore []examples.Property
 }
 
 // contactUs is where to ask for a copy of the Enterprise data file, which has
@@ -194,6 +196,8 @@ var templ = `<!DOCTYPE HTML>
 	      <b>Browser Name:</b> {{.BrowserName}}<br />
 	      <b>Browser Version:</b> {{.BrowserVersion}}<br />
 	      {{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>{{end}}
+	      <h3>Find out more</h3>
+	      <ul>{{range .FindOutMore}}<li>{{.Name}}: <a href="{{.Value}}">{{.Value}}</a></li>{{end}}</ul>
 	   </div>
    </body>
 </html>`
@@ -329,6 +333,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		browserName,
 		browserVersion,
 		"",
+		examples.FindOutMoreLinks("examples-device-detection-uach-uach.go"),
 	}
 	if missing {
 		p.ContactUs = contactUs

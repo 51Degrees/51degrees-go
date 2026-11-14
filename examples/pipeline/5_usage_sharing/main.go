@@ -45,9 +45,10 @@ import (
 	"net/http/httptest"
 	"sync"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/usagesharing"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 //go:embed config.json
@@ -131,4 +132,5 @@ func main() {
 	mu.Lock()
 	fmt.Printf("Total usage payloads received: %d\n", received)
 	mu.Unlock()
+	fmt.Print(findoutmore.Section("examples-pipeline-5_usage_sharing-main.go"))
 }
