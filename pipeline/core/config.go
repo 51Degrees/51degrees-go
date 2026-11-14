@@ -33,7 +33,7 @@ import (
 // can in turn be loaded from a human-readable file. The structure intentionally
 // mirrors PipelineOptions / ElementOptions from the reference implementations so
 // configuration files stay consistent across languages.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/pipeline-configuration.md
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/pipeline-configuration.md
 
 // ElementOptions describes how to build a single Flow Element. If SubElements is
 // populated, the element is a ParallelElements group and BuilderName /
@@ -56,6 +56,54 @@ type PipelineOptions struct {
 	// BuildParameters supplies Pipeline-level configuration. Recognized keys
 	// (case-insensitive) include "suppressProcessExceptions" and "concurrent".
 	BuildParameters map[string]any `json:"buildParameters,omitempty"`
+}
+
+// pipelineOptionsMember is the member at the root of a configuration file
+// that holds the options, as in the other languages' files.
+const pipelineOptionsMember = "PipelineOptions"
+
+// noElementsMessage says where a configuration's elements go.
+const noElementsMessage = "names no elements, so the Pipeline would do " +
+	"nothing. List them under PipelineOptions, for example " +
+	`{"PipelineOptions": {"Elements": [{"BuilderName": "SequenceElement"}]}}`
+
+// UnmarshalJSON reads the options from a "PipelineOptions" member at the
+// root, the form the other languages' configuration files take, where other
+// members such as "Logging" may sit beside it. Without that member it reads
+// the options from the root, the form earlier releases read. The member's
+// name is matched ignoring case, as encoding/json matches field names.
+func (o *PipelineOptions) UnmarshalJSON(data []byte) error {
+	type plain PipelineOptions
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return err
+	}
+	for name, member := range root {
+		if !strings.EqualFold(name, pipelineOptionsMember) {
+			continue
+		}
+		for other := range root {
+			if strings.EqualFold(other, "elements") {
+				return NewConfigurationError("the configuration has "+
+					"elements both at its root and under "+
+					pipelineOptionsMember+", so which are meant is not "+
+					"clear. Keep only those under "+pipelineOptionsMember,
+					nil)
+			}
+		}
+		var p plain
+		if err := json.Unmarshal(member, &p); err != nil {
+			return err
+		}
+		*o = PipelineOptions(p)
+		return nil
+	}
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*o = PipelineOptions(p)
+	return nil
 }
 
 // ElementFactory creates a Flow Element from named build parameters.
@@ -93,6 +141,10 @@ func (r *BuilderRegistry) lookup(builderName string) (ElementFactory, bool) {
 // registered factories. If an element or the Pipeline cannot be built, the
 // elements already built are closed and the error is returned.
 func (r *BuilderRegistry) BuildFromConfiguration(opts PipelineOptions, logger *slog.Logger) (Pipeline, error) {
+	if len(opts.Elements) == 0 {
+		return nil, NewConfigurationError("the configuration "+
+			noElementsMessage, nil)
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -153,7 +205,8 @@ func (r *BuilderRegistry) buildElement(eo ElementOptions, logger *slog.Logger) (
 	return el, nil
 }
 
-// LoadPipelineOptions reads PipelineOptions from a JSON file.
+// LoadPipelineOptions reads PipelineOptions from a JSON file, in either form
+// UnmarshalJSON reads, and refuses a file that names no elements.
 func LoadPipelineOptions(path string) (PipelineOptions, error) {
 	var opts PipelineOptions
 	data, err := os.ReadFile(path)
@@ -162,6 +215,10 @@ func LoadPipelineOptions(path string) (PipelineOptions, error) {
 	}
 	if err := json.Unmarshal(data, &opts); err != nil {
 		return opts, NewConfigurationError("could not parse configuration file '"+path+"'", err)
+	}
+	if len(opts.Elements) == 0 {
+		return opts, NewConfigurationError("the configuration file '"+
+			path+"' "+noElementsMessage, nil)
 	}
 	return opts, nil
 }
