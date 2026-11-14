@@ -4,3 +4,6 @@
 [submodule "javascript-templates"]
 	path = javascript-templates
 	url = ../javascript-templates
+[submodule "derived-properties"]
+	path = derived-properties
+	url = ../derived-properties
