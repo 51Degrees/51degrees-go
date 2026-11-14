@@ -72,6 +72,11 @@ type fileUpdater struct {
 
 	fileWatcher fileWatcher
 	logger      *LogWrapper
+
+	// callbackMu guards onUpdateComplete, as a callback can be registered
+	// while a check reports.
+	callbackMu       sync.Mutex
+	onUpdateComplete []func(UpdateComplete)
 }
 
 // NewFileUpdater initializes a new FileUpdater instance with default settings for updating and managing a data file.
