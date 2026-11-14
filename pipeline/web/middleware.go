@@ -159,8 +159,9 @@ func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
 func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
-// cookies, query and form parameters, client IP, host and protocol, and the
-// request itself as core.EvidenceHTTPRequest.
+// cookies, query and form parameters, client IP, host and protocol, the
+// request line where an element accepts it, and the request itself as
+// core.EvidenceHTTPRequest.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
 func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
@@ -213,10 +214,34 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	fd.AddEvidence("server.client-ip", clientIP)
 	fd.AddEvidence("header.protocol", protocol)
 
+	request := core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol)
+	m.addRequestLine(fd, r, request)
+
 	// The request itself, whether or not an element accepts it, so that the
 	// Usage Sharing Element can share headers no element accepts.
-	fd.AddEvidence(core.EvidenceHTTPRequest,
-		core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol))
+	fd.AddEvidence(core.EvidenceHTTPRequest, request)
+}
+
+// addRequestLine adds the method, path and query string of the request line,
+// exactly as it was sent, each only when an element in the Pipeline accepts
+// it, so a Pipeline with no such element carries no new values. The query
+// string is added empty when the request has none. A request that a server
+// did not read has no request line, so none of it is added.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/web-integration.md#populating-evidence
+func (m *Middleware) addRequestLine(fd core.FlowData, r *http.Request, request core.WebRequest) {
+	filter := m.pipeline.EvidenceKeyFilter()
+	if filter == nil || r.RequestURI == "" {
+		return
+	}
+	for key, value := range map[string]string{
+		core.EvidenceRequestMethod: request.Method(),
+		core.EvidenceRequestPath:   request.Path(),
+		core.EvidenceRequestQuery:  request.RawQuery(),
+	} {
+		if filter.Include(key) {
+			fd.AddEvidence(key, value)
+		}
+	}
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
