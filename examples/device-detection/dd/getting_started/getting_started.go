@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example dd/getting_started/getting_started.go
+This example shows how to perform simple device detections on User-Agent
+strings with the dd package. It runs with the free Lite data file, and
+shows the properties that only the Enterprise data file has as needing it.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/dd/getting_started).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*

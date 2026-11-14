@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example dd/match_device_id/match_device_id.go
+This example shows how to perform device detections using Device IDs,
+with the dd package.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/dd/match_device_id).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*
