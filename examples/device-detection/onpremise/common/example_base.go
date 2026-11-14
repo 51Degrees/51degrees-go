@@ -23,6 +23,8 @@
 package common
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
@@ -62,6 +64,10 @@ func RunExample(exampleFunc ExampleFunc) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Every example ends with where to find out more, tagged with its file.
+	_, file, _, _ := runtime.Caller(1)
+	fmt.Print(dd_example.FindOutMore(dd_example.ExampleContent(file)))
 }
 
 var ExampleEvidenceDesktop = []onpremise.Evidence{

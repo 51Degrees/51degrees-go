@@ -34,24 +34,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 func TestMain(m *testing.M) {
 	// Initialise manager
 	manager = dd.NewResourceManager()
 	config = dd.NewConfigHash(dd.Balanced)
-	dataFiles := []string{"51Degrees-LiteV4.1.hash"}
-	filePath, err := dd.GetFilePath("../..", dataFiles)
-	if err != nil {
-		log.Fatalf("Cannot find file that matches any of \"%s\".\n",
-			strings.Join(dataFiles, ", "))
-	}
+	// Found as the example finds it, so a fresh clone downloads it.
+	filePath := examples.GetFilePathByName([]string{examples.LiteDataFile})
 
-	err = dd.InitManagerFromFile(
+	err := dd.InitManagerFromFile(
 		manager,
 		*config,
 		"",
@@ -71,10 +67,18 @@ func TestMain(m *testing.M) {
 // Test if the web integration handler handles the request
 // correctly.
 func TestHandler(t *testing.T) {
-	// Expected response body
+	// Expected response body, with the Lite data file, which has none of the
+	// properties only the Enterprise data file has.
 	p := &Page{
-		"Mobile Safari",
-		"640",
+		BrowserName:       "Mobile Safari",
+		ScreenPixelsWidth: "640",
+		ContactUs:         contactUs,
+		FindOutMore: examples.FindOutMoreLinks(
+			"examples-device-detection-web-web_integration.go"),
+	}
+	for _, property := range examples.EnterpriseProperties {
+		p.Enterprise = append(p.Enterprise,
+			examples.Property{Name: property, Value: examples.NeedsEnterprise})
 	}
 
 	// Construct the template
@@ -120,5 +124,24 @@ func TestHandler(t *testing.T) {
 			"\"\n"+
 			"%s\n"+
 			"\"\n", exp, act)
+	}
+}
+
+// TestHandlerShowsEnterprise checks the page shows the properties only the
+// Enterprise data file has, with the link to ask for a copy when the data file
+// lacks them.
+func TestHandlerShowsEnterprise(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("User-Agent",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) "+
+			"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 "+
+			"Safari/9537.53")
+	rr := httptest.NewRecorder()
+	http.HandlerFunc(handler).ServeHTTP(rr, r)
+	if err := examples.CheckFindOutMore(rr.Body.String()); err != nil {
+		t.Error(err)
+	}
+	if err := examples.CheckEnterprise(rr.Body.String()); err != nil {
+		t.Error(err)
 	}
 }

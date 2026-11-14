@@ -29,7 +29,7 @@
 //
 // Run with: go run ./examples/6_caching
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/required-examples.md
 package main
 
 import (
@@ -38,10 +38,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/cache"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 const evidenceDateOfBirth = "query.date-of-birth"
@@ -112,4 +113,5 @@ func main() {
 	fmt.Printf("2nd lookup %s -> %s (cacheHit=%v, took %s)\n", dob, sign, hit, dur.Round(time.Millisecond))
 
 	fmt.Printf("Engine performed %d computation(s) for 2 identical requests.\n", engine.computeCount.Load())
+	fmt.Print(findoutmore.Section("examples-pipeline-6_caching-main.go"))
 }

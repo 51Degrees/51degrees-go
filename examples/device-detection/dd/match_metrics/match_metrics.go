@@ -33,18 +33,25 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 package main
 
 /*
-This example illustrates how match metrics can be accessed.
+This example illustrates how match metrics can be accessed. It runs with the
+free Lite data file, and shows the properties that only the Enterprise data
+file has as needing it.
 */
 
 import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 
 	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-dd-match_metrics-match_metrics.go&utm_term=enterprise-data-file"
 
 // Expected output format for match metrics report
 const expected = `\tIsMobile: (True|False)\n` +
@@ -56,10 +63,11 @@ const expected = `\tIsMobile: (True|False)\n` +
 	`\tSub Strings: .*\n`
 
 // matchMetrics performs a device detection on the input User-Agent string and
-// return the match metrics.
+// return the match metrics, a line for each property only the Enterprise data
+// file has, and whether the data file lacks any of them.
 func matchMetrics(
 	results *dd.ResultsHash,
-	ua string) string {
+	ua string) (string, string, bool) {
 	// Perform detection
 	err := results.MatchUserAgent(ua)
 	if err != nil {
@@ -119,7 +127,8 @@ func matchMetrics(
 		returnStr += fmt.Sprintf("\tMethod: %s\n", methodStr)
 		returnStr += fmt.Sprintf("\tSub Strings: %s\n", matchedUserAgent)
 	}
-	return returnStr
+	enterprise, missing := dd_example.EnterpriseValues(results, "\t")
+	return returnStr, enterprise, missing
 }
 
 func verifyOutputFormat(matchReport string) string {
@@ -149,10 +158,18 @@ func runMatchMetrics(perf dd.PerformanceProfile) string {
 	config := dd.NewConfigHash(perf)
 	filePath := dd_example.GetFilePathByName([]string{dd_example.LiteDataFile})
 
+	// The properties to detect, with those only the Enterprise data file has.
+	properties := append([]string{
+		"ScreenPixelsWidth",
+		"HardwareModel",
+		"IsMobile",
+		"BrowserName",
+		"Id",
+	}, dd_example.EnterpriseProperties...)
 	err := dd.InitManagerFromFile(
 		manager,
 		*config,
-		"ScreenPixelsWidth,HardwareModel,IsMobile,BrowserName,Id",
+		strings.Join(properties, ","),
 		filePath)
 	if err != nil {
 		log.Fatalln(err)
@@ -181,21 +198,26 @@ func runMatchMetrics(perf dd.PerformanceProfile) string {
 		"Build/KOT49H) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 " +
 		"Chrome/30.0.0.0 Safari/537.36"
 
-	// Carries out a match for a mobile User-Agent.
-	report := fmt.Sprintf("Mobile User-Agent: %s\n", uaMobile)
-	actual := matchMetrics(results, uaMobile)
-	report += verifyOutputFormat(actual)
-
-	// Carries out a match for a desktop User-Agent.
-	report += fmt.Sprintf("\nDesktop User-Agent: %s\n", uaDesktop)
-	actual = matchMetrics(results, uaDesktop)
-	report += verifyOutputFormat(actual)
-
-	// Carries out a match for a MediaHub User-Agent.
-	report += fmt.Sprintf("\nMediaHub User-Agent: %s\n", uaMediaHub)
-	actual = matchMetrics(results, uaMediaHub)
-	report += verifyOutputFormat(actual)
-
+	// Carries out a match for each User-Agent, checks the format of its match
+	// metrics, and shows the properties only the Enterprise data file has.
+	report := ""
+	missing := false
+	for i, device := range []struct{ name, ua string }{
+		{"Mobile", uaMobile},
+		{"Desktop", uaDesktop},
+		{"MediaHub", uaMediaHub},
+	} {
+		if i > 0 {
+			report += "\n"
+		}
+		report += fmt.Sprintf("%s User-Agent: %s\n", device.name, device.ua)
+		actual, enterprise, needs := matchMetrics(results, device.ua)
+		report += verifyOutputFormat(actual) + enterprise
+		missing = missing || needs
+	}
+	if missing {
+		report += dd_example.EnterpriseNote(contactUs)
+	}
 	return report
 }
 
@@ -231,4 +253,10 @@ func main() {
 	//	Iterations: [number]
 	//	Method: [PERFORMANCE|COMBINED|PREDICTIVE|NONE]
 	//	Sub strings: [string]
+	//
+	// With the free Lite data file, each device is followed by
+	//	HardwareVendor: needs the Enterprise data file
+	//	HardwareName: needs the Enterprise data file
+	//	DeviceType: needs the Enterprise data file
+	// and the output ends with where to ask for a copy of that file.
 }

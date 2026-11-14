@@ -30,7 +30,7 @@
 //
 // Run with: go run ./examples/5_usage_sharing
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/required-examples.md
 package main
 
 import (
@@ -45,9 +45,10 @@ import (
 	"net/http/httptest"
 	"sync"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/usagesharing"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 //go:embed config.json
@@ -131,4 +132,5 @@ func main() {
 	mu.Lock()
 	fmt.Printf("Total usage payloads received: %d\n", received)
 	mu.Unlock()
+	fmt.Print(findoutmore.Section("examples-pipeline-5_usage_sharing-main.go"))
 }

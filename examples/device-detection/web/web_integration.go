@@ -46,7 +46,17 @@ enter "localhost:8000" in the URL input. A similar return as the following is ex
 Browser: Chrome
 
 Screen Pixels Width: Unknown
+
+HardwareVendor: needs the Enterprise data file
+
+HardwareName: needs the Enterprise data file
+
+DeviceType: needs the Enterprise data file
+
+Some of these properties need the Enterprise data file. Contact us for a copy.
 ```
+With the free Lite data file, the properties that only the Enterprise data file
+has are shown as needing it, with a link to ask for a copy.
 
 To be sure that the application works with different User-Agents, `curl` can be
 used:
@@ -65,10 +75,19 @@ import (
 	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-// Properties required for a response page.
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-web-web_integration.go&utm_term=enterprise-data-file"
+
+// Properties required for a response page. Enterprise holds the properties
+// only the Enterprise data file has, and ContactUs is set when the data file
+// lacks any of them.
 type Page struct {
 	BrowserName       string
 	ScreenPixelsWidth string
+	Enterprise        []examples.Property
+	ContactUs         string
+	FindOutMore       []examples.Property
 }
 
 var manager *dd.ResourceManager
@@ -84,6 +103,10 @@ var templ = `<!DOCTYPE HTML>
   <body>
     <p id=browsername>Browser: <b>{{.BrowserName}}</b></p>
     <p id=screenpixelswidth>Screen Pixels Width: <b>{{.ScreenPixelsWidth}}</b></p>
+    {{range .Enterprise}}<p>{{.Name}}: <b>{{.Value}}</b></p>
+    {{end}}{{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>
+    {{end}}<h3>Find out more</h3>
+    <ul>{{range .FindOutMore}}<li>{{.Name}}: <a href="{{.Value}}">{{.Value}}</a></li>{{end}}</ul>
   </body>
 </html>`
 
@@ -138,10 +161,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	match(results, r.UserAgent())
 	browserName := getValue(results, "BrowserName")
 	screenPixelWidth := getValue(results, "ScreenPixelsWidth")
+	enterprise, missing := examples.Enterprise(results)
 	p := &Page{
-		browserName,
-		screenPixelWidth,
+		BrowserName:       browserName,
+		ScreenPixelsWidth: screenPixelWidth,
+		Enterprise:        enterprise,
 	}
+	if missing {
+		p.ContactUs = contactUs
+	}
+	p.FindOutMore = examples.FindOutMoreLinks(
+		"examples-device-detection-web-web_integration.go")
 
 	// Construct the template
 	t := template.Must(template.New("dd").Parse(templ))

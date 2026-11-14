@@ -24,7 +24,9 @@ package common
 
 import (
 	"fmt"
+	"log"
 
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 )
 
@@ -66,12 +68,18 @@ func IsFreeDataFile(engine *ipi_onpremise.Engine, properties []string) bool {
 	return true
 }
 
-// PrintEnterpriseOffer writes, for an example that shows no properties, where
-// to ask for a copy of the Enterprise data file.
-func PrintEnterpriseOffer(contactUs string) {
-	fmt.Printf("\nThis example used a free data file. The Enterprise data "+
-		"file adds the location, range and connection properties. Contact us "+
-		"for a copy at %s\n", contactUs)
+// PrintNeedsEnterprise writes, for an example that shows no values of its
+// own, each of properties that only the Enterprise data file has as needing
+// that file, then where to ask for a copy.
+func PrintNeedsEnterprise(properties []string, contactUs string) {
+	fmt.Println("\nThis example used a free data file, which has no values " +
+		"for these properties:")
+	for _, property := range properties {
+		if !FreeProperties[property] {
+			fmt.Printf("\t%s: %s\n", property, NeedsEnterprise)
+		}
+	}
+	PrintEnterpriseNote(contactUs)
 }
 
 // PrintEnterpriseNote writes where to ask for a copy of the Enterprise data
@@ -79,4 +87,47 @@ func PrintEnterpriseOffer(contactUs string) {
 func PrintEnterpriseNote(contactUs string) {
 	fmt.Printf("\nSome of these properties need the Enterprise data file. "+
 		"Contact us for a copy at %s\n", contactUs)
+}
+
+// ShowEnterprise opens the data file with properties, looks up one address
+// and prints each property, as needing the Enterprise data file when the
+// data file is a free one, then where to ask for a copy. It is for the
+// examples that measure with fewer properties and show these afterwards, so
+// the measurement is unchanged. The caller stops its own engine first, so
+// the data file is never loaded twice at once, and the low memory
+// configuration reads only what the one lookup needs.
+func ShowEnterprise(dataFile, contactUs string, properties []string) {
+	engine, err := ipi_onpremise.New(
+		ipi_onpremise.WithConfigIpi(
+			ipi_interop.NewConfigIpi(ipi_interop.LowMemory)),
+		ipi_onpremise.WithDataFile(dataFile),
+		ipi_onpremise.WithAutoUpdate(false),
+		ipi_onpremise.WithTempDataCopy(false),
+		ipi_onpremise.WithProperties(properties),
+	)
+	if err != nil {
+		log.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Stop()
+
+	free := IsFreeDataFile(engine, properties)
+	values, err := engine.Process(probeAddress)
+	if err != nil {
+		log.Fatalf("Failed to process %s: %v", probeAddress, err)
+	}
+	fmt.Printf("\nIP address %s:\n", probeAddress)
+	for _, property := range properties {
+		value, found := values.GetValueByProperty(property)
+		switch {
+		case found:
+			fmt.Printf("\t%s: %v\n", property, value)
+		case free && !FreeProperties[property]:
+			fmt.Printf("\t%s: %s\n", property, NeedsEnterprise)
+		default:
+			fmt.Printf("\t%s: no value for this address\n", property)
+		}
+	}
+	if free {
+		PrintEnterpriseNote(contactUs)
+	}
 }

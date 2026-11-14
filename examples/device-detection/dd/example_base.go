@@ -58,9 +58,59 @@ var EnterpriseProperties = []string{"HardwareVendor", "HardwareName", "DeviceTyp
 const NeedsEnterprise = "needs the Enterprise data file"
 
 // HasProperty reports whether the data file has the property, which the
-// results must have been asked for.
+// results must have been asked for, as they are when no property names are
+// given. A name given that the data file does not have keeps its place among
+// the names, and has no type.
 func HasProperty(results *dd.ResultsHash, property string) bool {
-	return results.RequiredPropertyIndexFromName(property) >= 0
+	index := results.RequiredPropertyIndexFromName(property)
+	return index >= 0 && results.PropertyType(index) != nil
+}
+
+// Property is a property and the text an example shows for it.
+type Property struct {
+	Name  string
+	Value string
+}
+
+// Enterprise returns each of EnterpriseProperties with its value in the
+// results, or NeedsEnterprise when the data file does not have it, and
+// whether any needed it.
+func Enterprise(results *dd.ResultsHash) ([]Property, bool) {
+	shown := make([]Property, 0, len(EnterpriseProperties))
+	missing := false
+	for _, property := range EnterpriseProperties {
+		if !HasProperty(results, property) {
+			shown = append(shown, Property{property, NeedsEnterprise})
+			missing = true
+			continue
+		}
+		hasValues, err := results.HasValues(property)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if !hasValues {
+			shown = append(shown, Property{property, "no value for this device"})
+			continue
+		}
+		value, err := results.ValuesString(property, ",")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		shown = append(shown, Property{property, value})
+	}
+	return shown, missing
+}
+
+// EnterpriseValues returns a line for each of EnterpriseProperties, starting
+// with indent, as Enterprise gives it, and whether any needed the Enterprise
+// data file.
+func EnterpriseValues(results *dd.ResultsHash, indent string) (string, bool) {
+	shown, missing := Enterprise(results)
+	output := ""
+	for _, property := range shown {
+		output += fmt.Sprintf("%s%s: %s\n", indent, property.Name, property.Value)
+	}
+	return output, missing
 }
 
 // EnterpriseNote returns where to ask for a copy of the Enterprise data file,
@@ -68,6 +118,44 @@ func HasProperty(results *dd.ResultsHash, property string) bool {
 func EnterpriseNote(contactUs string) string {
 	return fmt.Sprintf("Some of these properties need the Enterprise data "+
 		"file. Contact us for a copy at %s\n", contactUs)
+}
+
+// mobileUserAgent is the User-Agent of an iPhone, which ShowEnterprise
+// detects.
+const mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
+	"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 " +
+	"Safari/9537.53"
+
+// ShowEnterprise loads the data file with IsMobile and the properties only the
+// Enterprise data file has, detects an iPhone's User-Agent, and returns those
+// properties, with where to ask for a copy of that file when the data file
+// lacks any of them. It is for the examples that measure with fewer
+// properties, and show these after the measurement, so the measurement is
+// unchanged. IsMobile is asked for as well, so that the list always names a
+// property every data file has.
+func ShowEnterprise(dataFilePath, contactUs string) string {
+	manager := dd.NewResourceManager()
+	config := dd.NewConfigHash(dd.Default)
+	err := dd.InitManagerFromFile(
+		manager,
+		*config,
+		strings.Join(append([]string{"IsMobile"}, EnterpriseProperties...), ","),
+		dataFilePath)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer manager.Free()
+	results := dd.NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(mobileUserAgent); err != nil {
+		log.Fatalln(err)
+	}
+	values, missing := EnterpriseValues(results, "\t")
+	output := fmt.Sprintf("Mobile User-Agent: %s\n%s", mobileUserAgent, values)
+	if missing {
+		output += EnterpriseNote(contactUs)
+	}
+	return output
 }
 
 // The data repository, the data submodule of cxx, has a link file in
@@ -378,6 +466,7 @@ func PerformExample(perf dd.PerformanceProfile, eFunc ExampleFunc) {
 			fmt.Print(output)
 		}
 	}
+	fmt.Print(FindOutMore(callerContent()))
 }
 
 // Same as PerformExample with additional support for command line options
@@ -411,6 +500,7 @@ func PerformExampleOptions(perf dd.PerformanceProfile, eFunc ExampleOptFunc) {
 			fmt.Print(output)
 		}
 	}
+	fmt.Print(FindOutMore(callerContent()))
 }
 
 type Options struct {

@@ -6,10 +6,10 @@
 
 Demonstrates how to set up periodic data file updates by either polling the 51degrees [distributor](https://51degrees.com/documentation/_services__distributor.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-onpremise-readme.md&utm_term=update_polling_interval) server or a custom URL. 
 
-To run the example, execute the following command:
+To run the example, execute the following command from `examples/device-detection`:
 
 ```bash
-_51DEGREES_LICENSE_KEY=my_license_key go run onpremise/update_polling_interval.go
+_51DEGREES_LICENSE_KEY=my_license_key go run ./onpremise/update_polling_interval
 ```
 
 # onpremise API Usage

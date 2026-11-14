@@ -52,6 +52,10 @@ IsMobile Evidence Records: 58076
 Processed Evidence Records: 80000
 Number of CPUs: 2
 ```
+
+The detections it measures ask for IsMobile alone. Afterwards it shows the
+properties that only the Enterprise data file has, as needing that file when
+the data file in use is the free Lite one.
 */
 
 import ( //	"runtime"
@@ -78,6 +82,10 @@ import ( //	"runtime"
 
 // File to output the performance report
 const reportFile = "performance_report.log"
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-performance-performance.go&utm_term=enterprise-data-file"
 const fIterationCount = 4
 
 // Report struct for each performance run
@@ -266,9 +274,6 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
-			// Stopping the engine frees its data set. Deferring the call
-			// stops it however this function returns.
-			defer engine.Stop()
 
 			// Action
 			actReport := report{0, 0, 0, 0}
@@ -280,6 +285,12 @@ func main() {
 
 			// Print the final performance report
 			printReport(&actReport, "")
+
+			// Stopping the engine frees its data set, so the data file is
+			// never loaded twice at once when the properties only the
+			// Enterprise data file has are shown.
+			engine.Stop()
+			fmt.Print(dd_example.ShowEnterprise(params.DataFile, contactUs))
 
 			return nil
 		},
@@ -295,5 +306,10 @@ func main() {
 //   Processed Evidence Records: 20000
 //   Number of CPUs: 2
 
-// Output:
+// Output, with the free Lite data file:
 // Output report to file "performance_report.log".
+// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
+//	HardwareVendor: needs the Enterprise data file
+//	HardwareName: needs the Enterprise data file
+//	DeviceType: needs the Enterprise data file
+// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>

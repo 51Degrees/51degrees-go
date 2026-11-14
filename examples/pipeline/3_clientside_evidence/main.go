@@ -35,7 +35,7 @@
 //
 // Run with: go run ./examples/3_clientside_evidence
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/required-examples.md
 package main
 
 import (
@@ -47,9 +47,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/web"
 )
 
@@ -125,6 +126,7 @@ func main() {
 	fmt.Println("\n=== POST /51dpipeline/json (client callback with the gathered date) ===")
 	json := httpPostForm(srv.URL+web.DefaultJSONURL, url.Values{"date-of-birth": {"1992-04-15"}})
 	fmt.Println(json)
+	fmt.Print(findoutmore.Section("examples-pipeline-3_clientside_evidence-main.go"))
 }
 
 func httpGet(u string) string {

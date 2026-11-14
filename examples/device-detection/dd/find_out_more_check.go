@@ -1,6 +1,6 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
  * This Original Work is licensed under the European Union Public Licence
@@ -20,12 +20,28 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
-package main
+package dd
 
-/*
-TODO: To be implemented
-*/
+import (
+	"fmt"
+	"strings"
+)
 
-func main() {
-	// TODO: To be implemented
+// repositoryURL is the repository every example's Find out more section
+// names.
+const repositoryURL = "https://github.com/51Degrees/51degrees-go"
+
+// CheckFindOutMore returns an error unless the output of an example, as text
+// or as a web page, ends with a Find out more section that names this
+// repository. The examples' tests call it.
+func CheckFindOutMore(output string) error {
+	at := strings.LastIndex(output, "Find out more")
+	if at < 0 {
+		return fmt.Errorf("the output has no Find out more section")
+	}
+	if !strings.Contains(output[at:], repositoryURL) {
+		return fmt.Errorf("the Find out more section does not name %s",
+			repositoryURL)
+	}
+	return nil
 }
