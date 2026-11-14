@@ -1,0 +1,13 @@
+name: Usage rule 1 red test
+on:
+  push:
+    branches:
+      - tmp/usage-rule-1-red
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the repeat comparison
+        working-directory: pipeline
+        run: go test ./elements/usagesharing/ -run TestRepeatHash -v
