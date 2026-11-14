@@ -95,10 +95,15 @@ function Invoke-GoTests {
         # go test writes what the compiler and linker print, warnings included,
         # to standard error, and go-junit-report counts any of it as a failed
         # build. So standard error goes to the log and only the test output to
-        # the report. A package that does not build still fails, because go
-        # test reports it on standard output.
+        # the report. A test that runs the go command itself, as the examples'
+        # tests do, passes on what that command's compiler prints as its own
+        # output, and go-junit-report reads a line starting '# ' there as a
+        # package that failed to build, so those lines go to the log as well.
+        # A package that does not build still fails, because go test reports
+        # it on standard output as FAIL.
         go test -v @Packages 2>&1 | ForEach-Object {
-            if ($_ -is [System.Management.Automation.ErrorRecord]) {
+            if ($_ -is [System.Management.Automation.ErrorRecord] -or
+                "$_".StartsWith('# ')) {
                 Write-Host $_.ToString()
                 return
             }
