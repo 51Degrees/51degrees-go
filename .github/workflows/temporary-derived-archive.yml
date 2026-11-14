@@ -1,0 +1,51 @@
+name: Temporary derived property archive check
+
+on: push
+
+jobs:
+  archive:
+    name: The archived module carries the scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive the pipeline module as a module download is made, without submodules
+        run: |
+          mkdir -p "$RUNNER_TEMP/archive"
+          git archive HEAD pipeline | tar -x -C "$RUNNER_TEMP/archive"
+          ls "$RUNNER_TEMP/archive/pipeline/elements/derivedproperty/scripts"
+      - name: A program outside the repository loads every built-in script
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          cat > go.mod <<EOF
+          module consumer
+
+          go 1.22
+
+          require github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.174
+
+          replace github.com/51Degrees/51degrees-go/pipeline/v4 => $RUNNER_TEMP/archive/pipeline
+          EOF
+          cat > main.go <<'EOF'
+          package main
+
+          import (
+          	"fmt"
+
+          	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
+          )
+
+          func main() {
+          	for _, s := range derivedproperty.BuiltInScripts() {
+          		e, err := derivedproperty.NewBuilder().AddBuiltInScript(s).Build()
+          		if err != nil {
+          			panic(err)
+          		}
+          		m := e.Scripts()[0]
+          		fmt.Printf("%s %s, output %s.%s\n", m.Name, m.Version, derivedproperty.DataKey, m.Output.Name)
+          	}
+          }
+          EOF
+          GOWORK=off GOFLAGS=-mod=mod go run .
