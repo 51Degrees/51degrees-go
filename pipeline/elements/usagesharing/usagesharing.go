@@ -575,7 +575,7 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []strin
 	writeElement(b, "Language", "Go")
 	writeElement(b, "LanguageVersion", runtime.Version())
 	writeElement(b, "ServerIP", serverIP())
-	writeElement(b, "Platform", runtime.GOOS)
+	writeElement(b, "Platform", platformName())
 
 	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))
@@ -773,13 +773,14 @@ func hashWithSession(evidence uint64, session string) uint64 {
 	return h.Sum64()
 }
 
+// isUniquenessKey reports whether a key is the session id or the sequence the
+// Sequence Element adds, which make each request of a session unique, so the
+// repeat comparison leaves them out whatever the sharing settings. A value of
+// another prefix with the same name is compared like any other.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L296-L299
 func isUniquenessKey(key string) bool {
-	_, field := core.SplitEvidenceKey(key)
-	switch strings.ToLower(field) {
-	case "sequence", "session-id":
-		return true
-	}
-	return false
+	return strings.EqualFold(key, sequence.EvidenceSessionID) ||
+		strings.EqualFold(key, sequence.EvidenceSequence)
 }
 
 // --- duplicate tracker ---------------------------------------------------
