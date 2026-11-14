@@ -1,0 +1,51 @@
+name: Temporary usage sharing package tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Usage sharing package tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The submodules the Pipeline tests read
+        run: git submodule update --init --depth 1 derived-properties javascript-templates
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format
+        if: always() && runner.os == 'Linux'
+        working-directory: pipeline
+        run: |
+          unformatted=$(gofmt -l elements/usagesharing || true)
+          echo "gofmt: ${unformatted:-none}"
+          test -z "$unformatted"
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        run: go vet ./elements/usagesharing/
+      - name: The new tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v -run 'TestPackagesAreThe51DegreesModulesBuiltIn|TestTheProgramIsNotAPackageItUses|TestEachRecordNamesEveryPackageInUse' ./elements/usagesharing/
+      - name: Every Pipeline test
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 ./...
+      - name: The usage sharing example's message
+        if: always()
+        working-directory: examples/pipeline
+        run: |
+          set -o pipefail
+          go run ./5_usage_sharing | tee example.out
+          echo "Package elements in the message:"
+          grep -o '<Package Name="[^"]*">[^<]*</Package>' example.out || echo "none"
