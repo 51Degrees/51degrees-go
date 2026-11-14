@@ -1,0 +1,41 @@
+name: Temporary example tests
+
+on: push
+
+defaults:
+  run:
+    # bash with -eo pipefail, so a failing go test fails its step even
+    # though its output goes through grep.
+    shell: bash
+
+jobs:
+  test:
+    name: Example tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Free data files, downloaded once as a fresh clone would
+        run: |
+          for i in 1 2 3 4 5 6; do
+            sh cxx/data/get-data-files.sh && break
+            sleep 30
+          done
+          ls -la cxx/data/device-detection cxx/data/ip-intelligence
+      - name: Device Detection examples
+        if: always()
+        working-directory: examples/device-detection
+        run: go test -count=1 -p 1 -timeout 40m ./... 2>&1 | grep -E -- '^(---|ok|FAIL|panic)|_test.go:[0-9]+:'
+      - name: IP Intelligence examples
+        if: always()
+        working-directory: examples/ip-intelligence
+        run: go test -count=1 -p 1 -timeout 40m ./... 2>&1 | grep -E -- '^(---|ok|FAIL|panic)|_test.go:[0-9]+:'
+      - name: Mixed examples
+        if: always()
+        working-directory: examples/mixed
+        run: go test -count=1 -p 1 -timeout 40m ./... 2>&1 | grep -E -- '^(---|ok|FAIL|panic)|_test.go:[0-9]+:'
+      - name: Pipeline examples
+        if: always()
+        working-directory: examples/pipeline
+        run: go test -count=1 -p 1 -timeout 40m ./... 2>&1 | grep -E -- '^(---|ok|FAIL|panic)|_test.go:[0-9]+:'
