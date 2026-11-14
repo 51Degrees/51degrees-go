@@ -11,7 +11,10 @@ use (
 	./pipeline
 )
 
-replace github.com/51Degrees/51degrees-go/common/v4 v4.5.173 => ./common
+replace (
+	github.com/51Degrees/51degrees-go/common/v4 v4.5.173 => ./common
+	github.com/51Degrees/51degrees-go/common/v4 v4.5.174 => ./common
+)
 
 replace github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.173 => ./device-detection
 

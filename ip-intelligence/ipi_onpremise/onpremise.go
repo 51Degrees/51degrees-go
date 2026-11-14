@@ -149,9 +149,11 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 // handleFileExternallyChanged handles the logic for processing a file that has been altered externally to ensure consistency.
 func (e *Engine) handleFileExternallyChanged() {
-	if tries, err := e.reload(); err != nil {
+	tries, err := e.reload()
+	if err != nil {
 		e.logReloadError(tries, err)
 	}
+	e.reportReload(err)
 
 	e.IncreaseFileExternallyChangedCount()
 }
@@ -183,7 +185,17 @@ func (e *Engine) run() error {
 			return err
 		}
 		if downloaded {
-			loaded = false
+			// The update on start-up ends once the new file has loaded or
+			// failed to, so it is reported here.
+			loadErr := e.processFileExternallyChanged()
+			callbackErr := e.ReportUpdateComplete(reloadStatus(loadErr))
+			if loadErr != nil {
+				return loadErr
+			}
+			if callbackErr != nil {
+				return callbackErr
+			}
+			loaded = true
 		}
 	}
 
@@ -291,12 +303,42 @@ func (p *reloadPanic) Error() string { return fmt.Sprintf("panic: %v", p.value) 
 func (e *Engine) logReloadError(tries int, err error) {
 	var p *reloadPanic
 	if errors.As(err, &p) {
-		e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
-			"Error detail: %v", engineTypeName, p.value)
+		e.logUnhandledError(p.value)
 		return
 	}
 	e.logger.Errorf("Error during check for data update. An error occurred when applying a data update to "+
 		"engine '%s' after %d tries. Error detail: %v", engineTypeName, tries, err)
+}
+
+// logUnhandledError logs a failure the error table has no row for, with its
+// last row.
+func (e *Engine) logUnhandledError(detail interface{}) {
+	e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
+		"Error detail: %v", engineTypeName, detail)
+}
+
+// reportReload reports a reload made by update polling or the file watcher to
+// the update callbacks, and logs a callback's panic with the error table's
+// last row.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#reporting-each-check
+func (e *Engine) reportReload(err error) {
+	if callbackErr := e.ReportUpdateComplete(reloadStatus(err)); callbackErr != nil {
+		e.logUnhandledError(callbackErr)
+	}
+}
+
+// reloadStatus gives the status a reload that ended with err reports: success,
+// the refresh failure, or the unknown error for a panic.
+func reloadStatus(err error) common_go.UpdateStatus {
+	var p *reloadPanic
+	switch {
+	case err == nil:
+		return common_go.UpdateSuccess
+	case errors.As(err, &p):
+		return common_go.UpdateUnknownError
+	default:
+		return common_go.UpdateRefreshFailed
+	}
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -305,9 +347,11 @@ func (e *Engine) logReloadError(tries int, err error) {
 func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
-		if tries, err := e.reload(); err != nil {
+		tries, err := e.reload()
+		if err != nil {
 			e.logReloadError(tries, err)
 		}
+		e.reportReload(err)
 	}
 }
 
