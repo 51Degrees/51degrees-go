@@ -86,14 +86,29 @@ function Invoke-GoTests {
     $JUnitPath = [System.IO.Path]::GetFullPath($JUnitPath)
     New-Item -ItemType Directory -Force -Path (Split-Path $JUnitPath) | Out-Null
     if ($IsMacOS) {
-        # go-junit-report counts the harmless linker warning about -lm being
-        # given more than once as an error.
+        # The linker warns that -lm is given more than once, which is harmless.
         $env:CGO_LDFLAGS = '-Wl,-no_warn_duplicate_libraries'
     }
     Push-Location $ModulePath
     try {
         Write-Host "Testing $Packages in '$ModulePath'"
-        go test -v @Packages 2>&1 | go-junit-report -set-exit-code -iocopy -out $JUnitPath | Out-Host
+        # go test writes what the compiler and linker print, warnings included,
+        # to standard error, and go-junit-report counts any of it as a failed
+        # build. So standard error goes to the log and only the test output to
+        # the report. A test that runs the go command itself, as the examples'
+        # tests do, passes on what that command's compiler prints as its own
+        # output, and go-junit-report reads a line starting '# ' there as a
+        # package that failed to build, so those lines go to the log as well.
+        # A package that does not build still fails, because go test reports
+        # it on standard output as FAIL.
+        go test -v @Packages 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord] -or
+                "$_".StartsWith('# ')) {
+                Write-Host $_.ToString()
+                return
+            }
+            $_
+        } | go-junit-report -set-exit-code -iocopy -out $JUnitPath | Out-Host
         return $LASTEXITCODE
     } finally {
         Pop-Location

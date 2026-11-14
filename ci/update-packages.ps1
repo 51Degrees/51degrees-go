@@ -30,6 +30,14 @@ git -C $RepoName submodule update --init --remote javascript-templates
 Copy-Item -Path (Join-Path $RepoName 'javascript-templates/*.mustache') `
     -Destination (Join-Path $RepoName 'pipeline/elements/javascriptbuilder/javascript-templates') -Force
 
+# The Derived Property Element keeps a committed copy of the scripts it ships,
+# for the same reason, and the copy moves with the derived-properties
+# submodule. ci/check-derived-properties.ps1 fails when they differ.
+git -C $RepoName submodule update --init --remote derived-properties
+$scripts = Join-Path $RepoName 'pipeline/elements/derivedproperty/scripts'
+Remove-Item -Path (Join-Path $scripts '*') -Force
+Copy-Item -Path (Join-Path $RepoName 'derived-properties/scripts/*') -Destination $scripts -Force
+
 # Update the dependencies of each module, without the workspace. The examples
 # move to the latest release of the published modules. A change to them alone
 # doesn't make a release. An example that requires a module not released yet
