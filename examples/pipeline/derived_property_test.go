@@ -37,7 +37,7 @@ const (
 	fromCode          = "2. Built in code"
 )
 
-// The lines the example prints for the second request of each Pipeline,
+// The lines the example prints for the third request of each Pipeline,
 // where session.PointerMoved is absent. The message names the missing
 // source Property.
 const (
