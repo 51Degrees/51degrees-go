@@ -112,6 +112,9 @@ type Element struct {
 	staticMu  sync.Mutex
 	staticSet bool
 	flowNames []string
+	// packages are the 51Degrees modules in use, read once when the element
+	// is built, as they do not change while the program runs.
+	packages []packageVersion
 
 	closeOnce sync.Once
 
