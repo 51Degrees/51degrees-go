@@ -25,6 +25,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -34,9 +35,9 @@ func test(t *testing.T, name string) {
 }
 
 // run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed, and checks that it ends with a Find out
-// more section naming this repository.
-func run(t *testing.T, name string, environment []string) {
+// that is nil, prints what it printed, checks that it ends with a Find out
+// more section naming this repository, and returns what it printed.
+func run(t *testing.T, name string, environment []string) string {
 	cmd := exec.Command("go", "run", "./"+name)
 	cmd.Env = environment
 	output, err := cmd.CombinedOutput()
@@ -49,6 +50,30 @@ func run(t *testing.T, name string, environment []string) {
 		"https://github.com/51Degrees/51degrees-go") {
 		t.Errorf("%s does not end with a Find out more section naming "+
 			"this repository", name)
+	}
+	return string(output)
+}
+
+// needsEnterprise matches a line naming a property as needing the
+// Enterprise data file, as the examples print it.
+var needsEnterprise = regexp.MustCompile(
+	`(?m)\b[A-Z][A-Za-z]+: needs the Enterprise data file$`)
+
+// contactPage starts the link the examples give to ask for a copy of the
+// Enterprise data file.
+const contactPage = "https://51degrees.com/contact-us?"
+
+// checkEnterprise checks that an example run on a free data file says which
+// of the properties it asks for need the Enterprise data file, and gives the
+// link to ask for a copy once.
+func checkEnterprise(t *testing.T, name, output string) {
+	if !needsEnterprise.MatchString(output) {
+		t.Errorf("%s does not name a property as needing the Enterprise "+
+			"data file", name)
+	}
+	if count := strings.Count(output, contactPage); count != 1 {
+		t.Errorf("%s gives the contact link %d times, not once", name,
+			count)
 	}
 }
 
@@ -107,9 +132,10 @@ func TestGettingStartedCloud(t *testing.T) {
 // in mixed/integration_test.go and runs via `go test` inside that module.
 
 // testFree runs an example as a fresh clone would, without the settings CI
-// gives the other tests, so that it uses the free data files and evidence.
+// gives the other tests, so that it uses the free data files and evidence,
+// and checks it shows what only the Enterprise data file has.
 func testFree(t *testing.T, name string) {
-	run(t, name, withoutSettings(os.Environ()))
+	checkEnterprise(t, name, run(t, name, withoutSettings(os.Environ())))
 }
 
 // withoutSettings returns the environment without the variables that name a
