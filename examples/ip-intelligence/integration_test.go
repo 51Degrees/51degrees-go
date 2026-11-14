@@ -59,9 +59,11 @@ func run(t *testing.T, name string, environment []string) string {
 var needsEnterprise = regexp.MustCompile(
 	`(?m)\b[A-Z][A-Za-z]+: needs the Enterprise data file$`)
 
-// contactPage starts the link the examples give to ask for a copy of the
-// Enterprise data file.
-const contactPage = "https://51degrees.com/contact-us?"
+// contactUsLink is the start of every example's link to ask for a copy of the
+// Enterprise data file, which each example ends with its own utm_content and
+// utm_term.
+const contactUsLink = "https://51degrees.com/contact-us?" +
+	"utm_source=code&utm_medium=example&utm_campaign=51degrees-go"
 
 // checkEnterprise checks that an example run on a free data file says which
 // of the properties it asks for need the Enterprise data file, and gives the
@@ -71,7 +73,7 @@ func checkEnterprise(t *testing.T, name, output string) {
 		t.Errorf("%s does not name a property as needing the Enterprise "+
 			"data file", name)
 	}
-	if count := strings.Count(output, contactPage); count != 1 {
+	if count := strings.Count(output, contactUsLink); count != 1 {
 		t.Errorf("%s gives the contact link %d times, not once", name,
 			count)
 	}
