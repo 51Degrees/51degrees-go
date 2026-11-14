@@ -28,7 +28,7 @@
 // self-contained, runnable example, a mock 51Degrees cloud service is started
 // locally; in production the engine would point at https://cloud.51degrees.com.
 //
-// Run with: go run ./examples/4_cloud_engine
+// Run from examples/pipeline with: go run ./4_cloud_engine
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
 package main

@@ -84,20 +84,40 @@ func TestMatchDeviceId(t *testing.T) {
 	testEnterprise(t, "match_device_id")
 }
 
+func TestMatchDeviceIdFreeDataFile(t *testing.T) {
+	testFree(t, "match_device_id")
+}
+
 func TestMatchMetrics(t *testing.T) {
 	testEnterprise(t, "match_metrics")
+}
+
+func TestMatchMetricsFreeDataFile(t *testing.T) {
+	testFree(t, "match_metrics")
 }
 
 func TestOfflineProcessing(t *testing.T) {
 	testEnterprise(t, "offline_processing")
 }
 
+func TestOfflineProcessingFreeDataFile(t *testing.T) {
+	testFree(t, "offline_processing")
+}
+
 func TestPerformance(t *testing.T) {
 	testEnterprise(t, "performance")
 }
 
+func TestPerformanceFreeDataFile(t *testing.T) {
+	testFree(t, "performance")
+}
+
 func TestReloadFromFile(t *testing.T) {
 	testEnterprise(t, "reload_from_file")
+}
+
+func TestReloadFromFileFreeDataFile(t *testing.T) {
+	testFree(t, "reload_from_file")
 }
 
 func TestUpdatePollingInterval(t *testing.T) {
