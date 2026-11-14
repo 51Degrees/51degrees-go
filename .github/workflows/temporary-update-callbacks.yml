@@ -1,0 +1,66 @@
+name: Temporary update callback tests
+
+on: push
+
+defaults:
+  run:
+    # bash with -eo pipefail, so a failing go test fails its step even
+    # though its output goes through grep.
+    shell: bash
+
+jobs:
+  test:
+    name: Update callback tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout common-ci
+        uses: actions/checkout@v4
+        with:
+          repository: 51Degrees/common-ci
+          path: common-ci
+          persist-credentials: false
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: common-ci/51degrees-go
+          submodules: recursive
+          persist-credentials: false
+      - name: Workspace, as ci/create-workspace.ps1 makes it
+        working-directory: common-ci/51degrees-go
+        shell: pwsh
+        run: |
+          ./ci/create-workspace.ps1
+          git --no-pager diff -- go.work
+          Write-Host '--- go.work begins'
+          Get-Content -Raw go.work
+          Write-Host '--- go.work ends'
+      # The free Device Detection file was not available from the distributor
+      # at 05:43 UTC, so the TAC file is fetched as CI fetches it.
+      - name: Data files the engine tests use
+        working-directory: common-ci
+        shell: pwsh
+        env:
+          DD_KEY: ${{ secrets.DEVICE_DETECTION_KEY }}
+          DD_URL: ${{ secrets.DEVICE_DETECTION_URL }}
+        run: |
+          ./steps/fetch-assets.ps1 -Assets 'TAC-HashV41.hash', '51Degrees-IPIV4AsnIpiV41.ipi' `
+            -DeviceDetection $env:DD_KEY -DeviceDetectionUrl $env:DD_URL
+          Copy-Item assets/TAC-HashV41.hash 51degrees-go/device-detection/51Degrees-LiteV4.1.hash
+          Copy-Item assets/51Degrees-IPIV4AsnIpiV41.ipi 51degrees-go/ip-intelligence/
+          Get-ChildItem assets | Select-Object Name, Length
+      - name: common
+        if: always()
+        working-directory: common-ci/51degrees-go/common
+        run: go test -count=1 ./... 2>&1 | grep -E -- '^(---|ok|FAIL|panic)|^\s+---|_test.go:[0-9]+:'
+      - name: Device Detection engine
+        if: always()
+        working-directory: common-ci/51degrees-go/device-detection
+        env:
+          CI: "true"
+        run: go test -count=1 -v -run 'TestUpdateCallback' ./onpremise 2>&1 | grep -E -- '^(=== RUN|---|ok|FAIL|panic)|^\s+---|_test.go:[0-9]+:'
+      - name: IP Intelligence engine
+        if: always()
+        working-directory: common-ci/51degrees-go/ip-intelligence
+        env:
+          CI: "true"
+        run: go test -count=1 -v -run 'TestUpdateCallback' ./ipi_onpremise 2>&1 | grep -E -- '^(=== RUN|---|ok|FAIL|panic)|^\s+---|_test.go:[0-9]+:'
