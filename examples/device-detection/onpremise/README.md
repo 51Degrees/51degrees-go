@@ -142,6 +142,19 @@ options like WithDataUpdateUrl, WithLicenseKey will be ignored since auto update
     WithAutoUpdate(enabled bool) EngineOptions
 ```
 
+#### WithUpdateCallback registers a callback that each check for an update reports to
+* fn - called once each check ends, with the data file's path and a status
+  named as the .NET data update service names it, such as
+  `AUTO_UPDATE_SUCCESS`, `AUTO_UPDATE_NOT_NEEDED` or
+  `AUTO_UPDATE_REFRESH_FAILED`
+* the update on start-up, each pull and each change the file watcher sees
+  are reported. A callback that panics is logged, apart from the update on
+  start-up, where New returns the panic as an error
+
+```go
+    WithUpdateCallback(fn func(common_go.UpdateComplete)) EngineOptions
+```
+
 #### WithTempDataCopy enables or disables creating a temp copy of the data file
 default is true
 * if enabled, engine will create a temp copy of the data file and use it to initialize the manager
