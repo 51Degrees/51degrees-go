@@ -31,6 +31,7 @@ package ipi_cloud
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 
@@ -64,6 +65,11 @@ func New(logger *slog.Logger) *Engine {
 	return &Engine{
 		BaseCloudAspectEngine: aspectengine.NewBaseCloudAspectEngine(DataKey, logger),
 	}
+}
+
+// Factory builds the engine from configuration for core.BuilderRegistry.
+func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
+	return nil, errors.New("ipi_cloud: not built from configuration yet")
 }
 
 // Process reads the IP Intelligence section of the cloud response into Data.
