@@ -108,7 +108,7 @@ func runWith(name, variable, value string) (string, error) {
 // test can supply one, as the on-premise examples do. Given a file that does
 // not exist, each stops rather than using the free file it would otherwise
 // find.
-// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/required-examples.md#L29-L30
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/required-examples.md?plain=1#L29-L30
 func TestEachExampleReadsTheDataFileVariable(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "supplied.hash")
 	for _, name := range examples {
