@@ -50,6 +50,7 @@ fine against other versions, but additional caution should be applied.
   - *elements/setheaders* - Gathers HTTP response headers to request more Evidence.
   - *elements/usagesharing* - Shares anonymized usage data with 51Degrees.
   - *elements/translation* - Translates values using YAML translation sources.
+  - *elements/derivedproperty* - Derives new properties from other elements' properties, following the rules in YAML or JSON scripts, such as HumanConfidence and IsGdpr.
 - **web** - The `net/http` web integration (middleware and intercepted endpoints).
 
 ## Installation
