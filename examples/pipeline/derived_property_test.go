@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,9 @@ func TestDerivedPropertyExample(t *testing.T) {
 func runFrom(t *testing.T, folder, dir string) ([]byte, error) {
 	t.Helper()
 	program := filepath.Join(t.TempDir(), "derived_property")
+	if runtime.GOOS == "windows" {
+		program += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", program, ".")
 	build.Dir = folder
 	if output, err := build.CombinedOutput(); err != nil {
