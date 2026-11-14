@@ -2,7 +2,10 @@ param (
     [string]$DeviceDetection,
     [string]$DeviceDetectionUrl,
     [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl
+    [string]$IpIntelligenceUrl,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
@@ -12,7 +15,7 @@ $RepoPath = Join-Path $PSScriptRoot ".."
 # day restores, whatever it changes, so it fetches for every product.
 $Products = $AllProducts
 if ($env:GITHUB_JOB -ne 'Configure') {
-    $Products = Get-AffectedProducts $RepoPath
+    $Products = Get-AffectedProducts $RepoPath $Branch
 }
 $Data = Join-Path $RepoPath "cxx/data"
 
