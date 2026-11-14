@@ -110,12 +110,14 @@ func (config *ConfigHash) SetUsePredictiveGraph(use bool) {
 	}
 }
 
-// SetConcurrency sets the expected concurrent requests.
+// SetConcurrency sets the expected concurrent requests for every collection
+// read from the file, as the C++ ConfigHash::setConcurrency does.
 func (config *ConfigHash) SetConcurrency(concurrency uint16) {
 	config.CPtr.strings.concurrency = C.ushort(concurrency)
 	config.CPtr.properties.concurrency = C.ushort(concurrency)
 	config.CPtr.values.concurrency = C.ushort(concurrency)
 	config.CPtr.profiles.concurrency = C.ushort(concurrency)
+	config.CPtr.rootNodes.concurrency = C.ushort(concurrency)
 	config.CPtr.nodes.concurrency = C.ushort(concurrency)
 	config.CPtr.profileOffsets.concurrency = C.ushort(concurrency)
 	config.CPtr.maps.concurrency = C.ushort(concurrency)
@@ -200,7 +202,8 @@ func (config *ConfigHash) UsePredictiveGraph() bool {
 	return cIntToBool(i)
 }
 
-// Concurrency returns the configured concurrency
+// Concurrency returns the lowest concurrency of the collections read from the
+// file, as the C++ ConfigHash::getConcurrency does.
 func (config *ConfigHash) Concurrency() uint16 {
 	minConcurrency := math.Min(
 		float64(C.ushort(config.CPtr.strings.concurrency)),
@@ -210,6 +213,9 @@ func (config *ConfigHash) Concurrency() uint16 {
 		float64(minConcurrency))
 	minConcurrency = math.Min(
 		float64(C.ushort(config.CPtr.profiles.concurrency)),
+		minConcurrency)
+	minConcurrency = math.Min(
+		float64(C.ushort(config.CPtr.rootNodes.concurrency)),
 		minConcurrency)
 	minConcurrency = math.Min(
 		float64(C.ushort(config.CPtr.nodes.concurrency)),
