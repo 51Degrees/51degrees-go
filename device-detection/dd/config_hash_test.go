@@ -84,7 +84,7 @@ func TestNewConfigHashSetGetNumeric(t *testing.T) {
 // SetConcurrency sets the concurrency of every collection the native
 // configuration holds, as the C++ ConfigHash::setConcurrency does, so each
 // collection's file handles and cache parts follow it.
-// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md#L518
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L518
 func TestConfigHash_SetConcurrency(t *testing.T) {
 	for _, concurrency := range []uint16{1, 7, 65535} {
 		config := NewConfigHash(Default)
