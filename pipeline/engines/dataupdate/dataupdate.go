@@ -184,7 +184,25 @@ const (
 	StatusRefreshFailed Status = "AUTO_UPDATE_REFRESH_FAILED"
 	// StatusUnknownError is a failure none of the others name.
 	StatusUnknownError Status = "AUTO_UPDATE_UNKNOWN_ERROR"
+	// StatusNoConfiguration is a programmatic check for a data file the
+	// service has no configuration for. It is given to the caller in a
+	// NoConfigurationError and reported to no callback.
+	StatusNoConfiguration Status = "AUTO_UPDATE_NO_CONFIGURATION"
 )
+
+// NoConfigurationError is the error for a data file the service has no
+// configuration for. Its Status is StatusNoConfiguration.
+type NoConfigurationError struct {
+	// Identifier is the data file asked for.
+	Identifier string
+}
+
+func (e *NoConfigurationError) Error() string {
+	return fmt.Sprintf("data update: no registration for identifier %q", e.Identifier)
+}
+
+// Status is StatusNoConfiguration.
+func (e *NoConfigurationError) Status() Status { return StatusNoConfiguration }
 
 // Complete is the report a check makes once it ends.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
@@ -370,10 +388,13 @@ func (s *Service) OnUpdate(identifier string, fn func()) {
 }
 
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP
-// polling is configured it polls the remote server; otherwise it refreshes from
-// the configured file if it is newer. The check is reported to the callbacks
-// and its error is passed to the caller rather than logged.
-// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#programmatic-update
+// polling is configured it polls the remote server. Otherwise it refreshes from
+// the configured file when that is newer than the file last loaded, and reports
+// the check as not needed when it is not. The check is reported to the
+// callbacks and its error is passed to the caller rather than logged. A data
+// source the service has no configuration for gives a NoConfigurationError and
+// is reported to no callback.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md#programmatic-update
 func (s *Service) CheckForUpdate(identifier string) error {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
@@ -381,14 +402,16 @@ func (s *Service) CheckForUpdate(identifier string) error {
 	if !ok {
 		// A data file the service has no configuration for is the caller's to
 		// deal with, and nothing is reported.
-		return fmt.Errorf("data update: no registration for identifier %q", identifier)
+		return &NoConfigurationError{Identifier: identifier}
 	}
 	status := StatusSuccess
 	var err error
 	if reg.cfg.DataUpdateURL != "" {
 		status, err = reg.httpUpdate()
-	} else if err = reg.refreshFromFile(); err != nil {
-		status = StatusRefreshFailed
+	} else if loaded, refreshErr := reg.refreshFromNewerFile(); refreshErr != nil {
+		status, err = StatusRefreshFailed, refreshErr
+	} else if !loaded {
+		status = StatusNotNeeded
 	}
 	reported := reg.report(status)
 	if err != nil {
@@ -406,7 +429,7 @@ func (s *Service) UpdateFromMemory(identifier string, data []byte) error {
 	reg, ok := s.registrations[identifier]
 	s.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("data update: no registration for identifier %q", identifier)
+		return &NoConfigurationError{Identifier: identifier}
 	}
 	if len(data) == 0 {
 		return errors.New("data update: empty in-memory data")
