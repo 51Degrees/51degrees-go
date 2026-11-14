@@ -23,11 +23,14 @@
 package ipi_onpremise
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"net/http"
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
 )
@@ -87,11 +90,35 @@ func (l *reportLog) check(t *testing.T, dataFile string) {
 	}
 }
 
+// withPastNextUpdate returns the data file with the date it expects its next
+// update moved to the marked year, because the first pull waits for that
+// date, which a recently published file has not reached.
+func withPastNextUpdate(t *testing.T, good []byte) []byte {
+	t.Helper()
+	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, good)), WithAutoUpdate(false), WithFileWatch(false))
+	next := e.nextUpdateDate()
+	e.stop(t)
+	if !next.After(time.Now()) {
+		return good
+	}
+	date := make([]byte, 4)
+	binary.LittleEndian.PutUint16(date, uint16(next.Year()))
+	date[2] = byte(next.Month())
+	date[3] = byte(next.Day())
+	i := bytes.Index(good[:reloadTestHeaderBytes], date)
+	if i < 0 {
+		t.Fatalf("next update date %v not found in the header", next)
+	}
+	moved := append([]byte{}, good...)
+	binary.LittleEndian.PutUint16(moved[i:], reloadTestMarkedYear)
+	return moved
+}
+
 // Each pull reports once it ends. A pull that finds new data ends when the
 // engine has loaded it or failed to.
 // See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#reporting-each-check
 func TestUpdateCallbackHearsEachPull(t *testing.T) {
-	good := readGoodFile(t)
+	good := withPastNextUpdate(t, readGoodFile(t))
 	bad := unusableFiles(good)[1]
 	server := newUpdateServer()
 	defer server.Close()
