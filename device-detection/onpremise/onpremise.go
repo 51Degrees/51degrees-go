@@ -57,6 +57,9 @@ type Engine struct {
 	reloadFileEvents chan struct{}
 	// reloadLoop is done once reloadFileEvent has returned.
 	reloadLoop sync.WaitGroup
+	// reloadMu makes each reload of the data file run on its own, whether
+	// update polling, the file watcher or RefreshData asked for it.
+	reloadMu sync.Mutex
 
 	licenseKey                string
 	product                   string
@@ -206,9 +209,20 @@ func (e *Engine) run() error {
 	return nil
 }
 
-// RefreshData loads the Engine's data file again now.
+// errStopped is the error RefreshData gives once the engine has stopped.
+var errStopped = errors.New("the engine has stopped, so it has no data to refresh")
+
+// RefreshData loads the Engine's data file again now, for an application
+// that has replaced the file and does not leave it to the file watcher. It
+// is safe to call while the Engine processes and while an update runs, as
+// each reload runs on its own. When the file cannot be used it returns the
+// error, after the tries a watched file gets, and the Engine goes on with the
+// data it had. The caller gets the error, so it is not logged, and nothing is
+// reported to the update callbacks, which hear the checks for an update.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L36-L41
 func (e *Engine) RefreshData() error {
-	return nil
+	_, err := e.reload()
+	return err
 }
 
 // Stop has to be called to free all the resources of the engine
@@ -237,7 +251,11 @@ func (e *Engine) Stop() {
 	close(e.reloadFileEvents)
 	e.reloadLoop.Wait()
 
+	// A reload in progress, such as one RefreshData asked for, ends before the
+	// manager is freed, and one asked for later refuses.
+	e.reloadMu.Lock()
 	e.isStopped = true
+	e.reloadMu.Unlock()
 	close(e.stopCh)
 
 	if e.manager != nil {
@@ -272,15 +290,22 @@ func (e *Engine) reload() (int, error) {
 	for tries := 1; ; tries++ {
 		err := e.reloadOnce()
 		var p *reloadPanic
-		if err == nil || errors.As(err, &p) || tries == reloadTries {
+		if err == nil || errors.As(err, &p) || errors.Is(err, errStopped) ||
+			tries == reloadTries {
 			return tries, err
 		}
 		time.Sleep(reloadRetryWaitMilliseconds * time.Millisecond)
 	}
 }
 
-// reloadOnce loads the data file again, returning a panic as a reloadPanic.
+// reloadOnce loads the data file again, on its own, returning a panic as a
+// reloadPanic.
 func (e *Engine) reloadOnce() (err error) {
+	e.reloadMu.Lock()
+	defer e.reloadMu.Unlock()
+	if e.isStopped {
+		return errStopped
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			err = &reloadPanic{r}
