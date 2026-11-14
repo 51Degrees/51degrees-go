@@ -120,11 +120,17 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 // PullOnStart runs the start-up update, which blocks until the pull has finished and does not announce the new
 // file, as the caller loads the data file afterwards. It returns true when a new data file replaced the old one.
 // A data file that is already current is not an error, and a failed pull falls back to the local data file. It
-// returns an error only when the pull failed and there is no local data file to fall back to.
+// returns an error when the pull failed and there is no local data file to fall back to, or when an update
+// callback panicked. A pull that downloaded a new file is left for the caller to report once it has loaded it.
 func (e *FileUpdater) PullOnStart() (bool, error) {
 	e.startUpPullDone = true
 	e.logger.Infof("Updating on start-up")
 	_, downloaded, err := e.pull(nil)
+	if !downloaded {
+		if callbackErr := e.ReportUpdateComplete(pullUpdateStatus(err)); callbackErr != nil {
+			return false, callbackErr
+		}
+	}
 	if err == nil || errors.Is(err, ErrFileNotModified) || e.HasLocalDataFile() {
 		return downloaded, nil
 	}
@@ -251,16 +257,36 @@ func (e *FileUpdater) pullUnlessStopped(
 
 // pullRecovering makes one pull and returns the time in milliseconds before
 // the next. A panic in the pull is logged and the next pull comes after the
-// polling interval, so one failed pull does not end automatic updates.
+// polling interval, so one failed pull does not end automatic updates. A pull
+// that ends without new data is reported to the update callbacks, and one
+// that downloaded a new file is reported by the engine once it has loaded it.
 func (e *FileUpdater) pullRecovering(ctx context.Context, reloadFileEvents chan struct{}) (nextMs int) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logUnhandledError(fmt.Errorf("panic: %v", r))
 			nextMs = e.dataFilePullEveryMs
+			e.reportPolled(ctx, UpdateUnknownError)
 		}
 	}()
-	nextMs, _, _ = e.pullWith(ctx, reloadFileEvents)
+	var downloaded bool
+	var err error
+	nextMs, downloaded, err = e.pullWith(ctx, reloadFileEvents)
+	if !downloaded {
+		e.reportPolled(ctx, pullUpdateStatus(err))
+	}
 	return nextMs
+}
+
+// reportPolled reports a pull made by update polling to the update callbacks,
+// unless a stop ended it, and logs a callback's panic with the error table's
+// last row.
+func (e *FileUpdater) reportPolled(ctx context.Context, status UpdateStatus) {
+	if ctx.Err() != nil {
+		return
+	}
+	if err := e.ReportUpdateComplete(status); err != nil {
+		e.logUnhandledError(err)
+	}
 }
 
 // pull does one pull and returns the time in milliseconds before the next one, whether a new data file replaced
@@ -320,7 +346,7 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 		os.Remove(fileResponse.path)
 		e.logCheckError(fmt.Sprintf("An error occurred when copying a data file to replace the existing one "+
 			"at '%s'. Error detail: %v", e.GetDataFile(), err))
-		return e.GetDataFilePullEveryMs(), false, err
+		return e.GetDataFilePullEveryMs(), false, &renameError{err}
 	}
 	e.logger.Printf("data file written successfully: %d bytes", fileResponse.size)
 
@@ -398,6 +424,43 @@ func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
 	}
 	return "", false
 }
+
+// pullUpdateStatus gives the status a pull that ended with err reports, being
+// that of the error table row its log message comes from, and the unknown
+// error for a failure the table has no row for.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#errors
+func pullUpdateStatus(err error) UpdateStatus {
+	if errors.Is(err, ErrFileNotModified) {
+		return UpdateNotNeeded
+	}
+	if errors.Is(err, ErrNoDataFileProvided) {
+		return UpdateTempPathNotSet
+	}
+	var re *renameError
+	if errors.As(err, &re) {
+		return UpdateCannotRename
+	}
+	var pe *pullError
+	if errors.As(err, &pe) {
+		switch pe.kind {
+		case pullConnect, pullRead, pullStatus:
+			return UpdateHTTPSError
+		case pullTooManyRequests:
+			return UpdateTooManyRequests
+		case pullForbidden:
+			return UpdateForbidden
+		case pullIntegrity:
+			return UpdateMD5ValidationFailed
+		}
+	}
+	return UpdateUnknownError
+}
+
+// renameError is a download that could not replace the data file.
+type renameError struct{ err error }
+
+func (r *renameError) Error() string { return r.err.Error() }
+func (r *renameError) Unwrap() error { return r.err }
 
 // pullErrorKind says which step of a pull failed, which decides the log message.
 type pullErrorKind int
