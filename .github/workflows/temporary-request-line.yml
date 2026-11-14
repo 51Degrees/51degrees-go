@@ -1,0 +1,47 @@
+name: Temporary request line Evidence tests
+
+on: push
+
+defaults:
+  run:
+    # bash with -eo pipefail, so a failing go test fails its step even
+    # though its output goes through tail.
+    shell: bash
+
+jobs:
+  test:
+    name: Request line Evidence tests - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: gofmt
+        working-directory: pipeline
+        run: |
+          unformatted=$(gofmt -l core web elements/usagesharing)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+        run: go vet ./core/ ./web/ ./elements/usagesharing/ 2>&1 | tail -n 60
+      - name: The request line tests
+        if: always()
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+          CI: "true"
+        run: go test -count=1 -v -run 'RequestLine|NoQueryString|AbsoluteForm|NoRequestLine|WebRequest' ./core/ ./web/ 2>&1 | tail -n 80
+      - name: Every test of core, web and usage sharing
+        if: always()
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+          CI: "true"
+        run: go test -count=1 ./core/ ./web/ ./elements/usagesharing/ 2>&1 | tail -n 80
