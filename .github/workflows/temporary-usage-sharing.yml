@@ -1,0 +1,31 @@
+name: Temporary usage sharing tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Usage sharing tests - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Vet
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+        run: go vet ./elements/usagesharing/ 2>&1 | tail -n 40
+      - name: Tests
+        if: always()
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+        run: go test -count=1 -v -run 'TestRepeatHash|TestASession|TestTheAdditionalValues|TestPlatform|TestShareRules|TestUsageSharingSendsXML|TestTrackSession' ./elements/usagesharing/ 2>&1 | grep -E -- '^(=== RUN|---|ok|FAIL|panic)|^\s+---|_test.go:[0-9]+:'
