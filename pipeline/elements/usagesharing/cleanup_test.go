@@ -41,6 +41,10 @@ const wantCleanupLimitSeconds = 5
 // cleanup limit on any runner.
 const closeWaitSeconds = 15
 
+// pollIntervalMilliseconds is how often the test looks for the stand-in
+// service to see the request stop.
+const pollIntervalMilliseconds = 10
+
 // Closing the element while the service does not answer stops sending once
 // the cleanup limit has passed, discards the entries still to send and logs
 // a warning with how many, so that Close does not hold up the process that
@@ -102,7 +106,7 @@ func TestCloseStopsSendingAfterTheCleanupLimit(t *testing.T) {
 	// The service sees the request stop a moment after Close returns.
 	deadline := time.Now().Add(closeWaitSeconds * time.Second)
 	for !abandoned.Load() && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(pollIntervalMilliseconds * time.Millisecond)
 	}
 	if !abandoned.Load() {
 		t.Error("the final message's request was not stopped")
