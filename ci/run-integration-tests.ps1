@@ -3,14 +3,17 @@ param (
     [Parameter(Mandatory)][string]$Name,
     [string]$DeviceDetection,
     [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl
+    [string]$IpIntelligenceUrl,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
 . $PSScriptRoot/products.ps1
 
 $Results = Join-Path $RepoName "test-results/integration"
-$Products = Get-AffectedProducts $RepoName
+$Products = Get-AffectedProducts $RepoName $Branch
 $failed = 0
 
 function Test-Examples([string]$Product, [string]$ModulePath, [string]$JUnitName) {
