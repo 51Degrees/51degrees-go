@@ -258,8 +258,9 @@ type registration struct {
 	lastModified time.Time
 
 	// loadedFileTime is the modification time of the data file the Engine
-	// was last refreshed from, which a watched file has to be newer than to
-	// be loaded. Guarded by refreshMu.
+	// holds, taken at Register and at each refresh from the file. A watched
+	// or programmatically checked file has to be newer than it to be loaded.
+	// Guarded by refreshMu.
 	loadedFileTime time.Time
 
 	onComplete []func(Complete)
@@ -295,6 +296,11 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 	}
 	if cfg.OnComplete != nil {
 		reg.onComplete = append(reg.onComplete, cfg.OnComplete)
+	}
+	// The Engine was built from the data file as it is now, so a check loads
+	// the file only once it is newer than that.
+	if modified, ok := reg.currentDataTime(); ok {
+		reg.loadedFileTime = modified
 	}
 
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
@@ -389,8 +395,8 @@ func (s *Service) OnUpdate(identifier string, fn func()) {
 
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP
 // polling is configured it polls the remote server. Otherwise it refreshes from
-// the configured file when that is newer than the file last loaded, and reports
-// the check as not needed when it is not. The check is reported to the
+// the configured file when that is newer than the file the Engine holds, and
+// reports the check as not needed when it is not. The check is reported to the
 // callbacks and its error is passed to the caller rather than logged. A data
 // source the service has no configuration for gives a NoConfigurationError and
 // is reported to no callback.
@@ -656,8 +662,9 @@ func (r *registration) refreshFromFile() error {
 }
 
 // refreshFromNewerFile reloads the Engine from its data file when the file is
-// newer than the one last loaded, and says whether it was loaded. A watched
-// file that is not newer is left alone, as .NET leaves it.
+// newer than the one the Engine holds, and says whether it was loaded. A
+// watched or programmatically checked file that is not newer is left alone,
+// as .NET leaves it.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
 func (r *registration) refreshFromNewerFile() (bool, error) {
 	r.refreshMu.Lock()
