@@ -1,0 +1,35 @@
+name: Derived properties check
+
+on:
+  pull_request:
+    paths:
+      - 'derived-properties'
+      - 'pipeline/elements/derivedproperty/scripts/**'
+      - '.gitmodules'
+      - 'ci/check-derived-properties.ps1'
+      - '.github/workflows/derived-properties-check.yml'
+  push:
+    branches:
+      - main
+      - rc
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  derived-properties:
+    name: The committed scripts match the derived-properties submodule
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout derived-properties
+        run: git submodule update --init derived-properties
+
+      - name: Compare the copy with the submodule
+        shell: pwsh
+        run: ./ci/check-derived-properties.ps1

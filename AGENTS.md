@@ -335,6 +335,21 @@ by hand. The JavaScript templates check (`ci/check-javascript-templates.ps1`)
 fails when the copy differs from the submodule, and the nightly package update
 moves the submodule and the copy together.
 
+## The derived property scripts
+
+The Derived Property Element (`pipeline/elements/derivedproperty`) runs the
+scripts of [derived-properties](https://github.com/51Degrees/derived-properties),
+which is the `derived-properties` submodule, and ships the scripts in its
+`scripts` folder. As for the JavaScript template, the package holds a copy of
+them in `pipeline/elements/derivedproperty/scripts`, embedded in the module.
+Never edit the copy by hand. The derived properties check
+(`ci/check-derived-properties.ps1`) fails when the copy differs from the
+submodule, and the nightly package update moves the submodule and the copy
+together. A script added to the submodule needs a `BuiltInScript` constant,
+which `TestBuiltInScriptsAreTheSubmodule` checks. The package's tests run every
+case file and every rejection case in the submodule's `tests` folder, so its
+answers and its faults are checked against the other languages'.
+
 ## Data files
 
 The data files come from the [data](https://github.com/51Degrees/data)
