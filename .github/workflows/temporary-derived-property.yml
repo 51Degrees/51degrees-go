@@ -1,0 +1,47 @@
+name: Temporary derived property tests
+
+on: push
+
+defaults:
+  run:
+    # bash with -eo pipefail, so a failing go test fails its step even
+    # though its output goes through tail.
+    shell: bash
+
+jobs:
+  test:
+    name: Derived property tests - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout derived-properties
+        run: git submodule update --init derived-properties
+      - name: The copy matches the submodule
+        shell: pwsh
+        run: ./ci/check-derived-properties.ps1
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+        run: go vet ./elements/derivedproperty/ 2>&1 | tail -n 60
+      - name: Tests
+        if: always()
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+          CI: "true"
+        run: go test -count=1 ./elements/derivedproperty/ 2>&1 | tail -n 150
+      - name: Tests with the race detector
+        if: always() && matrix.os == 'ubuntu-latest'
+        working-directory: pipeline
+        env:
+          GOWORK: "off"
+          CI: "true"
+        run: go test -count=1 -race -run 'TestSharedCases|TestPipelineCheckFindsAParallelGroup|TestNoElementData' ./elements/derivedproperty/ 2>&1 | tail -n 60
