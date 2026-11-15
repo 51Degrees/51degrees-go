@@ -27,6 +27,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -206,8 +207,21 @@ func TestFileWatcher_Watch_Success(t *testing.T) {
 	logger := &LogWrapper{}
 	stopCh := make(chan *sync.WaitGroup, 1)
 
+	// A real watcher on a file, which the test stops. A bare Watcher has no
+	// interval, so its goroutine would check the file without pause for the
+	// rest of the package, and on one processor that holds up other
+	// goroutines' timers.
+	path := filepath.Join(t.TempDir(), "data.hash")
+	if err := os.WriteFile(path, []byte("one"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	poll := watcherTestPollMs * time.Millisecond
+	watcher, err := newWatcher(path, poll, poll)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fw := &FileWatcher{
-		watcher:  &Watcher{},
+		watcher:  watcher,
 		logger:   logger,
 		stopCh:   stopCh,
 		callback: func() {},
@@ -219,7 +233,7 @@ func TestFileWatcher_Watch_Success(t *testing.T) {
 	}
 
 	// Execute
-	err := fw.watch(onChange)
+	err = fw.watch(onChange)
 
 	// Assert
 	if err != nil {
@@ -230,6 +244,15 @@ func TestFileWatcher_Watch_Success(t *testing.T) {
 	fw.callback()
 	if !callbackCalled {
 		t.Error("Expected callback to be set correctly")
+	}
+
+	if err := fw.stop(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-watcher.IsStopped():
+	case <-time.After(watcherTestTimeoutMs * time.Millisecond):
+		t.Fatal("the watcher did not stop")
 	}
 
 	// A watcher left running here keeps running through every later test.
