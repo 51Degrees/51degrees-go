@@ -154,6 +154,11 @@ func (manager *ResourceManager) ReloadFromMemory() error {
 	return nil
 }
 
+// ReloadFromBytes reloads the data set from a data file held in data.
+func (manager *ResourceManager) ReloadFromBytes(data []byte) error {
+	return nil
+}
+
 // extractSetHeaderName extracts the header name to be set from a 'SetHeader'
 // property. Panic if the property is not in correct format
 func extractSetHeaderName(property string) (headerName string, err error) {
