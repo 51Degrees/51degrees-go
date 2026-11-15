@@ -217,9 +217,11 @@ func (manager *ResourceManager) ReloadFromBytes(data []byte) error {
 		C.long(len(data)),
 		e.CPtr,
 	)
-	// A reload that fails leaves the copy with the caller.
+	// The copy now belongs to the data set the C library made for it, which
+	// frees it when it is freed, a reload that fails included. The only
+	// failure before that data set exists is the C library failing to
+	// allocate it, which leaves the copy unfreed rather than freed twice.
 	if err := reloadError(s, e, nil); err != nil {
-		C.free(copied)
 		return err
 	}
 	initHttpHeaderKeys(manager)
