@@ -23,6 +23,7 @@
 package usagesharing
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -75,16 +76,29 @@ func TestProcessDoesNotWaitForTheSend(t *testing.T) {
 	t.Cleanup(func() { p.Close() })
 	t.Cleanup(func() { close(release) })
 
+	// The calls run on a goroutine of their own, which reports an error
+	// rather than failing the test, as only the test's goroutine may.
 	started := time.Now()
 	done := make(chan struct{})
+	failed := make(chan error, 1)
 	go func() {
 		defer close(done)
 		for i := 0; i < processCalls; i++ {
-			share(t, p, i)
+			fd := p.CreateFlowData()
+			fd.AddEvidence("header.user-agent", fmt.Sprintf("agent-%d", i))
+			if err := fd.Process(); err != nil {
+				failed <- err
+				return
+			}
 		}
 	}()
 	select {
 	case <-done:
+		select {
+		case err := <-failed:
+			t.Fatalf("process: %v", err)
+		default:
+		}
 		t.Logf("%d Process calls took %v with the service not answering",
 			processCalls, time.Since(started))
 	case <-time.After(processWaitSeconds * time.Second):
