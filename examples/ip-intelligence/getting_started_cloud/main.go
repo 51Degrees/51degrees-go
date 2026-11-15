@@ -40,7 +40,9 @@ The cloud service needs a Resource Key that includes IP Intelligence
 properties. Create one for free with the
 [Configurator](https://configure.51degrees.com/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-getting_started_cloud-main.go&utm_term=resource-key),
 then put it in the `_51DEGREES_RESOURCE_KEY` environment variable, or give it
-as the example's first argument.
+as the example's first argument. Run with no Resource Key, the example says
+where to create one and which variable to put it in, and ends without an
+error.
 
 ## Running the example
 
@@ -115,11 +117,16 @@ func main() {
 		resourceKey = os.Args[1]
 	}
 	if resourceKey == "" {
-		log.Fatalf("No Resource Key was given, so the example cannot use the "+
-			"cloud service. Create one that includes IP Intelligence "+
+		// With no Resource Key there is nothing to look up, so the example
+		// says how to get one and ends cleanly, which lets it run with no
+		// settings.
+		fmt.Printf("No Resource Key was given, so the example does not use "+
+			"the cloud service. Create one that includes IP Intelligence "+
 			"properties for free at %s, then put it in the %s environment "+
-			"variable or give it as the first argument.",
+			"variable or give it as the first argument.\n",
 			configuratorURL, resourceKeyVariable)
+		fmt.Print(findOutMore)
+		return
 	}
 
 	// The Cloud Request Engine sends the evidence to the cloud service, and

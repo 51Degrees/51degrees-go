@@ -115,8 +115,48 @@ func TestUpdatePollingInterval(t *testing.T) {
 	test(t, "update_polling_interval")
 }
 
+// resourceKeyVariable is the variable the cloud example reads its Resource
+// Key from.
+const resourceKeyVariable = "_51DEGREES_RESOURCE_KEY"
+
+// configureLink matches the tagged link to the page where a Resource Key is
+// created, on either address of that page.
+var configureLink = regexp.MustCompile(
+	`https://(configure\.51degrees\.com/|51degrees\.com/configure/?)\?` +
+		`utm_source=code&utm_medium=example&utm_campaign=51degrees-go&` +
+		`utm_content=[a-z0-9._-]+&utm_term=[a-z0-9-]+`)
+
+// A cloud example run as a fresh clone runs it, with no Resource Key, ends
+// without an error, names the variable to set and links to where a Resource
+// Key is created, so it runs in CI with no settings.
+// See https://github.com/51Degrees/specifications/blob/20173fa1186b2c3c51fb1e4588cbc4c2658edfd4/device-detection-specification/required-examples.md?plain=1#L140-L150
+func TestGettingStartedCloudWithNoResourceKey(t *testing.T) {
+	output := run(t, "getting_started_cloud",
+		withoutResourceKey(os.Environ()))
+	if !strings.Contains(output, resourceKeyVariable) {
+		t.Errorf("getting_started_cloud does not name %s", resourceKeyVariable)
+	}
+	if !configureLink.MatchString(output) {
+		t.Errorf("getting_started_cloud does not link to where a Resource " +
+			"Key is created, tagged for this example")
+	}
+}
+
+// withoutResourceKey returns the environment without the Resource Key.
+func withoutResourceKey(environment []string) []string {
+	kept := make([]string, 0, len(environment))
+	for _, variable := range environment {
+		name := strings.SplitN(variable, "=", 2)[0]
+		if !strings.EqualFold(name, resourceKeyVariable) {
+			kept = append(kept, variable)
+		}
+	}
+	return kept
+}
+
 // The cloud example needs a Resource Key that includes IP Intelligence
-// properties, so it is always built but run only when one is given.
+// properties to look anything up, so it is run with the cloud service only
+// when one is given.
 func TestGettingStartedCloud(t *testing.T) {
 	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
 	build.Stdout = os.Stdout
@@ -124,8 +164,9 @@ func TestGettingStartedCloud(t *testing.T) {
 	if err := build.Run(); err != nil {
 		t.Fatal(err)
 	}
-	if os.Getenv("_51DEGREES_RESOURCE_KEY") == "" {
-		t.Skip("_51DEGREES_RESOURCE_KEY is not set, so the cloud example is not run")
+	if os.Getenv(resourceKeyVariable) == "" {
+		t.Skip(resourceKeyVariable + " is not set, so the cloud example " +
+			"is not run with the cloud service")
 	}
 	test(t, "getting_started_cloud")
 }
