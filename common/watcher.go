@@ -38,6 +38,9 @@ type Watcher struct {
 	stopInter chan bool
 	stop      chan bool
 	running   bool
+	// baseline is the file as Start found it, which the first change is
+	// measured against, or nil when there was no file.
+	baseline os.FileInfo
 }
 
 // newWatcher creates and initializes a Watcher for monitoring a specified file, interval, and wait durations.
@@ -78,7 +81,8 @@ func (fw *Watcher) Start() error {
 
 	// The file as it is now is what a change is measured against. It is read
 	// before Start returns, so a change made as soon as it returns is seen.
-	prevInfo, _ := os.Stat(fw.filepath)
+	fw.baseline, _ = os.Stat(fw.filepath)
+	prevInfo := fw.baseline
 
 	// Every wait in the goroutine also waits for Stop, so it never blocks on
 	// a channel once the watcher has been stopped.

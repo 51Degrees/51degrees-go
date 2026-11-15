@@ -23,6 +23,7 @@
 package common_go
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -34,12 +35,6 @@ import (
 const (
 	watcherTestPollMs    = 10
 	watcherTestTimeoutMs = 2000
-	// watcherChangeWaitSeconds is how long a test waits for a change to be
-	// seen. The watcher saw one within 32 ms in 600 runs on Ubuntu, macOS and
-	// Windows, and a loaded runner has stalled for seconds, so this is well
-	// above both. A watcher that misses a change never sees it, however long
-	// the test waits.
-	watcherChangeWaitSeconds = 10
 )
 
 // watcherGoroutines counts the goroutines running a watcher's loop.
@@ -80,20 +75,21 @@ func newTestWatcher(t *testing.T) (*Watcher, string) {
 	return w, path
 }
 
-// A change made as soon as Start returns is seen, as the engines replace a
-// data file while they run. The watcher measures a change against the file
-// as it was when Start was called, so a replacement of the same size with a
-// later modification time counts however soon it comes.
-func TestWatcher_SeesAChangeRightAfterStart(t *testing.T) {
-	// With one processor the watcher's goroutine does not run before the
-	// change below is made, unless Start itself looks at the file first.
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+// Start reads the file a change is measured against before it returns, so a
+// data file replaced as soon as an engine has started is seen as a change.
+// The test looks at what Start read rather than waiting for the watcher to
+// report a change, so how soon the watcher's goroutine runs does not matter.
+func TestWatcher_StartReadsTheBaseline(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.hash")
 	if err := os.WriteFile(path, []byte("one"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	earlier := time.Now().Add(-time.Hour)
 	if err := os.Chtimes(path, earlier, earlier); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
 		t.Fatal(err)
 	}
 	poll := watcherTestPollMs * time.Millisecond
@@ -104,27 +100,38 @@ func TestWatcher_SeesAChangeRightAfterStart(t *testing.T) {
 	if err := w.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer w.Stop()
-
+	// A file of the same size, as a data file with a changed header is, put
+	// in place at once.
 	if err := os.WriteFile(path, []byte("two"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// The errors are read, as the engines read them, so that one does not
-	// hold up the watcher, and each is logged.
-	started := time.Now()
-	timeout := time.After(watcherChangeWaitSeconds * time.Second)
-	for {
-		select {
-		case <-w.Changed():
-			t.Logf("the change was seen after %v", time.Since(started))
-			return
-		case err := <-w.Errors():
-			t.Logf("the watcher reported %v", err)
-		case <-timeout:
-			t.Fatalf("a change made right after Start was not seen within %d "+
-				"seconds", watcherChangeWaitSeconds)
-		}
+
+	got := w.baseline
+	if got == nil || got.Size() != before.Size() ||
+		!got.ModTime().Equal(before.ModTime()) {
+		t.Errorf("Start read %v, want the file as it was before the change, "+
+			"%d bytes modified at %v", describe(got), before.Size(),
+			before.ModTime())
 	}
+
+	// The next test counts the watcher goroutines, so this one's has to
+	// have ended.
+	if err := w.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-w.IsStopped():
+	case <-time.After(watcherTestTimeoutMs * time.Millisecond):
+		t.Fatal("the watcher did not stop")
+	}
+}
+
+// describe gives a file's size and modification time, or that there is none.
+func describe(info os.FileInfo) string {
+	if info == nil {
+		return "no file"
+	}
+	return fmt.Sprintf("%d bytes modified at %v", info.Size(), info.ModTime())
 }
 
 func TestWatcher_StopEndsGoroutine(t *testing.T) {
