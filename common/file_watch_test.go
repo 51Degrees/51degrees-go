@@ -201,6 +201,7 @@ func TestNewFileWatcher_Success(t *testing.T) {
 }
 
 func TestFileWatcher_Watch_Success(t *testing.T) {
+	before := watcherGoroutines()
 	// Setup
 	logger := &LogWrapper{}
 	stopCh := make(chan *sync.WaitGroup, 1)
@@ -229,6 +230,12 @@ func TestFileWatcher_Watch_Success(t *testing.T) {
 	fw.callback()
 	if !callbackCalled {
 		t.Error("Expected callback to be set correctly")
+	}
+
+	// A watcher left running here keeps running through every later test.
+	if !waitUntil(func() bool { return watcherGoroutines() == before }) {
+		t.Errorf("%d watcher goroutines before the test, %d after it",
+			before, watcherGoroutines())
 	}
 }
 
