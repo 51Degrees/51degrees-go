@@ -184,6 +184,9 @@ const (
 	StatusRefreshFailed Status = "AUTO_UPDATE_REFRESH_FAILED"
 	// StatusUnknownError is a failure none of the others name.
 	StatusUnknownError Status = "AUTO_UPDATE_UNKNOWN_ERROR"
+	// StatusTimeout is a watched file that could not be opened for reading
+	// within the wait. It is not logged.
+	StatusTimeout Status = "AUTO_UPDATE_TIMEOUT"
 	// StatusNoConfiguration is a programmatic check for a data file the
 	// service has no configuration for. It is given to the caller in a
 	// NoConfigurationError and reported to no callback.
@@ -619,8 +622,14 @@ func (r *registration) startWatcher() error {
 			case <-timerC:
 				timerC = nil
 				r.guardCheck(func() {
+					readable, stopped := r.waitUntilReadable()
+					if stopped {
+						return
+					}
 					status := StatusSuccess
-					if loaded, err := r.refreshFromNewerFile(); err != nil {
+					if !readable {
+						status = StatusTimeout
+					} else if loaded, err := r.refreshFromNewerFile(); err != nil {
 						status = StatusRefreshFailed
 						r.logCheckFailure(err)
 					} else if !loaded {
@@ -671,6 +680,26 @@ var openForReading = func(path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// waitUntilReadable tries to open the data file for reading until it can, for
+// watchedFileReadableWait at most. It says whether the file could be opened,
+// and whether the service stopped first.
+func (r *registration) waitUntilReadable() (readable, stopped bool) {
+	deadline := time.Now().Add(watchedFileReadableWait)
+	for {
+		if openForReading(r.cfg.DataFilePath) == nil {
+			return true, false
+		}
+		if !time.Now().Before(deadline) {
+			return false, false
+		}
+		select {
+		case <-r.stop:
+			return false, true
+		case <-time.After(watchedFileOpenRetryMilliseconds * time.Millisecond):
+		}
+	}
 }
 
 // refreshFromFile reloads the Engine from its configured data file, trying up
