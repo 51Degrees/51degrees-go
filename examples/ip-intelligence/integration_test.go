@@ -83,8 +83,19 @@ func TestGettingStarted(t *testing.T) {
 	test(t, "getting_started")
 }
 
+// weightedLine matches a line giving a value with its weighting, as the
+// getting started example prints it.
+var weightedLine = regexp.MustCompile(`(?m)^\t[A-Za-z]+: .+ \(weight [01]\.[0-9]{2}\)\r?$`)
+
+// The getting started example runs on the free data file, shows what only
+// the Enterprise file has, and shows each value with its weighting.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/ip-intelligence-specification/required-examples.md?plain=1#L107
 func TestGettingStartedFreeDataFile(t *testing.T) {
-	testFree(t, "getting_started")
+	output := run(t, "getting_started", withoutSettings(os.Environ()))
+	checkEnterprise(t, "getting_started", output)
+	if !weightedLine.MatchString(output) {
+		t.Error("getting_started shows no value with its weighting")
+	}
 }
 
 func TestOfflineProcessingFreeDataFile(t *testing.T) {
