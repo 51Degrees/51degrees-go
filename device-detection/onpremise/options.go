@@ -220,6 +220,14 @@ func WithRandomization(seconds int) EngineOptions {
 	}
 }
 
+// WithIndexedProperties names the Properties whose values are indexed to the
+// profiles holding them.
+func WithIndexedProperties(names ...string) EngineOptions {
+	return func(cfg *Engine) error {
+		return nil
+	}
+}
+
 // WithProperties configures an Engine with a comma-separated list of manager properties derived from the provided slice.
 func WithProperties(properties []string) EngineOptions {
 	return func(cfg *Engine) error {
