@@ -25,6 +25,7 @@ package requestengine
 import (
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 )
@@ -64,5 +65,29 @@ func TestFactoryTakesEachEndpoint(t *testing.T) {
 	if n := base.total(); n != 0 {
 		t.Errorf("%d requests went to the endpoints made from EndPoint, "+
 			"want none, as the configuration names each one", n)
+	}
+}
+
+// Factory takes the recovery multiplier and the longest recovery from
+// RecoveryMultiplier and MaxRecoverySeconds, as it takes the recovery itself
+// from RecoverySeconds, so every recovery option in code can be set in a file.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/pipeline-configuration.md?plain=1#L42-L46
+func TestFactoryTakesTheRecoveryOptions(t *testing.T) {
+	cloud := newCredentialCloud()
+	element, err := Factory(map[string]any{
+		"ResourceKey":        testResourceKey,
+		"EndPoint":           cloud.serve(t).URL + "/",
+		"RecoveryMultiplier": 2.5,
+		"MaxRecoverySeconds": 90,
+	}, slog.New(&logRecorder{}))
+	if err != nil {
+		t.Fatalf("Factory: %v", err)
+	}
+	e := element.(*CloudRequestEngine)
+	if e.recoveryMultiplier != 2.5 {
+		t.Errorf("the recovery multiplier is %v, want 2.5", e.recoveryMultiplier)
+	}
+	if e.maxRecoveryDuration != 90*time.Second {
+		t.Errorf("the longest recovery is %v, want 1m30s", e.maxRecoveryDuration)
 	}
 }
