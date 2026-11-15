@@ -130,3 +130,37 @@ func TestComponentsGiveEachComponent(t *testing.T) {
 		}
 	}
 }
+
+// The metadata gives each Property's display order, whether it is mandatory,
+// and whether it and its values are shown, as the data file holds them. The
+// Asn file shows neither of its two Properties and marks both mandatory, so
+// the test wants some field set rather than any one of them.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/data-model-specification/README.md?plain=1#L55-L58
+func TestPropertiesGiveTheDisplayFields(t *testing.T) {
+	manager := metadataManager(t, "")
+	all, err := manager.Properties()
+	if err != nil {
+		t.Fatalf("Properties failed: %v", err)
+	}
+	shown, valuesShown, mandatory := 0, 0, 0
+	orders := make(map[uint8]bool)
+	for _, m := range all {
+		if m.Show {
+			shown++
+		}
+		if m.ShowValues {
+			valuesShown++
+		}
+		if m.IsMandatory {
+			mandatory++
+		}
+		orders[m.DisplayOrder] = true
+	}
+	t.Logf("%d Properties, %d shown, %d with values shown, %d mandatory, "+
+		"%d display orders", len(all), shown, valuesShown, mandatory,
+		len(orders))
+	if shown == 0 && valuesShown == 0 && mandatory == 0 && len(orders) < 2 {
+		t.Errorf("none of the %d Properties has a display field set, want "+
+			"the fields the data file holds", len(all))
+	}
+}

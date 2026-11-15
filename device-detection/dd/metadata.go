@@ -66,6 +66,17 @@ type PropertyMetadata struct {
 	IsObsolete bool
 	// ComponentId is the id of the component the Property belongs to.
 	ComponentId uint8
+	// DisplayOrder is the suggested place of the Property where Properties
+	// are listed.
+	DisplayOrder uint8
+	// IsMandatory says a profile is valid only when it holds a value of the
+	// Property other than the default.
+	IsMandatory bool
+	// Show says the Property is shown where Properties are listed.
+	Show bool
+	// ShowValues says the Property's values are shown where values are
+	// listed.
+	ShowValues bool
 }
 
 // Properties gives the metadata of every Property the data file defines,
@@ -80,12 +91,13 @@ func (manager *ResourceManager) Properties() ([]PropertyMetadata, error) {
 	all := make([]PropertyMetadata, 0, count)
 	for i := uint32(0); i < count; i++ {
 		e := NewException()
-		var valueType, componentId C.uint8_t
-		var isList, isObsolete, isAvailable C.bool
+		var valueType, componentId, displayOrder C.uint8_t
+		var isMandatory, isList, isObsolete, show, showValues, isAvailable C.bool
 		var mapCount C.uint32_t
 		if !C.fiftyoneDegreesHashGetProperty(cDataSet, C.uint32_t(i),
-			&valueType, &componentId, nil, nil, &isList, &isObsolete, nil,
-			nil, &mapCount, &isAvailable, nil, e.CPtr) {
+			&valueType, &componentId, &displayOrder, &isMandatory, &isList,
+			&isObsolete, &show, &showValues, &mapCount, &isAvailable, nil,
+			e.CPtr) {
 			if !e.IsOkay() {
 				return nil, messageError(C.ExceptionGetMessage(e.CPtr))
 			}
@@ -93,11 +105,15 @@ func (manager *ResourceManager) Properties() ([]PropertyMetadata, error) {
 			continue
 		}
 		m := PropertyMetadata{
-			Type:        propertyValueType(valueType).goType(bool(isList)),
-			Available:   bool(isAvailable),
-			IsList:      bool(isList),
-			IsObsolete:  bool(isObsolete),
-			ComponentId: uint8(componentId),
+			Type:         propertyValueType(valueType).goType(bool(isList)),
+			Available:    bool(isAvailable),
+			IsList:       bool(isList),
+			IsObsolete:   bool(isObsolete),
+			ComponentId:  uint8(componentId),
+			DisplayOrder: uint8(displayOrder),
+			IsMandatory:  bool(isMandatory),
+			Show:         bool(show),
+			ShowValues:   bool(showValues),
 		}
 		texts := []struct {
 			text C.fiftyoneDegreesPropertyText
