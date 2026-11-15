@@ -99,6 +99,31 @@ func TestMatchMetricsFreeDataFile(t *testing.T) {
 	testFree(t, "match_metrics")
 }
 
+func TestMetadata(t *testing.T) {
+	testEnterprise(t, "metadata")
+}
+
+// The Metadata example runs on the free data file and lists the Evidence
+// keys, each component with its properties and their values, and the values
+// of the profiles an iPhone is matched to, then shows what only the
+// Enterprise data file has.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/required-examples.md?plain=1#L288-L292
+func TestMetadataFreeDataFile(t *testing.T) {
+	output := run(t, "metadata", withoutSettings(os.Environ()))
+	checkEnterprise(t, "metadata", output)
+	for _, want := range []string{
+		"\theader.",
+		"Component HardwarePlatform",
+		"\t\tValues: ",
+		"is matched to the profiles",
+		"\t\tIsMobile True",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("metadata prints no %q", strings.TrimSpace(want))
+		}
+	}
+}
+
 func TestOfflineProcessing(t *testing.T) {
 	testEnterprise(t, "offline_processing")
 }
