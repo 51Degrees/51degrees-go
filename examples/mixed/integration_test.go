@@ -69,15 +69,32 @@ func TestMixedGettingStartedWebFreeDataFiles(t *testing.T) {
 	cmd := exec.Command("go", "test", "-count=1", "-v", "./getting_started_web")
 	cmd.Env = withoutSettings(os.Environ())
 	output, err := cmd.CombinedOutput()
-	os.Stdout.Write(output)
+	// The child's own test lines are not passed on as they are, because a
+	// report that reads this test's output would take them for its own.
 	if err != nil {
-		t.Error(err)
+		t.Errorf("the web example's tests failed with no settings: %v\n%s",
+			err, childLines(output))
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, " data:") {
+			t.Log(strings.TrimSpace(line))
+		}
 	}
 	for _, free := range []string{"51Degrees-LiteV4.1.hash", "51Degrees-LiteV41.ipi"} {
 		if !strings.Contains(string(output), free) {
 			t.Errorf("the web example's tests did not load %s", free)
 		}
 	}
+}
+
+// childLines gives the output of a child go test with each line marked as
+// the child's.
+func childLines(output []byte) string {
+	lines := strings.Split(strings.TrimRight(string(output), "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = "child: " + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // testFree runs an example as a fresh clone would, without the settings CI
