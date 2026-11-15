@@ -132,3 +132,20 @@ func TestReloadsFromMemoryThatCannotWorkAreRefused(t *testing.T) {
 		t.Error("ReloadFromMemory, which takes no data, gave no error")
 	}
 }
+
+// A reload from data that fails to load returns an error, and the manager
+// keeps detecting with the data it had. The C library frees the copy of the
+// data that failed with the data set it made for it, so the copy is freed
+// once.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L212-L213
+func TestAFailedReloadFromBytesKeepsTheData(t *testing.T) {
+	manager := memoryManager(t)
+	if err := manager.ReloadFromBytes(readTestData(t)[:512]); err == nil {
+		t.Error("ReloadFromBytes with the first 512 bytes of the data " +
+			"file gave no error")
+	}
+	if got := isMobile(t, manager); got != "True" {
+		t.Errorf("after a failed ReloadFromBytes IsMobile is %q, want True",
+			got)
+	}
+}
