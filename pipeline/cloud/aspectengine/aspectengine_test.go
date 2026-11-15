@@ -260,11 +260,11 @@ func emptyProductCloud() http.Handler {
 // lists the product with no Properties, fails neither the Pipeline build
 // nor any request. The engine has no Property metadata and logs the missing
 // product once, at warning level with a link to the Configurator, when the
-// Pipeline is built, with nothing logged on each request.
-// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity Its Element Data is empty, so reading a
-// Property gives the missing Property error for a product the Resource Key
-// does not include. Each case builds a new engine, which logs once of its
-// own.
+// Pipeline is built, with nothing logged on each request. Its Element Data is
+// empty, so reading a Property gives the missing Property error for a
+// product the Resource Key does not include. Each case builds a new engine,
+// which logs once of its own.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func TestMissingProductBuildsAndLogsOnce(t *testing.T) {
 	clouds := []struct {
 		name  string
