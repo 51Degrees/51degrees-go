@@ -22,8 +22,17 @@
 
 package onpremise
 
+import "errors"
+
 // ProfileIdsForPropertyValue gives the ids of the profiles that hold value for
-// property.
+// property, such as the devices with a TAC or a native model name. Both are
+// matched exactly as the data file holds them, and the ids are in ascending
+// order with each once. A Property named with WithIndexedProperties is found
+// through the native code's index, and any other by reading every profile.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L477-L499
 func (e *Engine) ProfileIdsForPropertyValue(property, value string) ([]uint32, error) {
-	return nil, nil
+	if e.manager == nil {
+		return nil, errors.New("the engine has no data loaded")
+	}
+	return e.manager.ProfileIdsForPropertyValue(property, value)
 }

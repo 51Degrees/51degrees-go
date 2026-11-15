@@ -220,10 +220,13 @@ func WithRandomization(seconds int) EngineOptions {
 	}
 }
 
-// WithIndexedProperties names the Properties whose values are indexed to the
-// profiles holding them.
+// WithIndexedProperties names the Properties, such as TAC and NativeModel,
+// whose values are indexed to the profiles holding them when the data file
+// loads and on each refresh, so ProfileIdsForPropertyValue finds them without
+// reading every profile. Names are matched exactly.
 func WithIndexedProperties(names ...string) EngineOptions {
 	return func(cfg *Engine) error {
+		cfg.indexedProperties = append([]string(nil), names...)
 		return nil
 	}
 }
