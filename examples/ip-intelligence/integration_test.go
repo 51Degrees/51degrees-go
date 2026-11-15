@@ -98,6 +98,32 @@ func TestGettingStartedFreeDataFile(t *testing.T) {
 	}
 }
 
+func TestMetadata(t *testing.T) {
+	test(t, "metadata")
+}
+
+// evidenceKeyLine matches an Evidence key as the Metadata Console example
+// lists it, being its prefix and its name.
+var evidenceKeyLine = regexp.MustCompile(`(?m)^\t(query|server)\.[A-Za-z0-9-]+\r?$`)
+
+// The Metadata Console example runs on the free data file and lists the
+// data file's published date, the Evidence keys the engine reads, its
+// components and each Property with its description, then shows what only
+// the Enterprise file has.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/ip-intelligence-specification/required-examples.md?plain=1#L167-L173
+func TestMetadataFreeDataFile(t *testing.T) {
+	output := run(t, "metadata", withoutSettings(os.Environ()))
+	checkEnterprise(t, "metadata", output)
+	for _, want := range []string{"\tPublished: ", "\nComponent "} {
+		if !strings.Contains(output, want) {
+			t.Errorf("metadata prints no %q", strings.TrimSpace(want))
+		}
+	}
+	if !evidenceKeyLine.MatchString(output) {
+		t.Error("metadata lists no Evidence key")
+	}
+}
+
 func TestOfflineProcessingFreeDataFile(t *testing.T) {
 	testFree(t, "offline_processing")
 }
