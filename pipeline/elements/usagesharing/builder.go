@@ -353,6 +353,15 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.IntParam(params, "MinimumEntriesPerMessage"); ok {
 		b.SetMinimumEntriesPerMessage(v)
 	}
+	if v, ok := core.IntParam(params, "MaximumQueueSize"); ok {
+		b.SetMaximumQueueSize(v)
+	}
+	if v, ok := core.IntParam(params, "AddTimeoutMilliseconds"); ok {
+		b.SetAddTimeout(time.Duration(v) * time.Millisecond)
+	}
+	if v, ok := core.IntParam(params, "TakeTimeoutMilliseconds"); ok {
+		b.SetTakeTimeout(time.Duration(v) * time.Millisecond)
+	}
 	if v, ok := core.StringParam(params, "ShareUsageUrl"); ok {
 		b.SetShareUsageURL(v)
 	}
