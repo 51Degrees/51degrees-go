@@ -39,6 +39,9 @@ type ResourceManager struct {
 	// manager was created with, or with no names, of each name of the first
 	// data file it loaded, built once when it is created.
 	indexes propertyIndexes
+	// fromMemory says the manager was made from data in memory, whose data
+	// sets free their copy of the data, so it can reload from memory.
+	fromMemory bool
 }
 
 // Finalizer function for Resource Manager
