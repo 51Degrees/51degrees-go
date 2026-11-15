@@ -74,6 +74,43 @@ func newTestWatcher(t *testing.T) (*Watcher, string) {
 	return w, path
 }
 
+// A change made as soon as Start returns is seen, as the engines replace a
+// data file while they run. The watcher measures a change against the file
+// as it was when Start was called, so a replacement of the same size with a
+// later modification time counts however soon it comes.
+func TestWatcher_SeesAChangeRightAfterStart(t *testing.T) {
+	// With one processor the watcher's goroutine does not run before the
+	// change below is made, unless Start itself looks at the file first.
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	path := filepath.Join(t.TempDir(), "data.hash")
+	if err := os.WriteFile(path, []byte("one"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	earlier := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, earlier, earlier); err != nil {
+		t.Fatal(err)
+	}
+	poll := watcherTestPollMs * time.Millisecond
+	w, err := newWatcher(path, poll, poll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer w.Stop()
+
+	if err := os.WriteFile(path, []byte("two"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-w.Changed():
+	case <-time.After(watcherTestTimeoutMs * time.Millisecond):
+		t.Fatalf("a change made right after Start was not seen within %d "+
+			"ms", watcherTestTimeoutMs)
+	}
+}
+
 func TestWatcher_StopEndsGoroutine(t *testing.T) {
 	before := watcherGoroutines()
 	w, _ := newTestWatcher(t)
