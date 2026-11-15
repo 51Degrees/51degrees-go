@@ -519,6 +519,16 @@ func (e *Engine) getPublishedDate() time.Time {
 	return ipi_interop.GetPublishedDate(e.manager)
 }
 
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts, worked
+// out from the data when it is loaded and each time it is refreshed. It is
+// safe to call while the data is refreshed.
+func (e *Engine) GetHttpHeaderKeys() []ipi_interop.EvidenceKey {
+	if e.manager == nil {
+		return nil
+	}
+	return e.manager.HeaderKeys()
+}
+
 // publishedDate is the published date of the loaded data file, or the zero
 // time before a data file is loaded.
 func (e *Engine) publishedDate() time.Time {
