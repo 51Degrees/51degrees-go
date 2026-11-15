@@ -146,8 +146,20 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	return engine, nil
 }
 
-// handleFileExternallyChanged handles events where a file has been externally modified, ensuring proper processing and logging.
+// handleFileExternallyChanged reloads the data file the file watcher saw
+// change, once it can be opened for reading, and reports the check. A file
+// another process still holds is waited for, and one that cannot be opened in
+// time is reported as a timeout and not logged, as the error table gives it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func (e *Engine) handleFileExternallyChanged() {
+	if !common_go.WaitUntilReadable(openWatchedFile, e.GetDataFile(),
+		watchedFileReadableWait, e.stopped) {
+		if !e.stopped() {
+			e.reportTimeout()
+		}
+		e.IncreaseFileExternallyChangedCount()
+		return
+	}
 	tries, err := e.reload()
 	if err != nil {
 		e.logReloadError(tries, err)
@@ -350,6 +362,22 @@ func (e *Engine) logUnhandledError(detail interface{}) {
 func (e *Engine) reportReload(err error) {
 	if callbackErr := e.ReportUpdateComplete(reloadStatus(err)); callbackErr != nil {
 		e.logUnhandledError(callbackErr)
+	}
+}
+
+// stopped says whether the engine has stopped.
+func (e *Engine) stopped() bool {
+	e.reloadMu.Lock()
+	defer e.reloadMu.Unlock()
+	return e.isStopped
+}
+
+// reportTimeout reports a watched file that could not be opened in time to
+// the update callbacks, and logs a callback's panic with the error table's
+// last row.
+func (e *Engine) reportTimeout() {
+	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
+		e.logUnhandledError(err)
 	}
 }
 
