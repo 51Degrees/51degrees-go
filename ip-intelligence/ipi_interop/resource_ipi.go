@@ -26,6 +26,7 @@ package ipi_interop
 //#include "ip-intelligence-cxx.h"
 import "C"
 import (
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -61,7 +62,47 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 		return messageError(C.StatusGetMessage(s, cPath))
 	}
 
+	initEvidenceKeys(manager)
 	return nil
+}
+
+// evidenceKeysSeparator is written between the keys the data set lists.
+const evidenceKeysSeparator = ","
+
+// initEvidenceKeys works out the Evidence keys the data in use accepts, from
+// the data set, and keeps them in the order the native code tries them, which
+// is every query key before any server key, each in the data set's order.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L75-L84
+func initEvidenceKeys(manager *ResourceManager) {
+	cDataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+	separator := C.CString(evidenceKeysSeparator)
+	defer C.free(unsafe.Pointer(separator))
+	length := C.IpiGetEvidenceKeys(cDataSet, nil, 0, separator)
+	buffer := (*C.char)(C.malloc(length + 1))
+	defer C.free(unsafe.Pointer(buffer))
+	C.IpiGetEvidenceKeys(cDataSet, buffer, length+1, separator)
+
+	var query, server []EvidenceKey
+	for _, key := range strings.Split(C.GoString(buffer),
+		evidenceKeysSeparator) {
+		cKey := C.CString(key)
+		prefix := C.EvidenceMapPrefix(cKey)
+		C.free(unsafe.Pointer(cKey))
+		if prefix == nil {
+			continue
+		}
+		name := strings.TrimPrefix(key[int(prefix.prefixLength):], ".")
+		k := EvidenceKey{EvidencePrefix(prefix.prefixEnum), name}
+		if k.Prefix == HttpEvidenceQuery {
+			query = append(query, k)
+		} else {
+			server = append(server, k)
+		}
+	}
+	manager.keysMu.Lock()
+	manager.HttpHeaderKeys = append(query, server...)
+	manager.keysMu.Unlock()
 }
 
 // ReloadFromFile reloads the data set of the manager from the data file at
@@ -72,7 +113,8 @@ func InitManagerFromFile(manager *ResourceManager, config ConfigIpi, properties 
 // afterwards. The C reload makes the new data set active through
 // fiftyoneDegreesResourceReplace, which frees the data set it replaced once the
 // last lookup using it has finished, so nothing is held here. A failed reload
-// keeps the data set in use and returns an error.
+// keeps the data set in use and returns an error. A reload that succeeds
+// works the accepted Evidence keys out again from the new data.
 //
 // Deprecated: config and properties are ignored, because a reload keeps the
 // manager's configuration and names. Pass the values the manager was created
@@ -85,12 +127,17 @@ func (manager *ResourceManager) ReloadFromFile(config ConfigIpi, properties stri
 	defer C.free(unsafe.Pointer(cPath))
 
 	s := C.IpiReloadManagerFromFile(manager.CPtr, cPath, exp.CPtr)
-	return reloadError(s, exp, cPath)
+	if err := reloadError(s, exp, cPath); err != nil {
+		return err
+	}
+	initEvidenceKeys(manager)
+	return nil
 }
 
 // ReloadFromOriginalFile reloads the data set being used by the resource
 // manager using the data file location which was used when the manager was
-// created. This is corresponding to the C API
+// created, and works the accepted Evidence keys out again from the new data.
+// This is corresponding to the C API
 // fiftyoneDegreesIpiReloadManagerFromOriginalFile
 func (manager *ResourceManager) ReloadFromOriginalFile() error {
 	exp := NewException()
@@ -101,6 +148,7 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 		exp.CPtr,
 	)
 	if s == C.SUCCESS && exp.IsOkay() {
+		initEvidenceKeys(manager)
 		return nil
 	}
 	cDataSet := C.DataSetGet(manager.CPtr)
