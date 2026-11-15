@@ -66,6 +66,17 @@ type PropertyMetadata struct {
 	IsObsolete bool
 	// ComponentId is the id of the component the Property belongs to.
 	ComponentId uint8
+	// DisplayOrder is the suggested place of the Property where Properties
+	// are listed.
+	DisplayOrder uint8
+	// IsMandatory says a profile is valid only when it holds a value of the
+	// Property other than the default.
+	IsMandatory bool
+	// Show says the Property is shown where Properties are listed.
+	Show bool
+	// ShowValues says the Property's values are shown where values are
+	// listed.
+	ShowValues bool
 }
 
 // Properties gives the metadata of every Property the data file defines,
