@@ -66,6 +66,14 @@ func New(logger *slog.Logger) *Engine {
 	}
 }
 
+// Factory builds the engine from configuration for core.BuilderRegistry, so
+// a Pipeline holding it can be built from a configuration file. The engine
+// has no options, so it takes no build parameters.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/pipeline-configuration.md?plain=1#L8-L10
+func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
+	return New(logger), nil
+}
+
 // Process reads the IP Intelligence section of the cloud response into Data.
 func (e *Engine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, DataKey)
