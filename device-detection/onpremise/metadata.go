@@ -22,9 +22,19 @@
 
 package onpremise
 
-import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+import (
+	"errors"
 
-// Properties gives the metadata of every Property the data file defines.
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+)
+
+// Properties gives the metadata of every Property the data file in use
+// defines, with each one's category, description, type, the data tiers that
+// hold it, and whether the engine was made with it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/usage-examples.md?plain=1#L148-L151
 func (e *Engine) Properties() ([]dd.PropertyMetadata, error) {
-	return nil, nil
+	if e.manager == nil {
+		return nil, errors.New("the engine has no data loaded")
+	}
+	return e.manager.Properties()
 }

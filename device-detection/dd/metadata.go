@@ -22,7 +22,26 @@
 
 package dd
 
-import "reflect"
+/*
+#include <stdlib.h>
+#include <string.h>
+#include "device-detection-cxx.h"
+
+// freeText frees a text the C library allocated because it did not fit the
+// buffer given, with the library's own Free, which Go cannot call directly.
+static void freeText(char *text) {
+	fiftyoneDegreesFree(text);
+}
+*/
+import "C"
+import (
+	"reflect"
+	"unsafe"
+)
+
+// metadataTextBytes is the buffer a text of the metadata is read into. A
+// longer text is read into memory the C library allocates.
+const metadataTextBytes = 1024
 
 // PropertyMetadata describes a Property the data file defines.
 type PropertyMetadata struct {
@@ -49,7 +68,113 @@ type PropertyMetadata struct {
 	ComponentId uint8
 }
 
-// Properties gives the metadata of every Property the data file defines.
+// Properties gives the metadata of every Property the data file defines,
+// those the manager was not made with included, through the C library's
+// Hash metadata functions.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/properties.md?plain=1#L65-L110
 func (manager *ResourceManager) Properties() ([]PropertyMetadata, error) {
-	return nil, nil
+	cDataSet := (*C.DataSetHash)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+
+	count := uint32(C.fiftyoneDegreesHashGetPropertyCount(cDataSet))
+	all := make([]PropertyMetadata, 0, count)
+	for i := uint32(0); i < count; i++ {
+		e := NewException()
+		var valueType, componentId C.uint8_t
+		var isList, isObsolete, isAvailable C.bool
+		var mapCount C.uint32_t
+		if !C.fiftyoneDegreesHashGetProperty(cDataSet, C.uint32_t(i),
+			&valueType, &componentId, nil, nil, &isList, &isObsolete, nil,
+			nil, &mapCount, &isAvailable, nil, e.CPtr) {
+			if !e.IsOkay() {
+				return nil, messageError(C.ExceptionGetMessage(e.CPtr))
+			}
+			// The properties collection gave nothing at the index.
+			continue
+		}
+		m := PropertyMetadata{
+			Type:        propertyValueType(valueType).goType(bool(isList)),
+			Available:   bool(isAvailable),
+			IsList:      bool(isList),
+			IsObsolete:  bool(isObsolete),
+			ComponentId: uint8(componentId),
+		}
+		texts := []struct {
+			text C.fiftyoneDegreesPropertyText
+			into *string
+		}{
+			{C.fiftyoneDegreesPropertyText(C.FIFTYONE_DEGREES_PROPERTY_TEXT_NAME),
+				&m.Name},
+			{C.fiftyoneDegreesPropertyText(C.FIFTYONE_DEGREES_PROPERTY_TEXT_CATEGORY),
+				&m.Category},
+			{C.fiftyoneDegreesPropertyText(C.FIFTYONE_DEGREES_PROPERTY_TEXT_DESCRIPTION),
+				&m.Description},
+			{C.fiftyoneDegreesPropertyText(C.FIFTYONE_DEGREES_PROPERTY_TEXT_URL),
+				&m.Url},
+		}
+		for _, t := range texts {
+			text, err := propertyText(cDataSet, i, t.text)
+			if err != nil {
+				return nil, err
+			}
+			*t.into = text
+		}
+		for j := uint32(0); j < uint32(mapCount); j++ {
+			tier, ok, err := propertyMapText(cDataSet, i, j)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				m.DataTiers = append(m.DataTiers, tier)
+			}
+		}
+		all = append(all, m)
+	}
+	return all, nil
+}
+
+// propertyText gives a text of the property at the index. A text the
+// property does not have is empty.
+func propertyText(
+	dataSet *C.DataSetHash,
+	index uint32,
+	text C.fiftyoneDegreesPropertyText) (string, error) {
+	var buffer [metadataTextBytes]C.char
+	e := NewException()
+	got := C.fiftyoneDegreesHashGetPropertyText(dataSet, C.uint32_t(index),
+		text, &buffer[0], C.size_t(len(buffer)), e.CPtr)
+	if !e.IsOkay() {
+		return "", messageError(C.ExceptionGetMessage(e.CPtr))
+	}
+	if got == nil {
+		return "", nil
+	}
+	value := C.GoString(got)
+	if got != &buffer[0] {
+		C.freeText(got)
+	}
+	return value, nil
+}
+
+// propertyMapText gives the name of one of the maps, being the data tiers,
+// the property at the index is in, and false when the data file gives no
+// name for it.
+func propertyMapText(
+	dataSet *C.DataSetHash,
+	index, mapIndex uint32) (string, bool, error) {
+	var buffer [metadataTextBytes]C.char
+	e := NewException()
+	got := C.fiftyoneDegreesHashGetPropertyMapText(dataSet, C.uint32_t(index),
+		C.uint32_t(mapIndex), &buffer[0], C.size_t(len(buffer)), e.CPtr)
+	if !e.IsOkay() {
+		return "", false, messageError(C.ExceptionGetMessage(e.CPtr))
+	}
+	if got == nil {
+		return "", false, nil
+	}
+	value := C.GoString(got)
+	if got != &buffer[0] {
+		C.freeText(got)
+	}
+	return value, true, nil
 }
