@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
@@ -72,6 +73,10 @@ type Engine struct {
 	maxRetries int
 
 	isStopped bool
+
+	// stopping is set as Stop begins, so a check waiting for the watched
+	// file ends at once rather than holding up Stop.
+	stopping atomic.Bool
 }
 
 const (
@@ -243,6 +248,7 @@ func (e *Engine) RefreshData() error {
 // Stop has to be called to free all the resources of the engine
 // before the instance goes out of scope
 func (e *Engine) Stop() {
+	e.stopping.Store(true)
 	num := 0
 	if e.IsAutoUpdateEnabled() && e.IsFilePullerStarted() {
 		num++ // file puller is enabled and started
@@ -365,11 +371,9 @@ func (e *Engine) reportReload(err error) {
 	}
 }
 
-// stopped says whether the engine has stopped.
+// stopped says whether the engine is stopping or has stopped.
 func (e *Engine) stopped() bool {
-	e.reloadMu.Lock()
-	defer e.reloadMu.Unlock()
-	return e.isStopped
+	return e.stopping.Load()
 }
 
 // reportTimeout reports a watched file that could not be opened in time to
