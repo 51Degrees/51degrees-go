@@ -35,16 +35,22 @@ import (
 // noTownReason is the reason the stand-in cloud gives for having no town.
 const noTownReason = "The town is not known for this range."
 
+// areasWkt is the WKT the stand-in cloud gives for Areas, written as the
+// specification writes a WKT value in JSON, an object with one member, value.
+const areasWkt = "POLYGON((1 2, 3 4, 5 6, 1 2))"
+
 // mockCloud stands in for the cloud service. It gives a weighted Property
 // with two values, a Property that is not weighted, and a weighted Property
-// with no value and a reason.
+// with no value and a reason, and Areas, a weighted WKT Property written as
+// an object with one member, value.
 func mockCloud() *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"Products":{"ip":{"DataTier":"CloudV5Bespoke","Properties":[` +
 			`{"Name":"RegisteredCountry","Type":"IReadOnlyList<IWeightedValue<String>>","Category":"Network"},` +
 			`{"Name":"AccuracyRadiusMin","Type":"Int32","Category":"Location"},` +
-			`{"Name":"Town","Type":"IReadOnlyList<IWeightedValue<String>>","Category":"Location"}]}}}`))
+			`{"Name":"Town","Type":"IReadOnlyList<IWeightedValue<String>>","Category":"Location"},` +
+			`{"Name":"Areas","Type":"IReadOnlyList<IWeightedValue<WktString>>","Category":"Location"}]}}}`))
 	})
 	mux.HandleFunc("/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`["query.client-ip"]`))
@@ -53,7 +59,8 @@ func mockCloud() *httptest.Server {
 		w.Write([]byte(`{"ip":{` +
 			`"registeredcountry":[{"value":"GB","rawweighting":49151},{"value":"IE","rawweighting":16384}],` +
 			`"accuracyradiusmin":250,` +
-			`"town":null,"townnullreason":"` + noTownReason + `"}}`))
+			`"town":null,"townnullreason":"` + noTownReason + `",` +
+			`"areas":[{"value":{"value":"` + areasWkt + `"},"rawweighting":65535}]}}`))
 	})
 	return httptest.NewServer(mux)
 }
@@ -132,5 +139,22 @@ func TestNoValue(t *testing.T) {
 	}
 	if town.NoValueMessage() != noTownReason {
 		t.Errorf("the reason for no town is %q", town.NoValueMessage())
+	}
+}
+
+// A WKT value the cloud writes as an object with one member, value, is read
+// as the WKT text it holds.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/value-types.md#wkt
+func TestAWktValueWrittenAsAnObjectIsReadAsItsText(t *testing.T) {
+	value, err := process(t).Get("areas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	areas, err := value.(engines.AspectPropertyValue[[]core.WeightedValue[string]]).Value()
+	if err != nil || len(areas) != 1 {
+		t.Fatalf("areas is %v, %v, want one value", areas, err)
+	}
+	if got := areas[0].Value(); got != areasWkt {
+		t.Errorf("areas is %q, want %q", got, areasWkt)
 	}
 }

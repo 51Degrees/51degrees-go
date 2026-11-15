@@ -83,6 +83,7 @@ func (config *ConfigIpi) SetConcurrency(concurrency uint16) {
 	config.CPtr.graphs.concurrency = C.ushort(concurrency)
 	config.CPtr.profileGroups.concurrency = C.ushort(concurrency)
 	config.CPtr.profileOffsets.concurrency = C.ushort(concurrency)
+	config.CPtr.propertyTypes.concurrency = C.ushort(concurrency)
 
 }
 

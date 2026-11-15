@@ -167,6 +167,8 @@ func TestSessionIDAndSequenceAreIndependent(t *testing.T) {
 		{"sequence with spaces is absent", map[string]any{EvidenceSequence: " 1"}, "", 1},
 		{"sequence as words is absent", map[string]any{EvidenceSequence: "one"}, "", 1},
 		{"sequence as empty text is absent", map[string]any{EvidenceSequence: ""}, "", 1},
+		{"sequence as a decimal in text is absent",
+			map[string]any{EvidenceSequence: "1.5"}, "", 1},
 		{"sequence out of range is absent",
 			map[string]any{EvidenceSequence: "99999999999999999999"}, "", 1},
 		{"the largest sequence that can be counted up",
@@ -240,5 +242,39 @@ func TestSessionIDAndSequenceAreIndependent(t *testing.T) {
 				t.Errorf("Evidence sequence = %v, Element Data %v", v, seq)
 			}
 		})
+	}
+}
+
+// The element accepts exactly the two Evidence keys the specification gives,
+// written out here so that a change to a constant fails the test.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/sequence-element.md#accepted-evidence
+func TestAcceptedEvidence(t *testing.T) {
+	filter := New(nil).EvidenceKeyFilter()
+	for _, key := range []string{"query.session-id", "query.sequence"} {
+		if !filter.Include(key) {
+			t.Errorf("the filter does not accept %s", key)
+		}
+	}
+	for _, key := range []string{"query.sessionid", "header.sequence",
+		"cookie.session-id", "query.user-agent"} {
+		if filter.Include(key) {
+			t.Errorf("the filter accepts %s", key)
+		}
+	}
+}
+
+// The Element Data key and the two Property names are the ones the
+// specification gives.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/sequence-element.md#element-data
+func TestElementDataNames(t *testing.T) {
+	data := run(t, nil)
+	if got := New(nil).DataKey(); got != "sequence" {
+		t.Errorf("the Element Data key is %q, want sequence", got)
+	}
+	if v, err := data.Get("session-id"); err != nil || v == "" {
+		t.Errorf("no session-id in the Element Data (%v, %v)", v, err)
+	}
+	if v, err := data.Get("sequence"); err != nil || v != 1 {
+		t.Errorf("sequence in the Element Data is %v (%v), want 1", v, err)
 	}
 }

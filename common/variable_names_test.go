@@ -59,6 +59,7 @@ var stillRead = map[string][]string{
 	"pipeline/cloud/requestengine/builder.go": {cloudURL},
 	"examples/device-detection/onpremise/common/environment.go": {
 		licence, deviceKey, dataFile, evidenceYAML},
+	"examples/device-detection/dd/environment.go": {dataFile, evidenceYAML},
 	"examples/ip-intelligence/common/environment.go": {
 		licence, ipiKey, dataFile, evidenceYAML, "IPI_" + dataFile + "_URL"},
 	"examples/mixed/common/environment.go": {dataFile, "DD_" + dataFile},

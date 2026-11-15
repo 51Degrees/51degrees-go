@@ -3,7 +3,7 @@ module github.com/51Degrees/51degrees-go/ip-intelligence/v4
 go 1.22
 
 require (
-	github.com/51Degrees/51degrees-go/common/v4 v4.5.173
+	github.com/51Degrees/51degrees-go/common/v4 v4.5.174
 	github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173
 )
 

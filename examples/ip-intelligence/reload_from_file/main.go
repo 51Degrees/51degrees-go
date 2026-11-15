@@ -365,7 +365,7 @@ func main() {
 			runReloadFromFile(engine, params)
 
 			if common.IsFreeDataFile(engine, common.NetworkProperties) {
-				common.PrintEnterpriseOffer(contactUs)
+				common.PrintNeedsEnterprise(common.NetworkProperties, contactUs)
 			}
 
 			return nil

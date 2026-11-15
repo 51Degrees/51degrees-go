@@ -129,12 +129,20 @@ func weightedValue(aspect map[string]json.RawMessage, name string) engines.Aspec
 	return engines.NewAspectPropertyValue(values)
 }
 
-// jsonText gives a JSON string as it is, and any other JSON value as it is
-// written.
+// jsonText gives a JSON string as it is, a WKT value written as an object with
+// one member, value, as the WKT text it holds, and any other JSON value as it
+// is written.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/value-types.md#wkt
 func jsonText(raw json.RawMessage) string {
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
 		return text
+	}
+	var wkt map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wkt); err == nil && len(wkt) == 1 {
+		if value, ok := wkt["value"]; ok && json.Unmarshal(value, &text) == nil {
+			return text
+		}
 	}
 	return string(raw)
 }

@@ -77,9 +77,21 @@ func TestHandler_MixedEngines(t *testing.T) {
 		t.Errorf("Expected Content-Type application/json, got %q", contentType)
 	}
 
+	body := rr.Body.Bytes()
 	var resp MixedResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("Failed to decode JSON response: %v", err)
+	}
+
+	// The response gives the links to find out more, naming this repository.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("Failed to decode JSON response: %v", err)
+	}
+	if !strings.Contains(string(fields["findOutMore"]),
+		"https://github.com/51Degrees/51degrees-go") {
+		t.Errorf("Expected findOutMore to name the repository, got %s",
+			fields["findOutMore"])
 	}
 
 	if resp.ClientIP == "" {

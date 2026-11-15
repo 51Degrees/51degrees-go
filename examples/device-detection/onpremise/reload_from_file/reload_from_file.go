@@ -34,6 +34,7 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 package main
 
 import (
+	"fmt"
 	"hash/fnv"
 	"io"
 	"log"
@@ -50,6 +51,28 @@ import (
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 	"gopkg.in/yaml.v3"
 )
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-reload_from_file-reload_from_file.go&utm_term=enterprise-data-file"
+
+// showEnterprise detects the mobile Evidence and returns the properties only
+// the Enterprise data file has, with where to ask for a copy of that file when
+// the data file in use lacks any of them.
+func showEnterprise(engine *onpremise.Engine) string {
+	results, err := engine.Process(common.ExampleEvidenceMobile)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer results.Free()
+	values, missing := dd_example.EnterpriseValues(results, "\t")
+	output := fmt.Sprintf("Mobile User-Agent: %s\n%s",
+		common.GetEvidenceUserAgent(common.ExampleEvidenceMobile), values)
+	if missing {
+		output += dd_example.EnterpriseNote(contactUs)
+	}
+	return output
+}
 
 // Number of iterations to perform over the Evidence Records.
 const fIterationCount = 4
@@ -225,7 +248,8 @@ func main() {
 			//Create on-premise engine
 			engine, err := onpremise.New(
 				// Detecting only IsMobile property
-				onpremise.WithProperties([]string{"IsMobile"}),
+				onpremise.WithProperties(append([]string{"IsMobile"},
+					dd_example.EnterpriseProperties...)),
 				// Optimized config provided
 				onpremise.WithConfigHash(config),
 				// Path to your data file
@@ -244,7 +268,14 @@ func main() {
 			defer engine.Stop()
 
 			//Process evidence
-			runReloadFromFileSub(engine, params.EvidenceYaml, params.DataFile)
+			// The evidence file is found as offline processing finds it, so
+			// a fresh clone with no settings downloads it.
+			runReloadFromFileSub(engine,
+				dd_example.GetFilePathByPath(params.EvidenceYaml),
+				params.DataFile)
+
+			// Show the properties only the Enterprise data file has.
+			fmt.Print(showEnterprise(engine))
 
 			return nil
 		},
@@ -260,5 +291,9 @@ func main() {
 // 2021/11/10 11:42:05 Hashcode '4217895257' for iteration '2'.
 // 2021/11/10 11:42:05 Hashcode '4217895257' for iteration '3'.
 
-// Output:
-// Program execution complete.
+// Output, with the free Lite data file:
+// Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1.2 Mobile/15E148 Safari/604.1
+//	HardwareVendor: needs the Enterprise data file
+//	HardwareName: needs the Enterprise data file
+//	DeviceType: needs the Enterprise data file
+// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>

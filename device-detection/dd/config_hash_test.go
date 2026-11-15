@@ -81,6 +81,45 @@ func TestNewConfigHashSetGetNumeric(t *testing.T) {
 	}
 }
 
+// SetConcurrency sets the concurrency of every collection the native
+// configuration holds, as the C++ ConfigHash::setConcurrency does, so each
+// collection's file handles and cache parts follow it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L518
+func TestConfigHash_SetConcurrency(t *testing.T) {
+	for _, concurrency := range []uint16{1, 7, 65535} {
+		config := NewConfigHash(Default)
+		config.SetConcurrency(concurrency)
+		for name, got := range map[string]uint16{
+			"strings":        uint16(config.CPtr.strings.concurrency),
+			"components":     uint16(config.CPtr.components.concurrency),
+			"maps":           uint16(config.CPtr.maps.concurrency),
+			"properties":     uint16(config.CPtr.properties.concurrency),
+			"values":         uint16(config.CPtr.values.concurrency),
+			"profiles":       uint16(config.CPtr.profiles.concurrency),
+			"rootNodes":      uint16(config.CPtr.rootNodes.concurrency),
+			"nodes":          uint16(config.CPtr.nodes.concurrency),
+			"profileOffsets": uint16(config.CPtr.profileOffsets.concurrency),
+		} {
+			if got != concurrency {
+				t.Errorf("SetConcurrency(%d) left %s at %d", concurrency, name,
+					got)
+			}
+		}
+	}
+}
+
+// Concurrency gives the lowest concurrency of the nine collections, as the
+// C++ ConfigHash::getConcurrency does.
+func TestConfigHash_ConcurrencyIsTheLowest(t *testing.T) {
+	config := NewConfigHash(Default)
+	config.SetConcurrency(7)
+	config.CPtr.rootNodes.concurrency = 3
+	if got := config.Concurrency(); got != 3 {
+		t.Errorf("Concurrency() = %d with rootNodes at 3 and the rest at 7, "+
+			"want 3", got)
+	}
+}
+
 func TestNewConfigHashSetGetBoolean(t *testing.T) {
 	// Test cases
 	data := []bool{true, false}
