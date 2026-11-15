@@ -17,7 +17,9 @@ $current = git -C $cxx describe --tags --always
 Write-Output "cxx is at $current, the latest release is $release"
 if ($release -and $release -ne $current) {
     git -C $cxx checkout --quiet $release
-    git -C $RepoName submodule update --init --recursive cxx
+    # The submodules inside cxx follow the release. Updating cxx itself from
+    # this repository would put it back at the commit this repository records.
+    git -C $cxx submodule update --init --recursive
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
 
