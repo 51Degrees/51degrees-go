@@ -184,7 +184,25 @@ const (
 	StatusRefreshFailed Status = "AUTO_UPDATE_REFRESH_FAILED"
 	// StatusUnknownError is a failure none of the others name.
 	StatusUnknownError Status = "AUTO_UPDATE_UNKNOWN_ERROR"
+	// StatusNoConfiguration is a programmatic check for a data file the
+	// service has no configuration for. It is given to the caller in a
+	// NoConfigurationError and reported to no callback.
+	StatusNoConfiguration Status = "AUTO_UPDATE_NO_CONFIGURATION"
 )
+
+// NoConfigurationError is the error for a data file the service has no
+// configuration for. Its Status is StatusNoConfiguration.
+type NoConfigurationError struct {
+	// Identifier is the data file asked for.
+	Identifier string
+}
+
+func (e *NoConfigurationError) Error() string {
+	return fmt.Sprintf("data update: no registration for identifier %q", e.Identifier)
+}
+
+// Status is StatusNoConfiguration.
+func (e *NoConfigurationError) Status() Status { return StatusNoConfiguration }
 
 // Complete is the report a check makes once it ends.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#reporting-each-check
@@ -240,8 +258,9 @@ type registration struct {
 	lastModified time.Time
 
 	// loadedFileTime is the modification time of the data file the Engine
-	// was last refreshed from, which a watched file has to be newer than to
-	// be loaded. Guarded by refreshMu.
+	// holds, taken at Register and at each refresh from the file. A watched
+	// or programmatically checked file has to be newer than it to be loaded.
+	// Guarded by refreshMu.
 	loadedFileTime time.Time
 
 	onComplete []func(Complete)
@@ -277,6 +296,11 @@ func (s *Service) Register(engine Refreshable, engineName string, cfg Config) er
 	}
 	if cfg.OnComplete != nil {
 		reg.onComplete = append(reg.onComplete, cfg.OnComplete)
+	}
+	// The Engine was built from the data file as it is now, so a check loads
+	// the file only once it is newer than that.
+	if modified, ok := reg.currentDataTime(); ok {
+		reg.loadedFileTime = modified
 	}
 
 	if cfg.UpdateOnStartup && cfg.DataUpdateURL != "" {
@@ -370,10 +394,13 @@ func (s *Service) OnUpdate(identifier string, fn func()) {
 }
 
 // CheckForUpdate triggers an immediate update for the named data source. If HTTP
-// polling is configured it polls the remote server; otherwise it refreshes from
-// the configured file if it is newer. The check is reported to the callbacks
-// and its error is passed to the caller rather than logged.
-// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#programmatic-update
+// polling is configured it polls the remote server. Otherwise it refreshes from
+// the configured file when that is newer than the file the Engine holds, and
+// reports the check as not needed when it is not. The check is reported to the
+// callbacks and its error is passed to the caller rather than logged. A data
+// source the service has no configuration for gives a NoConfigurationError and
+// is reported to no callback.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md#programmatic-update
 func (s *Service) CheckForUpdate(identifier string) error {
 	s.mu.Lock()
 	reg, ok := s.registrations[identifier]
@@ -381,14 +408,16 @@ func (s *Service) CheckForUpdate(identifier string) error {
 	if !ok {
 		// A data file the service has no configuration for is the caller's to
 		// deal with, and nothing is reported.
-		return fmt.Errorf("data update: no registration for identifier %q", identifier)
+		return &NoConfigurationError{Identifier: identifier}
 	}
 	status := StatusSuccess
 	var err error
 	if reg.cfg.DataUpdateURL != "" {
 		status, err = reg.httpUpdate()
-	} else if err = reg.refreshFromFile(); err != nil {
-		status = StatusRefreshFailed
+	} else if loaded, refreshErr := reg.refreshFromNewerFile(); refreshErr != nil {
+		status, err = StatusRefreshFailed, refreshErr
+	} else if !loaded {
+		status = StatusNotNeeded
 	}
 	reported := reg.report(status)
 	if err != nil {
@@ -406,7 +435,7 @@ func (s *Service) UpdateFromMemory(identifier string, data []byte) error {
 	reg, ok := s.registrations[identifier]
 	s.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("data update: no registration for identifier %q", identifier)
+		return &NoConfigurationError{Identifier: identifier}
 	}
 	if len(data) == 0 {
 		return errors.New("data update: empty in-memory data")
@@ -456,21 +485,41 @@ func (r *registration) startPolling() {
 				return
 			case <-timer.C:
 			}
-			status, err := r.httpUpdate()
-			if err != nil {
-				// A check the poller starts is logged here, and is never fatal.
-				r.logCheckFailure(err)
-				var rle *RateLimitError
-				if errors.As(err, &rle) && rle.RetryAfter > 0 {
-					// Reset polling to respect the server's rate limit.
-					override = rle.RetryAfter
+			r.guardCheck(func() {
+				status, err := r.httpUpdate()
+				if err != nil {
+					// A check the poller starts is logged here, and is never
+					// fatal.
+					r.logCheckFailure(err)
+					var rle *RateLimitError
+					if errors.As(err, &rle) && rle.RetryAfter > 0 {
+						// Reset polling to respect the server's rate limit.
+						override = rle.RetryAfter
+					}
 				}
-			}
-			if err := r.report(status); err != nil {
+				if err := r.report(status); err != nil {
+					r.logCheckFailure(err)
+				}
+			})
+		}
+	}()
+}
+
+// guardCheck runs one check started by update polling or the file watcher. A
+// panic in the check, such as one from the Engine's refresh, is logged with
+// the error table's last row and reported as StatusUnknownError, and the
+// caller goes on to its next check, so a later good data file is applied.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md#errors
+func (r *registration) guardCheck(check func()) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.svc.logger.Error(r.unhandledMessage(), "error", fmt.Errorf("panic: %v", rec))
+			if err := r.report(StatusUnknownError); err != nil {
 				r.logCheckFailure(err)
 			}
 		}
 	}()
+	check()
 }
 
 func (r *registration) nextInterval() time.Duration {
@@ -569,16 +618,18 @@ func (r *registration) startWatcher() error {
 				}
 			case <-timerC:
 				timerC = nil
-				status := StatusSuccess
-				if loaded, err := r.refreshFromNewerFile(); err != nil {
-					status = StatusRefreshFailed
-					r.logCheckFailure(err)
-				} else if !loaded {
-					status = StatusNotNeeded
-				}
-				if err := r.report(status); err != nil {
-					r.logCheckFailure(err)
-				}
+				r.guardCheck(func() {
+					status := StatusSuccess
+					if loaded, err := r.refreshFromNewerFile(); err != nil {
+						status = StatusRefreshFailed
+						r.logCheckFailure(err)
+					} else if !loaded {
+						status = StatusNotNeeded
+					}
+					if err := r.report(status); err != nil {
+						r.logCheckFailure(err)
+					}
+				})
 			case err, ok := <-w.Errors:
 				if !ok {
 					return
@@ -611,8 +662,9 @@ func (r *registration) refreshFromFile() error {
 }
 
 // refreshFromNewerFile reloads the Engine from its data file when the file is
-// newer than the one last loaded, and says whether it was loaded. A watched
-// file that is not newer is left alone, as .NET leaves it.
+// newer than the one the Engine holds, and says whether it was loaded. A
+// watched or programmatically checked file that is not newer is left alone,
+// as .NET leaves it.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
 func (r *registration) refreshFromNewerFile() (bool, error) {
 	r.refreshMu.Lock()
