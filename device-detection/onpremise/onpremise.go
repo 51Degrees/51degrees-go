@@ -65,6 +65,9 @@ type Engine struct {
 	product                   string
 	dataFileLastUsedByManager string
 	managerProperties         string
+	// indexedProperties are the Properties whose values are indexed to the
+	// profiles holding them.
+	indexedProperties []string
 
 	maxRetries int
 
@@ -462,7 +465,8 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		if e.config == nil {
 			e.config = dd.NewConfigHash(dd.Balanced)
 		}
-		err = dd.InitManagerFromFile(e.manager, *e.config, e.managerProperties, filePath)
+		err = dd.InitManagerFromFileWithIndexedProperties(e.manager, *e.config,
+			e.managerProperties, filePath, e.indexedProperties)
 		if err != nil {
 			if e.IsCreateTempDataCopyEnabled() {
 				e.removeCopy(filePath)
