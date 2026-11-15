@@ -88,10 +88,14 @@ func (manager *ResourceManager) Properties() ([]PropertyMetadata, error) {
 
 // propertyMetadata gives the metadata of every Property of the data set.
 func propertyMetadata(cDataSet *C.DataSetIpi) ([]PropertyMetadata, error) {
+	// One exception serves every call, cleared before each.
+	e := NewException()
+	defer e.Free()
+
 	count := uint32(C.fiftyoneDegreesIpiGetPropertyCount(cDataSet))
 	all := make([]PropertyMetadata, 0, count)
 	for i := uint32(0); i < count; i++ {
-		e := NewException()
+		e.Clear()
 		var valueType, componentId C.uint8_t
 		var isList, isObsolete, isAvailable C.bool
 		var mapCount C.uint32_t
@@ -126,7 +130,7 @@ func propertyMetadata(cDataSet *C.DataSetIpi) ([]PropertyMetadata, error) {
 		}
 		for _, t := range texts {
 			var buffer [metadataTextBytes]C.char
-			e := NewException()
+			e.Clear()
 			got := C.fiftyoneDegreesIpiGetPropertyText(cDataSet,
 				C.uint32_t(i), t.text, &buffer[0], C.size_t(len(buffer)),
 				e.CPtr)
@@ -137,7 +141,7 @@ func propertyMetadata(cDataSet *C.DataSetIpi) ([]PropertyMetadata, error) {
 		}
 		for j := uint32(0); j < uint32(mapCount); j++ {
 			var buffer [metadataTextBytes]C.char
-			e := NewException()
+			e.Clear()
 			got := C.fiftyoneDegreesIpiGetPropertyMapText(cDataSet,
 				C.uint32_t(i), C.uint32_t(j), &buffer[0],
 				C.size_t(len(buffer)), e.CPtr)
@@ -167,6 +171,9 @@ func (manager *ResourceManager) Components() ([]ComponentMetadata, error) {
 		return nil, err
 	}
 
+	e := NewException()
+	defer e.Free()
+
 	count := uint32(C.fiftyoneDegreesIpiGetComponentCount(cDataSet))
 	all := make([]ComponentMetadata, 0, count)
 	for i := uint32(0); i < count; i++ {
@@ -176,7 +183,7 @@ func (manager *ResourceManager) Components() ([]ComponentMetadata, error) {
 			continue
 		}
 		var buffer [metadataTextBytes]C.char
-		e := NewException()
+		e.Clear()
 		got := C.fiftyoneDegreesIpiGetComponentName(cDataSet, C.uint32_t(i),
 			&buffer[0], C.size_t(len(buffer)), e.CPtr)
 		if !e.IsOkay() {
