@@ -43,7 +43,7 @@ func keyNames(keys []EvidenceKey) []string {
 // again whenever the data is refreshed. A list that no longer matches the
 // data, here a placeholder, is replaced by the data's own list on each
 // reload.
-// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L76-L85
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L78-L86
 func TestEvidenceKeysAreWorkedOutAgainOnEachRefresh(t *testing.T) {
 	manager := initResourceManager("", t)
 	defer freeResourceManager(manager, t)

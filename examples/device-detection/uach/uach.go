@@ -295,7 +295,7 @@ func getValue(
 
 // Handler for web request
 func handler(w http.ResponseWriter, r *http.Request) {
-	filteredEvidence := extractEvidenceStrings(r, manager.HttpHeaderKeys)
+	filteredEvidence := extractEvidenceStrings(r, manager.HeaderKeys())
 	// Extract evidence
 	evidence := extractEvidence(filteredEvidence)
 	// Make sure evidence is freed at the end
