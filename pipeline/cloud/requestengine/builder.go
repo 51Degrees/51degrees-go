@@ -358,6 +358,15 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.StringParam(params, "EndPoint"); ok {
 		b.SetEndpoint(v)
 	}
+	if v, ok := core.StringParam(params, "DataEndPoint"); ok {
+		b.SetDataEndpoint(v)
+	}
+	if v, ok := core.StringParam(params, "PropertiesEndPoint"); ok {
+		b.SetPropertiesEndpoint(v)
+	}
+	if v, ok := core.StringParam(params, "EvidenceKeysEndPoint"); ok {
+		b.SetEvidenceKeysEndpoint(v)
+	}
 	if v, ok := core.StringParam(params, "CloudRequestOrigin"); ok {
 		b.SetCloudRequestOrigin(v)
 	}
@@ -372,6 +381,12 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	}
 	if v, ok := core.FloatParam(params, "RecoverySeconds"); ok {
 		b.SetRecoveryDuration(time.Duration(v * float64(time.Second)))
+	}
+	if v, ok := core.FloatParam(params, "RecoveryMultiplier"); ok {
+		b.SetRecoveryMultiplier(v)
+	}
+	if v, ok := core.FloatParam(params, "MaxRecoverySeconds"); ok {
+		b.SetMaxRecoveryDuration(time.Duration(v * float64(time.Second)))
 	}
 	// Return a nil element on failure, not a nil *CloudRequestEngine, which
 	// would make a non-nil core.FlowElement.
