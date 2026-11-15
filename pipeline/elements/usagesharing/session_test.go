@@ -23,10 +23,11 @@
 package usagesharing
 
 // These tests follow the track session and session cookie name options.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -127,23 +128,27 @@ func settle(t *testing.T, c *capture, want int) {
 
 // With track session on, identical Evidence from a new session is shared,
 // while a repeat within the same session is not. The session cookie itself
-// is not shared.
+// is not shared. Both hold whether or not all Evidence is shared.
 func TestTrackSessionSharesRepeatFromNewSession(t *testing.T) {
-	p, c := sessionPipeline(t, map[string]any{
-		"TrackSession": true, "SessionCookieName": "sessionid"})
-	shareSession(t, p, "A", "")
-	shareSession(t, p, "A", "")
-	shareSession(t, p, "B", "")
-	waitForEntries(t, c, 2)
-	settle(t, c, 2)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	// Every entry has a SessionId element of its own, so the cookie is
-	// looked for as an Evidence entry with the cookie's name.
-	for _, body := range c.bodies {
-		if strings.Contains(strings.ToLower(string(body)), `name="sessionid"`) {
-			t.Errorf("the session cookie was shared in %s", body)
+	for _, shareAll := range []bool{false, true} {
+		p, c := sessionPipeline(t, map[string]any{
+			"TrackSession": true, "SessionCookieName": "sessionid",
+			"ShareAllEvidence": shareAll})
+		shareSession(t, p, "A", "")
+		shareSession(t, p, "A", "")
+		shareSession(t, p, "B", "")
+		waitForEntries(t, c, 2)
+		settle(t, c, 2)
+		c.mu.Lock()
+		// Every entry has a SessionId element of its own, so the cookie is
+		// looked for as an Evidence entry with the cookie's name.
+		for _, body := range c.bodies {
+			if strings.Contains(strings.ToLower(string(body)), `name="sessionid"`) {
+				t.Errorf("share all %v: the session cookie was shared in %s",
+					shareAll, body)
+			}
 		}
+		c.mu.Unlock()
 	}
 }
 
@@ -169,57 +174,74 @@ func TestTrackSessionOffComparesNoCookie(t *testing.T) {
 	settle(t, c, 1)
 }
 
-// The session cookie is not shared unless all Evidence is shared, even when
-// its name starts with 51D_ as the cookies that are shared do.
-func TestSessionCookieSharedOnlyWithAllEvidence(t *testing.T) {
+// The session cookie is shared only when its name starts with 51D_, as no
+// other cookie is, whether or not all Evidence is shared.
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L90-L99
+func TestSessionCookieSharedOnlyWhenItStarts51D(t *testing.T) {
 	for _, shareAll := range []bool{false, true} {
-		p, c := sessionPipeline(t, map[string]any{
-			"TrackSession":      true,
-			"SessionCookieName": "51D_session",
-			"ShareAllEvidence":  shareAll,
-		})
-		fd := p.CreateFlowData()
-		fd.AddEvidence("header.user-agent", "ua")
-		fd.AddEvidence("cookie.51D_session", "A")
-		if err := fd.Process(); err != nil {
-			t.Fatalf("process: %v", err)
-		}
-		c.waitFor(t, 1)
-		c.mu.Lock()
-		body := strings.ToLower(string(c.bodies[0]))
-		c.mu.Unlock()
-		if shared := strings.Contains(body, "51d_session"); shared != shareAll {
-			t.Errorf("with all Evidence shared %v, the session cookie shared "+
-				"is %v, in %s", shareAll, shared, body)
+		for name, want := range sessionCookieShared {
+			p, c := sessionPipeline(t, map[string]any{
+				"TrackSession":      true,
+				"SessionCookieName": name,
+				"ShareAllEvidence":  shareAll,
+			})
+			fd := p.CreateFlowData()
+			fd.AddEvidence("header.user-agent", "ua")
+			fd.AddEvidence("cookie."+name, "A")
+			if err := fd.Process(); err != nil {
+				t.Fatalf("process: %v", err)
+			}
+			checkSessionCookieShared(t, c, name, want,
+				fmt.Sprintf("in the Evidence, share all %v", shareAll))
 		}
 	}
 }
 
-// The same holds for a 51D_ session cookie that comes only in the web
-// request, which the element reads as well as the Evidence.
-func TestSessionCookieInWebRequestSharedOnlyWithAllEvidence(t *testing.T) {
+// The same holds for a session cookie that comes only in the web request,
+// which the element reads as well as the Evidence.
+func TestSessionCookieInWebRequestSharedOnlyWhenItStarts51D(t *testing.T) {
 	for _, shareAll := range []bool{false, true} {
-		p, c := sessionPipeline(t, map[string]any{
-			"TrackSession":      true,
-			"SessionCookieName": "51D_session",
-			"ShareAllEvidence":  shareAll,
-		})
-		fd := p.CreateFlowData()
-		fd.AddEvidence("header.user-agent", "ua")
-		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.AddCookie(&http.Cookie{Name: "51D_session", Value: "A"})
-		fd.AddEvidence(core.EvidenceHTTPRequest, core.NewWebRequest(r))
-		if err := fd.Process(); err != nil {
-			t.Fatalf("process: %v", err)
+		for name, want := range sessionCookieShared {
+			p, c := sessionPipeline(t, map[string]any{
+				"TrackSession":      true,
+				"SessionCookieName": name,
+				"ShareAllEvidence":  shareAll,
+			})
+			fd := p.CreateFlowData()
+			fd.AddEvidence("header.user-agent", "ua")
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.AddCookie(&http.Cookie{Name: name, Value: "A"})
+			fd.AddEvidence(core.EvidenceHTTPRequest, core.NewWebRequest(r))
+			if err := fd.Process(); err != nil {
+				t.Fatalf("process: %v", err)
+			}
+			checkSessionCookieShared(t, c, name, want,
+				fmt.Sprintf("in the web request, share all %v", shareAll))
 		}
-		c.waitFor(t, 1)
-		c.mu.Lock()
-		body := strings.ToLower(string(c.bodies[0]))
-		c.mu.Unlock()
-		if shared := strings.Contains(body, "51d_session"); shared != shareAll {
-			t.Errorf("with all Evidence shared %v, the session cookie in the "+
-				"web request shared is %v, in %s", shareAll, shared, body)
-		}
+	}
+}
+
+// sessionCookieShared gives, for each session cookie name the tests use,
+// whether that cookie is shared.
+var sessionCookieShared = map[string]bool{
+	"51D_session": true,
+	"sessionid":   false,
+}
+
+// checkSessionCookieShared checks whether the first message holds the session
+// cookie name as an Evidence entry. Every entry has a SessionId element of
+// its own, so the cookie is looked for by its Name attribute.
+func checkSessionCookieShared(t *testing.T, c *capture, name string,
+	want bool, where string) {
+	t.Helper()
+	c.waitFor(t, 1)
+	c.mu.Lock()
+	body := strings.ToLower(string(c.bodies[0]))
+	c.mu.Unlock()
+	entry := `name="` + strings.ToLower(name) + `"`
+	if shared := strings.Contains(body, entry); shared != want {
+		t.Errorf("session cookie %s %s: shared %v, want %v, in %s",
+			name, where, shared, want, body)
 	}
 }
 
