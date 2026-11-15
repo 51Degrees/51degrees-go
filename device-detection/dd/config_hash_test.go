@@ -27,6 +27,7 @@ package dd
 // #include "device-detection-cxx.h"
 import (
 	"testing"
+	"unsafe"
 )
 
 func TestNewConfigHashPerformanceProfiles(t *testing.T) {
@@ -186,6 +187,27 @@ func TestSizeManagerFromFile(t *testing.T) {
 	performMultiPerfProfiles(testFunc, t)
 }
 
+// A manager made from a data file in memory is sized from that memory with
+// each performance profile, and data that fails to load gives an error
+// rather than a size.
 func TestSizeManagerFromMemory(t *testing.T) {
-	// TODO: Size the manager from memory
+	data := readTestData(t)
+	testFunc := func(perf PerformanceProfile, t *testing.T) {
+		s, err := NewConfigHash(perf).SizeManagerFromMemory("",
+			unsafe.Pointer(&data[0]), uint64(len(data)))
+		if err != nil {
+			t.Errorf("SizeManagerFromMemory failed for profile %d: %v", perf,
+				err)
+		}
+		if s == 0 {
+			t.Errorf("SizeManagerFromMemory gave 0 for profile %d, want the "+
+				"size", perf)
+		}
+	}
+	performMultiPerfProfiles(testFunc, t)
+	if _, err := NewConfigHash(InMemory).SizeManagerFromMemory("",
+		unsafe.Pointer(&data[0]), 512); err == nil {
+		t.Error("SizeManagerFromMemory gave no error for the first 512 bytes " +
+			"of the data file")
+	}
 }

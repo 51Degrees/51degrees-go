@@ -79,6 +79,26 @@ func TestReloadFromFile(t *testing.T) {
 
 // TestStronglyTyped runs the example and checks that it reads values as their
 // Go types and shows the properties only the Enterprise data file has.
+// A manager made from a data file held in memory detects, and detects again
+// once it is reloaded from data held in memory.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L212-L213
+func TestReloadFromMemory(t *testing.T) {
+	output := test(t, "reload_from_memory")
+	if err := CheckEnterprise(output); err != nil {
+		t.Errorf("reload_from_memory: %v", err)
+	}
+	for _, want := range []string{"Made from memory, the iPhone gives",
+		"Reloaded from memory, the iPhone gives"} {
+		if strings.Count(output, want) != 1 {
+			t.Errorf("reload_from_memory does not print %q once", want)
+		}
+	}
+	if strings.Count(output, "	IsMobile: True") != 2 {
+		t.Error("reload_from_memory does not give IsMobile True before " +
+			"and after the reload")
+	}
+}
+
 func TestStronglyTyped(t *testing.T) {
 	output := test(t, "strongly_typed")
 	if err := CheckEnterprise(output); err != nil {
@@ -93,7 +113,8 @@ func TestStronglyTyped(t *testing.T) {
 
 // examples are the examples in this folder that read a data file.
 var examples = []string{"getting_started", "match_device_id", "match_metrics",
-	"offline_processing", "performance", "reload_from_file", "strongly_typed"}
+	"offline_processing", "performance", "reload_from_file",
+	"reload_from_memory", "strongly_typed"}
 
 // runWith runs an example with the environment variable name set to value,
 // and returns what it printed and how it ended.
