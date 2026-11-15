@@ -69,7 +69,8 @@ func TestBuiltFromConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	countries, err := value.(engines.AspectPropertyValue[[]core.WeightedValue[string]]).Value()
-	if err != nil || len(countries) != 2 || countries[0].Value() != "GB" {
+	if err != nil || len(countries) != 2 ||
+		countries[0].Value() != "GB" || countries[1].Value() != "IE" {
 		t.Errorf("registeredcountry is %v, %v, want GB then IE", countries, err)
 	}
 }
