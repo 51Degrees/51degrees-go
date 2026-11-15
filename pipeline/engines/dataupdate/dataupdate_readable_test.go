@@ -40,6 +40,14 @@ const timeoutStatus = Status("AUTO_UPDATE_TIMEOUT")
 // the file to become readable loads it.
 const releaseAfterSeconds = 4
 
+// heldWaitMilliseconds is how long the first test lets the service wait for
+// a file that stays held.
+const heldWaitMilliseconds = 500
+
+// releasedWaitMinutes is how long the second test lets the service wait, far
+// longer than the file stays held.
+const releasedWaitMinutes = 1
+
 // heldFile stands for a data file another process holds, so it cannot be
 // opened for reading until it is released.
 type heldFile struct {
@@ -93,7 +101,8 @@ func (e *heldEngine) RefreshFromBytes([]byte) error {
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func TestAWatchedFileThatStaysHeldIsATimeout(t *testing.T) {
 	path := writeFile(t, "INITIAL")
-	held := holdWatchedFile(t, path, 500*time.Millisecond)
+	held := holdWatchedFile(t, path,
+		heldWaitMilliseconds*time.Millisecond)
 	engine := &heldEngine{held: held}
 	svc, out := loggedService(nil)
 	defer svc.Close()
@@ -126,7 +135,7 @@ func TestAWatchedFileThatStaysHeldIsATimeout(t *testing.T) {
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func TestAWatchedFileReleasedDuringTheWaitIsLoaded(t *testing.T) {
 	path := writeFile(t, "INITIAL")
-	held := holdWatchedFile(t, path, time.Minute)
+	held := holdWatchedFile(t, path, releasedWaitMinutes*time.Minute)
 	engine := &heldEngine{held: held}
 	svc, _ := loggedService(nil)
 	defer svc.Close()
