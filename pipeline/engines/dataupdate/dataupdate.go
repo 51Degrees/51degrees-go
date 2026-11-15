@@ -651,6 +651,28 @@ const (
 	refreshRetryWaitMilliseconds = 200
 )
 
+// How long the file watcher waits for a watched file to become readable, and
+// how often it tries to open it, because another process can still hold a
+// file it is writing.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
+const (
+	watchedFileReadableWaitMinutes   = 10
+	watchedFileOpenRetryMilliseconds = 200
+)
+
+// watchedFileReadableWait is the wait, a variable so tests can shorten it.
+var watchedFileReadableWait = watchedFileReadableWaitMinutes * time.Minute
+
+// openForReading opens the file at path for reading and closes it again, and
+// gives the error when it cannot be opened. Tests replace it.
+var openForReading = func(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 // refreshFromFile reloads the Engine from its configured data file, trying up
 // to refreshTries times. The watcher and polling are implicitly paused for the
 // duration because refresh is serialized by refreshMu.
