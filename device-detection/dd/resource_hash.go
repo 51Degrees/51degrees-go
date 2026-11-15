@@ -270,7 +270,9 @@ func initHttpHeaderKeys(manager *ResourceManager) {
 			keys = append(keys, EvidenceKey{p, key})
 		}
 	}
+	manager.keysMu.Lock()
 	manager.HttpHeaderKeys = keys
+	manager.keysMu.Unlock()
 }
 
 func GetPublishedDate(manager *ResourceManager) time.Time {

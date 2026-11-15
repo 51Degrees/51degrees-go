@@ -556,9 +556,10 @@ func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
 	return results, nil
 }
 
-// GetHttpHeaderKeys returns all HTTP headers that can be used as evidence for device detection
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts. It is
+// safe to call while the data is refreshed.
 func (e *Engine) GetHttpHeaderKeys() []dd.EvidenceKey {
-	return e.manager.HttpHeaderKeys
+	return e.manager.HeaderKeys()
 }
 
 // appendLicenceKey updates the data file URL by appending a license key to its query parameters and returns an error if it fails.
