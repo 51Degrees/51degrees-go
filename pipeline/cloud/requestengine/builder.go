@@ -358,6 +358,15 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.StringParam(params, "EndPoint"); ok {
 		b.SetEndpoint(v)
 	}
+	if v, ok := core.StringParam(params, "DataEndPoint"); ok {
+		b.SetDataEndpoint(v)
+	}
+	if v, ok := core.StringParam(params, "PropertiesEndPoint"); ok {
+		b.SetPropertiesEndpoint(v)
+	}
+	if v, ok := core.StringParam(params, "EvidenceKeysEndPoint"); ok {
+		b.SetEvidenceKeysEndpoint(v)
+	}
 	if v, ok := core.StringParam(params, "CloudRequestOrigin"); ok {
 		b.SetCloudRequestOrigin(v)
 	}
