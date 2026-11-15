@@ -382,6 +382,12 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.FloatParam(params, "RecoverySeconds"); ok {
 		b.SetRecoveryDuration(time.Duration(v * float64(time.Second)))
 	}
+	if v, ok := core.FloatParam(params, "RecoveryMultiplier"); ok {
+		b.SetRecoveryMultiplier(v)
+	}
+	if v, ok := core.FloatParam(params, "MaxRecoverySeconds"); ok {
+		b.SetMaxRecoveryDuration(time.Duration(v * float64(time.Second)))
+	}
 	// Return a nil element on failure, not a nil *CloudRequestEngine, which
 	// would make a non-nil core.FlowElement.
 	e, err := b.Build()
