@@ -226,8 +226,10 @@ with the placeholder key `example-resource-key`.
   `examples/ip-intelligence/integration_test.go`). It runs the Device Detection
   examples through `go test` in `examples/device-detection`, with the Lite
   file linked into that folder (`ci/fetch-assets.ps1`) rather than read from
-  `cxx`, and the on-premise ones again with no settings (the `FreeDataFile`
-  tests in `examples/device-detection/onpremise/onpremise_test.go`).
+  `cxx`, and every one of them again with no settings (the `FreeDataFile`
+  tests in `examples/device-detection/onpremise/onpremise_test.go` and
+  `TestEachExampleRunsWithNoSettings` in
+  `examples/device-detection/dd/no_settings_test.go`).
 
 ## Environment variable names
 
