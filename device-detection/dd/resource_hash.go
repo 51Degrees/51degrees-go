@@ -101,7 +101,8 @@ func InitManagerFromMemory(
 }
 
 // ReloadFromFile reloads the data set being used by the resource manager using
-// the specified data file location. This is corresponding to the C API
+// the specified data file location, and works the accepted Evidence keys out
+// again from the new data. This is corresponding to the C API
 // fiftyoneDegreesHashReloadManagerFromFile.
 func (manager *ResourceManager) ReloadFromFile(fileName string) error {
 	exp := NewException()
@@ -112,12 +113,17 @@ func (manager *ResourceManager) ReloadFromFile(fileName string) error {
 		cFilenamePath,
 		exp.CPtr,
 	)
-	return reloadError(s, exp, cFilenamePath)
+	if err := reloadError(s, exp, cFilenamePath); err != nil {
+		return err
+	}
+	initHttpHeaderKeys(manager)
+	return nil
 }
 
 // ReloadFromOriginalFile reloads the data set being used by the resource
 // manager using the data file location which was used when the manager was
-// created. This is corresponding to the C API
+// created, and works the accepted Evidence keys out again from the new data.
+// This is corresponding to the C API
 // fiftyoneDegreesHashReloadManagerFromOriginalFile
 func (manager *ResourceManager) ReloadFromOriginalFile() error {
 	exp := NewException()
@@ -126,6 +132,7 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 		exp.CPtr,
 	)
 	if s == C.SUCCESS && exp.IsOkay() {
+		initHttpHeaderKeys(manager)
 		return nil
 	}
 	cDataSet := C.DataSetGet(manager.CPtr)
@@ -270,7 +277,9 @@ func initHttpHeaderKeys(manager *ResourceManager) {
 			keys = append(keys, EvidenceKey{p, key})
 		}
 	}
+	manager.keysMu.Lock()
 	manager.HttpHeaderKeys = keys
+	manager.keysMu.Unlock()
 }
 
 func GetPublishedDate(manager *ResourceManager) time.Time {

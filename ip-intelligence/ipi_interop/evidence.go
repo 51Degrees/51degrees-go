@@ -29,6 +29,12 @@ import "unsafe"
 
 type EvidencePrefix C.fiftyoneDegreesEvidencePrefix
 
+// The prefixes of the Evidence keys a data set accepts.
+const (
+	HttpEvidenceServer EvidencePrefix = C.FIFTYONE_DEGREES_EVIDENCE_SERVER
+	HttpEvidenceQuery  EvidencePrefix = C.FIFTYONE_DEGREES_EVIDENCE_QUERY
+)
+
 // Header Key required by engine
 type EvidenceKey struct {
 	Prefix EvidencePrefix
