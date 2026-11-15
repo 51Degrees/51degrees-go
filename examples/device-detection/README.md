@@ -65,3 +65,5 @@ go run ./web
 go run ./uach
 ```
 For further details of how to run each example, please read more in the comment section located at the top of each example file.
+
+The examples under `dd` and `onpremise` use the free Lite data file and the free Evidence file unless the `_51DEGREES_DD_PATH` and `_51DEGREES_EVIDENCE_YAML` environment variables name others, such as an Enterprise data file. A test or your own code can set them to supply a file. The variables are in [common-ci's list of environment variable names](https://github.com/51Degrees/common-ci/blob/18f9a570ed862a0b7e1ecb1c55a8319f35f02491/environment-variables.md).

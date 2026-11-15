@@ -214,8 +214,8 @@ func runOfflineProcessing(perf dd.PerformanceProfile) string {
 	// Initialise manager
 	manager := dd.NewResourceManager()
 	config := dd.NewConfigHash(perf)
-	filePath := dd_example.GetFilePathByName([]string{dd_example.LiteDataFile})
-	evidenceFilePath := dd_example.GetFilePathByName([]string{dd_example.EvidenceFileYaml})
+	filePath := dd_example.DataFilePath()
+	evidenceFilePath := dd_example.EvidenceFilePath()
 	evDir := filepath.Dir(evidenceFilePath)
 	evBase := strings.TrimSuffix(filepath.Base(evidenceFilePath), filepath.Ext(evidenceFilePath))
 	outputFilePath := fmt.Sprintf("%s/%s.processed.yml", evDir, evBase)

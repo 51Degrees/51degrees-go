@@ -107,7 +107,7 @@ func runGettingStarted(perf dd.PerformanceProfile) string {
 	// Initialise manager
 	manager := dd.NewResourceManager()
 	config := dd.NewConfigHash(perf)
-	filePath := dd_example.GetFilePathByName([]string{dd_example.LiteDataFile})
+	filePath := dd_example.DataFilePath()
 
 	err := dd.InitManagerFromFile(
 		manager,

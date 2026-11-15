@@ -134,7 +134,7 @@ func match(results *dd.ResultsHash, ua string) (string, bool) {
 func runStronglyTyped(perf dd.PerformanceProfile) string {
 	manager := dd.NewResourceManager()
 	config := dd.NewConfigHash(perf)
-	filePath := dd_example.GetFilePathByName([]string{dd_example.LiteDataFile})
+	filePath := dd_example.DataFilePath()
 	err := dd.InitManagerFromFile(
 		manager,
 		*config,
