@@ -24,6 +24,7 @@ package onpremise
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,4 +78,33 @@ func TestWatchedFileThatCannotBeOpenedTimesOut(t *testing.T) {
 		t.Errorf("%d failures were logged, want the timeout not logged", n)
 	}
 	reports.check(t, data)
+}
+
+// Stopping the engine while a check waits for a watched file to become
+// readable ends the wait, so Stop does not wait the ten minutes the check
+// would.
+func TestStopEndsTheWaitForAWatchedFile(t *testing.T) {
+	good := readGoodFile(t)
+	wait, open := watchedFileReadableWait, openWatchedFile
+	var tries atomic.Int32
+	watchedFileReadableWait = common_go.WatchedFileReadableWaitMinutes *
+		time.Minute
+	openWatchedFile = func(string) error {
+		tries.Add(1)
+		return errors.New("held by another process")
+	}
+	// Cleanups run last first, so this one runs once the engine has stopped.
+	t.Cleanup(func() { watchedFileReadableWait, openWatchedFile = wait, open })
+
+	data := writeDataFile(t, good)
+	e := newReloadTestEngine(t,
+		WithDataFile(data),
+		WithAutoUpdate(false),
+		WithFileWatch(true),
+		WithCustomLogger(&reloadTestLog{}))
+	replaceFile(t, data, markedGoodFile(t, good, e.published()))
+	waitFor(t, "the check to start waiting", func() bool {
+		return tries.Load() > 0
+	})
+	e.stop(t)
 }
