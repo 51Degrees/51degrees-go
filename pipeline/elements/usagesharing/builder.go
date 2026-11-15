@@ -23,6 +23,7 @@
 package usagesharing
 
 import (
+	"context"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -252,6 +253,7 @@ func (b *Builder) Build() *Element {
 	}
 	tr := newTracker(cfg.repeatInterval)
 	tr.clock = clk
+	sendCtx, cancelSends := context.WithCancel(context.Background())
 
 	e := &Element{
 		BaseElement: core.NewBaseElement(DataKey, nil, b.logger),
@@ -262,6 +264,8 @@ func (b *Builder) Build() *Element {
 		tracker:     tr,
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 		clock:       clk,
+		sendCtx:     sendCtx,
+		cancelSends: cancelSends,
 	}
 	return e
 }
