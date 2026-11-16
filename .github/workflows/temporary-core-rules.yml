@@ -1,0 +1,50 @@
+name: Temporary pipeline core rules tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Pipeline core rules tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format
+        # Only on Ubuntu, because the Windows runner checks the repository
+        # out with CRLF line endings, which gofmt reports for every file.
+        if: always() && matrix.os == 'ubuntu-latest'
+        run: |
+          unformatted=$(gofmt -l pipeline/core common || true)
+          echo "gofmt: ${unformatted:-none}"
+          test -z "$unformatted"
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        run: go vet ./core/
+      - name: The new tests, five times
+        if: always()
+        working-directory: pipeline
+        run: go test -count=5 -v -timeout 5m -run 'TestABuilderUsedAgainLeavesItsPipelineAsItWas|TestElementDataIsReadFromSeveralGoroutinesAtOnce' ./core/
+      - name: The new tests with the race detector, five times
+        if: always()
+        working-directory: pipeline
+        run: go test -race -count=5 -v -timeout 10m -run 'TestABuilderUsedAgainLeavesItsPipelineAsItWas|TestElementDataIsReadFromSeveralGoroutinesAtOnce' ./core/
+      - name: Every test of the core package
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -timeout 10m ./core/...
