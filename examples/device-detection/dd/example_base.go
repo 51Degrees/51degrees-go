@@ -224,6 +224,10 @@ func GetFilePathByName(names []string) string {
 	return ""
 }
 
+// DataFileLine starts the line every example prints to say which data file
+// its values come from.
+const DataFileLine = "Data file:"
+
 // DataFilePath returns the data file an example uses, being the file the
 // _51DEGREES_DD_PATH environment variable names, as for the on-premise
 // examples, and otherwise the free Lite file, found or downloaded.
