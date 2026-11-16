@@ -352,30 +352,31 @@ func TestInitHttpHeaderKeys(t *testing.T) {
 		t.Error("Failed to initialize Http Header Keys.")
 	}
 
-	testKeysCount := make(map[string]int)
+	// Each header is accepted as a header key and as a query key with the
+	// same name. The other keys, of overridable Properties and of special
+	// Evidence, are checked by TestEvidenceKeysAreTheDataSetsOwnList.
 	reg := regexp.MustCompile(`^[A-Za-z].*`)
-	const headerPrefix = 1
-	const queryPrefix = 2
+	query := make(map[string]bool)
 	for _, key := range manager.HttpHeaderKeys {
 		if !reg.Match([]byte(key.Key)) {
 			t.Errorf("Key '%s' does not match expected format.", key.Key)
 		}
-		if key.Prefix == HttpHeaderString {
-			testKeysCount[key.Key] += headerPrefix
-		} else if key.Prefix == HttpEvidenceQuery {
-			testKeysCount[key.Key] += queryPrefix
+		if key.Prefix == HttpEvidenceQuery {
+			query[key.Key] = true
 		}
 	}
-
-	if len(testKeysCount) != len(manager.HttpHeaderKeys)/2 {
-		t.Error("Http header keys did not set both 'Header' and 'Query' prefixes " +
-			"for each key")
-	}
-	for _, count := range testKeysCount {
-		if count != headerPrefix+queryPrefix {
-			t.Error("Http header keys did not set both 'Header' and 'Query' prefixes " +
-				"for each key")
+	headers := 0
+	for _, key := range manager.HttpHeaderKeys {
+		if key.Prefix != HttpHeaderString {
+			continue
 		}
+		headers++
+		if !query[key.Key] {
+			t.Errorf("the header key '%s' has no query key", key.Key)
+		}
+	}
+	if headers == 0 {
+		t.Error("no header keys were listed")
 	}
 }
 
