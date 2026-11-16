@@ -1,0 +1,36 @@
+name: Temporary conformance tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Conformance tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: The Device Detection Cloud Engine tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v ./cloud/dd_cloud/
+      - name: The cloud console example built from an options file
+        if: always()
+        working-directory: examples/device-detection
+        run: go test -count=1 -v ./cloud/getting_started/
+      - name: A performance test of the JavaScript Builder exists and runs
+        if: always()
+        working-directory: pipeline
+        run: |
+          go test -run '^$' -bench JavaScriptBuilder -benchtime 200x ./elements/javascriptbuilder/ | tee bench.txt
+          grep -c '^BenchmarkJavaScriptBuilder' bench.txt
