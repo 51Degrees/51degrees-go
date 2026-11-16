@@ -1,0 +1,44 @@
+name: Temporary cloud errors array tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Cloud errors array tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format
+        if: always()
+        run: |
+          unformatted=$(gofmt -l pipeline/cloud/requestengine || true)
+          echo "gofmt: ${unformatted:-none}"
+          test -z "$unformatted"
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        run: go vet ./cloud/requestengine/
+      - name: The new tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v -timeout 3m -run 'TestEveryEntryOfACloudErrorsArrayIsItsOwnError|TestOneEntryOfACloudErrorsArrayIsOneError' ./cloud/requestengine/
+      - name: Every test of the cloud packages
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -timeout 10m ./cloud/...
