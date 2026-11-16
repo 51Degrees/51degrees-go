@@ -1,0 +1,34 @@
+name: Temporary cloud engine and figures tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Cloud engine and figures tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image, Go and Pester
+        shell: pwsh
+        run: |
+          "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
+          go version
+          Get-Module -ListAvailable Pester | Select-Object -First 1 Name, Version
+      - name: Device Detection Cloud Engine tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v ./cloud/dd_cloud/
+      - name: The example's tests
+        if: always()
+        working-directory: examples/device-detection
+        run: go test -count=1 -v ./cloud/getting_started/
+      - name: Benchmark figures tests
+        if: always()
+        shell: pwsh
+        run: |
+          $result = Invoke-Pester -Output Detailed -PassThru -Path ci/benchmark.Tests.ps1
+          if ($result.FailedCount -gt 0) { exit 1 }
