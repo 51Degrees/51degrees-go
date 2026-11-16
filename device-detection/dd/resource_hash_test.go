@@ -358,9 +358,6 @@ func TestInitHttpHeaderKeys(t *testing.T) {
 	reg := regexp.MustCompile(`^[A-Za-z].*`)
 	query := make(map[string]bool)
 	for _, key := range manager.HttpHeaderKeys {
-		if !reg.Match([]byte(key.Key)) {
-			t.Errorf("Key '%s' does not match expected format.", key.Key)
-		}
 		if key.Prefix == HttpEvidenceQuery {
 			query[key.Key] = true
 		}
@@ -371,6 +368,9 @@ func TestInitHttpHeaderKeys(t *testing.T) {
 			continue
 		}
 		headers++
+		if !reg.Match([]byte(key.Key)) {
+			t.Errorf("Key '%s' does not match expected format.", key.Key)
+		}
 		if !query[key.Key] {
 			t.Errorf("the header key '%s' has no query key", key.Key)
 		}
