@@ -160,7 +160,10 @@ func (e *BaseCloudAspectEngine) loadCloudProperties() []core.PropertyMetadata {
 // products, each naming element.
 func productMetadata(products map[string]requestengine.ProductMeta,
 	element core.FlowElement, aspectKey string) []core.PropertyMetadata {
-	product := products[aspectKey]
+	var product requestengine.ProductMeta
+	for _, each := range products {
+		product.Properties = append(product.Properties, each.Properties...)
+	}
 	out := make([]core.PropertyMetadata, 0, len(product.Properties))
 	for _, p := range product.Properties {
 		out = append(out, propertyMetadata(p, element))
