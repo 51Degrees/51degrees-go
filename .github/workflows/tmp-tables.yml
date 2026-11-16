@@ -1,0 +1,29 @@
+name: Temporary tables tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Tables tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The data submodule
+        run: |
+          git submodule update --init --depth 1 cxx
+          git -C cxx submodule update --init --depth 1 data
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: The free Asn data file, downloaded once
+        run: |
+          for i in 1 2 3; do sh cxx/data/get-data-files.sh 51Degrees-IPIV4AsnIpiV41.ipi && break; sleep 15; done
+          cp cxx/data/ip-intelligence/51Degrees-IPIV4AsnIpiV41.ipi ip-intelligence/
+      - name: The tables test and the read on request tests
+        working-directory: ip-intelligence
+        run: CI=true go test -count=1 -v -run 'TestAReloadKeepsTheTablesOfNamesAndPositions|TestProcessDataGivesTheValuesOfProcess|TestProcessingReadsNoPropertyValue' ./ipi_onpremise/
