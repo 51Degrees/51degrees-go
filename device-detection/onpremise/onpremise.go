@@ -377,8 +377,7 @@ func (e *Engine) stopped() bool {
 }
 
 // reportTimeout reports a watched file that could not be opened in time to
-// the update callbacks, and logs a callback's panic with the error table's
-// last row.
+// the update callbacks, and logs an error a callback gives back.
 func (e *Engine) reportTimeout() {
 	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
 		e.logUnhandledError(err)
