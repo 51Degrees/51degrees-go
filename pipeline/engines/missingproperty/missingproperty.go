@@ -25,7 +25,7 @@
 //
 // The messages match those defined in the specification exactly so they are
 // consistent across language implementations.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/properties.md#missing-properties
+// See https://github.com/51Degrees/specifications/blob/a667c4e262ada7ee48ce93d8545dfb1092ec4de4/pipeline-specification/features/properties.md#missing-properties
 package missingproperty
 
 import (
@@ -108,8 +108,8 @@ func ForProductNotInResourceKey(property, element, product string) *core.Propert
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		fmt.Sprintf("This is because your resource key does not include "+
 			"access to any properties under '%s'. Check or create a "+
-			"resource key with the properties you need in the configurator "+
-			"at https://configure.51degrees.com.", product)
+			"resource key with the properties you need on the "+
+			"configuration page at https://51degrees.com/configure.", product)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonProductNotInKey}
 }
 
@@ -130,8 +130,8 @@ func ForPropertyNotInResourceKey(property, element, product string, includedProp
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		fmt.Sprintf("This is because your resource key does not include "+
 			"access to this property. The properties included for your key "+
-			"under '%s' are %s. Check or change your key in the "+
-			"configurator at https://configure.51degrees.com.",
+			"under '%s' are %s. Check or change your key on the "+
+			"configuration page at https://51degrees.com/configure.",
 			product, strings.Join(includedProperties, ","))
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonPropertyNotInKey}
 }

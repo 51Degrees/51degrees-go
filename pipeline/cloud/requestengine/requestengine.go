@@ -459,12 +459,17 @@ func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
 const maxLoggedContentBytes = 512
 
 // checkResponse implements the error scenarios required of cloud HTTP requests.
+// An errors array holding more than one entry gives one error for each, held
+// together in a CloudRequestErrors.
 // The License Key is masked in each message, as the cloud service may write
 // it in its answer.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
 func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
-		return NewCloudResponseError(e.maskLicenseKey(strings.Join(msgs, "; ")), status, headers)
+		for i, msg := range msgs {
+			msgs[i] = e.maskLicenseKey(msg)
+		}
+		return NewCloudResponseErrors(msgs, status, headers)
 	}
 	if len(raw) == 0 {
 		return NewCloudResponseError(fmt.Sprintf("No data in response from cloud service at '%s'", url), status, headers)
