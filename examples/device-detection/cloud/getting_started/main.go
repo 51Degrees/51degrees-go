@@ -39,8 +39,8 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 ## Resource Key
 
 The cloud service needs a Resource Key that includes Device Detection
-properties. Create one for free with the
-[Configurator](https://configure.51degrees.com/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-cloud-getting_started-main.go&utm_term=resource-key),
+properties. Create one for free on the
+[configuration page](https://51degrees.com/configure/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-cloud-getting_started-main.go&utm_term=resource-key),
 then put it in the `_51DEGREES_RESOURCE_KEY` environment variable, or give it
 as the example's first argument. Run with no Resource Key, the example says
 where to create one and which variable to put it in, and ends without an
@@ -82,7 +82,7 @@ const resourceKeyPlaceholder = "!!YOUR_RESOURCE_KEY!!"
 const resourceKeyVariable = "_51DEGREES_RESOURCE_KEY"
 
 // configuratorURL is where a Resource Key can be created for free.
-const configuratorURL = "https://configure.51degrees.com/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-cloud-getting_started-main.go&utm_term=resource-key-required"
+const configuratorURL = "https://51degrees.com/configure/?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-cloud-getting_started-main.go&utm_term=resource-key-required"
 
 // findOutMore is printed when the example finishes.
 const findOutMore = `

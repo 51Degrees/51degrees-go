@@ -84,8 +84,10 @@ func TestCloudExampleIsBuiltFromAnOptionsFile(t *testing.T) {
 	}
 }
 
-// With no Resource Key, the example says where to get one and ends without
-// an error, so it runs with no settings.
+// With no Resource Key, the example names the variable to set, gives the
+// link to where a Resource Key is created, ends with Find out more and gives
+// no error, so it runs with no settings.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/required-examples.md?plain=1#L140-L150
 func TestCloudExampleWithNoResourceKey(t *testing.T) {
 	var out strings.Builder
 	if err := run(optionsFile, "", &out); err != nil {
@@ -93,5 +95,30 @@ func TestCloudExampleWithNoResourceKey(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), resourceKeyVariable) {
 		t.Errorf("the output does not name %s:\n%s", resourceKeyVariable, out.String())
+	}
+	if !strings.Contains(out.String(), configuratorURL) {
+		t.Errorf("the output does not link to %s:\n%s", configuratorURL, out.String())
+	}
+	checkFindOutMore(t, out.String())
+}
+
+// checkFindOutMore fails the test unless output ends with a Find out more
+// section that names the repository and links to 51degrees.com with the
+// example's campaign tags.
+func checkFindOutMore(t *testing.T, output string) {
+	t.Helper()
+	at := strings.LastIndex(output, "Find out more")
+	if at < 0 {
+		t.Fatalf("the output has no Find out more section:\n%s", output)
+	}
+	section := output[at:]
+	for _, want := range []string{
+		"https://github.com/51Degrees/51degrees-go",
+		"https://51degrees.com/",
+		"utm_source=code&utm_medium=example&utm_campaign=51degrees-go",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("the Find out more section lacks %q:\n%s", want, section)
+		}
 	}
 }
