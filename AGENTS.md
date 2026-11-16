@@ -188,20 +188,22 @@ describes.
 
 ### Cloud examples
 
-One example calls the 51Degrees cloud service,
-`examples/ip-intelligence/getting_started_cloud`, which needs a Resource Key in
+Two examples call the 51Degrees cloud service. The first,
+`examples/ip-intelligence/getting_started_cloud`, needs a Resource Key in
 the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument.
 Run with none, it says where to create one and which variable to put it in,
 then ends without an error (`main.go` lines 119 to 130), so CI runs it with no
 settings (`TestGettingStartedCloudWithNoResourceKey`) and with the cloud
-service only when a key is set.
-`examples/device-detection/cloud/getting_started` does the same for Device
-Detection, and builds its Pipeline from the options file
-`getting_started.json` beside it, so run it from its own folder. Its test
-runs it against a stand-in for the service. The other examples work on-premise, with a data
-file. The Pipeline API's `examples/pipeline/4_cloud_engine` shows a cloud
-engine against a stand-in for the service that the example starts itself,
-with the placeholder key `example-resource-key`.
+service only when a key is set. The second,
+`examples/device-detection/cloud/getting_started`, does the same for Device
+Detection with no key, and builds its Pipeline from the options file
+`getting_started.json` beside it, so run it from its own folder. Its two
+tests never call the cloud service, as one runs it with no key and the other
+builds its Pipeline from the options file against a stand-in for the
+service. The other examples work on-premise, with a data file. The Pipeline
+API's `examples/pipeline/4_cloud_engine` shows a cloud engine against a
+stand-in for the service that the example starts itself, with the
+placeholder key `example-resource-key`.
 
 ### Pitfalls
 
