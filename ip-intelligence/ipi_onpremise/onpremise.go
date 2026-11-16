@@ -325,8 +325,6 @@ func (e *Engine) reload() (int, error) {
 // reloadOnce loads the data file again, on its own, returning a panic as a
 // reloadPanic.
 func (e *Engine) reloadOnce() (err error) {
-	e.reloadMu.Lock()
-	defer e.reloadMu.Unlock()
 	if e.isStopped {
 		return errStopped
 	}
