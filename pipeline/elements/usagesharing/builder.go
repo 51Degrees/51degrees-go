@@ -24,6 +24,7 @@ package usagesharing
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -217,8 +218,9 @@ func (b *Builder) queueSize() int {
 }
 
 // Build creates the Usage Sharing Element. A back-off option outside its
-// range is refused with a *core.ConfigurationError when the element is added
-// to a Pipeline or processes.
+// range, a queue that cannot hold the entries a message needs, and an add
+// timeout of zero or less are each refused with a *core.ConfigurationError
+// when the element is added to a Pipeline or processes.
 func (b *Builder) Build() *Element {
 	recovery := defaultRecovery()
 	if b.recovery != nil {
@@ -246,6 +248,20 @@ func (b *Builder) Build() *Element {
 			"is on but no session cookie name is set, so there is no session "+
 			"to compare", nil)
 	}
+	if minimum := max(1, cfg.minEntries); cfg.err == nil && cfg.maxQueueSize < minimum {
+		cfg.err = core.NewConfigurationError(fmt.Sprintf("usage sharing: the "+
+			"maximum queue size %d is below the %d entries a message "+
+			"needs, so no message would ever be sent. Set the maximum "+
+			"queue size to %d or more, or set the minimum entries per "+
+			"message no higher than the queue size",
+			cfg.maxQueueSize, minimum, minimum), nil)
+	}
+	if cfg.err == nil && cfg.addTimeout <= 0 {
+		cfg.err = core.NewConfigurationError(fmt.Sprintf("usage sharing: the "+
+			"add timeout %s is not above zero, so an entry is discarded "+
+			"whenever the queue has no room for it at that moment. Set "+
+			"the add timeout above zero", cfg.addTimeout), nil)
+	}
 
 	client := b.httpClient
 	if client == nil {
@@ -256,6 +272,12 @@ func (b *Builder) Build() *Element {
 	if clk == nil {
 		clk = systemClock{}
 	}
+	// A refused configuration still gives an Element, which answers with
+	// its error, so the queue is made at a size make accepts.
+	queueSize := cfg.maxQueueSize
+	if queueSize < 1 {
+		queueSize = 1
+	}
 	tr := newTracker(cfg.repeatInterval)
 	tr.clock = clk
 	sendCtx, cancelSends := context.WithCancel(context.Background())
@@ -264,7 +286,7 @@ func (b *Builder) Build() *Element {
 		BaseElement: core.NewBaseElement(DataKey, nil, b.logger),
 		cfg:         cfg,
 		httpClient:  client,
-		queue:       make(chan *record, cfg.maxQueueSize),
+		queue:       make(chan *record, queueSize),
 		stop:        make(chan struct{}),
 		tracker:     tr,
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
