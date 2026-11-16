@@ -23,6 +23,7 @@
 package ipi_onpremise
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -258,5 +259,34 @@ func TestProcessDataGivesTheValuesOfProcess(t *testing.T) {
 				t.Errorf("%s value %d is %v, want %v", name, i, *got[i], *values[i])
 			}
 		}
+	}
+}
+
+// A reload keeps the tables of names and positions the first load made, so a
+// Data made while a reload runs pairs the same two tables as one made before
+// it. Both reload paths are covered, with and without a temporary copy.
+func TestAReloadKeepsTheTablesOfNamesAndPositions(t *testing.T) {
+	for _, temp := range []bool{true, false} {
+		t.Run(fmt.Sprintf("temporary copy %v", temp), func(t *testing.T) {
+			e := newReloadTestEngine(t,
+				WithDataFile(writeDataFile(t, readGoodFile(t))),
+				WithAutoUpdate(false), WithFileWatch(false),
+				WithTempDataCopy(temp))
+			names, positions := e.names.Load(), e.positions.Load()
+			if names == nil || positions == nil {
+				t.Fatal("the first load made no table of names or positions")
+			}
+			for i := 0; i < 2; i++ {
+				if err := e.RefreshData(); err != nil {
+					t.Fatalf("refresh %d: %v", i+1, err)
+				}
+				if e.names.Load() != names {
+					t.Errorf("refresh %d made a new table of names", i+1)
+				}
+				if e.positions.Load() != positions {
+					t.Errorf("refresh %d made a new table of positions", i+1)
+				}
+			}
+		})
 	}
 }

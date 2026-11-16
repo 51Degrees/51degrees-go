@@ -474,9 +474,11 @@ func (e *Engine) processFileExternallyChanged() error {
 	return e.reloadManager(reloadFilePath)
 }
 
-// this function will be called when the engine is started or the is new file available
-// it will create and initialize a new manager from the new file if it does not exist
-// if the manager exists, it will create a new manager from the new file and replace the existing manager thus freeing memory of the old manager
+// reloadManager loads the data file at filePath. The first call, when the
+// engine starts, makes the manager and with it the tables of names and
+// positions. Every later call, for a new file or a refresh, reloads the
+// manager's data set and keeps both tables, because the C library keeps the
+// properties the manager was made with.
 func (e *Engine) reloadManager(filePath string) (err error) {
 	if e.isStopped {
 		return nil
