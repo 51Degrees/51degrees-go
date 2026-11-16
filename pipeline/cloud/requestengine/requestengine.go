@@ -276,7 +276,6 @@ func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
 			fmt.Sprintf("failed to parse the response from cloud service at '%s' as JSON",
 				e.dataEndpoint), resp.StatusCode, resp.Header)
 	}
-	e.logWarnings(raw)
 	return string(raw), nil
 }
 
@@ -297,6 +296,7 @@ func (e *CloudRequestEngine) postEndpoint(endpoint string, form url.Values) ([]b
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	e.logWarnings(raw)
 
 	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw); err != nil {
 		return nil, nil, err
@@ -459,12 +459,17 @@ func (e *CloudRequestEngine) setCommonHeaders(req *http.Request) {
 const maxLoggedContentBytes = 512
 
 // checkResponse implements the error scenarios required of cloud HTTP requests.
+// An errors array holding more than one entry gives one error for each, held
+// together in a CloudRequestErrors.
 // The License Key is masked in each message, as the cloud service may write
 // it in its answer.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
 func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
-		return NewCloudResponseError(e.maskLicenseKey(strings.Join(msgs, "; ")), status, headers)
+		for i, msg := range msgs {
+			msgs[i] = e.maskLicenseKey(msg)
+		}
+		return NewCloudResponseErrors(msgs, status, headers)
 	}
 	if len(raw) == 0 {
 		return NewCloudResponseError(fmt.Sprintf("No data in response from cloud service at '%s'", url), status, headers)
@@ -480,6 +485,9 @@ func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.
 	return nil
 }
 
+// logWarnings logs each entry of an answer's warnings array as a warning. It
+// runs on every answer the engine reads, from discovery and data requests
+// alike, with the License Key masked.
 func (e *CloudRequestEngine) logWarnings(raw []byte) {
 	for _, w := range extractMessages(raw, "warnings") {
 		e.Logger().Warn("cloud service warning", "warning", e.maskLicenseKey(w))
@@ -713,6 +721,7 @@ func (e *CloudRequestEngine) getEndpoint(endpoint string, appendResource bool) (
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	e.logWarnings(raw)
 	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw); err != nil {
 		return nil, err
 	}

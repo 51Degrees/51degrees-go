@@ -8,16 +8,30 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 $cxx = Join-Path $RepoName cxx
 
-# Move cxx to the latest 51degrees-cxx release, and make the engines' C sources
-# from it.
+# Move cxx forward to the latest 51degrees-cxx release, and make the engines'
+# C sources from it. cxx moves only to a release that holds the commit it is
+# at, so a commit ahead of the latest release, such as the head of a cxx
+# release pull request, stays until a release holds it.
 git -C $cxx fetch --quiet --tags origin
 $release = git -C $cxx tag --list | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } |
     Sort-Object { [version]$_ } | Select-Object -Last 1
 $current = git -C $cxx describe --tags --always
 Write-Output "cxx is at $current, the latest release is $release"
 if ($release -and $release -ne $current) {
-    git -C $cxx checkout --quiet $release
-    git -C $RepoName submodule update --init --recursive cxx
+    $PSNativeCommandUseErrorActionPreference = $false
+    git -C $cxx merge-base --is-ancestor HEAD $release
+    $holds = $LASTEXITCODE -eq 0
+    $PSNativeCommandUseErrorActionPreference = $true
+    $global:LASTEXITCODE = 0
+    if ($holds) {
+        git -C $cxx checkout --quiet $release
+        # The submodules inside cxx follow the release. Updating cxx itself
+        # from this repository would put it back at the commit this
+        # repository records.
+        git -C $cxx submodule update --init --recursive
+    } else {
+        Write-Output "$release does not hold $current, so cxx stays where it is"
+    }
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
 

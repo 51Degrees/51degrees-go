@@ -71,6 +71,10 @@ type Engine struct {
 
 	isStopped bool
 
+	// stopping is set as Stop begins, so a check waiting for the watched
+	// file ends at once rather than holding up Stop.
+	stopping atomic.Bool
+
 	managerProperties []string
 	// names holds the property name at each required property index. It is
 	// made once, when the first data file is loaded, and kept across reloads,
@@ -150,8 +154,20 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	return engine, nil
 }
 
-// handleFileExternallyChanged handles the logic for processing a file that has been altered externally to ensure consistency.
+// handleFileExternallyChanged reloads the data file the file watcher saw
+// change, once it can be opened for reading, and reports the check. A file
+// another process still holds is waited for, and one that cannot be opened in
+// time is reported as a timeout and not logged, as the error table gives it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func (e *Engine) handleFileExternallyChanged() {
+	if !common_go.WaitUntilReadable(openWatchedFile, e.GetDataFile(),
+		watchedFileReadableWait, e.stopped) {
+		if !e.stopped() {
+			e.reportTimeout()
+		}
+		e.IncreaseFileExternallyChangedCount()
+		return
+	}
 	tries, err := e.reload()
 	if err != nil {
 		e.logReloadError(tries, err)
@@ -235,6 +251,7 @@ func (e *Engine) RefreshData() error {
 // Stop has to be called to free all the resources of the engine
 // before the instance goes out of scope
 func (e *Engine) Stop() {
+	e.stopping.Store(true)
 	num := 0
 	if e.IsAutoUpdateEnabled() && e.IsFilePullerStarted() {
 		num++ // file puller is enabled and started
@@ -354,6 +371,19 @@ func (e *Engine) logUnhandledError(detail interface{}) {
 func (e *Engine) reportReload(err error) {
 	if callbackErr := e.ReportUpdateComplete(reloadStatus(err)); callbackErr != nil {
 		e.logUnhandledError(callbackErr)
+	}
+}
+
+// stopped says whether the engine is stopping or has stopped.
+func (e *Engine) stopped() bool {
+	return e.stopping.Load()
+}
+
+// reportTimeout reports a watched file that could not be opened in time to
+// the update callbacks, and logs an error a callback gives back.
+func (e *Engine) reportTimeout() {
+	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
+		e.logUnhandledError(err)
 	}
 }
 
@@ -517,6 +547,16 @@ func (e *Engine) removeCopy(path string) {
 // getPublishedDate retrieves the published date of the data file being used by the engine.
 func (e *Engine) getPublishedDate() time.Time {
 	return ipi_interop.GetPublishedDate(e.manager)
+}
+
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts, worked
+// out from the data when it is loaded and each time it is refreshed. It is
+// safe to call while the data is refreshed.
+func (e *Engine) GetHttpHeaderKeys() []ipi_interop.EvidenceKey {
+	if e.manager == nil {
+		return nil
+	}
+	return e.manager.HeaderKeys()
 }
 
 // publishedDate is the published date of the loaded data file, or the zero

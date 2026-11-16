@@ -57,6 +57,9 @@ const (
 	UpdateRefreshFailed UpdateStatus = "AUTO_UPDATE_REFRESH_FAILED"
 	// UpdateUnknownError is a failure none of the others name.
 	UpdateUnknownError UpdateStatus = "AUTO_UPDATE_UNKNOWN_ERROR"
+	// UpdateTimeout is a watched data file that could not be opened for
+	// reading within the wait, which is not logged.
+	UpdateTimeout UpdateStatus = "AUTO_UPDATE_TIMEOUT"
 )
 
 // UpdateComplete is the report a check for an update makes once it ends.

@@ -227,7 +227,9 @@ func (b *Builder) DiscoveryState() *DiscoveryState { return b.discovered }
 // marks invalid fails the build with a *core.ConfigurationError, before any
 // request. A key or name that is empty or only whitespace counts as absent.
 // A 4xx answer to either request, such as for an invalid Resource Key, fails
-// the build with a *core.ConfigurationError wrapping the *CloudRequestError.
+// the build with a *core.ConfigurationError wrapping the *CloudRequestError,
+// or the *CloudRequestErrors when the answer's errors array holds more than
+// one entry.
 // Any other failure is logged as a warning and the build completes, and the
 // engine fetches what is missing on first use.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
@@ -299,7 +301,7 @@ const (
 		"License Key to authenticate with, as the cloud service answers 401 " +
 		"to a request that carries neither. Set one with SetResourceKey or " +
 		"SetLicenseKey. Create a Resource Key for free at " +
-		"https://configure.51degrees.com/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-requestengine-builder.go&utm_term=no-credential"
+		"https://51degrees.com/configure/?utm_source=code&utm_medium=package&utm_campaign=51degrees-go&utm_content=pipeline-cloud-requestengine-builder.go&utm_term=no-credential"
 	messageLicenseKeyNeedsProperties = "CloudRequestEngine has a License " +
 		"Key and no Requested Properties. A License Key names no Properties " +
 		"of its own, so the cloud service answers 400 to every request made " +
@@ -358,6 +360,15 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.StringParam(params, "EndPoint"); ok {
 		b.SetEndpoint(v)
 	}
+	if v, ok := core.StringParam(params, "DataEndPoint"); ok {
+		b.SetDataEndpoint(v)
+	}
+	if v, ok := core.StringParam(params, "PropertiesEndPoint"); ok {
+		b.SetPropertiesEndpoint(v)
+	}
+	if v, ok := core.StringParam(params, "EvidenceKeysEndPoint"); ok {
+		b.SetEvidenceKeysEndpoint(v)
+	}
 	if v, ok := core.StringParam(params, "CloudRequestOrigin"); ok {
 		b.SetCloudRequestOrigin(v)
 	}
@@ -372,6 +383,12 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	}
 	if v, ok := core.FloatParam(params, "RecoverySeconds"); ok {
 		b.SetRecoveryDuration(time.Duration(v * float64(time.Second)))
+	}
+	if v, ok := core.FloatParam(params, "RecoveryMultiplier"); ok {
+		b.SetRecoveryMultiplier(v)
+	}
+	if v, ok := core.FloatParam(params, "MaxRecoverySeconds"); ok {
+		b.SetMaxRecoveryDuration(time.Duration(v * float64(time.Second)))
 	}
 	// Return a nil element on failure, not a nil *CloudRequestEngine, which
 	// would make a non-nil core.FlowElement.

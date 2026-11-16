@@ -287,16 +287,27 @@ func (config *ConfigHash) SizeManagerFromFile(
 }
 
 // SizeManagerFromMemory returns the size of the memory which will be used for
-// holding a resource manager based on a given memory. The given memory holds
-// a data file content that is intended to initialize the resource amanger. The
-// properties is a comma separated string list. This matches the C API
-// fiftyoneDegreeshashSizeManagerFromMemory.
-//
-// TODO: To be implemeted
+// holding a resource manager made from the data file held in memory, which
+// is size bytes long. The input properties is a comma separated string list.
+// The C library reads the memory only during the call and keeps nothing of
+// it. Data that fails to load gives an error. This matches the C API
+// fiftyoneDegreesHashSizeManagerFromMemory.
 func (config *ConfigHash) SizeManagerFromMemory(
 	properties string,
 	memory unsafe.Pointer,
 	size uint64) (s uint64, err error) {
-	// TODO: To be implemeted
-	return 0, nil
+	exp := NewException()
+	propsRequired := NewPropertiesRequired(properties)
+	defer propsRequired.Free()
+	allocated := C.HashSizeManagerFromMemory(
+		config.CPtr,
+		propsRequired.CPtr,
+		memory,
+		C.long(size),
+		exp.CPtr,
+	)
+	if !exp.IsOkay() {
+		return 0, messageError(C.ExceptionGetMessage(exp.CPtr))
+	}
+	return uint64(allocated), nil
 }

@@ -178,7 +178,8 @@ func TestPrintedEvidenceHoldsNoRequestValues(t *testing.T) {
 
 // The payload sent for a request holds the parts of the request the
 // specification shares. With all Evidence shared it still holds no Cookie
-// header and no request path, and it holds the request method.
+// header, no cookie but the 51D_ ones and no request path, and it holds the
+// request method.
 func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
 	bodies := make(chan string, 4)
 	collector := httptest.NewServer(http.HandlerFunc(
@@ -204,7 +205,7 @@ func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/a-page?q=1", nil)
 	req.Header.Set("X-Test", "shared-header")
-	req.Header.Set("Cookie", "51D_c=shared-cookie")
+	req.Header.Set("Cookie", "51D_c=shared-cookie; site=private-cookie")
 	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -225,7 +226,7 @@ func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
 		}
 	}
 	for _, unwanted := range []string{"a-page",
-		`Name="cookie"`} {
+		`Name="cookie"`, "private-cookie"} {
 		if strings.Contains(payload, unwanted) {
 			t.Errorf("the payload holds %s: %.600s", unwanted, payload)
 		}

@@ -190,9 +190,11 @@ describes.
 
 One example calls the 51Degrees cloud service,
 `examples/ip-intelligence/getting_started_cloud`, which needs a Resource Key in
-the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument,
-and stops with a message saying where to create one when it has none
-(`main.go` lines 113 to 123). The other examples work on-premise, with a data
+the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument.
+Run with none, it says where to create one and which variable to put it in,
+then ends without an error (`main.go` lines 119 to 130), so CI runs it with no
+settings (`TestGettingStartedCloudWithNoResourceKey`) and with the cloud
+service only when a key is set. The other examples work on-premise, with a data
 file. The Pipeline API's `examples/pipeline/4_cloud_engine` shows a cloud
 engine against a stand-in for the service that the example starts itself,
 with the placeholder key `example-resource-key`.
@@ -224,8 +226,10 @@ with the placeholder key `example-resource-key`.
   `examples/ip-intelligence/integration_test.go`). It runs the Device Detection
   examples through `go test` in `examples/device-detection`, with the Lite
   file linked into that folder (`ci/fetch-assets.ps1`) rather than read from
-  `cxx`, and the on-premise ones again with no settings (the `FreeDataFile`
-  tests in `examples/device-detection/onpremise/onpremise_test.go`).
+  `cxx`, and every one of them again with no settings (the `FreeDataFile`
+  tests in `examples/device-detection/onpremise/onpremise_test.go` and
+  `TestEachExampleRunsWithNoSettings` in
+  `examples/device-detection/dd/no_settings_test.go`).
 
 ## Environment variable names
 

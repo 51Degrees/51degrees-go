@@ -259,11 +259,12 @@ func emptyProductCloud() http.Handler {
 // A Resource Key that includes no product for a Cloud Aspect Engine, or
 // lists the product with no Properties, fails neither the Pipeline build
 // nor any request. The engine has no Property metadata and logs the missing
-// product once, at error level with a link to the Configurator, with
-// nothing logged on each request. Its Element Data is empty, so reading a
-// Property gives the missing Property error for a product the Resource Key
-// does not include. Each case builds a new engine, which logs once of its
-// own.
+// product once, at warning level with a link to the Configurator, when the
+// Pipeline is built, with nothing logged on each request. Its Element Data is
+// empty, so reading a Property gives the missing Property error for a
+// product the Resource Key does not include. Each case builds a new engine,
+// which logs once of its own.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func TestMissingProductBuildsAndLogsOnce(t *testing.T) {
 	clouds := []struct {
 		name  string
@@ -288,6 +289,9 @@ func checkMissingProduct(t *testing.T, cloud http.Handler, suppress bool) {
 	const missing = "location"
 	log := &recordingHandler{}
 	p, engine := buildWithLogger(t, cloud, missing, suppress, slog.New(log))
+	if n := len(log.all()); n != 1 {
+		t.Errorf("logged %d times when the Pipeline was built, want once", n)
+	}
 	absent := missingproperty.ForProductNotAccessible("town", missing)
 	for i := 1; i <= 3; i++ {
 		fd := p.CreateFlowData()
@@ -334,8 +338,8 @@ func checkMissingProduct(t *testing.T, cloud http.Handler, suppress bool) {
 		}
 		return true
 	})
-	if records[0].Level != slog.LevelError {
-		t.Errorf("logged at %s, want %s", records[0].Level, slog.LevelError)
+	if records[0].Level != slog.LevelWarn {
+		t.Errorf("logged at %s, want %s", records[0].Level, slog.LevelWarn)
 	}
 	if product != missing {
 		t.Errorf("the log names the product %q, want %q", product, missing)

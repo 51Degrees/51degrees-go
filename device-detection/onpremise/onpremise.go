@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
@@ -65,10 +66,17 @@ type Engine struct {
 	product                   string
 	dataFileLastUsedByManager string
 	managerProperties         string
+	// indexedProperties are the Properties whose values are indexed to the
+	// profiles holding them.
+	indexedProperties []string
 
 	maxRetries int
 
 	isStopped bool
+
+	// stopping is set as Stop begins, so a check waiting for the watched
+	// file ends at once rather than holding up Stop.
+	stopping atomic.Bool
 }
 
 const (
@@ -143,8 +151,20 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	return engine, nil
 }
 
-// handleFileExternallyChanged handles events where a file has been externally modified, ensuring proper processing and logging.
+// handleFileExternallyChanged reloads the data file the file watcher saw
+// change, once it can be opened for reading, and reports the check. A file
+// another process still holds is waited for, and one that cannot be opened in
+// time is reported as a timeout and not logged, as the error table gives it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func (e *Engine) handleFileExternallyChanged() {
+	if !common_go.WaitUntilReadable(openWatchedFile, e.GetDataFile(),
+		watchedFileReadableWait, e.stopped) {
+		if !e.stopped() {
+			e.reportTimeout()
+		}
+		e.IncreaseFileExternallyChangedCount()
+		return
+	}
 	tries, err := e.reload()
 	if err != nil {
 		e.logReloadError(tries, err)
@@ -228,6 +248,7 @@ func (e *Engine) RefreshData() error {
 // Stop has to be called to free all the resources of the engine
 // before the instance goes out of scope
 func (e *Engine) Stop() {
+	e.stopping.Store(true)
 	num := 0
 	if e.IsAutoUpdateEnabled() && e.IsFilePullerStarted() {
 		num++ // file puller is enabled and started
@@ -350,6 +371,19 @@ func (e *Engine) reportReload(err error) {
 	}
 }
 
+// stopped says whether the engine is stopping or has stopped.
+func (e *Engine) stopped() bool {
+	return e.stopping.Load()
+}
+
+// reportTimeout reports a watched file that could not be opened in time to
+// the update callbacks, and logs an error a callback gives back.
+func (e *Engine) reportTimeout() {
+	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
+		e.logUnhandledError(err)
+	}
+}
+
 // reloadStatus gives the status a reload that ended with err reports: success,
 // the refresh failure, or the unknown error for a panic.
 func reloadStatus(err error) common_go.UpdateStatus {
@@ -462,7 +496,8 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		if e.config == nil {
 			e.config = dd.NewConfigHash(dd.Balanced)
 		}
-		err = dd.InitManagerFromFile(e.manager, *e.config, e.managerProperties, filePath)
+		err = dd.InitManagerFromFileWithIndexedProperties(e.manager, *e.config,
+			e.managerProperties, filePath, e.indexedProperties)
 		if err != nil {
 			if e.IsCreateTempDataCopyEnabled() {
 				e.removeCopy(filePath)
@@ -556,9 +591,10 @@ func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
 	return results, nil
 }
 
-// GetHttpHeaderKeys returns all HTTP headers that can be used as evidence for device detection
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts. It is
+// safe to call while the data is refreshed.
 func (e *Engine) GetHttpHeaderKeys() []dd.EvidenceKey {
-	return e.manager.HttpHeaderKeys
+	return e.manager.HeaderKeys()
 }
 
 // appendLicenceKey updates the data file URL by appending a license key to its query parameters and returns an error if it fails.

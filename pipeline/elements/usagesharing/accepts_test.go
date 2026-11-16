@@ -102,6 +102,7 @@ func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 		"header.protocol":       "https",
 		"cookie.51d_c":          "3",
 		"query.51d_q":           "1",
+		"query.other":           "2",
 		"server.client-ip":      "203.0.113.5",
 		"server.request-method": "GET",
 	}
@@ -114,6 +115,7 @@ func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 // sharing rules let through, as it always has.
 func TestUsageSharingSharesEvidenceWithoutAWebRequest(t *testing.T) {
 	p, e := newSharingPipeline(t, NewBuilder().SetBlockedHTTPHeaders("x-blocked").
+		SetShareAllQueryStringParameters(false).
 		SetIncludedQueryStringParameters("myparam"))
 
 	fd := p.CreateFlowData()
@@ -199,6 +201,41 @@ func TestUsageSharingNeverSharesTheCookieHeader(t *testing.T) {
 	}
 }
 
+// Only the cookies starting 51D_ are shared, whatever the configuration and
+// even when all Evidence is shared, from the Evidence and from the web
+// request alike.
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L65-L69
+func TestUsageSharingSharesNoCookieBut51D(t *testing.T) {
+	for _, shareAll := range []bool{false, true} {
+		p, e := newSharingPipeline(t, NewBuilder().SetShareAllEvidence(shareAll))
+		for key, want := range map[string]bool{
+			"cookie.51D_x": true, "cookie.51d_x": true,
+			"cookie.sessionid": false, "cookie.other": false,
+		} {
+			if got := e.isShared(key); got != want {
+				t.Errorf("share all %v: isShared(%q) = %v, want %v",
+					shareAll, key, got, want)
+			}
+		}
+
+		r := httptest.NewRequest("GET", "/page", nil)
+		r.Header.Set("Cookie", "51D_c=3; site=private")
+		fd := p.CreateFlowData()
+		fd.AddEvidence("cookie.own", "private")
+		fd.AddEvidence(httpRequestKey, core.NewWebRequest(r))
+		got := e.shareableEvidence(fd)
+		if got["cookie.51d_c"] != "3" {
+			t.Errorf("share all %v: cookie.51d_c = %q, shared %v",
+				shareAll, got["cookie.51d_c"], got)
+		}
+		for _, key := range []string{"cookie.site", "cookie.own"} {
+			if _, found := got[key]; found {
+				t.Errorf("share all %v: shared %s", shareAll, key)
+			}
+		}
+	}
+}
+
 // A session value is shared only when its name starts 51D_.
 func TestUsageSharingSharesOnlyTheSessionValuesStarting51D(t *testing.T) {
 	e := NewBuilder().Build()
@@ -247,8 +284,8 @@ func TestUsageSharingSharesTheSessionValuesOfTheWebRequest(t *testing.T) {
 // prefix, the names the cloud service gives them, they are shared whatever
 // the configuration, even when the blocked headers name them. As query
 // string or form parameters they follow the query rule, so they are shared
-// when allow listed, when all query string parameters are shared or when all
-// Evidence is shared.
+// unless all query string parameters are turned off, and then when allow
+// listed or when all Evidence is shared.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
 func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 	fiftyone := []string{"fiftyone.resource-key", "fiftyone.license-key"}
@@ -257,15 +294,18 @@ func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 		b     *Builder
 		query bool
 	}{
-		"default":   {NewBuilder(), false},
-		"no blocks": {NewBuilder().SetBlockedHTTPHeaders(), false},
+		"default":   {NewBuilder(), true},
+		"no blocks": {NewBuilder().SetBlockedHTTPHeaders(), true},
 		"keys blocked": {NewBuilder().SetBlockedHTTPHeaders("resource-key",
 			"license-key", "fiftyone.resource-key", "fiftyone.license-key"),
+			true},
+		"all query off": {NewBuilder().SetShareAllQueryStringParameters(false),
 			false},
-		"allow listed": {NewBuilder().SetIncludedQueryStringParameters(
-			"Resource", "License", "Licence"), true},
-		"all query": {NewBuilder().SetShareAllQueryStringParameters(true), true},
-		"share all": {NewBuilder().SetShareAllEvidence(true), true},
+		"allow listed": {NewBuilder().SetShareAllQueryStringParameters(false).
+			SetIncludedQueryStringParameters("Resource", "License", "Licence"),
+			true},
+		"share all": {NewBuilder().SetShareAllQueryStringParameters(false).
+			SetShareAllEvidence(true), true},
 	} {
 		e := c.b.Build()
 		for _, key := range fiftyone {

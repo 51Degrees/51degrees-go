@@ -28,14 +28,27 @@ package ipi_interop
 import "C"
 import (
 	"runtime"
+	"sync"
 )
 
 // ResourceManagers wraps around a pointer to a value of C ResourceManager
 // structure
 type ResourceManager struct {
-	setHeaders     map[string]([]string) // Headers to be set in a Http response
-	HttpHeaderKeys []EvidenceKey         // Http header keys required by this engine
-	CPtr           *C.ResourceManager    // Pointer to C resource
+	setHeaders map[string]([]string) // Headers to be set in a Http response
+	// HttpHeaderKeys are the Evidence keys the data in use accepts. Read them
+	// with HeaderKeys, which is safe while the data is refreshed.
+	HttpHeaderKeys []EvidenceKey
+	CPtr           *C.ResourceManager // Pointer to C resource
+	// keysMu guards HttpHeaderKeys, which a refresh replaces.
+	keysMu sync.RWMutex
+}
+
+// HeaderKeys returns the Evidence keys the data in use accepts. It is safe
+// to call while the data is refreshed.
+func (manager *ResourceManager) HeaderKeys() []EvidenceKey {
+	manager.keysMu.RLock()
+	defer manager.keysMu.RUnlock()
+	return manager.HttpHeaderKeys
 }
 
 // Finalizer function for Resource Manager
@@ -48,7 +61,7 @@ func resourceFinalizer(m *ResourceManager) {
 // NewResourceManager creats a new object of ResourceManager
 func NewResourceManager() *ResourceManager {
 	cManager := new(C.ResourceManager)
-	manager := &ResourceManager{nil, nil, cManager}
+	manager := &ResourceManager{CPtr: cManager}
 	runtime.SetFinalizer(manager, resourceFinalizer)
 	return manager
 }
@@ -65,7 +78,7 @@ func (manager *ResourceManager) Free() {
 	if manager.setHeaders != nil {
 		manager.setHeaders = nil
 	}
-	if manager.HttpHeaderKeys != nil {
-		manager.HttpHeaderKeys = nil
-	}
+	manager.keysMu.Lock()
+	manager.HttpHeaderKeys = nil
+	manager.keysMu.Unlock()
 }
