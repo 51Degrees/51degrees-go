@@ -1,0 +1,34 @@
+name: Temporary conformance tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Conformance tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: An IP Intelligence result reads a Property only when it is requested
+        if: always()
+        working-directory: ip-intelligence
+        run: go test -count=1 -v -run 'TestProcessingReadsNoPropertyValue|TestARequestedPropertyIsReadAlone|TestASecondRequestDoesNotReadAgain|TestAnUnknownPropertyReadsNothing|TestFreeReleasesTheResults|TestDataIsReadFromSeveralGoroutines' ./ipi_onpremise/
+      - name: The same tests with the race detector
+        if: always() && runner.os == 'Linux'
+        working-directory: ip-intelligence
+        run: go test -count=1 -race -run 'TestDataIsReadFromSeveralGoroutines|TestFreeReleasesTheResults' ./ipi_onpremise/
+      - name: The Hardware Profile Lookup Cloud Engine tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v ./cloud/hardwareprofile/
