@@ -82,6 +82,12 @@ func TestEachExampleRunsWithNoSettings(t *testing.T) {
 				output)
 			continue
 		}
+		// The file is named first, so a failure below says which file the
+		// example loaded.
+		if !strings.Contains(string(output), DataFileLine) {
+			t.Errorf("%s ran with no settings and did not say which data "+
+				"file it used:\n%s", name, output)
+		}
 		if !strings.Contains(html.UnescapeString(string(output)),
 			contactUsLink) {
 			t.Errorf("%s ran with no settings and gave no link to ask for "+
