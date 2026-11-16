@@ -1,0 +1,46 @@
+name: Temporary data file naming tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Data file naming tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format
+        # Only on Ubuntu, because the Windows runner checks the repository
+        # out with CRLF line endings, which gofmt reports for every file.
+        if: always() && matrix.os == 'ubuntu-latest'
+        run: |
+          unformatted=$(gofmt -l examples/device-detection/dd || true)
+          echo "gofmt: ${unformatted:-none}"
+          test -z "$unformatted"
+      - name: Vet
+        if: always()
+        working-directory: examples/device-detection
+        run: go vet ./dd/
+      - name: The examples run with no settings
+        if: always()
+        run: go test -count=1 -v -timeout 25m -run 'TestEachExampleRunsWithNoSettings' ./examples/device-detection/dd/
+      - name: Every test of the dd examples package
+        if: always()
+        run: go test -count=1 -timeout 30m ./examples/device-detection/dd/
