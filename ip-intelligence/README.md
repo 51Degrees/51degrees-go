@@ -56,6 +56,20 @@ Import the package as usual and it will get build automatically:
 go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ```
 
+### In a Pipeline
+
+`ipi_onpremise.NewPipelineEngine` takes the same options as `ipi_onpremise.New` and gives the engine as a Pipeline
+element, which adds `ipi_onpremise.IpData` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
+Cloud Engine gives its data in. Used on its own, `Engine.ProcessData` gives the same Aspect Data. To build a Pipeline
+from a configuration file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with
+`core.BuilderRegistry`. The build parameters are the options' names, such as `DataFile`, `AutoUpdate`,
+`PerformanceProfile` and `Properties`.
+
+```
+{"PipelineOptions": {"Elements": [{"BuilderName": "IpiOnPremiseEngine",
+  "BuildParameters": {"DataFile": "51Degrees-LiteV41.ipi", "AutoUpdate": false}}]}}
+```
+
 ### Vendored C Library
 
 Implementation wraps an amalgamated C library from [ip-intelligence-cxx](https://github.com/51Degrees/51degrees-cxx) repo

@@ -77,6 +77,19 @@ Import the package as usual and it will get build automatically:
 import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 ```
 
+### In a Pipeline
+
+`onpremise.NewPipelineEngine` takes the same options as `onpremise.New` and gives the engine as a Pipeline element,
+which adds `onpremise.DeviceData` to each Flow Data under the Data Key `device`, as the Device Detection Cloud Engine
+does. Used on its own, `Engine.ProcessData` gives the same Aspect Data. To build a Pipeline from a configuration file,
+register `onpremise.Factory` under `onpremise.BuilderName` with `core.BuilderRegistry`. The build parameters are the
+options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
+
+```
+{"PipelineOptions": {"Elements": [{"BuilderName": "DeviceDetectionHashEngine",
+  "BuildParameters": {"DataFile": "51Degrees-LiteV4.1.hash", "AutoUpdate": false}}]}}
+```
+
 ### Vendored C Library
 An amalgamation is an alternative way to distribute a library's source code using only a few files (as low as one or two).
 This go module depends on and ships an amalgamation of the device-detection C-library [device-detection-cxx](https://github.com/51degrees/51degrees-cxx) repository, which is then built automatically by CGo during `go build`.
