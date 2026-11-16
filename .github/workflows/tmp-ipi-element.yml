@@ -1,0 +1,40 @@
+name: Temporary IP Intelligence element tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: IP Intelligence element tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The data submodule
+        run: |
+          git submodule update --init --depth 1 cxx
+          git -C cxx submodule update --init --depth 1 data
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: The free Asn data file, downloaded once
+        run: |
+          for i in 1 2 3; do sh cxx/data/get-data-files.sh 51Degrees-IPIV4AsnIpiV41.ipi && break; sleep 15; done
+          cp cxx/data/ip-intelligence/51Degrees-IPIV4AsnIpiV41.ipi ip-intelligence/
+      - name: gofmt and go vet
+        if: always()
+        working-directory: ip-intelligence
+        run: |
+          test -z "$(gofmt -l ipi_onpremise ipi_interop | tee /dev/stderr)"
+          go vet ./ipi_onpremise/ ./ipi_interop/
+      - name: Every test of the on-premise engine
+        if: always()
+        working-directory: ip-intelligence
+        run: CI=true go test -count=1 -v ./ipi_onpremise/
+      - name: The goroutine tests with the race detector
+        if: always()
+        working-directory: ip-intelligence
+        run: CI=true go test -count=1 -race -v -run 'Goroutines' ./ipi_onpremise/
