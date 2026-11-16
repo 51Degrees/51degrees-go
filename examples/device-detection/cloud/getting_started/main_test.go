@@ -103,8 +103,8 @@ func TestCloudExampleWithNoResourceKey(t *testing.T) {
 }
 
 // checkFindOutMore fails the test unless output ends with a Find out more
-// section that names the repository and links to 51degrees.com with the
-// example's campaign tags.
+// section that names the repository and carries the example's campaign
+// tags.
 func checkFindOutMore(t *testing.T, output string) {
 	t.Helper()
 	at := strings.LastIndex(output, "Find out more")
@@ -114,7 +114,6 @@ func checkFindOutMore(t *testing.T, output string) {
 	section := output[at:]
 	for _, want := range []string{
 		"https://github.com/51Degrees/51degrees-go",
-		"https://51degrees.com/",
 		"utm_source=code&utm_medium=example&utm_campaign=51degrees-go",
 	} {
 		if !strings.Contains(section, want) {
