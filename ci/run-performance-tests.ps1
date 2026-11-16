@@ -53,6 +53,33 @@ if ($Products -contains 'ip-intelligence') {
     $lower.AvgMillisecsPerLookup = $results.LowerIsBetter.AvgMillisecsPerDetection
 }
 
+if ($Products -contains 'pipeline') {
+    # The JavaScript Builder's performance tests, which show the impact its
+    # minification has. Each figure is the average time to make one script,
+    # or to minify one, in milliseconds.
+    # See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/javascript-builder.md?plain=1#L109-L114
+    Push-Location (Join-Path $RepoName 'pipeline')
+    try {
+        Write-Host "Running the JavaScript Builder performance tests..."
+        $bench = go test -run '^$' -bench JavaScriptBuilder -benchtime 2s ./elements/javascriptbuilder/
+        $bench | Write-Host
+    } finally {
+        Pop-Location
+    }
+    $figures = ConvertFrom-GoBenchmark $bench
+    $names = [ordered]@{
+        'JavaScriptBuilder/Minified' = 'AvgMillisecsPerMinifiedScript'
+        'JavaScriptBuilder/NotMinified' = 'AvgMillisecsPerScriptNotMinified'
+        'JavaScriptBuilderMinification' = 'AvgMillisecsPerMinification'
+    }
+    foreach ($benchmark in $names.Keys) {
+        if (!$figures.Contains($benchmark)) {
+            throw "The JavaScript Builder performance tests gave no figure for $benchmark"
+        }
+        $lower[$names[$benchmark]] = $figures[$benchmark]
+    }
+}
+
 if (!$higher.Count -and !$lower.Count) {
     Write-Host "No engine affected, so no performance figures"
     exit

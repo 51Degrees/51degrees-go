@@ -50,6 +50,19 @@ function Resolve-AffectedProducts([string[]]$Changed) {
     return $affected.ToArray()
 }
 
+# Returns the figures in go test -bench output, by benchmark name without
+# the Benchmark prefix or the processor count go adds, each the average time
+# per operation in milliseconds.
+function ConvertFrom-GoBenchmark([string[]]$Lines) {
+    $figures = [ordered]@{}
+    foreach ($line in $Lines) {
+        if ($line -match '^Benchmark(\S+?)(?:-\d+)?\s+\d+\s+([\d.]+) ns/op') {
+            $figures[$Matches[1]] = [double]$Matches[2] / 1e6
+        }
+    }
+    return $figures
+}
+
 # Returns the products a pull request changes, or every product when the
 # checkout is not a pull request (a publish, or a build of the branch itself).
 # A pull request is checked out with the branch it merges into merged in, so
