@@ -1,0 +1,59 @@
+name: CI script tests
+
+# ci/packages.ps1 decides which modules a publish tags and at which version. A
+# mistake there releases a module that did not change, or leaves out one that
+# must move with another, and a published version can never be taken back.
+# ci/products.ps1 and ci/select-options.ps1 decide what a pull request builds,
+# and a mistake there leaves a module or a configuration untested. So their
+# tests run on every pull request that changes ci/, against common-ci's main,
+# which is the common-ci the publish and the builds run. Go and Pester are the
+# ones the runner has.
+
+on:
+  pull_request:
+    paths:
+      - 'ci/**'
+      - '.github/workflows/ci-script-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci-script-tests:
+    name: CI script tests - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: 51degrees-go
+          persist-credentials: false
+
+      - name: Checkout common-ci
+        uses: actions/checkout@v4
+        with:
+          repository: 51Degrees/common-ci
+          path: common-ci
+          persist-credentials: false
+
+      - name: Run the tests
+        shell: pwsh
+        run: |
+          $env:COMMON_CI = (Resolve-Path common-ci).Path
+          $paths = @(
+            '51degrees-go/ci/packages.Tests.ps1',
+            '51degrees-go/ci/select-options.Tests.ps1')
+          # Pester passes over a path that does not exist, so a test file that
+          # was renamed or removed would otherwise go untested.
+          foreach ($path in $paths) {
+            if (!(Test-Path $path)) { throw "$path does not exist" }
+          }
+          $result = Invoke-Pester -Output Detailed -PassThru -Path $paths
+          if ($result.Result -ne 'Passed' -or $result.PassedCount -eq 0) {
+            exit 1
+          }

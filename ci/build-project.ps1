@@ -1,5 +1,8 @@
 param (
-    [Parameter(Mandatory)][string]$RepoName
+    [Parameter(Mandatory)][string]$RepoName,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
@@ -14,7 +17,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 # repository at the version the next release publishes is not published yet,
 # so it is taken from that module's folder, through a copy of go.mod.
 $repoRoot = (Resolve-Path $RepoName).Path
-foreach ($product in Get-AffectedProducts $RepoName) {
+foreach ($product in Get-AffectedProducts $RepoName $Branch) {
     $replaces = @(Get-UnreleasedRequirementReplaces $repoRoot $product)
     Push-Location (Get-ProductPath $RepoName $product)
     try {

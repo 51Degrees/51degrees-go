@@ -110,12 +110,14 @@ func (config *ConfigHash) SetUsePredictiveGraph(use bool) {
 	}
 }
 
-// SetConcurrency sets the expected concurrent requests.
+// SetConcurrency sets the expected concurrent requests for every collection
+// read from the file, as the C++ ConfigHash::setConcurrency does.
 func (config *ConfigHash) SetConcurrency(concurrency uint16) {
 	config.CPtr.strings.concurrency = C.ushort(concurrency)
 	config.CPtr.properties.concurrency = C.ushort(concurrency)
 	config.CPtr.values.concurrency = C.ushort(concurrency)
 	config.CPtr.profiles.concurrency = C.ushort(concurrency)
+	config.CPtr.rootNodes.concurrency = C.ushort(concurrency)
 	config.CPtr.nodes.concurrency = C.ushort(concurrency)
 	config.CPtr.profileOffsets.concurrency = C.ushort(concurrency)
 	config.CPtr.maps.concurrency = C.ushort(concurrency)
@@ -200,7 +202,8 @@ func (config *ConfigHash) UsePredictiveGraph() bool {
 	return cIntToBool(i)
 }
 
-// Concurrency returns the configured concurrency
+// Concurrency returns the lowest concurrency of the collections read from the
+// file, as the C++ ConfigHash::getConcurrency does.
 func (config *ConfigHash) Concurrency() uint16 {
 	minConcurrency := math.Min(
 		float64(C.ushort(config.CPtr.strings.concurrency)),
@@ -210,6 +213,9 @@ func (config *ConfigHash) Concurrency() uint16 {
 		float64(minConcurrency))
 	minConcurrency = math.Min(
 		float64(C.ushort(config.CPtr.profiles.concurrency)),
+		minConcurrency)
+	minConcurrency = math.Min(
+		float64(C.ushort(config.CPtr.rootNodes.concurrency)),
 		minConcurrency)
 	minConcurrency = math.Min(
 		float64(C.ushort(config.CPtr.nodes.concurrency)),
@@ -281,16 +287,27 @@ func (config *ConfigHash) SizeManagerFromFile(
 }
 
 // SizeManagerFromMemory returns the size of the memory which will be used for
-// holding a resource manager based on a given memory. The given memory holds
-// a data file content that is intended to initialize the resource amanger. The
-// properties is a comma separated string list. This matches the C API
-// fiftyoneDegreeshashSizeManagerFromMemory.
-//
-// TODO: To be implemeted
+// holding a resource manager made from the data file held in memory, which
+// is size bytes long. The input properties is a comma separated string list.
+// The C library reads the memory only during the call and keeps nothing of
+// it. Data that fails to load gives an error. This matches the C API
+// fiftyoneDegreesHashSizeManagerFromMemory.
 func (config *ConfigHash) SizeManagerFromMemory(
 	properties string,
 	memory unsafe.Pointer,
 	size uint64) (s uint64, err error) {
-	// TODO: To be implemeted
-	return 0, nil
+	exp := NewException()
+	propsRequired := NewPropertiesRequired(properties)
+	defer propsRequired.Free()
+	allocated := C.HashSizeManagerFromMemory(
+		config.CPtr,
+		propsRequired.CPtr,
+		memory,
+		C.long(size),
+		exp.CPtr,
+	)
+	if !exp.IsOkay() {
+		return 0, messageError(C.ExceptionGetMessage(exp.CPtr))
+	}
+	return uint64(allocated), nil
 }

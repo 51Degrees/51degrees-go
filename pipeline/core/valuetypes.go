@@ -24,31 +24,51 @@ package core
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 // This file implements the space-optimized value types described in
-// https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/value-types.md
+// https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/value-types.md
 //
 // These are primarily used by the IP Intelligence Engine, but the decoding
 // logic is part of the core Pipeline so that it can be shared.
 
 const int16Max = 32767.0
 
+// degreesDecimalPlaces is the number of decimal places a value converted from
+// Azimuth or Declination is given to.
+const degreesDecimalPlaces = 3
+
 // AzimuthToDegrees converts a stored int16 Azimuth (compressed longitude) back
-// to a floating point longitude value in the range [-180, 180]. The result is
-// clamped because the int16 minimum (-32768) divided by int16Max (32767) would
-// otherwise fall just outside the range.
+// to a floating point longitude value in the range [-180, 180], rounded to 3
+// decimal places. The result is clamped because the int16 minimum (-32768)
+// divided by int16Max (32767) would otherwise fall just outside the range.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/value-types.md#rounding-of-azimuth-and-declination-values
 func AzimuthToDegrees(stored int16) float64 {
-	return clampDegrees(180.0*(float64(stored)/int16Max), 180.0)
+	return roundDegrees(clampDegrees(180.0*(float64(stored)/int16Max), 180.0))
 }
 
 // DeclinationToDegrees converts a stored int16 Declination (compressed latitude)
-// back to a floating point latitude value in the range [-90, 90]. The result is
-// clamped for the same boundary reason as AzimuthToDegrees.
+// back to a floating point latitude value in the range [-90, 90], rounded to 3
+// decimal places. The result is clamped for the same boundary reason as
+// AzimuthToDegrees.
 func DeclinationToDegrees(stored int16) float64 {
-	return clampDegrees(90.0*(float64(stored)/int16Max), 90.0)
+	return roundDegrees(clampDegrees(90.0*(float64(stored)/int16Max), 90.0))
+}
+
+// roundDegrees gives the float64 nearest to v rounded to
+// degreesDecimalPlaces, by way of the decimal text, so that the result is the
+// value nearest the rounded decimal rather than one off by a multiplication.
+func roundDegrees(v float64) float64 {
+	rounded, err := strconv.ParseFloat(
+		strconv.FormatFloat(v, 'f', degreesDecimalPlaces, 64), 64)
+	if err != nil {
+		return v
+	}
+	return rounded
 }
 
 // clampDegrees constrains v to [-limit, limit].
@@ -69,6 +89,15 @@ type WktString string
 
 // String returns the WKT string.
 func (w WktString) String() string { return string(w) }
+
+// MarshalJSON writes the WKT as an object with one member, value, holding the
+// WKT text, which is how a WKT value is written to JSON.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/value-types.md#wkt
+func (w WktString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Value string `json:"value"`
+	}{string(w)})
+}
 
 // WKBR geometry type identifiers (reduced Well-Known Binary).
 const (

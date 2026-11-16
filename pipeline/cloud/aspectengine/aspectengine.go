@@ -24,7 +24,7 @@
 // the raw JSON produced by the Cloud Request Engine and deserialize the portion
 // relevant to their Aspect into typed Element Data.
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md
 package aspectengine
 
 import (
@@ -83,6 +83,9 @@ func (e *BaseCloudAspectEngine) OnPipelineAdded(p core.Pipeline) error {
 		return nil
 	}
 	e.requestEngine.CompareAndSwap(nil, cre)
+	// The Cloud Request Engine normally knows the products by now, so a
+	// missing product is logged as the Pipeline is built.
+	e.loadCloudProperties()
 	return nil
 }
 
@@ -91,7 +94,7 @@ func (e *BaseCloudAspectEngine) OnPipelineAdded(p core.Pipeline) error {
 // Properties are absent until the Cloud Request Engine knows them, which is
 // when it was built or, after a transient failure then, once a request has
 // fetched them.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func (e *BaseCloudAspectEngine) Properties() []core.PropertyMetadata {
 	own := e.BaseAspectEngine.Properties()
 	cloud := e.loadCloudProperties()
@@ -131,7 +134,8 @@ func (e *BaseCloudAspectEngine) CloudRequestFailed(fd core.FlowData) bool {
 }
 
 // loadCloudProperties returns the product's Property metadata, building it
-// once the Cloud Request Engine knows the Properties.
+// once the Cloud Request Engine knows the Properties, and logs the missing
+// product when the Resource Key includes none for this engine.
 func (e *BaseCloudAspectEngine) loadCloudProperties() []core.PropertyMetadata {
 	if props := e.cloudProperties.Load(); props != nil {
 		return *props
@@ -145,6 +149,9 @@ func (e *BaseCloudAspectEngine) loadCloudProperties() []core.PropertyMetadata {
 		return nil
 	}
 	props := productMetadata(products, *el, e.DataKey())
+	if len(props) == 0 {
+		e.logMissingProduct()
+	}
 	e.cloudProperties.CompareAndSwap(nil, &props)
 	return *e.cloudProperties.Load()
 }
@@ -188,11 +195,12 @@ type productLogger interface {
 	logMissingProduct()
 }
 
-// logMissingProduct logs, once for this engine, that the Resource Key
-// includes no product for it.
+// logMissingProduct logs, once for this engine and at warning level, that
+// the Resource Key includes no product for it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func (e *BaseCloudAspectEngine) logMissingProduct() {
 	e.missingProductLogged.Do(func() {
-		e.Logger().Error("the Resource Key includes no product for this "+
+		e.Logger().Warn("the Resource Key includes no product for this "+
 			"Cloud Aspect Engine, so it gives no Properties",
 			"product", e.DataKey(), "configurator", configuratorURL)
 	})
@@ -240,7 +248,7 @@ func ResponseJSON(fd core.FlowData) (string, error) {
 // not an error, so ParseAspect returns an empty map, and the engine built on
 // BaseCloudAspectEngine whose data key is aspectKey logs the missing product
 // once.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage, error) {
 	raw, err := ResponseJSON(fd)
 	if err != nil {
@@ -287,7 +295,7 @@ func productMissing(fd core.FlowData, aspectKey string) bool {
 // AspectPropertyValue. If the JSON value is absent or null, the helper looks for
 // a sibling Property suffixed with "nullreason" and uses it as the no-value
 // message, implementing the Null Values feature.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#processing
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#processing
 func PropertyValue[T any](aspect map[string]json.RawMessage, name string) engines.AspectPropertyValue[T] {
 	raw, ok := aspect[name]
 	if ok && !isJSONNull(raw) {
@@ -316,7 +324,7 @@ func isJSONNull(raw json.RawMessage) bool {
 // normally fetched the Properties when it was built, but after a transient
 // failure then it fetches them on first use, so the result is not cached and
 // is derived again on each call.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func AspectProperties(fd core.FlowData, element core.FlowElement, aspectKey string) ([]core.PropertyMetadata, error) {
 	re := fd.Pipeline().GetElement(requestengine.DataKey)
 	cre, ok := re.(*requestengine.CloudRequestEngine)

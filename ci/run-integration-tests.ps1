@@ -3,14 +3,17 @@ param (
     [Parameter(Mandatory)][string]$Name,
     [string]$DeviceDetection,
     [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl
+    [string]$IpIntelligenceUrl,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
 . $PSScriptRoot/products.ps1
 
 $Results = Join-Path $RepoName "test-results/integration"
-$Products = Get-AffectedProducts $RepoName
+$Products = Get-AffectedProducts $RepoName $Branch
 $failed = 0
 
 function Test-Examples([string]$Product, [string]$ModulePath, [string]$JUnitName) {
@@ -46,8 +49,8 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
     Test-Examples 'ip-intelligence' (Join-Path $RepoName 'examples/mixed') 'mixed'
 }
 
-# The Pipeline examples have no tests of their own, so building them is the
-# check that they still work with the Pipeline module.
+# Building the Pipeline examples checks that each one compiles with the
+# Pipeline module, and their test runs each one and checks how it ends.
 if ($Products -contains 'pipeline') {
     $examples = Join-Path $RepoName 'examples/pipeline'
     Push-Location $examples

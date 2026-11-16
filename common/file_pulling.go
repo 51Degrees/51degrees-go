@@ -120,11 +120,17 @@ func (e *FileUpdater) ScheduleFilePulling(stopCh chan *sync.WaitGroup, reloadFil
 // PullOnStart runs the start-up update, which blocks until the pull has finished and does not announce the new
 // file, as the caller loads the data file afterwards. It returns true when a new data file replaced the old one.
 // A data file that is already current is not an error, and a failed pull falls back to the local data file. It
-// returns an error only when the pull failed and there is no local data file to fall back to.
+// returns an error when the pull failed and there is no local data file to fall back to, or when an update
+// callback panicked. A pull that downloaded a new file is left for the caller to report once it has loaded it.
 func (e *FileUpdater) PullOnStart() (bool, error) {
 	e.startUpPullDone = true
 	e.logger.Infof("Updating on start-up")
 	_, downloaded, err := e.pull(nil)
+	if !downloaded {
+		if callbackErr := e.ReportUpdateComplete(pullUpdateStatus(err)); callbackErr != nil {
+			return false, callbackErr
+		}
+	}
 	if err == nil || errors.Is(err, ErrFileNotModified) || e.HasLocalDataFile() {
 		return downloaded, nil
 	}
@@ -251,16 +257,36 @@ func (e *FileUpdater) pullUnlessStopped(
 
 // pullRecovering makes one pull and returns the time in milliseconds before
 // the next. A panic in the pull is logged and the next pull comes after the
-// polling interval, so one failed pull does not end automatic updates.
+// polling interval, so one failed pull does not end automatic updates. A pull
+// that ends without new data is reported to the update callbacks, and one
+// that downloaded a new file is reported by the engine once it has loaded it.
 func (e *FileUpdater) pullRecovering(ctx context.Context, reloadFileEvents chan struct{}) (nextMs int) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logUnhandledError(fmt.Errorf("panic: %v", r))
 			nextMs = e.dataFilePullEveryMs
+			e.reportPolled(ctx, UpdateUnknownError)
 		}
 	}()
-	nextMs, _, _ = e.pullWith(ctx, reloadFileEvents)
+	var downloaded bool
+	var err error
+	nextMs, downloaded, err = e.pullWith(ctx, reloadFileEvents)
+	if !downloaded {
+		e.reportPolled(ctx, pullUpdateStatus(err))
+	}
 	return nextMs
+}
+
+// reportPolled reports a pull made by update polling to the update callbacks,
+// unless a stop ended it, and logs a callback's panic with the error table's
+// last row.
+func (e *FileUpdater) reportPolled(ctx context.Context, status UpdateStatus) {
+	if ctx.Err() != nil {
+		return
+	}
+	if err := e.ReportUpdateComplete(status); err != nil {
+		e.logUnhandledError(err)
+	}
 }
 
 // pull does one pull and returns the time in milliseconds before the next one, whether a new data file replaced
@@ -320,7 +346,7 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 		os.Remove(fileResponse.path)
 		e.logCheckError(fmt.Sprintf("An error occurred when copying a data file to replace the existing one "+
 			"at '%s'. Error detail: %v", e.GetDataFile(), err))
-		return e.GetDataFilePullEveryMs(), false, err
+		return e.GetDataFilePullEveryMs(), false, &renameError{err}
 	}
 	e.logger.Printf("data file written successfully: %d bytes", fileResponse.size)
 
@@ -381,7 +407,7 @@ func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
 	}
 	url, engine := e.maskedDataFileUrl(), e.engineLabel()
 	switch pe.kind {
-	case pullConnect:
+	case pullConnect, pullRead:
 		return fmt.Sprintf("Error accessing data update service at '%s' for engine '%s'. Error detail: %v",
 			url, engine, pe.err), true
 	case pullTooManyRequests:
@@ -399,11 +425,51 @@ func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
 	return "", false
 }
 
+// pullUpdateStatus gives the status a pull that ended with err reports, being
+// that of the error table row its log message comes from, and the unknown
+// error for a failure the table has no row for.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#errors
+func pullUpdateStatus(err error) UpdateStatus {
+	if errors.Is(err, ErrFileNotModified) {
+		return UpdateNotNeeded
+	}
+	if errors.Is(err, ErrNoDataFileProvided) {
+		return UpdateTempPathNotSet
+	}
+	var re *renameError
+	if errors.As(err, &re) {
+		return UpdateCannotRename
+	}
+	var pe *pullError
+	if errors.As(err, &pe) {
+		switch pe.kind {
+		case pullConnect, pullRead, pullStatus:
+			return UpdateHTTPSError
+		case pullTooManyRequests:
+			return UpdateTooManyRequests
+		case pullForbidden:
+			return UpdateForbidden
+		case pullIntegrity:
+			return UpdateMD5ValidationFailed
+		}
+	}
+	return UpdateUnknownError
+}
+
+// renameError is a download that could not replace the data file.
+type renameError struct{ err error }
+
+func (r *renameError) Error() string { return r.err.Error() }
+func (r *renameError) Unwrap() error { return r.err }
+
 // pullErrorKind says which step of a pull failed, which decides the log message.
 type pullErrorKind int
 
 const (
 	pullConnect pullErrorKind = iota
+	// pullRead is a download that ended before the whole file arrived, which
+	// the table gives the same row as pullConnect, as .NET does.
+	pullRead
 	pullDownload
 	pullTooManyRequests
 	pullForbidden
@@ -504,7 +570,8 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 
 	// the MD5 header covers the raw body, compressed or not, so hash everything read from it
 	hash := md5.New()
-	body := bufio.NewReader(io.TeeReader(resp.Body, hash))
+	received := &readRecorder{r: resp.Body}
+	body := bufio.NewReader(io.TeeReader(received, hash))
 
 	// check if the response is compressed
 	// if it is, decompress it
@@ -512,6 +579,9 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	var fileBytes io.Reader = body
 	if isGzip(http.DetectContentType(head)) {
 		fileBytes, err = gzip.NewReader(body)
+		if received.err != nil {
+			return nil, newPullError(pullRead, received.err)
+		}
 		if err != nil {
 			return nil, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
 		}
@@ -521,7 +591,7 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	if err != nil {
 		return nil, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
 	}
-	size, err := writeDataFile(tempFile, fileBytes, body, dataFile)
+	size, err := writeDataFile(tempFile, fileBytes, received, dataFile)
 	if err == nil {
 		contentMD5 := resp.Header.Get("Content-MD5")
 		if len(contentMD5) > 0 {
@@ -550,18 +620,24 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	}, nil
 }
 
-// writeDataFile copies the uncompressed data into the temp file, drains the rest of the body so the MD5 hash
-// covers it, flushes the file to disk and gives it the data file's permissions (0644 for a new data file).
-func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, dataFile string) (int64, error) {
-	size, err := io.Copy(tempFile, data)
+// writeDataFile copies the uncompressed data into the temp file, flushes the file to disk and gives it the
+// data file's permissions (0644 for a new data file). The copy reads the response to its end, as the gzip
+// reader reads every gzip stream up to the end of its input, so the MD5 hash covers the whole body.
+// received says whether a failed copy stopped on reading the response, rather than on decompressing the
+// data or writing the file.
+func writeDataFile(tempFile *os.File, data io.Reader, received *readRecorder,
+	dataFile string) (int64, error) {
+	unpacked := &readRecorder{r: data}
+	size, err := io.Copy(tempFile, unpacked)
 	if err != nil {
 		tempFile.Close()
+		if received.err != nil {
+			return 0, newPullError(pullRead, received.err)
+		}
+		if unpacked.err != nil {
+			return 0, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", unpacked.err))
+		}
 		return 0, newPullError(pullWrite, fmt.Errorf("failed to write temp file: %v", err))
-	}
-	// the gzip reader stops before any trailing bytes
-	if _, err = io.Copy(io.Discard, body); err != nil {
-		tempFile.Close()
-		return 0, newPullError(pullDownload, fmt.Errorf("failed to read response: %v", err))
 	}
 	// a rename after a power loss must not leave an empty data file behind
 	if err = tempFile.Sync(); err != nil {
@@ -579,6 +655,22 @@ func writeDataFile(tempFile *os.File, data io.Reader, body io.Reader, dataFile s
 		return 0, newPullError(pullWrite, fmt.Errorf("failed to set temp file permissions: %v", err))
 	}
 	return size, nil
+}
+
+// readRecorder keeps the first error, other than the end of the data, that
+// reading the response gave, so a download cut short is told apart from a
+// file that could not be written or decompressed.
+type readRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (rr *readRecorder) Read(p []byte) (int, error) {
+	n, err := rr.r.Read(p)
+	if err != nil && err != io.EOF && rr.err == nil {
+		rr.err = err
+	}
+	return n, err
 }
 
 // removeStaleTempFiles deletes temp files a previous pull of this data file left behind, for example after

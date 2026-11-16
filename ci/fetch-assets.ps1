@@ -2,7 +2,10 @@ param (
     [string]$DeviceDetection,
     [string]$DeviceDetectionUrl,
     [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl
+    [string]$IpIntelligenceUrl,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
@@ -12,7 +15,7 @@ $RepoPath = Join-Path $PSScriptRoot ".."
 # day restores, whatever it changes, so it fetches for every product.
 $Products = $AllProducts
 if ($env:GITHUB_JOB -ne 'Configure') {
-    $Products = Get-AffectedProducts $RepoPath
+    $Products = Get-AffectedProducts $RepoPath $Branch
 }
 $Data = Join-Path $RepoPath "cxx/data"
 
@@ -51,6 +54,12 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
         -Path (Join-Path $Data "device-detection/51Degrees-LiteV4.1.hash") | Out-Null
     New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/51Degrees-LiteIpiV41.ipi" `
         -Path (Join-Path $Data "ip-intelligence/51Degrees-LiteV41.ipi") | Out-Null
+}
+# The on-premise examples run with no settings read the evidence file from
+# there too, so no test downloads it from the distributor.
+if ($Products -contains 'device-detection') {
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/20000 Evidence Records.yml" `
+        -Path (Join-Path $Data "device-detection/20000 Evidence Records.yml") | Out-Null
 }
 
 # The IP Intelligence reload tests use the small Asn data file and the

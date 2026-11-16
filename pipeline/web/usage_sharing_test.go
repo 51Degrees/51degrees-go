@@ -26,6 +26,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -177,7 +178,8 @@ func TestPrintedEvidenceHoldsNoRequestValues(t *testing.T) {
 
 // The payload sent for a request holds the parts of the request the
 // specification shares. With all Evidence shared it still holds no Cookie
-// header and no request path, and it holds the request method.
+// header, no cookie but the 51D_ ones and no request path, and it holds the
+// request method.
 func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
 	bodies := make(chan string, 4)
 	collector := httptest.NewServer(http.HandlerFunc(
@@ -203,7 +205,7 @@ func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/a-page?q=1", nil)
 	req.Header.Set("X-Test", "shared-header")
-	req.Header.Set("Cookie", "51D_c=shared-cookie")
+	req.Header.Set("Cookie", "51D_c=shared-cookie; site=private-cookie")
 	resp, err := srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -224,7 +226,68 @@ func TestSharedPayloadHoldsTheRequestParts(t *testing.T) {
 		}
 	}
 	for _, unwanted := range []string{"a-page",
-		`Name="cookie"`} {
+		`Name="cookie"`, "private-cookie"} {
+		if strings.Contains(payload, unwanted) {
+			t.Errorf("the payload holds %s: %.600s", unwanted, payload)
+		}
+	}
+}
+
+// sharedWaitSeconds bounds the wait for the message. Closing the Pipeline
+// sends the last message before it returns, so the wait only guards a hang.
+const sharedWaitSeconds = 5
+
+// With the default sharing rules, a header that no element reads still
+// reaches the message sent through the web integration, with the client IP
+// address, and the Cookie header and a cookie not starting 51D_ do not.
+func TestDefaultRulesShareAHeaderNoElementReads(t *testing.T) {
+	bodies := make(chan string, 4)
+	collector := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			zr, err := gzip.NewReader(r.Body)
+			if err == nil {
+				b, _ := io.ReadAll(zr)
+				bodies <- string(b)
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer collector.Close()
+
+	sharing := usagesharing.NewBuilder().SetMinimumEntriesPerMessage(1).
+		SetShareUsageURL(collector.URL).Build()
+	p, err := AssemblePipeline(PipelineConfig{}, newHeaderEngine(), sharing)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	srv := httptest.NewServer(NewMiddleware(p).Handler(http.NotFoundHandler()))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/", nil)
+	req.Header.Set("X-Read-By-No-Element", "default-rules-header")
+	req.Header.Set("Cookie", "other=not-shared")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	_ = resp.Body.Close()
+	p.Close()
+	// The client connects from the loopback address the server listens on.
+	loopback, _, _ := net.SplitHostPort(srv.Listener.Addr().String())
+
+	var payload string
+	select {
+	case payload = <-bodies:
+	case <-time.After(sharedWaitSeconds * time.Second):
+		t.Fatal("nothing was shared")
+	}
+	for _, want := range []string{
+		`<header Name="x-read-by-no-element">default-rules-header</header>`,
+		"<ClientIP>" + loopback + "</ClientIP>"} {
+		if !strings.Contains(payload, want) {
+			t.Errorf("the payload lacks %s: %.600s", want, payload)
+		}
+	}
+	for _, unwanted := range []string{"not-shared", `Name="cookie"`} {
 		if strings.Contains(payload, unwanted) {
 			t.Errorf("the payload holds %s: %.600s", unwanted, payload)
 		}

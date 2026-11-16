@@ -35,6 +35,7 @@ package usagesharing
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"hash/fnv"
@@ -73,6 +74,11 @@ const (
 	productName            = "Pipeline"
 	maxValueLength         = 10000
 )
+
+// DefaultShareAllQueryStringParameters shares every query string and form
+// parameter unless a user turns it off.
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L80-L81
+const DefaultShareAllQueryStringParameters = true
 
 type config struct {
 	includedQueryParams map[string]struct{}
@@ -123,6 +129,13 @@ type Element struct {
 	discarded atomic.Int64
 	// clock times the back-off and the waits of the sending goroutine.
 	clock clock
+	// sendCtx is the context of every send, which Close cancels once the
+	// cleanup limit has passed.
+	sendCtx     context.Context
+	cancelSends context.CancelFunc
+	// cut is the number of entries in a message whose send Close stopped. Only
+	// the sending goroutine uses it.
+	cut int
 }
 
 type record struct {
@@ -164,9 +177,7 @@ func (e *Element) Process(fd core.FlowData) error {
 	rec := &record{
 		dateSent: time.Now().UTC(),
 		evidence: ev,
-	}
-	if ip, ok := fd.Evidence().Get("server.client-ip"); ok {
-		rec.clientIP = fmt.Sprintf("%v", ip)
+		clientIP: foundClientIP(fd),
 	}
 	if data, err := fd.Get(sequence.DataKey); err == nil {
 		if v, err := data.Get(sequence.SessionIDProperty); err == nil {
@@ -221,23 +232,32 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	return out
 }
 
-// isSessionCookie reports whether key is the session cookie's Evidence key,
-// compared without regard to case.
-func (e *Element) isSessionCookie(key string) bool {
-	prefix, field := core.SplitEvidenceKey(key)
-	return prefix == core.PrefixCookie &&
-		strings.EqualFold(field, e.cfg.sessionCookieName)
+// foundClientIP returns the client IP address the element finds, from the
+// Evidence server.client-ip or else from the web request the Evidence holds
+// as core.EvidenceHTTPRequest. A value in both places is taken from the
+// Evidence, as for every value the element finds.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/pipeline-elements/usage-sharing-element.md#accepted-evidence
+func foundClientIP(fd core.FlowData) string {
+	ev := fd.Evidence()
+	if ip, ok := ev.Get("server.client-ip"); ok {
+		return fmt.Sprintf("%v", ip)
+	}
+	request, _ := ev.Get(core.EvidenceHTTPRequest)
+	if w, ok := request.(core.WebRequest); ok {
+		return w.ClientIP()
+	}
+	return ""
 }
 
 // trackedSession returns the session cookie to compare along with the
-// Evidence, which is only when track session is on and not all Evidence is
-// shared, as a shared cookie is compared already. It is read from the
-// Evidence and from the web request, and the Evidence value counts when
+// Evidence when track session is on, whether or not all Evidence is shared,
+// as a cookie whose name does not start 51D_ is never shared. It is read from
+// the Evidence and from the web request, and the Evidence value counts when
 // both hold it. Both are read by key, as Evidence keys are compared without
 // regard to case, so the Evidence is not copied for each request.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md#session-tracking
 func (e *Element) trackedSession(fd core.FlowData) (string, bool) {
-	if !e.cfg.trackSession || e.cfg.shareAllEvidence {
+	if !e.cfg.trackSession {
 		return "", false
 	}
 	ev := fd.Evidence()
@@ -387,7 +407,14 @@ func (e *Element) consume() {
 			}
 			continue
 		}
-		ok := e.send(e.takeMessage())
+		batch := e.takeMessage()
+		ok := e.send(batch)
+		if !ok && e.sendCtx.Err() != nil {
+			// Close stopped the send at the cleanup limit.
+			e.cut = len(batch)
+			e.finish(b)
+			return
+		}
 		switch b.record(ok, e.clock.now()) {
 		case backOffPaused:
 			e.Logger().Warn("usage sharing paused sending after failed sends",
@@ -437,8 +464,10 @@ func (e *Element) takeMessage() []*record {
 
 // finish ends sending when the element is closed. While sending is paused it
 // sends nothing and discards what is queued, logging how many. Otherwise it
-// sends whatever is left in one final message.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
+// sends whatever is left in one final message. When the cleanup limit passes
+// first, Close stops the send, and what was being sent and what is left are
+// discarded with a warning.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
 func (e *Element) finish(b *backOff) {
 	var rest []*record
 	for drained := false; !drained; {
@@ -449,6 +478,10 @@ func (e *Element) finish(b *backOff) {
 			drained = true
 		}
 	}
+	if e.sendCtx.Err() != nil {
+		e.warnDiscarded(e.cut + len(rest))
+		return
+	}
 	if len(rest) == 0 {
 		return
 	}
@@ -457,7 +490,17 @@ func (e *Element) finish(b *backOff) {
 			"the queued entries were discarded", "discarded", len(rest))
 		return
 	}
-	e.send(rest)
+	if !e.send(rest) && e.sendCtx.Err() != nil {
+		e.warnDiscarded(len(rest))
+	}
+}
+
+// warnDiscarded logs that the cleanup limit passed before sending ended, and
+// how many entries were discarded.
+func (e *Element) warnDiscarded(discarded int) {
+	e.Logger().Warn("usage sharing had not finished sending when the cleanup "+
+		"limit passed, so the entries left were discarded",
+		"discarded", discarded, "limit", cleanupLimitSeconds*time.Second)
 }
 
 // send sends one message and reports whether it succeeded. It fails when the
@@ -482,7 +525,8 @@ func (e *Element) send(batch []*record) bool {
 		e.Logger().Error("usage sharing: failed to finalize payload", "error", err)
 		return false
 	}
-	req, err := http.NewRequest(http.MethodPost, e.cfg.shareURL, &buf)
+	req, err := http.NewRequestWithContext(e.sendCtx, http.MethodPost,
+		e.cfg.shareURL, &buf)
 	if err != nil {
 		e.Logger().Error("usage sharing: failed to create request", "error", err)
 		return false
@@ -508,14 +552,34 @@ func (e *Element) send(batch []*record) bool {
 // read for the log.
 const maxLoggedResponseBytes = 64 << 10
 
+// cleanupLimitSeconds is how long Close waits for the data waiting to be
+// sent before it stops sending.
+const cleanupLimitSeconds = 5
+
 // Close sends any remaining data, unless sending is paused, then stops the
-// background goroutine.
+// background goroutine. If sending has not ended within the cleanup limit,
+// Close stops the send in progress, and the entries left are discarded with
+// a warning, so that closing does not hold up the process that closes it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/usage-sharing-element.md#cleanup
 func (e *Element) Close() error {
 	e.closeOnce.Do(func() {
 		// Ensure the consumer was started so the final flush runs.
 		e.startOne.Do(e.startConsumer)
 		close(e.stop)
-		e.wg.Wait()
+		finished := make(chan struct{})
+		go func() {
+			e.wg.Wait()
+			close(finished)
+		}()
+		limit := time.NewTimer(cleanupLimitSeconds * time.Second)
+		defer limit.Stop()
+		select {
+		case <-finished:
+		case <-limit.C:
+			e.cancelSends()
+			<-finished
+		}
+		e.cancelSends()
 	})
 	return nil
 }
@@ -560,7 +624,7 @@ func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []strin
 	writeElement(b, "Language", "Go")
 	writeElement(b, "LanguageVersion", runtime.Version())
 	writeElement(b, "ServerIP", serverIP())
-	writeElement(b, "Platform", runtime.GOOS)
+	writeElement(b, "Platform", platformName())
 
 	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))
@@ -758,13 +822,14 @@ func hashWithSession(evidence uint64, session string) uint64 {
 	return h.Sum64()
 }
 
+// isUniquenessKey reports whether a key is the session id or the sequence the
+// Sequence Element adds, which make each request of a session unique, so the
+// repeat comparison leaves them out whatever the sharing settings. A value of
+// another prefix with the same name is compared like any other.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L296-L299
 func isUniquenessKey(key string) bool {
-	_, field := core.SplitEvidenceKey(key)
-	switch strings.ToLower(field) {
-	case "sequence", "session-id":
-		return true
-	}
-	return false
+	return strings.EqualFold(key, sequence.EvidenceSessionID) ||
+		strings.EqualFold(key, sequence.EvidenceSequence)
 }
 
 // --- duplicate tracker ---------------------------------------------------

@@ -50,6 +50,7 @@ fine against other versions, but additional caution should be applied.
   - *elements/setheaders* - Gathers HTTP response headers to request more Evidence.
   - *elements/usagesharing* - Shares anonymized usage data with 51Degrees.
   - *elements/translation* - Translates values using YAML translation sources.
+  - *elements/derivedproperty* - Derives new properties from other elements' properties, following the rules in YAML or JSON scripts, such as HumanConfidence and IsGdpr.
 - **web** - The `net/http` web integration (middleware and intercepted endpoints).
 
 ## Installation
@@ -85,6 +86,7 @@ device detection, then these are available in this repository's
 | [4. Cloud Engine](../examples/pipeline/4_cloud_engine)                | Shows how to modify the simple element to perform the star sign lookup via a cloud service rather than locally. |
 | [5. Usage Sharing](../examples/pipeline/5_usage_sharing)              | Shows how to share usage with 51Degrees, configured from an options file. This helps us to keep our products up to date and accurate. |
 | [6. Result Caching](../examples/pipeline/6_caching)                   | Shows how the result caching feature works. |
+| [7. Derived Property](../examples/pipeline/7_derived_property)        | Shows how the Derived Property Element computes a property from properties other elements have produced, with a script held in code, a script file beside the example and the same Pipeline built from a configuration file, and what a script gives when a source property is missing. |
 
 Each example is a runnable program in [examples/pipeline](../examples/pipeline), a module of its own that uses
 the published Pipeline module. For example, from that folder:

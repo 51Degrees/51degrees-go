@@ -59,6 +59,9 @@ type Engine struct {
 	reloadFileEvents chan struct{}
 	// reloadLoop is done once reloadFileEvent has returned.
 	reloadLoop sync.WaitGroup
+	// reloadMu makes each reload of the data file run on its own, whether
+	// update polling, the file watcher or RefreshData asked for it.
+	reloadMu sync.Mutex
 
 	product                   string
 	dataFileLastUsedByManager string
@@ -67,6 +70,10 @@ type Engine struct {
 	maxRetries int
 
 	isStopped bool
+
+	// stopping is set as Stop begins, so a check waiting for the watched
+	// file ends at once rather than holding up Stop.
+	stopping atomic.Bool
 
 	managerProperties []string
 	// names holds the property name at each required property index. It is
@@ -147,11 +154,25 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	return engine, nil
 }
 
-// handleFileExternallyChanged handles the logic for processing a file that has been altered externally to ensure consistency.
+// handleFileExternallyChanged reloads the data file the file watcher saw
+// change, once it can be opened for reading, and reports the check. A file
+// another process still holds is waited for, and one that cannot be opened in
+// time is reported as a timeout and not logged, as the error table gives it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func (e *Engine) handleFileExternallyChanged() {
-	if tries, err := e.reload(); err != nil {
+	if !common_go.WaitUntilReadable(openWatchedFile, e.GetDataFile(),
+		watchedFileReadableWait, e.stopped) {
+		if !e.stopped() {
+			e.reportTimeout()
+		}
+		e.IncreaseFileExternallyChangedCount()
+		return
+	}
+	tries, err := e.reload()
+	if err != nil {
 		e.logReloadError(tries, err)
 	}
+	e.reportReload(err)
 
 	e.IncreaseFileExternallyChangedCount()
 }
@@ -183,7 +204,17 @@ func (e *Engine) run() error {
 			return err
 		}
 		if downloaded {
-			loaded = false
+			// The update on start-up ends once the new file has loaded or
+			// failed to, so it is reported here.
+			loadErr := e.processFileExternallyChanged()
+			callbackErr := e.ReportUpdateComplete(reloadStatus(loadErr))
+			if loadErr != nil {
+				return loadErr
+			}
+			if callbackErr != nil {
+				return callbackErr
+			}
+			loaded = true
 		}
 	}
 
@@ -201,9 +232,26 @@ func (e *Engine) run() error {
 	return nil
 }
 
+// errStopped is the error RefreshData gives once the engine has stopped.
+var errStopped = errors.New("the engine has stopped, so it has no data to refresh")
+
+// RefreshData loads the Engine's data file again now, for an application
+// that has replaced the file and does not leave it to the file watcher. It
+// is safe to call while the Engine processes and while an update runs, as
+// each reload runs on its own. When the file cannot be used it returns the
+// error, after the tries a watched file gets, and the Engine goes on with the
+// data it had. The caller gets the error, so it is not logged, and nothing is
+// reported to the update callbacks, which hear the checks for an update.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L36-L41
+func (e *Engine) RefreshData() error {
+	_, err := e.reload()
+	return err
+}
+
 // Stop has to be called to free all the resources of the engine
 // before the instance goes out of scope
 func (e *Engine) Stop() {
+	e.stopping.Store(true)
 	num := 0
 	if e.IsAutoUpdateEnabled() && e.IsFilePullerStarted() {
 		num++ // file puller is enabled and started
@@ -227,7 +275,11 @@ func (e *Engine) Stop() {
 	close(e.reloadFileEvents)
 	e.reloadLoop.Wait()
 
+	// A reload in progress, such as one RefreshData asked for, ends before the
+	// manager is freed, and one asked for later refuses.
+	e.reloadMu.Lock()
 	e.isStopped = true
+	e.reloadMu.Unlock()
 	close(e.stopCh)
 
 	if e.manager != nil {
@@ -262,15 +314,22 @@ func (e *Engine) reload() (int, error) {
 	for tries := 1; ; tries++ {
 		err := e.reloadOnce()
 		var p *reloadPanic
-		if err == nil || errors.As(err, &p) || tries == reloadTries {
+		if err == nil || errors.As(err, &p) || errors.Is(err, errStopped) ||
+			tries == reloadTries {
 			return tries, err
 		}
 		time.Sleep(reloadRetryWaitMilliseconds * time.Millisecond)
 	}
 }
 
-// reloadOnce loads the data file again, returning a panic as a reloadPanic.
+// reloadOnce loads the data file again, on its own, returning a panic as a
+// reloadPanic.
 func (e *Engine) reloadOnce() (err error) {
+	e.reloadMu.Lock()
+	defer e.reloadMu.Unlock()
+	if e.isStopped {
+		return errStopped
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			err = &reloadPanic{r}
@@ -291,12 +350,55 @@ func (p *reloadPanic) Error() string { return fmt.Sprintf("panic: %v", p.value) 
 func (e *Engine) logReloadError(tries int, err error) {
 	var p *reloadPanic
 	if errors.As(err, &p) {
-		e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
-			"Error detail: %v", engineTypeName, p.value)
+		e.logUnhandledError(p.value)
 		return
 	}
 	e.logger.Errorf("Error during check for data update. An error occurred when applying a data update to "+
 		"engine '%s' after %d tries. Error detail: %v", engineTypeName, tries, err)
+}
+
+// logUnhandledError logs a failure the error table has no row for, with its
+// last row.
+func (e *Engine) logUnhandledError(detail interface{}) {
+	e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
+		"Error detail: %v", engineTypeName, detail)
+}
+
+// reportReload reports a reload made by update polling or the file watcher to
+// the update callbacks, and logs a callback's panic with the error table's
+// last row.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#reporting-each-check
+func (e *Engine) reportReload(err error) {
+	if callbackErr := e.ReportUpdateComplete(reloadStatus(err)); callbackErr != nil {
+		e.logUnhandledError(callbackErr)
+	}
+}
+
+// stopped says whether the engine is stopping or has stopped.
+func (e *Engine) stopped() bool {
+	return e.stopping.Load()
+}
+
+// reportTimeout reports a watched file that could not be opened in time to
+// the update callbacks, and logs an error a callback gives back.
+func (e *Engine) reportTimeout() {
+	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
+		e.logUnhandledError(err)
+	}
+}
+
+// reloadStatus gives the status a reload that ended with err reports: success,
+// the refresh failure, or the unknown error for a panic.
+func reloadStatus(err error) common_go.UpdateStatus {
+	var p *reloadPanic
+	switch {
+	case err == nil:
+		return common_go.UpdateSuccess
+	case errors.As(err, &p):
+		return common_go.UpdateUnknownError
+	default:
+		return common_go.UpdateRefreshFailed
+	}
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -305,9 +407,11 @@ func (e *Engine) logReloadError(tries int, err error) {
 func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
-		if tries, err := e.reload(); err != nil {
+		tries, err := e.reload()
+		if err != nil {
 			e.logReloadError(tries, err)
 		}
+		e.reportReload(err)
 	}
 }
 
@@ -443,6 +547,16 @@ func (e *Engine) removeCopy(path string) {
 // getPublishedDate retrieves the published date of the data file being used by the engine.
 func (e *Engine) getPublishedDate() time.Time {
 	return ipi_interop.GetPublishedDate(e.manager)
+}
+
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts, worked
+// out from the data when it is loaded and each time it is refreshed. It is
+// safe to call while the data is refreshed.
+func (e *Engine) GetHttpHeaderKeys() []ipi_interop.EvidenceKey {
+	if e.manager == nil {
+		return nil
+	}
+	return e.manager.HeaderKeys()
 }
 
 // publishedDate is the published date of the loaded data file, or the zero

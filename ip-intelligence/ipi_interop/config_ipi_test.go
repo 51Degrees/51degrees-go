@@ -84,62 +84,35 @@ func TestNewConfigIpi(t *testing.T) {
 	}
 }
 
-//func TestConfigIpi_SetConcurrency(t *testing.T) {
-//	tests := []struct {
-//		name        string
-//		concurrency uint16
-//	}{
-//		{
-//			name:        "Set concurrency to 0",
-//			concurrency: 0,
-//		},
-//		{
-//			name:        "Set concurrency to 1",
-//			concurrency: 1,
-//		},
-//		{
-//			name:        "Set concurrency to max uint16",
-//			concurrency: 65535,
-//		},
-//	}
-//
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			config := NewConfigIpi(Default)
-//			config.SetConcurrency(tt.concurrency)
-//
-//			// Verify all concurrency fields are set correctly
-//			if uint16(config.CPtr.strings.concurrency) != tt.concurrency {
-//				t.Errorf("strings.concurrency = %v, want %v", config.CPtr.strings.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.components.concurrency) != tt.concurrency {
-//				t.Errorf("components.concurrency = %v, want %v", config.CPtr.components.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.maps.concurrency) != tt.concurrency {
-//				t.Errorf("maps.concurrency = %v, want %v", config.CPtr.maps.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.properties.concurrency) != tt.concurrency {
-//				t.Errorf("properties.concurrency = %v, want %v", config.CPtr.properties.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.values.concurrency) != tt.concurrency {
-//				t.Errorf("values.concurrency = %v, want %v", config.CPtr.values.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.profiles.concurrency) != tt.concurrency {
-//				t.Errorf("profiles.concurrency = %v, want %v", config.CPtr.profiles.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.graph.concurrency) != tt.concurrency {
-//				t.Errorf("graph.concurrency = %v, want %v", config.CPtr.graph.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.profileGroups.concurrency) != tt.concurrency {
-//				t.Errorf("profileGroups.concurrency = %v, want %v", config.CPtr.profileGroups.concurrency, tt.concurrency)
-//			}
-//			if uint16(config.CPtr.profileOffsets.concurrency) != tt.concurrency {
-//				t.Errorf("profileOffsets.concurrency = %v, want %v", config.CPtr.profileOffsets.concurrency, tt.concurrency)
-//			}
-//		})
-//	}
-//}
-//
+// SetConcurrency sets the concurrency of every collection the native
+// configuration holds, as the C++ ConfigIpi::setConcurrency does, so each
+// collection's file handles and cache parts follow it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L620
+func TestConfigIpi_SetConcurrency(t *testing.T) {
+	for _, concurrency := range []uint16{1, 7, 65535} {
+		config := NewConfigIpi(Default)
+		config.SetConcurrency(concurrency)
+		for name, got := range map[string]uint16{
+			"strings":        uint16(config.CPtr.strings.concurrency),
+			"components":     uint16(config.CPtr.components.concurrency),
+			"maps":           uint16(config.CPtr.maps.concurrency),
+			"properties":     uint16(config.CPtr.properties.concurrency),
+			"values":         uint16(config.CPtr.values.concurrency),
+			"profiles":       uint16(config.CPtr.profiles.concurrency),
+			"graphs":         uint16(config.CPtr.graphs.concurrency),
+			"profileGroups":  uint16(config.CPtr.profileGroups.concurrency),
+			"profileOffsets": uint16(config.CPtr.profileOffsets.concurrency),
+			"propertyTypes":  uint16(config.CPtr.propertyTypes.concurrency),
+			"graph":          uint16(config.CPtr.graph.concurrency),
+		} {
+			if got != concurrency {
+				t.Errorf("SetConcurrency(%d) left %s at %d", concurrency, name,
+					got)
+			}
+		}
+	}
+}
+
 //func TestConfigIpi_PerformanceProfile(t *testing.T) {
 //	tests := []struct {
 //		name    string

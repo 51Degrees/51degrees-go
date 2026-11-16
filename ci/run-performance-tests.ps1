@@ -1,6 +1,9 @@
 param (
     [Parameter(Mandatory)][string]$RepoName,
-    [Parameter(Mandatory)][string]$Name
+    [Parameter(Mandatory)][string]$Name,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
@@ -8,7 +11,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 . $PSScriptRoot/products.ps1
 
 $rootDir = $PWD
-$Products = Get-AffectedProducts $RepoName
+$Products = Get-AffectedProducts $RepoName $Branch
 
 # Every engine's figures go into one results file for this options entry,
 # which is what the performance comparison reads. The metric names differ

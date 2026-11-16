@@ -50,7 +50,7 @@ Each repository is brought in with its full history, so commit SHAs match the or
 | `javascript-templates` | The [javascript-templates](https://github.com/51Degrees/javascript-templates) submodule, which the JavaScript Builder Element's template is copied from |
 | `ci` | The scripts the shared 51Degrees CI workflows call |
 
-A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`, so it is installed with, for example:
+Each module has its own version and is released only when it changes, or when a module it requires is released. A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`, so it is installed with, for example:
 
 ```sh
 go get github.com/51Degrees/51degrees-go/device-detection/v4
@@ -80,7 +80,7 @@ Each module requires the others at a published version, as your own code would. 
 pwsh ci/create-workspace.ps1
 ```
 
-CI tests with the workspace when a published module has changed since the latest release, so the next release is tested with the examples. Otherwise the examples are tested against the published modules of the latest release, and nothing is released.
+CI tests with the workspace when a published module has changed since its last release, so the next release is tested with the examples. Otherwise the examples are tested against each module's latest release, as published, and nothing is released.
 
 The engines compile C sources made from the `cxx` submodule. After moving the submodule to another 51degrees-cxx release, run `pwsh ci/update-amalgamation.ps1` and commit the result. The build fails when they don't match.
 

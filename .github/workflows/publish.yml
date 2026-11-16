@@ -6,6 +6,10 @@ on:
       dryrun:
         type: boolean
         default: false
+      allow-early-release:
+        description: 'Publish even though a module was released less than a week ago'
+        type: boolean
+        default: false
       common-ci-ref:
         type: string
         default: ''
@@ -18,6 +22,7 @@ jobs:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}
       dryrun: ${{ inputs.dryrun || false }}
+      allow-early-release: ${{ inputs.allow-early-release || false }}
       common-ci-ref: ${{ inputs.common-ci-ref || '' }}
       cache-assets: true
     secrets:

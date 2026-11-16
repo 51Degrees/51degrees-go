@@ -30,11 +30,25 @@ import (
 )
 
 func test(t *testing.T, name string) {
+	run(t, name, nil)
+}
+
+// run runs an example in the environment given, or in this process's when
+// that is nil, prints what it printed, and checks that it ends with a Find out
+// more section naming this repository.
+func run(t *testing.T, name string, environment []string) {
 	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	cmd.Env = environment
+	output, err := cmd.CombinedOutput()
+	os.Stdout.Write(output)
+	if err != nil {
 		t.Error(err)
+	}
+	at := strings.LastIndex(string(output), "Find out more")
+	if at < 0 || !strings.Contains(string(output[at:]),
+		"https://github.com/51Degrees/51degrees-go") {
+		t.Errorf("%s does not end with a Find out more section naming "+
+			"this repository", name)
 	}
 }
 
@@ -46,16 +60,47 @@ func TestMixedGettingStartedConsoleFreeDataFiles(t *testing.T) {
 	testFree(t, "getting_started_console")
 }
 
+// The web example serves requests rather than ending, so its own tests run
+// its handler. They build its engines from the files the settings name, so
+// they are run again, as a fresh clone would run them, with no settings, and
+// the engines must then be made from the free data files.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/required-examples.md?plain=1#L20-L23
+func TestMixedGettingStartedWebFreeDataFiles(t *testing.T) {
+	cmd := exec.Command("go", "test", "-count=1", "-v", "./getting_started_web")
+	cmd.Env = withoutSettings(os.Environ())
+	output, err := cmd.CombinedOutput()
+	// The child's own test lines are not passed on as they are, because a
+	// report that reads this test's output would take them for its own.
+	if err != nil {
+		t.Errorf("the web example's tests failed with no settings: %v\n%s",
+			err, childLines(output))
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, " data:") {
+			t.Log(strings.TrimSpace(line))
+		}
+	}
+	for _, free := range []string{"51Degrees-LiteV4.1.hash", "51Degrees-LiteV41.ipi"} {
+		if !strings.Contains(string(output), free) {
+			t.Errorf("the web example's tests did not load %s", free)
+		}
+	}
+}
+
+// childLines gives the output of a child go test with each line marked as
+// the child's.
+func childLines(output []byte) string {
+	lines := strings.Split(strings.TrimRight(string(output), "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = "child: " + line
+	}
+	return strings.Join(lines, "\n")
+}
+
 // testFree runs an example as a fresh clone would, without the settings CI
 // gives the other tests, so that it uses the free data files and evidence.
 func testFree(t *testing.T, name string) {
-	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Env = withoutSettings(os.Environ())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Error(err)
-	}
+	run(t, name, withoutSettings(os.Environ()))
 }
 
 // withoutSettings returns the environment without the variables that name a

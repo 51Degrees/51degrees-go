@@ -73,6 +73,7 @@ func (c *capture) waitFor(t *testing.T, n int) {
 func TestShareRules(t *testing.T) {
 	e := NewBuilder().
 		SetBlockedHTTPHeaders("cookies").
+		SetShareAllQueryStringParameters(false).
 		SetIncludedQueryStringParameters("myparam").
 		Build()
 	defer e.Close()
@@ -91,6 +92,31 @@ func TestShareRules(t *testing.T) {
 		if got := e.isShared(key); got != want {
 			t.Errorf("isShared(%q) = %v, want %v", key, got, want)
 		}
+	}
+}
+
+// Every query string and form parameter is shared by default, and only
+// those starting 51D_ or allow listed are shared once the option is off.
+// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L71-L81
+func TestQueryParametersAreSharedByDefault(t *testing.T) {
+	for name, c := range map[string]struct {
+		b     *Builder
+		other bool
+	}{
+		"default":       {NewBuilder(), true},
+		"all query off": {NewBuilder().SetShareAllQueryStringParameters(false), false},
+	} {
+		e := c.b.Build()
+		for key, want := range map[string]bool{
+			"query.other":      c.other,
+			"query.utm_source": c.other,
+			"query.51d_bar":    true,
+		} {
+			if got := e.isShared(key); got != want {
+				t.Errorf("%s: isShared(%q) = %v, want %v", name, key, got, want)
+			}
+		}
+		e.Close()
 	}
 }
 

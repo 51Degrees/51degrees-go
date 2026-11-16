@@ -59,6 +59,7 @@ Below is a table that describes the examples:
 | performance                   | A benchmarking example to measure the speed of data processing in single and multi-threaded modes                         |
 | reload_from_file              | An example that demonstrates how a data file can be reloaded while serving IP Intelligence requests                       |
 | update_polling_interval       | An example doing periodic polling for the updated data file                                                               |
+| metadata                      | An example listing the data file's dates, the Evidence keys the engine reads in the order it tries them, and each component with its properties and their descriptions |
 | getting_started_cloud         | The getting started example using the 51Degrees cloud service and a Resource Key, rather than a data file                 |
 | mixed/getting_started_console | A command line example featuring both device detection and IP intelligence                                                |
 | mixed/getting_started_web     | A web example featuring both device detection and IP intelligence                                                |
