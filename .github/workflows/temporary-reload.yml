@@ -1,0 +1,41 @@
+name: Temporary reload tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Reload tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The data submodule
+        run: |
+          git submodule update --init --depth 1 cxx
+          git -C cxx submodule update --init --depth 1 data
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: The free Lite and Asn data files, downloaded once
+        run: |
+          for i in 1 2 3; do sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash && break; sleep 15; done
+          cp cxx/data/device-detection/51Degrees-LiteV4.1.hash device-detection/
+          for i in 1 2 3; do sh cxx/data/get-data-files.sh 51Degrees-IPIV4AsnIpiV41.ipi && break; sleep 15; done
+          cp cxx/data/ip-intelligence/51Degrees-IPIV4AsnIpiV41.ipi ip-intelligence/
+      - name: Device Detection refresh tests
+        if: always()
+        working-directory: device-detection
+        run: go test -count=1 -v -run '^TestRefreshData' ./onpremise/
+      - name: IP Intelligence refresh tests
+        if: always()
+        working-directory: ip-intelligence
+        run: CI=true go test -count=1 -v -run '^TestRefreshData' ./ipi_onpremise/
+      - name: The one at a time test with the race detector, to show what the detector says
+        if: always()
+        run: |
+          (cd device-detection && go test -race -count=1 -v -run '^TestRefreshDataWhileProcessing$' ./onpremise/)
+          (cd ip-intelligence && CI=true go test -race -count=1 -v -run '^TestRefreshDataWhileProcessing$' ./ipi_onpremise/)
