@@ -232,10 +232,10 @@ const DataFileLine = "Data file:"
 // reportedDataFile keeps the line to one for each run.
 var reportedDataFile sync.Once
 
-// reportDataFile prints the data file in use, with its size, and gives the
+// ReportDataFile prints the data file in use, with its size, and gives the
 // path back, so a run says where its values come from, whether the file was
 // named in a setting, found in the tree or fetched.
-func reportDataFile(path string) string {
+func ReportDataFile(path string) string {
 	reportedDataFile.Do(func() {
 		if info, err := os.Stat(path); err == nil {
 			fmt.Printf("%s %s (%d bytes)\n\n", DataFileLine, path, info.Size())
@@ -251,9 +251,9 @@ func reportDataFile(path string) string {
 // examples, and otherwise the free Lite file, found or downloaded.
 func DataFilePath() string {
 	if path := fromEnvironment("_51DEGREES_DD_PATH"); path != "" {
-		return reportDataFile(path)
+		return ReportDataFile(path)
 	}
-	return reportDataFile(GetFilePathByName([]string{LiteDataFile}))
+	return ReportDataFile(GetFilePathByName([]string{LiteDataFile}))
 }
 
 // EvidenceFilePath returns the Evidence file an example uses, being the file
