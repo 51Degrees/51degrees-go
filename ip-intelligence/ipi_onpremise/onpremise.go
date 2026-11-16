@@ -83,6 +83,17 @@ type Engine struct {
 	// positions holds the position of each required property name. It is
 	// made with names.
 	positions atomic.Pointer[map[string]int]
+
+	// profile and concurrency are the Performance Profile and Concurrency
+	// options. nil leaves the option at its default.
+	profile     *ipi_interop.PerformanceProfile
+	concurrency *uint16
+	// defaultConcurrency is the Concurrency used when none is set and no
+	// native configuration was given. 0 leaves the native code's own.
+	defaultConcurrency uint16
+	// afterLoad, when set, is called each time a data file has loaded, the
+	// first included, so that what depends on the data is worked out again.
+	afterLoad func(*Engine)
 }
 
 const (
@@ -493,14 +504,15 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		}
 		year, month, day := e.getPublishedDate().Date()
 		e.logger.Printf("data file loaded from " + filePath + " published on: " + fmt.Sprintf("%d-%d-%d", year, month, day))
+		if e.afterLoad != nil {
+			e.afterLoad(e)
+		}
 	}()
 
 	if e.manager == nil {
 		e.manager = ipi_interop.NewResourceManager()
 		// init manager from file
-		if e.config == nil {
-			e.config = ipi_interop.NewConfigIpi(ipi_interop.Balanced)
-		}
+		e.config = e.nativeConfig()
 
 		if err := ipi_interop.InitManagerFromFile(e.manager, *e.config, strings.Join(e.managerProperties, ","), filePath); err != nil {
 			if e.IsCreateTempDataCopyEnabled() {

@@ -136,6 +136,11 @@ func (e *Engine) processInto(results nativeResults, ipAddress string) (*Data, er
 		results.Free()
 		return nil, err
 	}
+	return e.newData(results), nil
+}
+
+// newData wraps populated results in a Data, reading no value.
+func (e *Engine) newData(results nativeResults) *Data {
 	var nameAt func(int) string
 	if names := e.names.Load(); names != nil {
 		nameAt = names.Name
@@ -150,7 +155,7 @@ func (e *Engine) processInto(results nativeResults, ipAddress string) (*Data, er
 		nameAt:    nameAt,
 		positions: positions,
 		read:      make(map[int][]*ipi_interop.WeightedValue),
-	}, nil
+	}
 }
 
 // setPositions makes the table from each required Property name to its

@@ -25,9 +25,11 @@ package ipi_onpremise
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
@@ -49,11 +51,134 @@ func WithDataFile(path string) EngineOptions {
 // PerformanceProfile, Drift, Difference, Concurrency
 // By default initialized with ipi_interopt.Balanced performance profile
 // ipi_interopt.NewConfigIpi(ipi_interopt.Balanced)
+//
+// It cannot be used with WithPerformanceProfile, because the configuration
+// given here already has a performance profile.
 func WithConfigIpi(configIpi *ipi_interop.ConfigIpi) EngineOptions {
 	return func(cfg *Engine) error {
+		if configIpi != nil && cfg.profile != nil {
+			return errProfileAndConfig
+		}
 		cfg.config = configIpi
 		return nil
 	}
+}
+
+// errProfileAndConfig refuses a Performance Profile given two ways.
+var errProfileAndConfig = errors.New("WithPerformanceProfile and " +
+	"WithConfigIpi were both given, and each sets the performance " +
+	"profile, so which is meant is not clear. Give one of them. " +
+	"WithConcurrency can be used with either")
+
+// performanceProfileNames are the names a Performance Profile is given by
+// in a configuration file, in lower case. MaxPerformance is the
+// specification's name for the profile that holds the whole data file in
+// memory, which this package calls InMemory.
+var performanceProfileNames = map[string]ipi_interop.PerformanceProfile{
+	"default":         ipi_interop.Default,
+	"lowmemory":       ipi_interop.LowMemory,
+	"balancedtemp":    ipi_interop.BalancedTemp,
+	"balanced":        ipi_interop.Balanced,
+	"highperformance": ipi_interop.HighPerformance,
+	"maxperformance":  ipi_interop.InMemory,
+	"inmemory":        ipi_interop.InMemory,
+}
+
+// performanceProfileList names the Performance Profiles in a message.
+const performanceProfileList = "LowMemory, Balanced, BalancedTemp, " +
+	"HighPerformance, MaxPerformance (also called InMemory) or Default"
+
+// ParsePerformanceProfile gives the Performance Profile with the given name,
+// ignoring case, or an error that lists the names when there is none.
+func ParsePerformanceProfile(name string) (ipi_interop.PerformanceProfile, error) {
+	profile, ok := performanceProfileNames[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return ipi_interop.Default, fmt.Errorf("'%s' is not a Performance "+
+			"Profile. Use %s", name, performanceProfileList)
+	}
+	return profile, nil
+}
+
+// WithPerformanceProfile sets the Performance Profile the Engine is created
+// with, which decides how much of the data file is held in memory. The
+// default is Balanced. A value that is not a Performance Profile is refused.
+// It cannot be used with WithConfigIpi.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L619
+func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOptions {
+	return func(cfg *Engine) error {
+		if profile < ipi_interop.Default || profile > ipi_interop.InMemory {
+			return fmt.Errorf("%d is not a Performance Profile. Use %s",
+				int(profile), performanceProfileList)
+		}
+		if cfg.config != nil {
+			return errProfileAndConfig
+		}
+		cfg.profile = &profile
+		return nil
+	}
+}
+
+// maxConcurrency is the highest Concurrency the native code can be given.
+const maxConcurrency = math.MaxUint16
+
+// WithConcurrency sets the expected number of operations that use the Engine
+// at the same time, which the native code uses for every collection it reads
+// from the data file. It has no effect when the whole data file is held in
+// memory. A number below 1 or above 65535 is refused.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L620
+func WithConcurrency(concurrency int) EngineOptions {
+	return func(cfg *Engine) error {
+		if concurrency < 1 || concurrency > maxConcurrency {
+			return fmt.Errorf("Concurrency is %d, and it has to be from 1 "+
+				"to %d. Leave it out to use the default", concurrency,
+				maxConcurrency)
+		}
+		value := uint16(concurrency)
+		cfg.concurrency = &value
+		return nil
+	}
+}
+
+// WithReuseOperationalFile says whether a copy of the data file left by an
+// earlier run is used again. When this Engine works from a copy it makes a
+// new one each time it starts and removes it when it stops, so there is never
+// an earlier copy to use again, and turning the option on is refused. Off is
+// the default, and is accepted.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L621
+func WithReuseOperationalFile(reuse bool) EngineOptions {
+	return func(cfg *Engine) error {
+		if reuse {
+			return errors.New("ReuseOperationalFile cannot be turned on. " +
+				"When this Engine works from a copy of the data file it " +
+				"makes a new one each time it starts and removes it when " +
+				"it stops, so there is no earlier copy to use again. Leave " +
+				"ReuseOperationalFile out or set it to false")
+		}
+		return nil
+	}
+}
+
+// nativeConfig gives the native configuration the data set is created with.
+// It is the one given with WithConfigIpi, or otherwise one for the
+// Performance Profile set, which is Balanced by default. The Concurrency set
+// is applied to either.
+func (e *Engine) nativeConfig() *ipi_interop.ConfigIpi {
+	config := e.config
+	concurrency := e.concurrency
+	if config == nil {
+		profile := ipi_interop.Balanced
+		if e.profile != nil {
+			profile = *e.profile
+		}
+		config = ipi_interop.NewConfigIpi(profile)
+		if concurrency == nil && e.defaultConcurrency != 0 {
+			concurrency = &e.defaultConcurrency
+		}
+	}
+	if concurrency != nil {
+		config.SetConcurrency(*concurrency)
+	}
+	return config
 }
 
 // WithLicenseKey sets the license key to use when pulling the data file
