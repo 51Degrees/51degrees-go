@@ -73,8 +73,8 @@ func TestMessagesMatchSpecification(t *testing.T) {
 			want: wantPrefix +
 				"This is because your resource key does not include access " +
 				"to any properties under 'device'. Check or create a " +
-				"resource key with the properties you need in the " +
-				"configurator at https://configure.51degrees.com.",
+				"resource key with the properties you need on the " +
+				"configuration page at https://51degrees.com/configure.",
 		},
 		{
 			name: "property not included with Resource Key",
@@ -84,8 +84,8 @@ func TestMessagesMatchSpecification(t *testing.T) {
 				"This is because your resource key does not include access " +
 				"to this property. The properties included for your key " +
 				"under 'device' are HardwareVendor,PlatformName. Check or " +
-				"change your key in the configurator at " +
-				"https://configure.51degrees.com.",
+				"change your key on the configuration page at " +
+				"https://51degrees.com/configure.",
 		},
 		{
 			name: "request to the remote server failed",
@@ -140,8 +140,8 @@ func TestPropertyNotInResourceKeyWithNoNames(t *testing.T) {
 	want := wantPrefix +
 		"This is because your resource key does not include access to this " +
 		"property. The properties included for your key under 'device' are " +
-		". Check or change your key in the configurator at " +
-		"https://configure.51degrees.com."
+		". Check or change your key on the configuration page at " +
+		"https://51degrees.com/configure."
 	if err.Message != want {
 		t.Fatalf("message\n got %q\nwant %q", err.Message, want)
 	}
