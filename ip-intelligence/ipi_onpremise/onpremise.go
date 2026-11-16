@@ -491,6 +491,8 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		if !loaded {
 			return
 		}
+		e.names.Store(ipi_interop.NewPropertyNames(e.manager))
+		e.setPositions(namesOf(e.names.Load()))
 		year, month, day := e.getPublishedDate().Date()
 		e.logger.Printf("data file loaded from " + filePath + " published on: " + fmt.Sprintf("%d-%d-%d", year, month, day))
 	}()
