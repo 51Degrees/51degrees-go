@@ -27,7 +27,9 @@
 // background goroutine batches entries into a GZip-compressed XML payload and
 // sends it, pausing after repeated failed sends. Identical Evidence is shared
 // at most once in each repeat Evidence interval, and all errors are logged
-// without disrupting the Pipeline.
+// without disrupting the Pipeline. Every record carries the element's process
+// identifier, and the values that do not change while the element lives are
+// written to its first record and again once each hour after that.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md
 package usagesharing
@@ -139,7 +141,21 @@ type Element struct {
 	// cut is the number of entries in a message whose send Close stopped. Only
 	// the sending goroutine uses it.
 	cut int
+
+	// processID is the process identifier, created when the element is
+	// built and written to every record.
+	// See https://github.com/51Degrees/specifications/blob/07e1fcedc2/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L113-L131
+	processID string
+	// invariantsWritten is whether a record has carried the invariant
+	// values, and invariantsAt is when the last one was written. Only the
+	// sending goroutine, which writes the records, uses them.
+	invariantsWritten bool
+	invariantsAt      time.Time
 }
+
+// invariantInterval is how long after the invariant values were last
+// written to a record they are written again.
+const invariantInterval = time.Hour
 
 type record struct {
 	sessionID string
@@ -341,7 +357,7 @@ func (e *Element) enqueue(rec *record) bool {
 }
 
 // OnPipelineAdded records the fully-qualified Flow Element names used in the
-// invariant portion of each shared record.
+// invariant values, which a record carries only when invariantsDue says so.
 func (e *Element) OnPipelineAdded(p core.Pipeline) error {
 	if e.cfg.err != nil {
 		return e.cfg.err
@@ -596,7 +612,7 @@ func (e *Element) buildXML(batch []*record) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString("<Devices>")
 	for _, rec := range batch {
-		e.writeDevice(&b, rec, flowNames)
+		e.writeDevice(&b, rec, flowNames, e.invariantsDue())
 	}
 	b.WriteString("</Devices>")
 	return []byte(b.String()), nil
@@ -611,26 +627,49 @@ func (e *Element) flowNamesSnapshot() []string {
 	return out
 }
 
-func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string) {
+// invariantsDue reports whether the next record is to carry the invariant
+// values, being the first record the element writes and the first once an
+// hour or more has passed since they were last written, and if so records
+// that they are written now. The hour runs from when they were written,
+// whether or not the record arrived.
+// See https://github.com/51Degrees/specifications/blob/07e1fcedc2/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L150-L160
+func (e *Element) invariantsDue() bool {
+	now := e.clock.now()
+	if e.invariantsWritten && now.Sub(e.invariantsAt) < invariantInterval {
+		return false
+	}
+	e.invariantsWritten = true
+	e.invariantsAt = now
+	return true
+}
+
+// writeDevice writes one record. Every record starts with the process
+// identifier, and only a record for which invariants is true carries the
+// invariant values.
+func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string,
+	invariants bool) {
 	b.WriteString("<Device>")
 	// Field order and always-present fields are fixed so the payload validates
 	// against the server-side schema.
+	writeElement(b, "ProcessId", e.processID)
 	writeElement(b, "SessionId", rec.sessionID)
 	writeElement(b, "Sequence", strconv.Itoa(rec.sequence))
 	writeElement(b, "DateSent", rec.dateSent.Format("2006-01-02T15:04:05"))
 	writeElement(b, "ClientIP", rec.clientIP)
-	writeElement(b, "Version", coreVersion())
-	writeElement(b, "Product", productName)
-	for _, name := range flowNames {
-		writeElement(b, "FlowElement", name)
+	if invariants {
+		writeElement(b, "Version", coreVersion())
+		writeElement(b, "Product", productName)
+		for _, name := range flowNames {
+			writeElement(b, "FlowElement", name)
+		}
+		for _, p := range e.packages {
+			writePackage(b, p)
+		}
+		writeElement(b, "Language", "Go")
+		writeElement(b, "LanguageVersion", runtime.Version())
+		writeElement(b, "ServerIP", serverIP())
+		writeElement(b, "Platform", platformName())
 	}
-	for _, p := range e.packages {
-		writePackage(b, p)
-	}
-	writeElement(b, "Language", "Go")
-	writeElement(b, "LanguageVersion", runtime.Version())
-	writeElement(b, "ServerIP", serverIP())
-	writeElement(b, "Platform", platformName())
 
 	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))

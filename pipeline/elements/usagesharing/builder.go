@@ -303,6 +303,7 @@ func (b *Builder) Build() *Element {
 		sendCtx:     sendCtx,
 		cancelSends: cancelSends,
 		packages:    packages(),
+		processID:   newProcessID(),
 	}
 	return e
 }
