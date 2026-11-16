@@ -194,7 +194,11 @@ the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument.
 Run with none, it says where to create one and which variable to put it in,
 then ends without an error (`main.go` lines 119 to 130), so CI runs it with no
 settings (`TestGettingStartedCloudWithNoResourceKey`) and with the cloud
-service only when a key is set. The other examples work on-premise, with a data
+service only when a key is set.
+`examples/device-detection/cloud/getting_started` does the same for Device
+Detection, and builds its Pipeline from the options file
+`getting_started.json` beside it, so run it from its own folder. Its test
+runs it against a stand-in for the service. The other examples work on-premise, with a data
 file. The Pipeline API's `examples/pipeline/4_cloud_engine` shows a cloud
 engine against a stand-in for the service that the example starts itself,
 with the placeholder key `example-resource-key`.
