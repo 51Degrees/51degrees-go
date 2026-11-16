@@ -87,8 +87,7 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		logger = slog.Default()
 	}
 
-	elements := make([]FlowElement, len(b.elements))
-	copy(elements, b.elements)
+	elements := b.elements
 
 	filters := make([]EvidenceKeyFilter, 0, len(elements))
 	// Flow Data must use thread-safe storage if it was explicitly requested or if
@@ -119,6 +118,7 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 
 	p := &pipeline{
 		elements:                  elements,
+		builder:                   b,
 		logger:                    logger,
 		concurrent:                concurrent,
 		suppressProcessExceptions: b.suppressProcessExceptions,

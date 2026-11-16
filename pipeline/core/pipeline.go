@@ -62,6 +62,7 @@ type Pipeline interface {
 
 type pipeline struct {
 	elements                  []FlowElement
+	builder                   *PipelineBuilder
 	logger                    *slog.Logger
 	concurrent                bool
 	suppressProcessExceptions bool
@@ -92,12 +93,20 @@ func (p *pipeline) isClosed() bool {
 }
 
 func (p *pipeline) FlowElements() []FlowElement {
+	if p.builder != nil {
+		out := make([]FlowElement, len(p.builder.elements))
+		copy(out, p.builder.elements)
+		return out
+	}
 	out := make([]FlowElement, len(p.elements))
 	copy(out, p.elements)
 	return out
 }
 
 func (p *pipeline) GetElement(dataKey string) FlowElement {
+	if p.builder != nil {
+		return findElement(p.builder.elements, dataKey)
+	}
 	return findElement(p.elements, dataKey)
 }
 

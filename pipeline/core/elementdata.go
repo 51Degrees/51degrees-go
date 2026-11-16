@@ -73,6 +73,7 @@ func NewBaseElementData() *BaseElementData {
 
 // Get returns the value of a Property by name, or an error if absent.
 func (d *BaseElementData) Get(propertyName string) (any, error) {
+	d.values.AddString("lastread", propertyName)
 	v, ok := d.values.GetString(propertyName)
 	if !ok {
 		return nil, NewDataError("property '" + propertyName + "' is not present in this element data")
