@@ -28,9 +28,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_cloud"
+	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
@@ -57,27 +59,45 @@ func compatibleDataFile(t *testing.T) string {
 	return path
 }
 
-// compatibleCloud stands in for the cloud service, giving AsnName as a
-// weighted String, the type the cloud gives it as.
-func compatibleCloud() *httptest.Server {
+// compatibleCloud stands in for the cloud service, giving each available
+// Property of the data file in the form the cloud gives a Property of its
+// type: a weighted one as a list of weighted Strings, and any other as a
+// String.
+func compatibleCloud(properties []ipi_interop.PropertyMetadata) *httptest.Server {
+	var metadata, values []string
+	for _, p := range properties {
+		if !p.Available {
+			continue
+		}
+		name := strings.ToLower(p.Name)
+		if p.Type.IsWeighted() {
+			metadata = append(metadata, fmt.Sprintf(`{"Name":%q,`+
+				`"Type":"IReadOnlyList<IWeightedValue<String>>"}`, p.Name))
+			values = append(values, fmt.Sprintf(
+				`%q:[{"value":"a value","rawweighting":65535}]`, name))
+		} else {
+			metadata = append(metadata, fmt.Sprintf(`{"Name":%q,"Type":"String"}`, p.Name))
+			values = append(values, fmt.Sprintf(`%q:"a value"`, name))
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"Products":{"ip":{"DataTier":"CloudV5Bespoke","Properties":[` +
-			`{"Name":"AsnName","Type":"IReadOnlyList<IWeightedValue<String>>","Category":"Network"}]}}}`))
+			strings.Join(metadata, ",") + `]}}}`))
 	})
 	mux.HandleFunc("/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`["query.client-ip"]`))
 	})
 	mux.HandleFunc("/json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"ip":{"asnname":[{"value":"A network","rawweighting":65535}]}}`))
+		w.Write([]byte(`{"ip":{` + strings.Join(values, ",") + `}}`))
 	})
 	return httptest.NewServer(mux)
 }
 
 // compatibleCloudData gives the IP Intelligence Cloud Engine's Element Data
 // from the stand-in cloud.
-func compatibleCloudData(t *testing.T) *ipi_cloud.Data {
-	srv := compatibleCloud()
+func compatibleCloudData(t *testing.T, properties []ipi_interop.PropertyMetadata) *ipi_cloud.Data {
+	srv := compatibleCloud(properties)
 	t.Cleanup(srv.Close)
 	cre, err := requestengine.NewBuilder().
 		SetResourceKey("test-resource-key").
@@ -108,8 +128,9 @@ func compatibleCloudData(t *testing.T) *ipi_cloud.Data {
 }
 
 // compatibleOnPremiseData gives the on-premise engine's Element Data, from a
-// Pipeline given the address as the cloud is given it.
-func compatibleOnPremiseData(t *testing.T) *IpData {
+// Pipeline given the address as the cloud is given it, and the metadata of
+// the data file's Properties.
+func compatibleOnPremiseData(t *testing.T) (*IpData, []ipi_interop.PropertyMetadata) {
 	engine, err := NewPipelineEngine(
 		WithDataFile(compatibleDataFile(t)), WithAutoUpdate(false))
 	if err != nil {
@@ -122,6 +143,10 @@ func compatibleOnPremiseData(t *testing.T) *IpData {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pipeline.Close() })
+	properties, err := engine.Engine().Properties()
+	if err != nil {
+		t.Fatal(err)
+	}
 	fd := pipeline.CreateFlowData()
 	fd.AddEvidence("query.client-ip", compatibleAddress)
 	if err := fd.Process(); err != nil {
@@ -131,34 +156,49 @@ func compatibleOnPremiseData(t *testing.T) *IpData {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return data
+	return data, properties
 }
 
 // The on-premise engine, in a Pipeline, gives Element Data under the IP
-// Intelligence Cloud Engine's Data Key, and gives each Property the cloud
-// gives as the same type, so code reading one reads the other.
+// Intelligence Cloud Engine's Data Key, and gives each Property as the same
+// type as the cloud engine gives a Property of its type, so code reading one
+// reads the other.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L24-L26
 func TestElementDataIsCompatibleWithTheCloudEngines(t *testing.T) {
 	if DataKey != ipi_cloud.DataKey {
 		t.Errorf("the on-premise Data Key is %q and the cloud one %q",
 			DataKey, ipi_cloud.DataKey)
 	}
-	onPremise := compatibleOnPremiseData(t)
-	cloud := compatibleCloudData(t)
-	want, err := cloud.Get("asnname")
+	onPremise, properties := compatibleOnPremiseData(t)
+	cloud := compatibleCloudData(t, properties)
+	compared := 0
+	for _, p := range properties {
+		if !p.Available {
+			continue
+		}
+		want, err := cloud.Get(p.Name)
+		if err != nil {
+			t.Fatalf("the cloud gives no %s: %v", p.Name, err)
+		}
+		got, err := onPremise.Get(p.Name)
+		if err != nil {
+			t.Errorf("the on-premise engine gives no %s: %v", p.Name, err)
+			continue
+		}
+		if fmt.Sprintf("%T", got) != fmt.Sprintf("%T", want) {
+			t.Errorf("%s is a %T on-premise and a %T from the cloud", p.Name, got, want)
+		}
+		compared++
+	}
+	if compared == 0 {
+		t.Error("the data file has no available Property to compare")
+	}
+	name, err := onPremise.Get("asnname")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := onPremise.Get("asnname")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fmt.Sprintf("%T", got) != fmt.Sprintf("%T", want) {
-		t.Fatalf("asnname is a %T on-premise and a %T from the cloud", got, want)
-	}
-	values, err := got.(engines.AspectPropertyValue[[]core.WeightedValue[string]]).Value()
-	if err != nil || len(values) == 0 || values[0].Value() == "" {
-		t.Errorf("asnname for %s is %v, %v, want a name", compatibleAddress, values, err)
+	if !name.(engines.PropertyValueAccessor).HasValue() {
+		t.Errorf("asnname for %s has no value", compatibleAddress)
 	}
 }
 

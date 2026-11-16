@@ -80,6 +80,10 @@ type Engine struct {
 	// made once, when the first data file is loaded, and kept across reloads,
 	// because the C library keeps the names the engine was built with.
 	names atomic.Pointer[ipi_interop.PropertyNames]
+
+	// weighted holds, by lower case name, the Properties the data file
+	// weights, once ProcessData has read them.
+	weighted atomic.Pointer[map[string]bool]
 }
 
 const (

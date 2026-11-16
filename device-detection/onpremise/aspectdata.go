@@ -23,6 +23,7 @@
 package onpremise
 
 import (
+	"reflect"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
@@ -61,15 +62,19 @@ func (e *Engine) ProcessData(evidenceList []Evidence) (*DeviceData, error) {
 // DeviceData.
 func (e *Engine) deviceData(results *dd.ResultsHash) *DeviceData {
 	data := &DeviceData{BaseAspectData: engines.NewBaseAspectData()}
-	lists := e.listProperties()
+	kinds := e.propertyKinds()
 	for index, name := range results.AvailableProperties() {
 		key := strings.ToLower(name)
 		values, reason := propertyValues(results, index)
+		list := kinds[key] == listProperty
 		switch {
-		case lists[key] && reason == "":
+		case list && reason == "":
 			data.Set(key, engines.NewAspectPropertyValue(values))
-		case lists[key]:
+		case list:
 			data.Set(key, engines.NoValue[[]string](reason))
+		case reason == "" && kinds[key] == booleanProperty:
+			data.Set(key, engines.NewAspectPropertyValue(
+				strings.ToLower(strings.Join(values, "|"))))
 		case reason == "":
 			data.Set(key, engines.NewAspectPropertyValue(strings.Join(values, "|")))
 		default:
@@ -78,6 +83,20 @@ func (e *Engine) deviceData(results *dd.ResultsHash) *DeviceData {
 	}
 	return data
 }
+
+// propertyKind is how DeviceData gives the value of a Property.
+type propertyKind int
+
+const (
+	// textProperty is given as its text, as the data file holds it.
+	textProperty propertyKind = iota
+	// listProperty is given as a list of Strings.
+	listProperty
+	// booleanProperty is given as "true" or "false", as the Device Detection
+	// Cloud Engine gives a Boolean, where the data file holds "True" or
+	// "False".
+	booleanProperty
+)
 
 // propertyValues gives the values of the Property at the required property
 // index, or the reason it has none.
@@ -112,22 +131,26 @@ func noValueReason(reason string) string {
 	return reason
 }
 
-// listProperties gives, by lower case name, the Properties the data file in
-// use holds as lists. The answer is kept once the data file has given it.
-func (e *Engine) listProperties() map[string]bool {
-	if lists := e.lists.Load(); lists != nil {
-		return *lists
+// propertyKinds gives, by lower case name, how DeviceData gives each Property
+// of the data file in use that is not text. The answer is kept once the data
+// file has given it.
+func (e *Engine) propertyKinds() map[string]propertyKind {
+	if kinds := e.kinds.Load(); kinds != nil {
+		return *kinds
 	}
 	properties, err := e.Properties()
 	if err != nil {
-		return map[string]bool{}
+		return map[string]propertyKind{}
 	}
-	lists := make(map[string]bool, len(properties))
+	kinds := make(map[string]propertyKind, len(properties))
 	for _, p := range properties {
-		if p.IsList {
-			lists[strings.ToLower(p.Name)] = true
+		switch {
+		case p.IsList:
+			kinds[strings.ToLower(p.Name)] = listProperty
+		case p.Type == reflect.TypeOf(true):
+			kinds[strings.ToLower(p.Name)] = booleanProperty
 		}
 	}
-	e.lists.Store(&lists)
-	return lists
+	e.kinds.Store(&kinds)
+	return kinds
 }
