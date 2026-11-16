@@ -68,8 +68,9 @@ func TestFactoryKeepsQueueSizeAndTimeoutDefaults(t *testing.T) {
 		t.Fatalf("factory: %v", err)
 	}
 	cfg := fe.(*Element).cfg
-	if cfg.minEntries != 5 {
-		t.Errorf("minimum entries per message %d, want 5", cfg.minEntries)
+	if cfg.minEntries != DefaultMinEntries {
+		t.Errorf("minimum entries per message %d, want %d",
+			cfg.minEntries, DefaultMinEntries)
 	}
 	if cfg.maxQueueSize != DefaultMaxQueueSize {
 		t.Errorf("maximum queue size %d, want %d",
