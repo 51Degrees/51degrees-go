@@ -1,0 +1,38 @@
+name: Temporary derived script order tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Derived script order tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The submodules the Pipeline tests read
+        run: git submodule update --init --depth 1 derived-properties javascript-templates
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format and vet
+        if: always()
+        working-directory: pipeline
+        run: |
+          test -z "$(gofmt -l elements/derivedproperty | tee /dev/stderr)"
+          go vet ./elements/derivedproperty/
+      - name: The script order tests
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -v -run 'TestDerivedFromDerived|TestAChainOfDerivedProperties|TestScriptsThatReadEachOther' ./elements/derivedproperty/
+      - name: Every test of the element
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 ./elements/derivedproperty/
