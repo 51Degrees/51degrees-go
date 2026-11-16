@@ -1,0 +1,46 @@
+name: Temporary cloud cache rule tests
+
+on: push
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Cloud cache rule tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Image and Go
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          go version
+      - name: Format
+        # Only on Ubuntu, because the Windows runner checks the repository
+        # out with CRLF line endings, which gofmt reports for every file.
+        if: always() && matrix.os == 'ubuntu-latest'
+        run: |
+          unformatted=$(gofmt -l pipeline/cloud || true)
+          echo "gofmt: ${unformatted:-none}"
+          test -z "$unformatted"
+      - name: Vet
+        if: always()
+        working-directory: pipeline
+        run: go vet ./cloud/...
+      - name: The new test, five times
+        if: always()
+        working-directory: pipeline
+        run: go test -count=5 -v -timeout 5m -run 'TestEachRequestReachesTheCloudServiceEvenWithTheSameEvidence' ./cloud/requestengine/
+      - name: Every test of the cloud packages
+        if: always()
+        working-directory: pipeline
+        run: go test -count=1 -timeout 10m ./cloud/...

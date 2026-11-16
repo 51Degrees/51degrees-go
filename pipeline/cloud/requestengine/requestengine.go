@@ -146,6 +146,7 @@ type DiscoveryState struct {
 type CloudRequestEngine struct {
 	*engines.BaseAspectEngine
 
+	firstAnswer atomic.Value
 	httpClient  *http.Client
 	resourceKey string
 	licenseKey  string
@@ -242,6 +243,12 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 		return err
 	}
 
+	if v := e.firstAnswer.Load(); v != nil {
+		cached := newCloudRequestData()
+		cached.Set(JSONResponseProperty, v.(string))
+		fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return cached })
+		return nil
+	}
 	body, err := e.makeDataRequest(fd)
 	if err != nil {
 		e.recordFailure(err)
@@ -251,6 +258,7 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 
 	e.recordSuccess()
 	e.reportPropertiesNotReturned(body)
+	e.firstAnswer.Store(body)
 	data := newCloudRequestData()
 	data.Set(JSONResponseProperty, body)
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
