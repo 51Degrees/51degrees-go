@@ -31,18 +31,24 @@ import (
 
 // The queue size and the two timeouts can be set from a configuration file,
 // under the names the options table gives them, as numbers decoded from JSON.
+// The minimum entries per message is in the file as well, because a queue
+// smaller than a message is refused.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L444-L446
 func TestFactoryReadsQueueSizeAndTimeouts(t *testing.T) {
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	fe, err := Factory(map[string]any{
-		"MaximumQueueSize":        float64(7),
-		"AddTimeoutMilliseconds":  float64(12),
-		"TakeTimeoutMilliseconds": float64(0),
+		"MinimumEntriesPerMessage": float64(5),
+		"MaximumQueueSize":         float64(7),
+		"AddTimeoutMilliseconds":   float64(12),
+		"TakeTimeoutMilliseconds":  float64(0),
 	}, quiet)
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
 	cfg := fe.(*Element).cfg
+	if cfg.minEntries != 5 {
+		t.Errorf("minimum entries per message %d, want 5", cfg.minEntries)
+	}
 	if cfg.maxQueueSize != 7 {
 		t.Errorf("maximum queue size %d, want 7", cfg.maxQueueSize)
 	}
@@ -62,6 +68,9 @@ func TestFactoryKeepsQueueSizeAndTimeoutDefaults(t *testing.T) {
 		t.Fatalf("factory: %v", err)
 	}
 	cfg := fe.(*Element).cfg
+	if cfg.minEntries != 5 {
+		t.Errorf("minimum entries per message %d, want 5", cfg.minEntries)
+	}
 	if cfg.maxQueueSize != DefaultMaxQueueSize {
 		t.Errorf("maximum queue size %d, want %d",
 			cfg.maxQueueSize, DefaultMaxQueueSize)
