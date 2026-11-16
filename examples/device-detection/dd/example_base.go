@@ -38,6 +38,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"gopkg.in/yaml.v3"
@@ -224,14 +225,35 @@ func GetFilePathByName(names []string) string {
 	return ""
 }
 
+// DataFileLine starts the line every example prints to say which data file
+// its values come from.
+const DataFileLine = "Data file:"
+
+// reportedDataFile keeps the line to one for each run.
+var reportedDataFile sync.Once
+
+// reportDataFile prints the data file in use, with its size, and gives the
+// path back, so a run says where its values come from, whether the file was
+// named in a setting, found in the tree or fetched.
+func reportDataFile(path string) string {
+	reportedDataFile.Do(func() {
+		if info, err := os.Stat(path); err == nil {
+			fmt.Printf("%s %s (%d bytes)\n\n", DataFileLine, path, info.Size())
+			return
+		}
+		fmt.Printf("%s %s\n\n", DataFileLine, path)
+	})
+	return path
+}
+
 // DataFilePath returns the data file an example uses, being the file the
 // _51DEGREES_DD_PATH environment variable names, as for the on-premise
 // examples, and otherwise the free Lite file, found or downloaded.
 func DataFilePath() string {
 	if path := fromEnvironment("_51DEGREES_DD_PATH"); path != "" {
-		return path
+		return reportDataFile(path)
 	}
-	return GetFilePathByName([]string{LiteDataFile})
+	return reportDataFile(GetFilePathByName([]string{LiteDataFile}))
 }
 
 // EvidenceFilePath returns the Evidence file an example uses, being the file
