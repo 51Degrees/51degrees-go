@@ -93,7 +93,8 @@ func TestRefreshDataOnDemand(t *testing.T) {
 }
 
 // RefreshData is safe to call while other goroutines process and refresh.
-// Run with -race, a reload that is not made on its own is reported.
+// Run with -race, a reload that is not made on its own is reported, which
+// ci/run-unit-tests.ps1 does on Linux.
 func TestRefreshDataWhileProcessing(t *testing.T) {
 	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, readGoodFile(t))),
 		WithAutoUpdate(false), WithFileWatch(false))
