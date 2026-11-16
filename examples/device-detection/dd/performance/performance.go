@@ -302,7 +302,8 @@ func run(
 // Setup all configuration settings required for running this example.
 // Run the example.
 func runPerformance(perf dd.PerformanceProfile, options dd_example.Options) string {
-	dataFilePath := dd_example.GetFilePathByPath(options.DataFilePath)
+	dataFilePath := dd_example.ReportDataFile(
+		dd_example.GetFilePathByPath(options.DataFilePath))
 
 	// Create Resource Manager
 	manager := dd.NewResourceManager()
