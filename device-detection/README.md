@@ -16,10 +16,12 @@ Go Lite implementation is currently supporting the following platforms and archi
 - Windows 64bit, Intel
 
 Go version:
-- 1.19
+- 1.22
 
-Compiles with go 1.19 and higher.  The minimum version of 1.19 is dictated by the fact that this library is used
-by the [prebid-server](https://github.com/prebid/prebid-server/) module and it has a minimum version requirement of go 1.19.
+Compiles with go 1.22 and higher, the version the Pipeline module asks for. The on-premise engine gives its results
+as Aspect Data, the Pipeline module's type, and can be added to a Pipeline (`onpremise.PipelineEngine`), so the module
+requires the Pipeline module. [prebid-server](https://github.com/prebid/prebid-server/) uses the earlier
+`device-detection-go` module and itself asks for a later Go than 1.22.
 
 ## Pre-requisites
 

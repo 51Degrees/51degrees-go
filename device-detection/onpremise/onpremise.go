@@ -77,6 +77,10 @@ type Engine struct {
 	// stopping is set as Stop begins, so a check waiting for the watched
 	// file ends at once rather than holding up Stop.
 	stopping atomic.Bool
+
+	// lists holds, by lower case name, the Properties the data file holds as
+	// lists, once ProcessData has read them.
+	lists atomic.Pointer[map[string]bool]
 }
 
 const (

@@ -25,8 +25,7 @@
 // the 51Degrees cloud service, so a Pipeline gives Device Detection
 // Properties from the cloud. It uses no C code, so it needs no cgo, and it
 // is in the Pipeline module beside the shared Cloud Engines rather than in the
-// Device Detection module, which keeps its Go 1.19 minimum and its
-// requirements as they are.
+// Device Detection module, whose packages need cgo.
 //
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/pipeline-elements/device-detection-cloud.md
 package dd_cloud

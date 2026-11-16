@@ -25,9 +25,9 @@ repository, an example downloads the published modules its `go.mod` names.
 ### Prerequisites
 
 - Git.
-- Go 1.22 or later, because the IP Intelligence and Pipeline modules ask for
-  1.22. The Device Detection module on its own asks for 1.19. CI tests Go 1.23
-  and 1.24 (`ci/options.json`).
+- Go 1.22 or later, because the Device Detection, IP Intelligence and
+  Pipeline modules ask for 1.22. The common module on its own asks for 1.19.
+  CI tests Go 1.23 and 1.24 (`ci/options.json`).
 - A C compiler for cgo, being GCC on Linux, Clang on macOS and MinGW-x64 on
   Windows, with `libatomic`, which usually comes with GCC and Clang.
 - On Windows, the MinGW-x64 `bin` folder on the `PATH` (by default

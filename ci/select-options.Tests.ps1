@@ -53,9 +53,9 @@ BeforeAll {
 Describe 'Resolve-AffectedProducts' {
     It 'builds <Product> and what requires it for a change to <File>' -TestCases @(
         @{ File = 'pipeline/core/flowdata.go'; Product = 'pipeline'
-            Expected = @('ip-intelligence', 'pipeline') }
+            Expected = @('device-detection', 'ip-intelligence', 'pipeline') }
         @{ File = 'examples/pipeline/1_simple_element/main.go'; Product = 'pipeline'
-            Expected = @('ip-intelligence', 'pipeline') }
+            Expected = @('device-detection', 'ip-intelligence', 'pipeline') }
         @{ File = 'device-detection/dd/results_hash.go'; Product = 'device-detection'
             Expected = @('device-detection') }
         @{ File = 'ip-intelligence/ipi_cloud/engine.go'; Product = 'ip-intelligence'
