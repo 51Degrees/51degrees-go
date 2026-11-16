@@ -30,7 +30,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const (
@@ -91,8 +93,6 @@ func TestRefreshDataOnDemand(t *testing.T) {
 }
 
 // RefreshData is safe to call while other goroutines process and refresh.
-// Run with -race, a reload that is not made on its own is reported, which
-// ci/run-unit-tests.ps1 does on Linux.
 func TestRefreshDataWhileProcessing(t *testing.T) {
 	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, readGoodFile(t))),
 		WithAutoUpdate(false), WithFileWatch(false))
@@ -125,6 +125,63 @@ func TestRefreshDataWhileProcessing(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+// loadCounter is a logger that counts the reloads reporting at once. A
+// reload reports the file it loaded before it ends, and the counter holds
+// each report for a moment, so two reloads running at once are seen
+// reporting at once.
+type loadCounter struct {
+	inProgress atomic.Int32
+	most       atomic.Int32
+	loads      atomic.Int32
+}
+
+// loadReportMilliseconds is how long the counter holds each report.
+const loadReportMilliseconds = 20
+
+func (c *loadCounter) Printf(format string, v ...interface{}) {
+	if !strings.HasPrefix(fmt.Sprintf(format, v...), "data file loaded from ") {
+		return
+	}
+	now := c.inProgress.Add(1)
+	for {
+		most := c.most.Load()
+		if now <= most || c.most.CompareAndSwap(most, now) {
+			break
+		}
+	}
+	c.loads.Add(1)
+	time.Sleep(loadReportMilliseconds * time.Millisecond)
+	c.inProgress.Add(-1)
+}
+
+// Reloads asked for from several goroutines at once are made one at a time.
+func TestRefreshDataReloadsOneAtATime(t *testing.T) {
+	counter := &loadCounter{}
+	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, readGoodFile(t))),
+		WithAutoUpdate(false), WithFileWatch(false), WithCustomLogger(counter))
+	var wg sync.WaitGroup
+	for i := 0; i < refreshTestRefreshers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < refreshTestRefreshes; j++ {
+				if err := e.RefreshData(); err != nil {
+					t.Error(err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	// The first load, when the Engine was made, and each refresh.
+	want := int32(1 + refreshTestRefreshers*refreshTestRefreshes)
+	if got := counter.loads.Load(); got != want {
+		t.Errorf("%d loads were reported, want %d", got, want)
+	}
+	if most := counter.most.Load(); most != 1 {
+		t.Errorf("%d reloads ran at once, want one at a time", most)
 	}
 }
 
