@@ -227,7 +227,9 @@ func (b *Builder) DiscoveryState() *DiscoveryState { return b.discovered }
 // marks invalid fails the build with a *core.ConfigurationError, before any
 // request. A key or name that is empty or only whitespace counts as absent.
 // A 4xx answer to either request, such as for an invalid Resource Key, fails
-// the build with a *core.ConfigurationError wrapping the *CloudRequestError.
+// the build with a *core.ConfigurationError wrapping the *CloudRequestError,
+// or the *CloudRequestErrors when the answer's errors array holds more than
+// one entry.
 // Any other failure is logged as a warning and the build completes, and the
 // engine fetches what is missing on first use.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#revised-design-eager-discovery-at-build-time-transient-failure-fallback
