@@ -36,3 +36,24 @@ Describe 'ConvertFrom-GoBenchmark' {
         $figures.Count | Should -Be 0
     }
 }
+
+Describe 'Get-JavaScriptBuilderFigures' {
+    It 'gives each figure as a time and as a rate a second' {
+        $figures = Get-JavaScriptBuilderFigures @(
+            'BenchmarkJavaScriptBuilder/Minified-4         	    2416	    500000 ns/op',
+            'BenchmarkJavaScriptBuilder/NotMinified-4      	    3891	    250000 ns/op',
+            'BenchmarkJavaScriptBuilderMinification-4      	    7059	    125000 ns/op')
+        $figures.LowerIsBetter.AvgMillisecsPerMinifiedScript | Should -Be 0.5
+        $figures.LowerIsBetter.AvgMillisecsPerScriptNotMinified | Should -Be 0.25
+        $figures.LowerIsBetter.AvgMillisecsPerMinification | Should -Be 0.125
+        $figures.HigherIsBetter.MinifiedScriptsPerSecond | Should -Be 2000
+        $figures.HigherIsBetter.ScriptsNotMinifiedPerSecond | Should -Be 4000
+        $figures.HigherIsBetter.MinificationsPerSecond | Should -Be 8000
+    }
+
+    It 'stops when a benchmark gave no figure' {
+        { Get-JavaScriptBuilderFigures @(
+            'BenchmarkJavaScriptBuilder/Minified-4         	    2416	    500000 ns/op') } |
+            Should -Throw '*JavaScriptBuilder/NotMinified*'
+    }
+}

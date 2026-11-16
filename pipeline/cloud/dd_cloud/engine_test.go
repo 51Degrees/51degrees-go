@@ -43,7 +43,8 @@ const iPhone = "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
 
 // mockCloud stands in for the cloud service. Its Device Detection section
 // gives a Boolean, a String, a list of Strings, and a Property with no value
-// and a reason.
+// and a reason. The Resource Key also gives a location product, whose
+// Property the Device Detection Cloud Engine leaves out.
 func mockCloud() *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +52,9 @@ func mockCloud() *httptest.Server {
 			`{"Name":"IsMobile","Type":"Boolean","Category":"Device"},` +
 			`{"Name":"PlatformName","Type":"String","Category":"Software"},` +
 			`{"Name":"HardwareName","Type":"Array","Category":"Device"},` +
-			`{"Name":"HardwareVendor","Type":"String","Category":"Device"}]}}}`))
+			`{"Name":"HardwareVendor","Type":"String","Category":"Device"}]},` +
+			`"location":{"DataTier":"CloudV4Free","Properties":[` +
+			`{"Name":"Town","Type":"String","Category":"Location"}]}}}`))
 	})
 	mux.HandleFunc("/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`["header.user-agent"]`))
@@ -181,23 +184,29 @@ func TestPropertiesAreTheDeviceDetectionSubset(t *testing.T) {
 			t.Errorf("the engine's Properties lack %s, got %v", want, names)
 		}
 	}
+	if names["Town"] {
+		t.Errorf("the engine's Properties hold Town, from the location product, got %v", names)
+	}
 }
 
-// Without a Cloud Request Engine before it, the engine has no cloud response
-// to work on, so processing gives an error rather than empty values.
+// The engine initializes itself from a Cloud Request Engine added to the
+// Pipeline before it, so a Pipeline with none, or with one only after the
+// engine, is not built.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/pipeline-elements/device-detection-cloud.md?plain=1#L22-L24
-func TestEngineNeedsACloudRequestEngineBeforeIt(t *testing.T) {
-	pipeline, err := core.NewPipelineBuilder().
-		AddFlowElement(New(nil)).
-		Build()
-	if err != nil {
-		return
+func TestAPipelineWithoutACloudRequestEngineBeforeItIsNotBuilt(t *testing.T) {
+	if p, err := core.NewPipelineBuilder().AddFlowElement(New(nil)).Build(); err == nil {
+		p.Close()
+		t.Error("a Pipeline with no Cloud Request Engine was built")
 	}
-	defer pipeline.Close()
-	fd := pipeline.CreateFlowData()
-	fd.AddEvidence("header.user-agent", iPhone)
-	if err := fd.Process(); err == nil {
-		t.Error("processing with no Cloud Request Engine before the engine gave no error")
+	srv := mockCloud()
+	defer srv.Close()
+	p, err := core.NewPipelineBuilder().
+		AddFlowElement(New(nil)).
+		AddFlowElement(requestEngine(t, srv)).
+		Build()
+	if err == nil {
+		p.Close()
+		t.Error("a Pipeline with the Cloud Request Engine after this engine was built")
 	}
 }
 
