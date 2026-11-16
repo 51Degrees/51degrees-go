@@ -33,9 +33,10 @@ import (
 // The performance tests of the JavaScript Builder. They measure the time it
 // takes to make the script with minification and without, and the time the
 // minification alone takes, so the figures show the impact minification has.
-// CI's performance run (ci/run-performance-tests.ps1) publishes the figures,
-// where a later change that makes them worse is seen. They set no time limit
-// of their own, as a limit would depend on the runner.
+// CI's performance run (ci/run-performance-tests.ps1) records each figure as a
+// time and as a rate a second, and the Compare Performance job checks each
+// rate against earlier runs, so a later change that makes one worse is seen.
+// They set no time limit of their own, as a limit would depend on the runner.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/javascript-builder.md?plain=1#L109-L114
 
 // benchmarkPipeline gives a Pipeline that makes the script, minified or not.

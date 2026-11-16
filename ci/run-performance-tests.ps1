@@ -55,8 +55,9 @@ if ($Products -contains 'ip-intelligence') {
 
 if ($Products -contains 'pipeline') {
     # The JavaScript Builder's performance tests, which show the impact its
-    # minification has. Each figure is the average time to make one script,
-    # or to minify one, in milliseconds.
+    # minification has. Each figure is given as the average time to make one
+    # script, or to minify one, in milliseconds, and as how many a second,
+    # which is the form the performance comparison checks.
     # See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/javascript-builder.md?plain=1#L109-L114
     Push-Location (Join-Path $RepoName 'pipeline')
     try {
@@ -66,17 +67,12 @@ if ($Products -contains 'pipeline') {
     } finally {
         Pop-Location
     }
-    $figures = ConvertFrom-GoBenchmark $bench
-    $names = [ordered]@{
-        'JavaScriptBuilder/Minified' = 'AvgMillisecsPerMinifiedScript'
-        'JavaScriptBuilder/NotMinified' = 'AvgMillisecsPerScriptNotMinified'
-        'JavaScriptBuilderMinification' = 'AvgMillisecsPerMinification'
+    $builder = Get-JavaScriptBuilderFigures $bench
+    foreach ($name in $builder.LowerIsBetter.Keys) {
+        $lower[$name] = $builder.LowerIsBetter[$name]
     }
-    foreach ($benchmark in $names.Keys) {
-        if (!$figures.Contains($benchmark)) {
-            throw "The JavaScript Builder performance tests gave no figure for $benchmark"
-        }
-        $lower[$names[$benchmark]] = $figures[$benchmark]
+    foreach ($name in $builder.HigherIsBetter.Keys) {
+        $higher[$name] = $builder.HigherIsBetter[$name]
     }
 }
 

@@ -37,6 +37,7 @@ import (
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/aspectengine"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
@@ -67,6 +68,49 @@ func New(logger *slog.Logger) *Engine {
 	return &Engine{
 		BaseCloudAspectEngine: aspectengine.NewBaseCloudAspectEngine(DataKey, logger),
 	}
+}
+
+// OnPipelineAdded initializes the engine from the Cloud Request Engine, which
+// must have been added to the Pipeline before it. A Pipeline with no Cloud
+// Request Engine before this engine is refused.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/pipeline-elements/device-detection-cloud.md?plain=1#L22-L24
+func (e *Engine) OnPipelineAdded(p core.Pipeline) error {
+	if !requestEngineBefore(p, e) {
+		return core.NewConfigurationError("the Device Detection Cloud Engine "+
+			"needs a Cloud Request Engine added to the Pipeline before it", nil)
+	}
+	return e.BaseCloudAspectEngine.OnPipelineAdded(p)
+}
+
+// requestEngineBefore reports whether p runs a Cloud Request Engine before e,
+// being one of p's elements before the element that is e or the group run in
+// parallel that holds e.
+func requestEngineBefore(p core.Pipeline, e *Engine) bool {
+	seen := false
+	for _, el := range p.FlowElements() {
+		if holds(el, e) {
+			return seen
+		}
+		if _, ok := el.(*requestengine.CloudRequestEngine); ok {
+			seen = true
+		}
+	}
+	return false
+}
+
+// holds reports whether el is e, or a group that holds e.
+func holds(el core.FlowElement, e *Engine) bool {
+	if el == core.FlowElement(e) {
+		return true
+	}
+	if group, ok := el.(interface{ Children() []core.FlowElement }); ok {
+		for _, child := range group.Children() {
+			if holds(child, e) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Factory builds the engine from configuration for core.BuilderRegistry, so
