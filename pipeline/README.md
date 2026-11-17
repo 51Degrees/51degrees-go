@@ -128,6 +128,11 @@ http.ListenAndServe(":8080", mw.Handler(myAppHandler))
 
 // Inside myAppHandler:
 //   flowData, _ := web.FromContext(r.Context())
+//   A Flow Data cannot be used by two goroutines at once, so copy the
+//   values that work on another goroutine needs, and pass those:
+//   device, _ := flowData.Get("device")
+//   isMobile, _ := device.Get("ismobile")
+//   go record(isMobile)
 ```
 
 The example at [examples/pipeline/3_clientside_evidence](../examples/pipeline/3_clientside_evidence)
