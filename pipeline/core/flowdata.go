@@ -34,15 +34,16 @@ import (
 // caller. A Flow Data belongs to exactly one Pipeline and can be processed only
 // once.
 //
-// A Flow Data must not be read from another goroutine until Process has
-// returned. In a Pipeline built without SetConcurrent and with no parallel
-// group, processing writes the Element Data into a plain map, and a read from
-// another goroutine meanwhile can end the whole program with a fatal error,
-// not return one. The Pipeline adds no lock for this, to keep processing fast.
-// Once Process has returned the Pipeline adds nothing more, so the Flow Data
-// can then be handed to other goroutines and read from several at once.
+// A Flow Data is used by one goroutine at a time and is not safe to use from
+// several at once. Once Process has returned it may pass to another goroutine,
+// which then uses it alone. Reading it from another goroutine while Process
+// runs can end the whole program with a fatal error rather than return one,
+// because in a Pipeline built without SetConcurrent and with no parallel group
+// processing writes the Element Data into a map that takes no lock. The
+// Pipeline adds no lock, to keep processing fast, so a caller that shares a
+// Flow Data across goroutines is responsible for any locking.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#flow-data
-// See https://github.com/51Degrees/specifications/blob/1477eaf7d21c48520787112eb64634936184c83c/pipeline-specification/features/thread-safety.md?plain=1#L73-L80
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L12-L22
 type FlowData interface {
 	// AddEvidence adds a single Evidence key-value pair, replacing any value held
 	// under the same key when the case is ignored. The caller adds Evidence
