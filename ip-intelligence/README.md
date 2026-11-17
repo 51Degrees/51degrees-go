@@ -71,7 +71,8 @@ if data, err := core.Get[*ipi_onpremise.Data](flowData); err == nil {
 ```
 
 If a Data is not closed, a finalizer releases its results once nothing holds it, but only when the garbage collector
-next runs, which can be too late under load. The engine refuses a results cache, and its `SetCache` returns an error,
+next runs, which can be too late under load. A Data is not safe to use from several goroutines at once, because reading
+a value writes into its results, and it takes no lock, so the caller is responsible for any locking. The engine refuses a results cache, and its `SetCache` returns an error,
 because a cached Data would be read after its results were released. Used on its own, `Engine.ProcessData` gives the
 same Data, and the caller calls `Close` on it when it has finished with it. To build a Pipeline from a configuration
 file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with `core.BuilderRegistry`. The build

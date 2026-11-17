@@ -49,8 +49,6 @@ func closer(t *testing.T, data *Data) io.Closer {
 
 // resultsHeld reports whether the Data still holds its native results.
 func resultsHeld(d *Data) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	return d.results != nil
 }
 

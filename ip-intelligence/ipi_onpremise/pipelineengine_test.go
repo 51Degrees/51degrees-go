@@ -69,8 +69,6 @@ func processAddress(t *testing.T, pipeline core.Pipeline, address string) *Data 
 // propertiesRead gives the number of Properties the Data has read from the
 // native results.
 func propertiesRead(d *Data) int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	return len(d.read)
 }
 
