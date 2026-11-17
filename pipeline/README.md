@@ -133,6 +133,26 @@ http.ListenAndServe(":8080", mw.Handler(myAppHandler))
 The example at [examples/pipeline/3_clientside_evidence](../examples/pipeline/3_clientside_evidence)
 stands up the middleware and exercises the full client-side round-trip.
 
+## Thread safety
+
+A Flow Data must not be read from another goroutine until `Process` has
+returned. In a Pipeline built without `SetConcurrent` and with no parallel
+group, processing writes the Element Data into a plain Go map. A read from
+another goroutine while that map is written can end the whole program with
+`fatal error: concurrent map read and map write`, which `recover` does not
+catch, rather than return an error.
+
+The Pipeline adds no lock for this, to keep processing fast for the usual case
+of one goroutine per request.
+
+Once `Process` has returned, the Pipeline adds nothing more to the Flow Data. A
+caller that needs to hand a Flow Data to another goroutine does so then, and
+reading it is safe from several goroutines at once. Whether an Element Data's
+own values can be read from several goroutines at once is set by its type.
+
+This follows the Pipeline specification's
+[thread-safety page](https://github.com/51Degrees/specifications/blob/1477eaf7d21c48520787112eb64634936184c83c/pipeline-specification/features/thread-safety.md).
+
 ## Design notes
 
 This implementation follows a "hybrid" approach: public concepts and package
