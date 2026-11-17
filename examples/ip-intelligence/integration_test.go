@@ -23,15 +23,88 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 )
 
+// test runs an example with the settings CI gives every example, on its own
+// data file, as ownDataFile gives it.
 func test(t *testing.T, name string) {
-	run(t, name, nil)
+	environment, err := ownDataFile(t, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(t, name, environment)
+}
+
+// ownDataFile returns environment with _51DEGREES_IPI_PATH naming the
+// example's own data file, in a new folder beside the file the environment
+// names under that name or its deprecated one, and without the deprecated
+// name. The own file is a hard link to the named file, or a copy where a link
+// cannot be made, and the folder is removed when the test ends. An update
+// renames the file it downloads over its data file, so it replaces the
+// example's own file and never the one the other examples read. Environment
+// is returned unchanged when it names no data file.
+func ownDataFile(t *testing.T, environment []string) ([]string, error) {
+	deprecated := "DATA" + "_FILE"
+	var named, old string
+	kept := make([]string, 0, len(environment)+1)
+	for _, variable := range environment {
+		name, value, _ := strings.Cut(variable, "=")
+		switch strings.ToUpper(name) {
+		case "_51DEGREES_IPI_PATH":
+			named = value
+			continue
+		case deprecated:
+			old = value
+			continue
+		}
+		kept = append(kept, variable)
+	}
+	source := named
+	if source == "" {
+		source = old
+	}
+	if source == "" {
+		return environment, nil
+	}
+	folder, err := os.MkdirTemp(filepath.Dir(source), "own-data-file-")
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() { os.RemoveAll(folder) })
+	own := filepath.Join(folder, filepath.Base(source))
+	if err := os.Link(source, own); err != nil {
+		if err := copyFile(source, own); err != nil {
+			return nil, fmt.Errorf("the example needs its own data file, "+
+				"made from %s: %w", source, err)
+		}
+	}
+	return append(kept, "_51DEGREES_IPI_PATH="+own), nil
+}
+
+// copyFile copies the file at from to a new file at to.
+func copyFile(from, to string) error {
+	in, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(to)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // run runs an example in the environment given, or in this process's when

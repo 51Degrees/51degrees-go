@@ -51,8 +51,14 @@ func run(t *testing.T, name string, environment []string) string {
 	return string(output)
 }
 
+// test runs an example with the settings CI gives every example, on its own
+// data file, as ownDataFile gives it.
 func test(t *testing.T, name string) {
-	run(t, name, nil)
+	environment, err := ownDataFile(t, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(t, name, environment)
 }
 
 // testEnterprise runs an example and checks that it shows the properties only
@@ -157,17 +163,13 @@ func TestReloadFromFileFreeDataFile(t *testing.T) {
 // file the settings name as the free data file, so the example must leave
 // that file as it was. It downloads only with a licence key.
 func TestUpdatePollingInterval(t *testing.T) {
-	environment, err := withOwnDataFile(os.Environ(), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
 	shared := os.Getenv("_51DEGREES_DD_PATH")
 	if shared == "" || os.Getenv("_51DEGREES_LICENSE_KEY") == "" {
-		run(t, "update_polling_interval", environment)
+		test(t, "update_polling_interval")
 		return
 	}
 	before := fileSum(t, shared)
-	run(t, "update_polling_interval", environment)
+	test(t, "update_polling_interval")
 	if fileSum(t, shared) != before {
 		size := int64(-1)
 		if info, err := os.Stat(shared); err == nil {
@@ -179,14 +181,15 @@ func TestUpdatePollingInterval(t *testing.T) {
 	}
 }
 
-// withOwnDataFile returns environment with _51DEGREES_DD_PATH naming a copy,
-// in dir, of the data file the environment names under that name or its
-// deprecated one, or of the free data file the examples find when it names
-// none, and without the deprecated name. It returns environment unchanged
-// when it names no data file and the free one is not found. The update
-// example renames each newer data file it downloads over the one it is
-// given, so with a copy it changes no file that another test reads.
-func withOwnDataFile(environment []string, dir string) ([]string, error) {
+// ownDataFile returns environment with _51DEGREES_DD_PATH naming the
+// example's own data file, in a new folder beside the file the environment
+// names under that name or its deprecated one, and without the deprecated
+// name. The own file is a hard link to the named file, or a copy where a link
+// cannot be made, and the folder is removed when the test ends. An update
+// renames the file it downloads over its data file, so it replaces the
+// example's own file and never the one the other examples read. Environment
+// is returned unchanged when it names no data file.
+func ownDataFile(t *testing.T, environment []string) ([]string, error) {
 	deprecated := "DATA" + "_FILE"
 	var named, old string
 	kept := make([]string, 0, len(environment)+1)
@@ -207,19 +210,21 @@ func withOwnDataFile(environment []string, dir string) ([]string, error) {
 		source = old
 	}
 	if source == "" {
-		// A free file that is neither found nor downloaded is left for the
-		// example to report, as it does when run on its own.
-		source = dd_example.GetDataFile(dd_example.LiteDataFile)
-		if _, err := os.Stat(source); err != nil {
-			return environment, nil
+		return environment, nil
+	}
+	folder, err := os.MkdirTemp(filepath.Dir(source), "own-data-file-")
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() { os.RemoveAll(folder) })
+	own := filepath.Join(folder, filepath.Base(source))
+	if err := os.Link(source, own); err != nil {
+		if err := copyFile(source, own); err != nil {
+			return nil, fmt.Errorf("the example needs its own data file, "+
+				"made from %s: %w", source, err)
 		}
 	}
-	copied := filepath.Join(dir, filepath.Base(source))
-	if err := copyFile(source, copied); err != nil {
-		return nil, fmt.Errorf("the update example needs its own copy of "+
-			"the data file %s: %w", source, err)
-	}
-	return append(kept, "_51DEGREES_DD_PATH="+copied), nil
+	return append(kept, "_51DEGREES_DD_PATH="+own), nil
 }
 
 // copyFile copies the file at from to a new file at to.

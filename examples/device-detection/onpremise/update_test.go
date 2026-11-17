@@ -51,61 +51,74 @@ func readText(t *testing.T, path string) string {
 	return string(content)
 }
 
-// The update example renames a newer data file over the one it is given when
-// it downloads one, so it is given its own copy of the data file the settings
-// name. A download then replaces the copy and never the file that the other
-// examples, tested at the same time, read as the free data file.
-func TestTheUpdateExampleIsGivenItsOwnDataFile(t *testing.T) {
+// An example is given its own data file, a hard link to or a copy of the one
+// the settings name, under either name, in a new folder beside it. Other
+// variables are kept, and renaming a file over the example's own file leaves
+// the named file as it was.
+func TestAnExampleIsGivenItsOwnDataFile(t *testing.T) {
 	deprecated := "DATA" + "_FILE"
 	for _, name := range []string{"_51DEGREES_DD_PATH", deprecated} {
 		t.Run(name, func(t *testing.T) {
-			shared := filepath.Join(t.TempDir(), "51Degrees-LiteV4.1.hash")
+			folder := t.TempDir()
+			shared := filepath.Join(folder, "51Degrees-LiteV4.1.hash")
 			if err := os.WriteFile(shared, []byte("the free data file"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			dir := t.TempDir()
-			environment, err := withOwnDataFile(
-				[]string{"PATH=kept", name + "=" + shared}, dir)
+			environment, err := ownDataFile(t,
+				[]string{"PATH=kept", name + "=" + shared})
 			if err != nil {
 				t.Fatal(err)
 			}
-			copied, ok := valueOf(environment, "_51DEGREES_DD_PATH")
-			if !ok || filepath.Dir(copied) != dir {
-				t.Fatalf("the update example is given %q, want a copy in %s",
-					copied, dir)
+			own, ok := valueOf(environment, "_51DEGREES_DD_PATH")
+			if !ok || own == shared ||
+				filepath.Dir(filepath.Dir(own)) != folder {
+				t.Fatalf("the example is given %q, want its own file in a "+
+					"new folder in %s", own, folder)
 			}
 			if _, ok := valueOf(environment, deprecated); ok {
-				t.Errorf("the update example is still given %s", deprecated)
+				t.Errorf("the example is still given %s", deprecated)
 			}
 			if path, _ := valueOf(environment, "PATH"); path != "kept" {
 				t.Errorf("PATH is %q, want it kept", path)
 			}
-			if got := readText(t, copied); got != "the free data file" {
-				t.Errorf("the copy holds %q", got)
+			if got := readText(t, own); got != "the free data file" {
+				t.Errorf("the example's own file holds %q", got)
 			}
 
 			// An update writes the download next to the data file and
 			// renames it over the data file.
-			download := filepath.Join(dir, "download")
+			download := filepath.Join(filepath.Dir(own), "download")
 			if err := os.WriteFile(download, []byte("the Enterprise data file"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Rename(download, copied); err != nil {
+			if err := os.Rename(download, own); err != nil {
 				t.Fatal(err)
 			}
 			if got := readText(t, shared); got != "the free data file" {
-				t.Errorf("an update of the copy changed the shared file to %q", got)
+				t.Errorf("an update of the example's own file changed the "+
+					"named file to %q", got)
 			}
 		})
 	}
 }
 
 // A data file that the settings name and that is not there is an error, so
-// the update example is never run on a file other tests read.
-func TestTheUpdateExampleNeedsADataFileToCopy(t *testing.T) {
+// an example is never run on a file other tests read.
+func TestAnExampleNeedsADataFileOfItsOwn(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.hash")
-	if _, err := withOwnDataFile(
-		[]string{"_51DEGREES_DD_PATH=" + missing}, t.TempDir()); err == nil {
+	if _, err := ownDataFile(t,
+		[]string{"_51DEGREES_DD_PATH=" + missing}); err == nil {
 		t.Errorf("a missing data file gave no error")
+	}
+}
+
+// With no data file named, the environment is passed on as it is, and the
+// example finds the free data file itself.
+func TestAnExampleWithNoDataFileNamedIsGivenTheEnvironment(t *testing.T) {
+	environment := []string{"PATH=kept"}
+	got, err := ownDataFile(t, environment)
+	if err != nil || len(got) != 1 || got[0] != "PATH=kept" {
+		t.Errorf("ownDataFile gave %q and %v, want the environment as it was",
+			got, err)
 	}
 }
