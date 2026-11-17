@@ -180,4 +180,13 @@ var (
 	ErrNotProcessed = errors.New("flow data has not been processed yet")
 	// ErrPipelineClosed is returned when an operation is attempted on a closed Pipeline.
 	ErrPipelineClosed = errors.New("pipeline has been closed")
+	// ErrFlowDataFinished is what adding Evidence, Element Data or an error
+	// to a Flow Data that has finished processing panics with, wrapped in an
+	// error that names what was added.
+	ErrFlowDataFinished = errors.New("the Flow Data has finished processing")
+	// ErrElementDataFinished is what a write to Element Data panics with,
+	// wrapped in an error that names the value, once the Flow Elements that
+	// write it have finished processing.
+	ErrElementDataFinished = errors.New(
+		"the Flow Element that writes this Element Data has finished processing")
 )
