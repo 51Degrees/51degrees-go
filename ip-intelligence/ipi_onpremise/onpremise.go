@@ -80,6 +80,9 @@ type Engine struct {
 	// made once, when the first data file is loaded, and kept across reloads,
 	// because the C library keeps the names the engine was built with.
 	names atomic.Pointer[ipi_interop.PropertyNames]
+	// positions holds the position of each required property name. It is
+	// made with names.
+	positions atomic.Pointer[map[string]int]
 
 	// weighted holds, by lower case name, the Properties the data file
 	// weights, once ProcessData has read them.
@@ -475,9 +478,11 @@ func (e *Engine) processFileExternallyChanged() error {
 	return e.reloadManager(reloadFilePath)
 }
 
-// this function will be called when the engine is started or the is new file available
-// it will create and initialize a new manager from the new file if it does not exist
-// if the manager exists, it will create a new manager from the new file and replace the existing manager thus freeing memory of the old manager
+// reloadManager loads the data file at filePath. The first call, when the
+// engine starts, makes the manager and with it the tables of names and
+// positions. Every later call, for a new file or a refresh, reloads the
+// manager's data set and keeps both tables, because the C library keeps the
+// properties the manager was made with.
 func (e *Engine) reloadManager(filePath string) (err error) {
 	if e.isStopped {
 		return nil
@@ -509,7 +514,9 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		}
 		// The table of names is made once, here, and never from a later
 		// data set.
-		e.names.Store(ipi_interop.NewPropertyNames(e.manager))
+		names := ipi_interop.NewPropertyNames(e.manager)
+		e.names.Store(names)
+		e.setPositions(namesOf(names))
 		e.dataFileLastUsedByManager = filePath
 		loaded = true
 		return nil
@@ -590,6 +597,11 @@ func (e *Engine) NewResultsIpi() *ipi_interop.ResultsIpi {
 // Process processes the given IP address and retrieves associated values using the default properties.
 // If results is nil, creates a new ResultsIpi object for this call (per-call mode).
 // If results is provided, reuses the existing object (reuse mode for better performance).
+//
+// Deprecated: Process copies the values of every required Property out of
+// the native results while it processes, and the specification requires a
+// value to be read only when its Property is requested. Use ProcessData,
+// which does that, and call Free on the Data it returns.
 func (e *Engine) Process(ipAddress string) (ipi_interop.Values, error) {
 	return e.ProcessWithResults(ipAddress, nil)
 }
@@ -597,6 +609,11 @@ func (e *Engine) Process(ipAddress string) (ipi_interop.Values, error) {
 // ProcessWithResults processes the given IP address with an optional reusable ResultsIpi object.
 // If results is nil, creates a new ResultsIpi object for this call.
 // If results is provided, reuses it for better performance (caller manages lifecycle).
+//
+// Deprecated: ProcessWithResults copies the values of every required Property
+// out of the native results while it processes, and the specification
+// requires a value to be read only when its Property is requested. Use
+// ProcessData, which does that, and call Free on the Data it returns.
 func (e *Engine) ProcessWithResults(ipAddress string, results *ipi_interop.ResultsIpi) (ipi_interop.Values, error) {
 	var shouldFree bool
 
