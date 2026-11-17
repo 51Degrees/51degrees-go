@@ -23,6 +23,7 @@
 package onpremise
 
 import (
+	"crypto/sha256"
 	"os"
 	"os/exec"
 	"strings"
@@ -148,8 +149,38 @@ func TestReloadFromFileFreeDataFile(t *testing.T) {
 	testFree(t, "reload_from_file")
 }
 
+// The update example renames each newer data file it downloads over the data
+// file it is given. The other examples, tested at the same time, read the
+// file the settings name as the free data file, so the example must leave
+// that file as it was. It downloads only with a licence key.
 func TestUpdatePollingInterval(t *testing.T) {
+	shared := os.Getenv("_51DEGREES_DD_PATH")
+	if shared == "" || os.Getenv("_51DEGREES_LICENSE_KEY") == "" {
+		test(t, "update_polling_interval")
+		return
+	}
+	before := fileSum(t, shared)
 	test(t, "update_polling_interval")
+	if fileSum(t, shared) != before {
+		size := int64(-1)
+		if info, err := os.Stat(shared); err == nil {
+			size = info.Size()
+		}
+		t.Errorf("the update example replaced %s, which the other examples "+
+			"read as the free data file, with a file of %d bytes", shared,
+			size)
+	}
+}
+
+// fileSum gives the SHA-256 of the file at path, failing the test when it
+// cannot be read.
+func fileSum(t *testing.T, path string) [sha256.Size]byte {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sha256.Sum256(content)
 }
 
 // withoutSettings returns the environment without the variables that name a
