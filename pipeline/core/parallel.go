@@ -33,10 +33,10 @@ import (
 // executes them concurrently when processed. It is the mechanism behind the
 // optional parallel-processing feature and the AddParallel builder method.
 //
-// A Pipeline that contains ParallelElements MUST be configured as concurrent so
-// that Flow Data uses thread-safe storage. Each child element MUST write to a
-// distinct Element Data key.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/advanced-features/parallel-processing.md
+// A Pipeline that contains ParallelElements is concurrent, so its Flow Data
+// adds Element Data with a compare and swap. Each child element MUST write to
+// a distinct Element Data key, and MUST NOT add Evidence.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L14-L59
 type ParallelElements struct {
 	*BaseElement
 	children []FlowElement
@@ -68,7 +68,7 @@ func (pe *ParallelElements) PropertiesLoaded() bool {
 }
 
 // IsConcurrent reports that this element processes its children on multiple
-// goroutines, so a Pipeline containing it must use thread-safe Flow Data.
+// goroutines, so a Pipeline containing it is concurrent.
 func (pe *ParallelElements) IsConcurrent() bool { return true }
 
 // Children returns the contained elements.
@@ -79,31 +79,39 @@ func (pe *ParallelElements) Children() []FlowElement {
 }
 
 // Process runs all child elements concurrently and waits for them to complete.
-// Errors and panics from children are recorded against the Flow Data rather
-// than aborting the others.
+// The errors children return, and their panics, are added to the Flow Data
+// once every child has stopped, in the order the children were added, rather
+// than aborting the others. Errors a child adds itself go in while it runs.
 func (pe *ParallelElements) Process(data FlowData) error {
 	// The children read Evidence at the same time, so none of them may add to
-	// it.
-	if fd, ok := data.(*flowData); ok {
+	// it, and they add their own errors under the errors lock.
+	fd, _ := data.(*flowData)
+	if fd != nil {
 		fd.enterParallel()
-		defer fd.leaveParallel()
 	}
+	errs := make([]error, len(pe.children))
 	var wg sync.WaitGroup
-	for _, c := range pe.children {
+	for i, c := range pe.children {
 		wg.Add(1)
-		go func(c FlowElement) {
+		go func(i int, c FlowElement) {
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					data.AddError(fmt.Errorf("panic processing element '%s': %v", c.DataKey(), r), c)
+					errs[i] = fmt.Errorf("panic processing element '%s': %v", c.DataKey(), r)
 				}
 			}()
-			if err := c.Process(data); err != nil {
-				data.AddError(err, c)
-			}
-		}(c)
+			errs[i] = c.Process(data)
+		}(i, c)
 	}
 	wg.Wait()
+	if fd != nil {
+		fd.leaveParallel()
+	}
+	for i, err := range errs {
+		if err != nil {
+			data.AddError(err, pe.children[i])
+		}
+	}
 	return nil
 }
 

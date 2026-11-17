@@ -46,8 +46,8 @@ type Pipeline interface {
 	// EvidenceKeyFilter returns a filter that includes the Evidence keys of every
 	// element in the Pipeline.
 	EvidenceKeyFilter() EvidenceKeyFilter
-	// IsConcurrent reports whether Flow Data created by this Pipeline uses
-	// thread-safe storage (required for parallel processing).
+	// IsConcurrent reports whether Flow Data created by this Pipeline adds
+	// Element Data with a compare and swap, as parallel processing needs.
 	IsConcurrent() bool
 	// IsSuppressProcessExceptions reports whether processing errors are logged
 	// rather than returned. Exposed so wrappers such as the web integration can
