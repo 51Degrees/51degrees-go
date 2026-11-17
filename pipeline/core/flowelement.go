@@ -38,6 +38,15 @@ type FlowElement interface {
 	// Flow Data.
 	DataKey() string
 	// Process reads from and writes to the supplied Flow Data.
+	//
+	// A Flow Element in a parallel group must not add Evidence, because the
+	// other members of the group read the Evidence at the same time. That is
+	// the element's responsibility, and nothing checks it. Evidence such an
+	// element adds stays in its own view of the Flow Data, and is dropped when
+	// the group finishes, with no log and no error. A Flow Element that adds
+	// Evidence for later Flow Elements to read runs outside any parallel
+	// group, before the Flow Elements that read it.
+	// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L133-L139
 	Process(data FlowData) error
 	// EvidenceKeyFilter describes the Evidence keys this element makes use of.
 	EvidenceKeyFilter() EvidenceKeyFilter

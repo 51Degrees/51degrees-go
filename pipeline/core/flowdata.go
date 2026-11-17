@@ -38,11 +38,12 @@ type FlowData interface {
 	// AddEvidence adds a single Evidence key-value pair, replacing any value held
 	// under the same key when the case is ignored. The caller adds Evidence
 	// before processing, and a Flow Element may add Evidence while it processes,
-	// for the Flow Elements after it and the caller to read. A call while a
-	// parallel group runs is ignored and logged, and a call after processing
-	// has finished panics with ErrFlowDataFinished. The caller must not add
-	// Evidence while processing runs, because such a call cannot be told apart
-	// from one made by a Flow Element.
+	// for the Flow Elements after it and the caller to read. A member of a
+	// parallel group adds to its own view of the Flow Data, so what it adds is
+	// dropped when the group finishes, as FlowElement.Process says. A call
+	// after processing has finished panics with ErrFlowDataFinished. The
+	// caller must not add Evidence while processing runs, because such a call
+	// cannot be told apart from one made by a Flow Element.
 	// Returns the Flow Data for chaining.
 	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md#adding-evidence-values
 	AddEvidence(key string, value any) FlowData
@@ -102,8 +103,8 @@ type flowData struct {
 
 	started  atomic.Bool
 	finished atomic.Bool
-	// parallel counts the parallel groups running, which take no Evidence
-	// and add their errors under errMu.
+	// parallel counts the parallel groups running, whose members add their
+	// errors under errMu.
 	parallel atomic.Int32
 	// supplied is the Evidence as it was when processing started.
 	supplied map[string]any
@@ -141,10 +142,6 @@ func (fd *flowData) AddEvidence(key string, value any) FlowData {
 	if fd.finished.Load() {
 		finishedPanic("Evidence '" + key + "'")
 	}
-	if fd.parallel.Load() > 0 {
-		fd.pipeline.logger.Warn("evidence added while a parallel group is running; ignoring", "key", key)
-		return fd
-	}
 	fd.evidence.put(key, value)
 	return fd
 }
@@ -178,7 +175,7 @@ func (fd *flowData) Process() error {
 // a new map. It is for work that depends on the request alone, such as a cache
 // validator.
 func SuppliedEvidence(fd FlowData) map[string]any {
-	if f, ok := fd.(*flowData); ok && f.supplied != nil {
+	if f := baseFlowData(fd); f != nil && f.supplied != nil {
 		return maps.Clone(f.supplied)
 	}
 	return fd.Evidence().AsMap()
@@ -321,7 +318,7 @@ func (fd *flowData) finishWriting(since *elementNode, keys []string) {
 }
 
 // enterParallel and leaveParallel bracket a parallel group, during which
-// Evidence takes no values and errors are added under the errors lock.
+// errors are added under the errors lock.
 func (fd *flowData) enterParallel() {
 	fd.parallel.Add(1)
 }
