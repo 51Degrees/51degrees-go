@@ -27,7 +27,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -58,8 +57,9 @@ type nativeResults interface {
 // Cloud Engine is, whether the Engine is used in a Pipeline or on its own.
 // Get gives each Property of the Engine as its weighted values.
 //
-// Data is safe to read from several goroutines at once. Only one goroutine at
-// a time reads from the native results.
+// Data is not safe to use from several goroutines at once, because reading a
+// value writes into the native results and into the values Data keeps, and
+// Data takes no lock. The caller is responsible for any locking.
 //
 // The native results hold memory the Go garbage collector does not manage, so
 // call Free when the Data is no longer needed. A read after Free returns
@@ -67,9 +67,9 @@ type nativeResults interface {
 //
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L10-L12
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L34-L37
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L523
 type Data struct {
 	*engines.BaseAspectData
-	mu        sync.Mutex
 	results   nativeResults
 	hasValues bool
 	nameAt    func(int) string
@@ -100,8 +100,6 @@ func (d *Data) Values(property string) ([]*ipi_interop.WeightedValue, error) {
 // the Properties the Engine was created with, reading them from the native
 // results the first time the Property is requested.
 func (d *Data) ValuesByIndex(index int) ([]*ipi_interop.WeightedValue, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.results == nil {
 		return nil, ErrDataFreed
 	}
@@ -208,8 +206,6 @@ func toRawWeighting(weight float64) uint16 {
 
 // Free releases the native results. It is safe to call more than once.
 func (d *Data) Free() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.results != nil {
 		d.results.Free()
 		d.results = nil

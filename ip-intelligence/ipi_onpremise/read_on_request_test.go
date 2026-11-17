@@ -198,35 +198,6 @@ func TestFreeReleasesTheResults(t *testing.T) {
 	data.Free()
 }
 
-// Finished Element Data MUST be safe to read from several threads at once, so
-// Aspect Data that reads its values from a ResultsIpi instance MUST let only
-// one thread at a time read from its results.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L525
-func TestDataIsReadFromSeveralGoroutines(t *testing.T) {
-	e, results := newCountingEngine()
-	data, err := e.processInto(results, "203.0.113.1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer data.Free()
-	var wg sync.WaitGroup
-	for g := 0; g < 8; g++ {
-		wg.Add(1)
-		go func(g int) {
-			defer wg.Done()
-			name := []string{"A", "B", "C"}[g%3]
-			if _, err := data.Values(name); err != nil {
-				t.Error(err)
-			}
-		}(g)
-	}
-	wg.Wait()
-	if reads := results.readsMade(); len(reads) != 3 {
-		t.Errorf("eight goroutines reading three Properties read %v, "+
-			"want each Property read once", reads)
-	}
-}
-
 // With a data file, each Property read on request gives the values Process
 // gives for it.
 func TestProcessDataGivesTheValuesOfProcess(t *testing.T) {
