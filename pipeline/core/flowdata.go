@@ -75,6 +75,16 @@ type FlowData interface {
 	// after processing has finished panics with ErrFlowDataFinished.
 	AddError(err error, element FlowElement)
 
+	// Close gives the Element Data back to the pools it came from, apart from
+	// any that a cache holds, and leaves the Flow Data holding none. Call it
+	// once the Flow Data and its Element Data are no longer needed. Keeping a
+	// reference to the Element Data after Close is not supported, because a
+	// pool may give the instance to another request, and nothing checks for
+	// it. A closed Flow Data cannot be processed, and a second Close does
+	// nothing. It returns nil.
+	// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/resource-cleanup.md?plain=1#L87-L101
+	Close() error
+
 	// markStarted is called internally to enforce single processing. It returns
 	// false if processing has already started.
 	markStarted() bool
@@ -103,6 +113,7 @@ type flowData struct {
 
 	started  atomic.Bool
 	finished atomic.Bool
+	closed   bool
 	// parallel counts the parallel groups running, whose members add their
 	// errors under errMu.
 	parallel atomic.Int32
@@ -282,6 +293,24 @@ func (fd *flowData) markFinished() {
 		}
 	}
 	fd.finished.Store(true)
+}
+
+// Close gives each Element Data that came from a pool back to it. A view of
+// a cached instance, and an instance marked shared, stay where they are.
+func (fd *flowData) Close() error {
+	if fd.closed {
+		return nil
+	}
+	fd.closed = true
+	fd.started.Store(true)
+	fd.finished.Store(true)
+	for n := fd.head.Load(); n != nil; n = n.next {
+		if p, ok := n.data.(pooled); ok {
+			p.release()
+		}
+	}
+	fd.head.Store(nil)
+	return nil
 }
 
 // openForWriting opens the Element Data held under keys, in lower case, for
