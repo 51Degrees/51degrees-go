@@ -22,7 +22,10 @@
 
 package core
 
-import "log/slog"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // PipelineBuilder constructs immutable Pipeline instances. Flow Elements are
 // added in flow order. This is the Go analogue of the fluent Pipeline builder
@@ -77,6 +80,21 @@ func (b *PipelineBuilder) SetAutoCloseElements(v bool) *PipelineBuilder {
 	return b
 }
 
+// RunsLast is implemented by a Flow Element that must be the last Flow
+// Element of a Pipeline and outside any parallel group, as the usage sharing
+// element must. RunsLast names the element for the error Build gives when it
+// is anywhere else.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L106-L112
+type RunsLast interface {
+	RunsLast() string
+}
+
+// misplaced is the error for an element that must run last but is not.
+func misplaced(r RunsLast, e FlowElement) error {
+	return NewConfigurationError(fmt.Sprintf("%s '%s' must be the last Flow "+
+		"Element and outside any parallel group", r.RunsLast(), e.DataKey()), nil)
+}
+
 // Build creates the immutable Pipeline. It aggregates the Evidence key filter
 // across all elements, then notifies each element that it has been added to
 // the Pipeline. The Pipeline gathers the elements' Property metadata when it
@@ -96,7 +114,10 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 	// from the elements removes the foot-gun of adding parallel work without
 	// remembering to enable concurrency.
 	concurrent := b.concurrent
-	for _, e := range elements {
+	for i, e := range elements {
+		if r, ok := e.(RunsLast); ok && i != len(elements)-1 {
+			return nil, misplaced(r, e)
+		}
 		filters = append(filters, e.EvidenceKeyFilter())
 		if e.IsConcurrent() {
 			concurrent = true
@@ -107,6 +128,9 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		if group, ok := e.(childLister); ok {
 			seen := make(map[string]struct{})
 			for _, c := range group.Children() {
+				if r, ok := c.(RunsLast); ok {
+					return nil, misplaced(r, c)
+				}
 				if _, dup := seen[c.DataKey()]; dup {
 					return nil, NewConfigurationError("parallel element '"+e.DataKey()+
 						"' has children with duplicate data key '"+c.DataKey()+

@@ -146,6 +146,13 @@ type record struct {
 	evidence  map[string]string // key: full evidence key, value: raw value
 }
 
+// RunsLast names the element for the error a Pipeline builder gives when it
+// is anywhere but last, or in a parallel group. It runs last so that it
+// shares the Evidence every other Flow Element has added, and outside any
+// group so that nothing changes the Evidence while it reads it.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L106-L119
+func (e *Element) RunsLast() string { return "the usage sharing element" }
+
 // Process samples and enqueues the request's shareable Evidence.
 func (e *Element) Process(fd core.FlowData) error {
 	if e.cfg.err != nil {
