@@ -99,6 +99,61 @@ func TestAFormBodySharesOnly51DNames(t *testing.T) {
 	}
 }
 
+// A parameter whose name does not start 51D_ is still shared when it is
+// Evidence the Pipeline uses, being a key an element in the Pipeline accepts,
+// from a query string and from a form body alike.
+func TestAParameterThePipelineUsesIsShared(t *testing.T) {
+	e := NewBuilder().SetSharePercentage(0).
+		SetShareUsageURL("http://127.0.0.1:1/").Build()
+	engine := &userAgentEngine{BaseElement: core.NewBaseElement("device",
+		core.NewWhitelistFilter("header.user-agent", "query.user-agent"), nil)}
+	p, err := core.NewPipelineBuilder().AddFlowElement(engine).
+		AddFlowElement(e).Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer p.Close()
+	for key, want := range map[string]bool{
+		"query.user-agent": true,
+		"query.User-Agent": true,
+		"query.51D_x":      true,
+		"query.password":   false,
+	} {
+		if got := e.isShared(key); got != want {
+			t.Errorf("isShared(%q) = %v, want %v", key, got, want)
+		}
+	}
+
+	get := httptest.NewRequest("GET",
+		"/page?user-agent=ua&password=secret&51D_x=1", nil)
+	fd := p.CreateFlowData()
+	fd.AddEvidence(httpRequestKey, core.NewWebRequest(get))
+	want := map[string]string{"query.user-agent": "ua", "query.51d_x": "1"}
+	if q := queryOf(e.shareableEvidence(fd)); !reflect.DeepEqual(q, want) {
+		t.Errorf("from a query string, shared the parameters %v, want %v",
+			q, want)
+	}
+
+	form := url.Values{"user-agent": {"ua"}, "password": {"secret"},
+		"51D_y": {"2"}}
+	post := httptest.NewRequest("POST", "/page",
+		strings.NewReader(form.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if err := post.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	fd = p.CreateFlowData()
+	for k, v := range form {
+		fd.AddEvidence("query."+k, v[0])
+	}
+	fd.AddEvidence(httpRequestKey, core.NewWebRequest(post))
+	want = map[string]string{"query.user-agent": "ua", "query.51d_y": "2"}
+	if q := queryOf(e.shareableEvidence(fd)); !reflect.DeepEqual(q, want) {
+		t.Errorf("from a form body, shared the parameters %v, want %v",
+			q, want)
+	}
+}
+
 // queryOf gives the query and form parameters among shared values.
 func queryOf(shared map[string]string) map[string]string {
 	out := map[string]string{}
