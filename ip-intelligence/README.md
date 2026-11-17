@@ -59,11 +59,12 @@ go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ### In a Pipeline
 
 `ipi_onpremise.NewPipelineEngine` takes the same options as `ipi_onpremise.New` and gives the engine as a Pipeline
-element, which adds `ipi_onpremise.IpData` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
-Cloud Engine gives its data in. Used on its own, `Engine.ProcessData` gives the same Aspect Data. To build a Pipeline
-from a configuration file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with
-`core.BuilderRegistry`. The build parameters are the options' names, such as `DataFile`, `AutoUpdate`,
-`PerformanceProfile` and `Properties`.
+element, which adds `ipi_onpremise.Data` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
+Cloud Engine gives its data in. The Data reads each Property from the data file's results only when it is requested. A
+Flow Data has no Close, so those results are freed when nothing holds the Data. Used on its own, `Engine.ProcessData`
+gives the same Data, and the caller calls `Free` on it when it has finished with it. To build a Pipeline from a
+configuration file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with `core.BuilderRegistry`.
+The build parameters are the options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
 
 ```
 {"PipelineOptions": {"Elements": [{"BuilderName": "IpiOnPremiseEngine",

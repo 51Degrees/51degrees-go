@@ -171,6 +171,53 @@ func TestGetGivesEachPropertyAsTheCloudEngineDoes(t *testing.T) {
 	}
 }
 
+// Get gives a Property the data file weights as the cloud engine gives a
+// weighted Property, each value as text with its raw weighting, and no value
+// with a message where the address has none.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L24-L26
+func TestGetGivesAWeightedPropertyAsTheCloudEngineDoes(t *testing.T) {
+	e := &Engine{}
+	e.setPositions([]string{"A", "C", "D"})
+	e.weighted.Store(&map[string]bool{"c": true, "d": true})
+	results := &countingResults{values: map[int][]*ipi_interop.WeightedValue{
+		1: {{Value: "c", Weight: 0.5}, {Value: 1.25, Weight: 0.5}},
+	}}
+	data, err := e.processInto(results, "203.0.113.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer data.Free()
+	a := aspectData(t, data)
+	got, err := a.Get("C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := got.(cloudWeighted)
+	if !ok {
+		t.Fatalf("C gave a %T, want a %T", got, cloudWeighted{})
+	}
+	list, err := c.Value()
+	want := []core.WeightedValue[string]{
+		core.NewWeightedValue("c", rawWeighting(0.5)),
+		core.NewWeightedValue("1.25", rawWeighting(0.5)),
+	}
+	if err != nil || !reflect.DeepEqual(list, want) {
+		t.Errorf("C gave %v (%v), want %v", list, err, want)
+	}
+	got, err = a.Get("D")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, ok := got.(cloudWeighted)
+	if !ok {
+		t.Fatalf("D gave a %T, want a %T", got, cloudWeighted{})
+	}
+	if d.HasValue() || d.NoValueMessage() == "" {
+		t.Errorf("D gave %v with the message %q, want no value and a message",
+			d.AsInterface(), d.NoValueMessage())
+	}
+}
+
 // Each property MUST also be exposed as a weighted value. WeightedValues
 // gives each Property of the Engine, by its name in any case, as its weighted
 // values, reading only that Property, and only when it is requested.

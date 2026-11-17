@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -42,9 +43,12 @@ const noAddressReason = "No IP address was supplied in the evidence the engine r
 // PipelineEngine is the on-premise IP Intelligence engine as an On-premise
 // Aspect Engine, to add to a Pipeline in place of the IP Intelligence Cloud
 // Engine. It looks up the first IP address in the evidence it accepts, in the
-// order the data file gives, and adds IpData under DataKey, with the caching
-// and lazy loading the Pipeline's engines share. Closing it, or the Pipeline
-// that holds it, stops the engine.
+// order the data file gives, and adds the Data ProcessData gives under
+// DataKey, with the caching and lazy loading the Pipeline's engines share.
+// That Data reads each Property from the native results only when it is
+// requested. A Flow Data has no Close, so the native results are freed when
+// nothing holds the Data. Closing the engine, or the Pipeline that holds it,
+// stops the engine.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L24-L26
 type PipelineEngine struct {
 	*engines.BaseOnPremiseAspectEngine
@@ -83,17 +87,18 @@ func newPipelineEngine(engine *Engine, logger *slog.Logger) *PipelineEngine {
 func (p *PipelineEngine) Engine() *Engine { return p.engine }
 
 // Process looks up the IP address in the Flow Data's evidence, and adds the
-// results as IpData.
+// results as a Data, which reads no value until one is requested.
 func (p *PipelineEngine) Process(fd core.FlowData) error {
 	return p.Execute(fd, func() (engines.AspectData, error) {
 		address, ok := p.address(fd)
 		if !ok {
-			return p.engine.ipData(nil, noAddressReason), nil
+			return p.engine.noAddressData(), nil
 		}
 		data, err := p.engine.ProcessData(address)
 		if err != nil {
 			return nil, err
 		}
+		runtime.SetFinalizer(data, (*Data).Free)
 		return data, nil
 	})
 }
