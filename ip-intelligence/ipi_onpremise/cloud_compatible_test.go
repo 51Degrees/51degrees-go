@@ -130,7 +130,7 @@ func compatibleCloudData(t *testing.T, properties []ipi_interop.PropertyMetadata
 // compatibleOnPremiseData gives the on-premise engine's Element Data, from a
 // Pipeline given the address as the cloud is given it, and the metadata of
 // the data file's Properties.
-func compatibleOnPremiseData(t *testing.T) (*IpData, []ipi_interop.PropertyMetadata) {
+func compatibleOnPremiseData(t *testing.T) (*Data, []ipi_interop.PropertyMetadata) {
 	engine, err := NewPipelineEngine(
 		WithDataFile(compatibleDataFile(t)), WithAutoUpdate(false))
 	if err != nil {
@@ -152,7 +152,7 @@ func compatibleOnPremiseData(t *testing.T) (*IpData, []ipi_interop.PropertyMetad
 	if err := fd.Process(); err != nil {
 		t.Fatal(err)
 	}
-	data, err := core.Get[*IpData](fd)
+	data, err := core.Get[*Data](fd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,6 +214,7 @@ func TestEngineGivesTheSameElementData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer data.Free()
 	var _ engines.AspectData = data
 	properties, err := engine.Properties()
 	if err != nil {

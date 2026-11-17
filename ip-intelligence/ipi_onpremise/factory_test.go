@@ -94,7 +94,7 @@ func TestBuiltFromAConfigurationFile(t *testing.T) {
 			if err := fd.Process(); err != nil {
 				t.Fatal(err)
 			}
-			data, err := core.Get[*IpData](fd)
+			data, err := core.Get[*Data](fd)
 			if err != nil {
 				t.Fatal(err)
 			}
