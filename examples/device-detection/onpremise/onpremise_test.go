@@ -24,8 +24,11 @@ package onpremise
 
 import (
 	"crypto/sha256"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -154,13 +157,17 @@ func TestReloadFromFileFreeDataFile(t *testing.T) {
 // file the settings name as the free data file, so the example must leave
 // that file as it was. It downloads only with a licence key.
 func TestUpdatePollingInterval(t *testing.T) {
+	environment, err := withOwnDataFile(os.Environ(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	shared := os.Getenv("_51DEGREES_DD_PATH")
 	if shared == "" || os.Getenv("_51DEGREES_LICENSE_KEY") == "" {
-		test(t, "update_polling_interval")
+		run(t, "update_polling_interval", environment)
 		return
 	}
 	before := fileSum(t, shared)
-	test(t, "update_polling_interval")
+	run(t, "update_polling_interval", environment)
 	if fileSum(t, shared) != before {
 		size := int64(-1)
 		if info, err := os.Stat(shared); err == nil {
@@ -170,6 +177,67 @@ func TestUpdatePollingInterval(t *testing.T) {
 			"read as the free data file, with a file of %d bytes", shared,
 			size)
 	}
+}
+
+// withOwnDataFile returns environment with _51DEGREES_DD_PATH naming a copy,
+// in dir, of the data file the environment names under that name or its
+// deprecated one, or of the free data file the examples find when it names
+// none, and without the deprecated name. It returns environment unchanged
+// when it names no data file and the free one is not found. The update
+// example renames each newer data file it downloads over the one it is
+// given, so with a copy it changes no file that another test reads.
+func withOwnDataFile(environment []string, dir string) ([]string, error) {
+	deprecated := "DATA" + "_FILE"
+	var named, old string
+	kept := make([]string, 0, len(environment)+1)
+	for _, variable := range environment {
+		name, value, _ := strings.Cut(variable, "=")
+		switch strings.ToUpper(name) {
+		case "_51DEGREES_DD_PATH":
+			named = value
+			continue
+		case deprecated:
+			old = value
+			continue
+		}
+		kept = append(kept, variable)
+	}
+	source := named
+	if source == "" {
+		source = old
+	}
+	if source == "" {
+		// A free file that is neither found nor downloaded is left for the
+		// example to report, as it does when run on its own.
+		source = dd_example.GetDataFile(dd_example.LiteDataFile)
+		if _, err := os.Stat(source); err != nil {
+			return environment, nil
+		}
+	}
+	copied := filepath.Join(dir, filepath.Base(source))
+	if err := copyFile(source, copied); err != nil {
+		return nil, fmt.Errorf("the update example needs its own copy of "+
+			"the data file %s: %w", source, err)
+	}
+	return append(kept, "_51DEGREES_DD_PATH="+copied), nil
+}
+
+// copyFile copies the file at from to a new file at to.
+func copyFile(from, to string) error {
+	in, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(to)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // fileSum gives the SHA-256 of the file at path, failing the test when it

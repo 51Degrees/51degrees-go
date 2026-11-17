@@ -1,0 +1,111 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+package onpremise
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// valueOf gives the value of the named variable in environment, and whether
+// it is there.
+func valueOf(environment []string, name string) (string, bool) {
+	for _, variable := range environment {
+		if n, value, _ := strings.Cut(variable, "="); strings.EqualFold(n, name) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// readText gives the content of the file at path, failing the test when it
+// cannot be read.
+func readText(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
+}
+
+// The update example renames a newer data file over the one it is given when
+// it downloads one, so it is given its own copy of the data file the settings
+// name. A download then replaces the copy and never the file that the other
+// examples, tested at the same time, read as the free data file.
+func TestTheUpdateExampleIsGivenItsOwnDataFile(t *testing.T) {
+	deprecated := "DATA" + "_FILE"
+	for _, name := range []string{"_51DEGREES_DD_PATH", deprecated} {
+		t.Run(name, func(t *testing.T) {
+			shared := filepath.Join(t.TempDir(), "51Degrees-LiteV4.1.hash")
+			if err := os.WriteFile(shared, []byte("the free data file"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			environment, err := withOwnDataFile(
+				[]string{"PATH=kept", name + "=" + shared}, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			copied, ok := valueOf(environment, "_51DEGREES_DD_PATH")
+			if !ok || filepath.Dir(copied) != dir {
+				t.Fatalf("the update example is given %q, want a copy in %s",
+					copied, dir)
+			}
+			if _, ok := valueOf(environment, deprecated); ok {
+				t.Errorf("the update example is still given %s", deprecated)
+			}
+			if path, _ := valueOf(environment, "PATH"); path != "kept" {
+				t.Errorf("PATH is %q, want it kept", path)
+			}
+			if got := readText(t, copied); got != "the free data file" {
+				t.Errorf("the copy holds %q", got)
+			}
+
+			// An update writes the download next to the data file and
+			// renames it over the data file.
+			download := filepath.Join(dir, "download")
+			if err := os.WriteFile(download, []byte("the Enterprise data file"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(download, copied); err != nil {
+				t.Fatal(err)
+			}
+			if got := readText(t, shared); got != "the free data file" {
+				t.Errorf("an update of the copy changed the shared file to %q", got)
+			}
+		})
+	}
+}
+
+// A data file that the settings name and that is not there is an error, so
+// the update example is never run on a file other tests read.
+func TestTheUpdateExampleNeedsADataFileToCopy(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.hash")
+	if _, err := withOwnDataFile(
+		[]string{"_51DEGREES_DD_PATH=" + missing}, t.TempDir()); err == nil {
+		t.Errorf("a missing data file gave no error")
+	}
+}
