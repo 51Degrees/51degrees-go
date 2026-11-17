@@ -60,11 +60,22 @@ go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 
 `ipi_onpremise.NewPipelineEngine` takes the same options as `ipi_onpremise.New` and gives the engine as a Pipeline
 element, which adds `ipi_onpremise.Data` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
-Cloud Engine gives its data in. The Data reads each Property from the data file's results only when it is requested. A
-Flow Data has no Close, so those results are freed when nothing holds the Data. Used on its own, `Engine.ProcessData`
-gives the same Data, and the caller calls `Free` on it when it has finished with it. To build a Pipeline from a
-configuration file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with `core.BuilderRegistry`.
-The build parameters are the options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
+Cloud Engine gives its data in. The Data reads each Property from the data file's results only when it is requested, and
+holds those results in memory the Go garbage collector cannot see until it is released. A Flow Data has no Close, so
+call `Close` on the Data when you have finished with the Flow Data, which releases the results at once:
+
+```go
+if data, err := core.Get[*ipi_onpremise.Data](flowData); err == nil {
+	defer data.Close()
+}
+```
+
+If a Data is not closed, a finalizer releases its results once nothing holds it, but only when the garbage collector
+next runs, which can be too late under load. The engine refuses a results cache, and its `SetCache` returns an error,
+because a cached Data would be read after its results were released. Used on its own, `Engine.ProcessData` gives the
+same Data, and the caller calls `Close` on it when it has finished with it. To build a Pipeline from a configuration
+file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with `core.BuilderRegistry`. The build
+parameters are the options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
 
 ```
 {"PipelineOptions": {"Elements": [{"BuilderName": "IpiOnPremiseEngine",

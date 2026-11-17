@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,9 +83,11 @@ func (noResults) Free() {}
 // Data is safe to read from several goroutines at once. Only one goroutine at
 // a time reads from the native results.
 //
-// The native results hold memory the Go garbage collector does not manage, so
-// call Free when the Data is no longer needed. A read after Free returns
-// ErrDataFreed.
+// The native results hold memory the Go garbage collector does not manage or
+// see, so call Close, or Free, when the Data is no longer needed, which
+// releases them at once. A read after that returns ErrDataFreed. A Data the
+// Pipeline engine adds to a Flow Data also has a finalizer that releases them
+// once nothing holds the Data, as a backstop for a caller that does not.
 //
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L10-L12
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L34-L37
@@ -292,10 +295,21 @@ func (d *Data) Free() {
 	}
 }
 
+// Close releases the native results at once, as Free does, so that Data is an
+// io.Closer, and drops the finalizer a Pipeline sets. It is safe to call more
+// than once, and after Free, which is what that finalizer calls. It always
+// returns nil.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L60-L61
+func (d *Data) Close() error {
+	d.Free()
+	runtime.SetFinalizer(d, nil)
+	return nil
+}
+
 // ProcessData processes the given IP address and returns its Data, which
 // reads each Property's values from the native results only when that
-// Property is requested. The caller calls Free on the Data when it is done
-// with it.
+// Property is requested. The caller calls Close, or Free, on the Data when it
+// is done with it.
 func (e *Engine) ProcessData(ipAddress string) (*Data, error) {
 	return e.processInto(ipi_interop.NewResultsIpi(e.manager), ipAddress)
 }

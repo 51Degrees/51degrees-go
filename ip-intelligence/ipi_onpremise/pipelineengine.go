@@ -34,6 +34,7 @@ import (
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/cache"
 )
 
 // noAddressReason is the reason each Property has no value when the Flow
@@ -44,12 +45,16 @@ const noAddressReason = "No IP address was supplied in the evidence the engine r
 // Aspect Engine, to add to a Pipeline in place of the IP Intelligence Cloud
 // Engine. It looks up the first IP address in the evidence it accepts, in the
 // order the data file gives, and adds the Data ProcessData gives under
-// DataKey, with the caching and lazy loading the Pipeline's engines share.
-// That Data reads each Property from the native results only when it is
-// requested. A Flow Data has no Close, so the native results are freed when
-// nothing holds the Data. Closing the engine, or the Pipeline that holds it,
-// stops the engine.
+// DataKey, with the lazy loading the Pipeline's engines share. That Data reads
+// each Property from the native results only when it is requested, and holds
+// them until it is released. A Flow Data has no Close, so the caller releases
+// them at once with Close on the Data, got with core.Get[*Data], when it has
+// finished with the Flow Data. A finalizer releases them once nothing holds
+// the Data, as a backstop. The engine takes no results cache, because a
+// cached Data would be read after its release. Closing the engine, or the
+// Pipeline that holds it, stops the engine.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L24-L26
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L60-L61
 type PipelineEngine struct {
 	*engines.BaseOnPremiseAspectEngine
 	engine    *Engine
@@ -101,6 +106,28 @@ func (p *PipelineEngine) Process(fd core.FlowData) error {
 		runtime.SetFinalizer(data, (*Data).Free)
 		return data, nil
 	})
+}
+
+// errCacheRefused is the error SetCache gives.
+var errCacheRefused = core.NewConfigurationError("a results cache cannot be "+
+	"added to the on-premise IP Intelligence engine, because its Data holds "+
+	"native results that are released when the caller has finished with "+
+	"them, and a cached Data would be read after that", nil)
+
+// SetCache refuses a results cache and adds none, because the specification
+// says "the system MUST NOT allow a cache to be added to Engines where the
+// Element Data they produce requires cleanup beyond what normal garbage
+// collection will achieve", and this engine's Data does. A nil cache adds
+// nothing and gives no error.
+//
+// Deprecated: this engine takes no results cache. SetCache is kept because
+// the engine's base type offers it, and always refuses a cache.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L74-L76
+func (p *PipelineEngine) SetCache(c cache.Cache) error {
+	if c == nil {
+		return nil
+	}
+	return errCacheRefused
 }
 
 // Close stops the engine, freeing its data set. A second call does nothing.

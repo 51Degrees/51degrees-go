@@ -85,8 +85,11 @@ func TestCloseFreesTheNativeResultsAtOnce(t *testing.T) {
 	}
 }
 
-// The finalizer a Pipeline sets calls Free, so Close after Free, as after the
-// finalizer, does nothing and gives no error.
+// "There MUST be some mechanism to ensure that such resources are cleaned up
+// when the Element Data is no longer needed." The finalizer a Pipeline sets
+// and Close are two such ways, so Close after Free, which the finalizer
+// calls, does nothing and gives no error.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L60-L61
 func TestCloseAfterFreeDoesNothing(t *testing.T) {
 	e, results := newCountingEngine()
 	data, err := e.processInto(results, "203.0.113.1")
@@ -105,8 +108,10 @@ func TestCloseAfterFreeDoesNothing(t *testing.T) {
 	}
 }
 
-// In a Pipeline, Close on the Data the engine added releases its native
-// results at once, without waiting for the garbage collector.
+// "There MUST be some mechanism to ensure that such resources are cleaned up
+// when the Element Data is no longer needed." In a Pipeline, Close on the
+// Data the engine added releases its native results at once, without waiting
+// for the garbage collector.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L60-L61
 func TestCloseInAPipelineFreesTheNativeResultsAtOnce(t *testing.T) {
 	data := processAddress(t, enginePipeline(t), compatibleAddress)
