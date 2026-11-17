@@ -218,9 +218,9 @@ func (b *Builder) queueSize() int {
 }
 
 // Build creates the Usage Sharing Element. A back-off option outside its
-// range, a queue that cannot hold the entries a message needs, and an add
-// timeout of zero or less are each refused with a *core.ConfigurationError
-// when the element is added to a Pipeline or processes.
+// range, a negative queue size, and an add timeout of zero or less are each
+// refused with a *core.ConfigurationError when the element is added to a
+// Pipeline or processes.
 func (b *Builder) Build() *Element {
 	recovery := defaultRecovery()
 	if b.recovery != nil {
@@ -248,13 +248,10 @@ func (b *Builder) Build() *Element {
 			"is on but no session cookie name is set, so there is no session "+
 			"to compare", nil)
 	}
-	if minimum := max(1, cfg.minEntries); cfg.err == nil && cfg.maxQueueSize < minimum {
+	if cfg.err == nil && cfg.maxQueueSize < 0 {
 		cfg.err = core.NewConfigurationError(fmt.Sprintf("usage sharing: the "+
-			"maximum queue size %d is below the %d entries a message "+
-			"needs, so no message would ever be sent. Set the maximum "+
-			"queue size to %d or more, or set the minimum entries per "+
-			"message no higher than the queue size",
-			cfg.maxQueueSize, minimum, minimum), nil)
+			"maximum queue size %d is negative. Set it to zero or more",
+			cfg.maxQueueSize), nil)
 	}
 	if cfg.err == nil && cfg.addTimeout <= 0 {
 		cfg.err = core.NewConfigurationError(fmt.Sprintf("usage sharing: the "+
@@ -274,10 +271,7 @@ func (b *Builder) Build() *Element {
 	}
 	// A refused configuration still gives an Element, which answers with
 	// its error, so the queue is made at a size make accepts.
-	queueSize := cfg.maxQueueSize
-	if queueSize < 1 {
-		queueSize = 1
-	}
+	queueSize := max(0, cfg.maxQueueSize)
 	tr := newTracker(cfg.repeatInterval)
 	tr.clock = clk
 	sendCtx, cancelSends := context.WithCancel(context.Background())
