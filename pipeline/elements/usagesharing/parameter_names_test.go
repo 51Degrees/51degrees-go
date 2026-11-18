@@ -34,7 +34,9 @@ import (
 
 // Query string and form parameters follow the cookie rule: only a name that
 // starts 51D_ is shared, whatever the configuration, so a name a site uses
-// for itself, such as password, never is.
+// for itself, such as password, never is. The deprecated options change
+// nothing.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L72-L104
 func TestOnlyParameterNamesStarting51DAreShared(t *testing.T) {
 	configs := map[string]*Builder{
 		"default": NewBuilder(),
@@ -62,6 +64,7 @@ func TestOnlyParameterNamesStarting51DAreShared(t *testing.T) {
 }
 
 // A GET request's query string shares only its 51D_ names.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L81-L91
 func TestAQueryStringSharesOnly51DNames(t *testing.T) {
 	p, e := newSharingPipeline(t, NewBuilder())
 	r := httptest.NewRequest("GET",
@@ -77,6 +80,7 @@ func TestAQueryStringSharesOnly51DNames(t *testing.T) {
 
 // A POST request's form body shares only its 51D_ names, whether the form
 // comes in the request or as query Evidence, as the web integration adds it.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L81-L91
 func TestAFormBodySharesOnly51DNames(t *testing.T) {
 	p, e := newSharingPipeline(t, NewBuilder())
 	form := url.Values{"password": {"secret"}, "51D_y": {"2"},
@@ -102,6 +106,7 @@ func TestAFormBodySharesOnly51DNames(t *testing.T) {
 // A parameter whose name does not start 51D_ is still shared when it is
 // Evidence the Pipeline uses, being a key an element in the Pipeline accepts,
 // from a query string and from a form body alike.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L72-L91
 func TestAParameterThePipelineUsesIsShared(t *testing.T) {
 	e := NewBuilder().SetSharePercentage(0).
 		SetShareUsageURL("http://127.0.0.1:1/").Build()

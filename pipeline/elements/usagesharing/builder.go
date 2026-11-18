@@ -314,7 +314,7 @@ func isNeverShared(key string) bool {
 // shared, counting a parameter as used when a Pipeline the element is in
 // accepts it. The element accepts no Evidence (its filter is empty), so these
 // rules never widen a Pipeline's cache keys or ETag.
-// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L31-L104
 func (e *Element) isShared(key string) bool {
 	return e.isSharedIn(key, e.pipelinesAccept)
 }

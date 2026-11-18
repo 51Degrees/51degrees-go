@@ -28,7 +28,7 @@
 // in the two Resource Key messages. That address stays
 // https://configure.51degrees.com, as programs may match on the text and the
 // specification asks for the table's text only as a SHOULD.
-// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/properties.md?plain=1#L111-L139
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/properties.md?plain=1#L116-L139
 package missingproperty
 
 import (
