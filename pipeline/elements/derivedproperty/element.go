@@ -87,7 +87,12 @@ func GetAs[T any](d *Data, name string) (T, error) {
 // is built, so concurrent requests need nothing further.
 type Element struct {
 	*core.BaseElement
-	scripts  []*compiledScript
+	// scripts holds the scripts in the order they were added, which is the
+	// order of the metadata.
+	scripts []*compiledScript
+	// run holds the same scripts in the order they are evaluated, each
+	// after the scripts whose derived properties it reads.
+	run      []*compiledScript
 	reads    []sourceRead
 	keys     []string
 	metadata []ScriptMetaData
@@ -138,7 +143,7 @@ func (e *Element) Process(fd core.FlowData) error {
 			slots[i] = readSource(sources[r.key], found[r.key], r.property)
 		}
 	}
-	for _, s := range e.scripts {
+	for _, s := range e.run {
 		e.processScript(s, slots, found, out)
 	}
 	return nil
