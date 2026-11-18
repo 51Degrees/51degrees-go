@@ -1,0 +1,23 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "51Degrees Device Detection and IP Intelligence for Go",
+  "description": "User-Agent parser for Go that supports Device Detection, browser detection, mobile detection and crawler detection on-premise, as an alternative to UAParser.js, DeviceAtlas and WURFL. IP Intelligence adds IP geolocation, including IP to country data, as an alternative to MaxMind and IPinfo.",
+  "excludeFolders": [
+    ".github",
+    "ci",
+    "cxx",
+    "javascript-templates",
+    "derived-properties",
+    "archive",
+    "archived",
+    "old",
+    "deprecated",
+    "legacy",
+    "previous",
+    "outdated",
+    "superseded",
+    "benchmark",
+    "benchmarks",
+    "benches"
+  ]
+}
