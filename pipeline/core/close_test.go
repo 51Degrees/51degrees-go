@@ -23,6 +23,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -82,31 +83,42 @@ func TestClosingAFlowDataReturnsItsElementDataToThePool(t *testing.T) {
 	}
 }
 
-// Element Data taken from the pool has no values and can be written.
+// Element Data taken from the pool has no values and can be written. Each
+// request writes a value under a name of its own, so a value an earlier
+// request left in a reused instance shows.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L87-L96
 func TestPooledElementDataStartsEmptyAndOpen(t *testing.T) {
-	values := 0
+	request := 0
+	writer := newFuncElement("pooled", nil, func(fd FlowData) error {
+		fd.GetOrAdd("pooled", func(FlowData) ElementData {
+			return NewBaseElementData()
+		}).Set(fmt.Sprintf("value%d", request), true)
+		return nil
+	})
+	var held map[string]any
 	reader := newFuncElement("reader", nil, func(fd FlowData) error {
 		d, err := fd.Get("pooled")
 		if err != nil {
 			return err
 		}
-		values = len(d.AsMap())
+		held = d.AsMap()
 		return nil
 	})
 	p, err := NewPipelineBuilder().SetLogger(quietLogger()).
-		AddFlowElement(pooledWriter()).AddFlowElement(reader).Build()
+		AddFlowElement(writer).AddFlowElement(reader).Build()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	for i := range 20 {
+	for request = range 20 {
 		fd := p.CreateFlowData()
 		if err := fd.Process(); err != nil {
-			t.Fatalf("request %d: %v", i, err)
+			t.Fatalf("request %d: %v", request, err)
 		}
-		if values != 1 {
-			t.Fatalf("request %d: the Element Data held %d values, want 1",
-				i, values)
+		want := fmt.Sprintf("value%d", request)
+		if _, ok := held[want]; !ok || len(held) != 1 {
+			t.Fatalf("request %d: the Element Data held %v, want only %s",
+				request, held, want)
 		}
 		closeOf(t, fd).Close()
 	}
