@@ -138,6 +138,25 @@ http.ListenAndServe(":8080", mw.Handler(myAppHandler))
 The example at [examples/pipeline/3_clientside_evidence](../examples/pipeline/3_clientside_evidence)
 stands up the middleware and exercises the full client-side round-trip.
 
+## Thread safety
+
+A Flow Data is used by one goroutine at a time, and is not safe to use from
+several at once, apart from the members of a parallel group, which the
+Pipeline runs itself. Once `Process` has returned, a Flow Data may pass to
+another goroutine, which then uses it alone.
+
+Using a Flow Data from another goroutine while `Process` runs is a data race.
+It can end the whole program with a fatal error, such as
+`fatal error: concurrent map read and map write`, which `recover` does not
+catch, rather than return an error.
+
+The Pipeline adds no lock for this, to keep processing fast for the usual case
+of one goroutine per request. A caller that shares a Flow Data across
+goroutines is responsible for any locking.
+
+This follows the Pipeline specification's
+[thread-safety page](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md).
+
 ## Design notes
 
 This implementation follows a "hybrid" approach: public concepts and package
