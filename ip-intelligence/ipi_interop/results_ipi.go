@@ -58,6 +58,10 @@ type ResultsIpi struct {
 // NewResultsIpi creates a new ResultsIpi instance using the provided ResourceManager.
 // The instance handles C.ResultsIpi creation and associated memory management.
 // A finalizer is set to ensure resources are explicitly freed.
+//
+// A ResultsIpi is not safe to use from several goroutines at once, so one
+// belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func NewResultsIpi(manager *ResourceManager) *ResultsIpi {
 	r := C.ResultsIpiCreate(manager.CPtr)
 

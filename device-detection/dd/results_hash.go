@@ -87,6 +87,10 @@ func resultsFinalizer(res *ResultsHash) {
 // turned the synonym into a two-argument function-like macro, which cgo cannot
 // expand. Passing 0 mirrors what that macro injects; uaCapacity is ignored but
 // kept to keep the public signature stable for callers.
+//
+// A ResultsHash is not safe to use from several goroutines at once, so one
+// belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func NewResultsHash(
 	manager *ResourceManager,
 	uaCapacity uint32,

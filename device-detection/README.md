@@ -96,6 +96,17 @@ go doc -all
 
 **NOTE**: Not all APIs are available. Ones that are not available include string `TODO: To be implemented` in their descriptions.
 
+## Thread safety
+
+A results instance, being the `dd.ResultsHash` that `Engine.Process`,
+`Engine.NewResultsHash` and `dd.NewResultsHash` return, is not safe to use
+from several goroutines at once, because reading a value writes into the
+native results, and it takes no lock. So a results instance belongs to one
+goroutine at a time, and the caller is responsible for thread-safe access to
+one it shares, for example with a `sync.Mutex` of its own. A web server makes
+one for each request. See the
+[results instances rules](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L196-L221).
+
 ## Examples
 
 Examples can be found in the [examples/device-detection](../examples/device-detection) folder. Users can follow its [README.md](../examples/device-detection/README.md) for details and comments in each examples for how to run them.

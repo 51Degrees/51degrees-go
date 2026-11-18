@@ -150,6 +150,9 @@ func (h *mixedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		wg            sync.WaitGroup
 	)
 
+	// Each request makes its own results, because a results instance is not
+	// safe to use from several goroutines at once. The handler reads
+	// ddResults only after wg.Wait, once the goroutine that made it is done.
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
