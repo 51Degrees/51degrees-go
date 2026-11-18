@@ -150,11 +150,16 @@ while the internals are idiomatic Go. In particular:
   non-generic interface, rather than generic methods.
 - **Composition over inheritance.** The deep `FlowElement` → `AspectEngine` →
   `CloudAspectEngine` hierarchy of the reference implementations is flattened
-  into small interfaces plus embeddable `Base*` structs. Caching and lazy
-  loading are applied by an engine-supplied compute function passed to
-  `BaseAspectEngine.Execute`, following the strategy pattern recommended in the
-  specification's
+  into small interfaces plus embeddable `Base*` structs. Caching is applied
+  around an engine-supplied compute function passed to
+  `BaseAspectEngine.Execute`, which runs it on the calling goroutine, following
+  the strategy pattern recommended in the specification's
   [reference-implementation notes](https://github.com/51Degrees/specifications/blob/main/pipeline-specification/reference-implementation-notes.md).
+  `SetLazyLoading` is deprecated and has no effect, as the specification's
+  [lazy loading](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/lazy-loading.md)
+  page says. Long-running work belongs in a
+  [lazy property](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#lazy-properties)
+  of a Flow Element's own Element Data.
 
 ## Project documentation
 
