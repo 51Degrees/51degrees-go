@@ -59,6 +59,11 @@ var flowDataKey = contextKey{}
 // it, sets any requested response headers, and makes the Flow Data available via
 // FromContext. It also serves the intercepted client-side JavaScript and JSON
 // endpoints.
+//
+// A Flow Data cannot be used by two goroutines at once. A handler that hands
+// work to another goroutine copies the values that work needs out of the
+// Flow Data first, and passes those values rather than the Flow Data.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L25-L40
 type Middleware struct {
 	pipeline       core.Pipeline
 	javaScriptURL  string
@@ -108,6 +113,8 @@ func NewMiddleware(pipeline core.Pipeline, opts ...Option) *Middleware {
 }
 
 // FromContext returns the processed Flow Data stored on the request context.
+// Use it on the request's goroutine. Work handed to another goroutine gets the
+// values it needs copied out of the Flow Data, never the Flow Data.
 func FromContext(ctx context.Context) (core.FlowData, bool) {
 	fd, ok := ctx.Value(flowDataKey).(core.FlowData)
 	return fd, ok
