@@ -149,7 +149,6 @@ func (d *BaseElementData) release() {
 	if d.shared.Load() || d.values == nil {
 		return
 	}
-	typedmap.Clear(d.values)
 	d.openForWriting()
 	baseElementDataPool.Put(d)
 }
