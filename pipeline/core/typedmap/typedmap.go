@@ -132,8 +132,8 @@ type concurrentMap struct {
 	data map[string]any
 }
 
-// NewConcurrentMap returns a Map that is safe for concurrent use. This is used
-// where the Pipeline is configured for concurrent or parallel processing.
+// NewConcurrentMap returns a Map that is safe for concurrent use, for state
+// that several goroutines write.
 func NewConcurrentMap() Map {
 	return &concurrentMap{data: make(map[string]any)}
 }

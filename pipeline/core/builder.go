@@ -52,8 +52,9 @@ func (b *PipelineBuilder) SetLogger(l *slog.Logger) *PipelineBuilder {
 	return b
 }
 
-// SetConcurrent configures whether Flow Data created by the Pipeline uses
-// thread-safe storage. This must be enabled when using parallel processing.
+// SetConcurrent configures whether Flow Data created by the Pipeline adds
+// Element Data with a compare and swap, so that several goroutines can add at
+// once. A Pipeline with a parallel group is concurrent whatever this says.
 func (b *PipelineBuilder) SetConcurrent(v bool) *PipelineBuilder {
 	b.concurrent = v
 	return b
@@ -91,10 +92,10 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 	copy(elements, b.elements)
 
 	filters := make([]EvidenceKeyFilter, 0, len(elements))
-	// Flow Data must use thread-safe storage if it was explicitly requested or if
-	// any element processes concurrently (e.g. ParallelElements). Deriving this
-	// from the elements removes the foot-gun of adding parallel work without
-	// remembering to enable concurrency.
+	// Flow Data adds Element Data with a compare and swap if that was asked
+	// for or if any element processes concurrently (e.g. ParallelElements).
+	// Deriving this from the elements means adding parallel work needs no
+	// other setting.
 	concurrent := b.concurrent
 	for _, e := range elements {
 		filters = append(filters, e.EvidenceKeyFilter())
