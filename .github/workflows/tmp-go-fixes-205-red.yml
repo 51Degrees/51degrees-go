@@ -1,0 +1,27 @@
+name: Temporary build of cbfe1891 on tmp/go-fixes-205-red
+
+on:
+  push:
+    branches:
+      - 'tmp/go-fixes-205-red'
+
+jobs:
+  Build:
+    uses: 51Degrees/common-ci/.github/workflows/nightly-pull-requests.yml@main
+    with:
+      repo-name: 51degrees-go
+      org-name: 51Degrees
+      branch: tmp/go-fixes-205-red
+      prs: ''
+      build-without-pull-requests: true
+      dryrun: true
+      cache-assets: true
+      fail-fast: false
+      skip-compare-performance: true
+      common-ci-ref: tmp/no-macos
+    secrets:
+      token: ${{ secrets.ACCESS_TOKEN }}
+      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
+      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
+      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
+      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
