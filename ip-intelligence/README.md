@@ -68,7 +68,11 @@ A results instance, being the `ipi_interop.ResultsIpi` that
 at once, because reading a value writes into the native results, and it takes
 no lock. So a results instance belongs to one goroutine at a time, and the
 caller is responsible for thread-safe access to one it shares, for example
-with a `sync.Mutex` of its own. A web server makes one for each request. See the
+with a `sync.Mutex` of its own. A web server makes one for each request. The
+`Data` that `Engine.ProcessData` returns reads its values from a results
+instance of its own, so it is not safe to use from several goroutines at once
+either, and the caller is responsible for thread-safe access to one it shares
+in the same way. See the
 [results instances rules](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L196-L221).
 
 ## Development

@@ -30,9 +30,9 @@ import (
 
 // "Aspect Data that reads its values from a ResultsIpi instance MUST NOT
 // lock it, and is not safe to use from several threads at once", so Data
-// holds no lock of its own. The caller is responsible for any locking.
-// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L523
-// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L203-L210
+// holds no lock of its own. The caller is responsible for thread-safe access.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L525
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L205-L212
 func TestDataTakesNoLock(t *testing.T) {
 	locks := []reflect.Type{
 		reflect.TypeOf(sync.Mutex{}), reflect.TypeOf(sync.RWMutex{}),

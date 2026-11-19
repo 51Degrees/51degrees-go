@@ -59,7 +59,8 @@ type nativeResults interface {
 //
 // Data is not safe to use from several goroutines at once, because reading a
 // value writes into the native results and into the values Data keeps, and
-// Data takes no lock. The caller is responsible for any locking.
+// Data takes no lock. The caller is responsible for thread-safe access to one
+// it shares, for example with a sync.Mutex of its own.
 //
 // The native results hold memory the Go garbage collector does not manage, so
 // call Free when the Data is no longer needed. A read after Free returns
@@ -67,7 +68,7 @@ type nativeResults interface {
 //
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L10-L12
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L34-L37
-// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L523
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L525
 type Data struct {
 	*engines.BaseAspectData
 	results   nativeResults
@@ -215,7 +216,9 @@ func (d *Data) Free() {
 // ProcessData processes the given IP address and returns its Data, which
 // reads each Property's values from the native results only when that
 // Property is requested. The caller calls Free on the Data when it is done
-// with it.
+// with it. The Data is not safe to use from several goroutines at once, so
+// it belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func (e *Engine) ProcessData(ipAddress string) (*Data, error) {
 	return e.processInto(ipi_interop.NewResultsIpi(e.manager), ipAddress)
 }
