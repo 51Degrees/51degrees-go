@@ -75,26 +75,19 @@ const (
 	maxValueLength         = 10000
 )
 
-// DefaultShareAllQueryStringParameters shares every query string and form
-// parameter unless a user turns it off.
-// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L80-L81
-const DefaultShareAllQueryStringParameters = true
-
 type config struct {
-	includedQueryParams map[string]struct{}
-	shareAllQueryParams bool
-	shareAllEvidence    bool
-	blockedHeaders      map[string]struct{}
-	sharePercentage     float64
-	minEntries          int
-	maxQueueSize        int
-	addTimeout          time.Duration
-	takeTimeout         time.Duration
-	shareURL            string
-	repeatInterval      time.Duration
-	recovery            recoveryConfig
-	trackSession        bool
-	sessionCookieName   string
+	shareAllEvidence  bool
+	blockedHeaders    map[string]struct{}
+	sharePercentage   float64
+	minEntries        int
+	maxQueueSize      int
+	addTimeout        time.Duration
+	takeTimeout       time.Duration
+	shareURL          string
+	repeatInterval    time.Duration
+	recovery          recoveryConfig
+	trackSession      bool
+	sessionCookieName string
 	// err refuses a configuration that cannot work, when the element is
 	// added to a Pipeline.
 	err error
@@ -208,8 +201,8 @@ func (e *Element) sample() bool {
 	return e.rng.Float64() < e.cfg.sharePercentage
 }
 
-// shareableEvidence returns the values the element finds that isShared lets
-// through, keyed by their Evidence key. It finds every Evidence value and,
+// shareableEvidence returns the values the element finds that isSharedFor
+// lets through, keyed by their Evidence key. It finds every Evidence value and,
 // when the Evidence holds the web request as core.EvidenceHTTPRequest, the
 // request's parts too. A key found in both keeps the Evidence value, and the
 // request itself is never shared.
@@ -218,13 +211,13 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
 	all := fd.Evidence().AsMap()
 	for key, val := range all {
-		if key != core.EvidenceHTTPRequest && e.isShared(key) {
+		if key != core.EvidenceHTTPRequest && e.isSharedFor(fd, key) {
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
 	if w, ok := all[core.EvidenceHTTPRequest].(core.WebRequest); ok {
 		for key, val := range requestEvidence(w) {
-			if _, found := all[key]; !found && e.isShared(key) {
+			if _, found := all[key]; !found && e.isSharedFor(fd, key) {
 				out[key] = val
 			}
 		}

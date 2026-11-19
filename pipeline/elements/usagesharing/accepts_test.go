@@ -102,7 +102,6 @@ func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 		"header.protocol":       "https",
 		"cookie.51d_c":          "3",
 		"query.51d_q":           "1",
-		"query.other":           "2",
 		"server.client-ip":      "203.0.113.5",
 		"server.request-method": "GET",
 	}
@@ -112,10 +111,10 @@ func TestUsageSharingSharesTheWebRequest(t *testing.T) {
 }
 
 // Without a web request, usage sharing shares the Evidence values the
-// sharing rules let through, as it always has.
+// sharing rules let through, as it always has. A parameter named in the
+// include list is not shared unless its name starts 51D_.
 func TestUsageSharingSharesEvidenceWithoutAWebRequest(t *testing.T) {
 	p, e := newSharingPipeline(t, NewBuilder().SetBlockedHTTPHeaders("x-blocked").
-		SetShareAllQueryStringParameters(false).
 		SetIncludedQueryStringParameters("myparam"))
 
 	fd := p.CreateFlowData()
@@ -136,7 +135,6 @@ func TestUsageSharingSharesEvidenceWithoutAWebRequest(t *testing.T) {
 		"header.x-test":     "shared",
 		"cookie.51d_c":      "3",
 		"query.51d_q":       "1",
-		"query.myparam":     "4",
 		"server.client-ip":  "203.0.113.5",
 	}
 	if got := e.shareableEvidence(fd); !reflect.DeepEqual(got, want) {
@@ -164,8 +162,8 @@ func TestUsageSharingNeverSharesTheNeverSharedKeys(t *testing.T) {
 				t.Errorf("%s: isShared(%q) = true, want false", name, key)
 			}
 		}
-		if e.cfg.shareAllEvidence && !e.isShared("query.valid.email") {
-			t.Errorf("%s: isShared(query.valid.email) = false, want true", name)
+		if e.cfg.shareAllEvidence && !e.isShared("query.51D_valid.email") {
+			t.Errorf("%s: isShared(query.51D_valid.email) = false, want true", name)
 		}
 		e.Close()
 	}
@@ -283,9 +281,8 @@ func TestUsageSharingSharesTheSessionValuesOfTheWebRequest(t *testing.T) {
 // No rule removes the Resource Key or the License Key. Under the fiftyone
 // prefix, the names the cloud service gives them, they are shared whatever
 // the configuration, even when the blocked headers name them. As query
-// string or form parameters they follow the query rule, so they are shared
-// unless all query string parameters are turned off, and then when allow
-// listed or when all Evidence is shared.
+// string or form parameters their names do not start 51D_, so they are never
+// shared, whatever the configuration.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
 func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 	fiftyone := []string{"fiftyone.resource-key", "fiftyone.license-key"}
@@ -294,18 +291,15 @@ func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 		b     *Builder
 		query bool
 	}{
-		"default":   {NewBuilder(), true},
-		"no blocks": {NewBuilder().SetBlockedHTTPHeaders(), true},
+		"default":   {NewBuilder(), false},
+		"no blocks": {NewBuilder().SetBlockedHTTPHeaders(), false},
 		"keys blocked": {NewBuilder().SetBlockedHTTPHeaders("resource-key",
 			"license-key", "fiftyone.resource-key", "fiftyone.license-key"),
-			true},
-		"all query off": {NewBuilder().SetShareAllQueryStringParameters(false),
 			false},
-		"allow listed": {NewBuilder().SetShareAllQueryStringParameters(false).
-			SetIncludedQueryStringParameters("Resource", "License", "Licence"),
-			true},
-		"share all": {NewBuilder().SetShareAllQueryStringParameters(false).
-			SetShareAllEvidence(true), true},
+		"allow listed": {NewBuilder().SetIncludedQueryStringParameters(
+			"Resource", "License", "Licence"), false},
+		"all query": {NewBuilder().SetShareAllQueryStringParameters(true), false},
+		"share all": {NewBuilder().SetShareAllEvidence(true), false},
 	} {
 		e := c.b.Build()
 		for _, key := range fiftyone {
@@ -324,7 +318,8 @@ func TestUsageSharingKeepsTheResourceAndLicenseKeys(t *testing.T) {
 }
 
 // The keys are found in the web request under the same rules as in the
-// Evidence, so reading the request as well loses neither of them.
+// Evidence, so reading the request as well loses neither of them, and the
+// query string parameters naming them are not shared.
 func TestUsageSharingSharesTheKeysOfTheWebRequest(t *testing.T) {
 	for _, allQuery := range []bool{false, true} {
 		p, e := newSharingPipeline(t,
@@ -343,10 +338,8 @@ func TestUsageSharingSharesTheKeysOfTheWebRequest(t *testing.T) {
 					allQuery, key, got)
 			}
 		}
-		for key, want := range map[string]string{
-			"query.resource": "r", "query.license": "l"} {
-			if v, found := got[key]; found != allQuery ||
-				(found && v != want) {
+		for _, key := range []string{"query.resource", "query.license"} {
+			if v, found := got[key]; found {
 				t.Errorf("all query %v: %s = %q, found %v, shared %v",
 					allQuery, key, v, found, got)
 			}
