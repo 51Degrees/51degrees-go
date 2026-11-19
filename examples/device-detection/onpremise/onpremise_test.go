@@ -23,12 +23,8 @@
 package onpremise
 
 import (
-	"crypto/sha256"
-	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,14 +47,8 @@ func run(t *testing.T, name string, environment []string) string {
 	return string(output)
 }
 
-// test runs an example with the settings CI gives every example, on its own
-// data file, as ownDataFile gives it.
 func test(t *testing.T, name string) {
-	environment, err := ownDataFile(t, os.Environ())
-	if err != nil {
-		t.Fatal(err)
-	}
-	run(t, name, environment)
+	run(t, name, nil)
 }
 
 // testEnterprise runs an example and checks that it shows the properties only
@@ -158,102 +148,8 @@ func TestReloadFromFileFreeDataFile(t *testing.T) {
 	testFree(t, "reload_from_file")
 }
 
-// The update example renames each newer data file it downloads over the data
-// file it is given. The other examples, tested at the same time, read the
-// file the settings name as the free data file, so the example must leave
-// that file as it was. It downloads only with a licence key.
 func TestUpdatePollingInterval(t *testing.T) {
-	shared := os.Getenv("_51DEGREES_DD_PATH")
-	if shared == "" || os.Getenv("_51DEGREES_LICENSE_KEY") == "" {
-		test(t, "update_polling_interval")
-		return
-	}
-	before := fileSum(t, shared)
 	test(t, "update_polling_interval")
-	if fileSum(t, shared) != before {
-		size := int64(-1)
-		if info, err := os.Stat(shared); err == nil {
-			size = info.Size()
-		}
-		t.Errorf("the update example replaced %s, which the other examples "+
-			"read as the free data file, with a file of %d bytes", shared,
-			size)
-	}
-}
-
-// ownDataFile returns environment with _51DEGREES_DD_PATH naming the
-// example's own data file, in a new folder beside the file the environment
-// names under that name or its deprecated one, and without the deprecated
-// name. The own file is a hard link to the named file, or a copy where a link
-// cannot be made, and the folder is removed when the test ends. An update
-// renames the file it downloads over its data file, so it replaces the
-// example's own file and never the one the other examples read. Environment
-// is returned unchanged when it names no data file.
-func ownDataFile(t *testing.T, environment []string) ([]string, error) {
-	deprecated := "DATA" + "_FILE"
-	var named, old string
-	kept := make([]string, 0, len(environment)+1)
-	for _, variable := range environment {
-		name, value, _ := strings.Cut(variable, "=")
-		switch strings.ToUpper(name) {
-		case "_51DEGREES_DD_PATH":
-			named = value
-			continue
-		case deprecated:
-			old = value
-			continue
-		}
-		kept = append(kept, variable)
-	}
-	source := named
-	if source == "" {
-		source = old
-	}
-	if source == "" {
-		return environment, nil
-	}
-	folder, err := os.MkdirTemp(filepath.Dir(source), "own-data-file-")
-	if err != nil {
-		return nil, err
-	}
-	t.Cleanup(func() { os.RemoveAll(folder) })
-	own := filepath.Join(folder, filepath.Base(source))
-	if err := os.Link(source, own); err != nil {
-		if err := copyFile(source, own); err != nil {
-			return nil, fmt.Errorf("the example needs its own data file, "+
-				"made from %s: %w", source, err)
-		}
-	}
-	return append(kept, "_51DEGREES_DD_PATH="+own), nil
-}
-
-// copyFile copies the file at from to a new file at to.
-func copyFile(from, to string) error {
-	in, err := os.Open(from)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(to)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
-}
-
-// fileSum gives the SHA-256 of the file at path, failing the test when it
-// cannot be read.
-func fileSum(t *testing.T, path string) [sha256.Size]byte {
-	t.Helper()
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sha256.Sum256(content)
 }
 
 // withoutSettings returns the environment without the variables that name a

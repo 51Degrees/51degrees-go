@@ -29,12 +29,12 @@ import (
 	"testing"
 )
 
-// The update example is tested with the settings CI gives every example, and
-// with a licence key it renames the Enterprise data file it downloads over
-// the data file _51DEGREES_DD_PATH names. The other examples, tested at the
-// same time, read that file as the free one, so it must be left as it was.
-// The stand-in in testdata/update replaces its data file at once, as an
-// update does, so the test needs no download and no wait.
+// With a licence key the update example renames the Enterprise data file it
+// downloads over its data file. The tests of other packages read the file
+// _51DEGREES_DD_PATH names at the same time, so onOwnDataFile, which TestMain
+// runs this package's tests through, must leave that file as it was. The
+// stand-in in testdata/update replaces its data file at once, as an update
+// does, so the test needs no download and no wait.
 func TestAnUpdateLeavesTheDataFileTheSettingsName(t *testing.T) {
 	shared := filepath.Join(t.TempDir(), "51Degrees-LiteV4.1.hash")
 	if err := os.WriteFile(shared, []byte("the free data file"), 0o644); err != nil {
@@ -42,7 +42,10 @@ func TestAnUpdateLeavesTheDataFileTheSettingsName(t *testing.T) {
 	}
 	t.Setenv("_51DEGREES_DD_PATH", shared)
 	before := sha256.Sum256([]byte("the free data file"))
-	test(t, "testdata/update")
+	code := onOwnDataFile(func() int {
+		run(t, "testdata/update", nil)
+		return 0
+	})
 	content, err := os.ReadFile(shared)
 	if err != nil {
 		t.Fatalf("an update removed %s: %v", shared, err)
@@ -51,5 +54,9 @@ func TestAnUpdateLeavesTheDataFileTheSettingsName(t *testing.T) {
 		t.Errorf("an update replaced %s, the data file the settings name "+
 			"and the other examples read, so it now holds %q", shared,
 			content)
+	}
+	if code != 0 {
+		t.Errorf("onOwnDataFile gave %d for tests that passed and left %s "+
+			"as it was, want 0", code, shared)
 	}
 }
