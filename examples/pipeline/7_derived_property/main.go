@@ -192,8 +192,7 @@ func runFromConfiguration() {
 
 	element := pipeline.GetElement(derivedproperty.DataKey).(*derivedproperty.Element)
 	for _, script := range element.Scripts() {
-		fmt.Printf("Script %s %s from %s\n",
-			script.Name, script.Version, script.Source)
+		fmt.Printf("Script %s %s\n", script.Name, script.Version)
 	}
 	fmt.Println()
 	for _, r := range requests {
