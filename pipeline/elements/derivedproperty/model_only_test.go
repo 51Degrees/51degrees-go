@@ -128,7 +128,8 @@ func TestDerivedDataTakesNoLock(t *testing.T) {
 	}
 }
 
-// docOf gives the doc comment of the type named in the file.
+// docOf gives the doc comment of the type named in the file, with its line
+// breaks joined.
 func docOf(t *testing.T, file, name string) string {
 	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), file, nil,
@@ -143,7 +144,7 @@ func docOf(t *testing.T, file, name string) string {
 		}
 		for _, s := range g.Specs {
 			if ts, ok := s.(*ast.TypeSpec); ok && ts.Name.Name == name {
-				return g.Doc.Text()
+				return strings.Join(strings.Fields(g.Doc.Text()), " ")
 			}
 		}
 	}

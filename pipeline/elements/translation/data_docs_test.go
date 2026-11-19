@@ -44,7 +44,7 @@ func TestTheDataCommentKeepsTwoEnginesOutOfOneGroup(t *testing.T) {
 		if g, ok := d.(*ast.GenDecl); ok {
 			for _, s := range g.Specs {
 				if ts, ok := s.(*ast.TypeSpec); ok && ts.Name.Name == "Data" {
-					doc = g.Doc.Text()
+					doc = strings.Join(strings.Fields(g.Doc.Text()), " ")
 				}
 			}
 		}
