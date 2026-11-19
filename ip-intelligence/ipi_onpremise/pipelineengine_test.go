@@ -90,17 +90,22 @@ func TestPipelineEngineReadsAPropertyOnlyWhenItIsRequested(t *testing.T) {
 	}
 }
 
-// With no IP address in the evidence the engine reads, every Property has no
-// value, and the message says why.
+// With no IP address in the evidence the engine reads, or only a value that
+// is not one whole address, every Property has no value, and the message
+// says why.
 func TestPipelineEngineWithNoAddressSaysSo(t *testing.T) {
-	data := processAddress(t, enginePipeline(t), "")
-	name := textOf(t, data, "asnname")
-	if name.HasValue() {
-		t.Errorf("asnname is %v with no address, want no value", name.AsInterface())
-	}
-	if name.NoValueMessage() != noAddressReason {
-		t.Errorf("asnname gave the message %q, want %q",
-			name.NoValueMessage(), noAddressReason)
+	pipeline := enginePipeline(t)
+	for _, address := range []string{"", "unknown"} {
+		data := processAddress(t, pipeline, address)
+		name := textOf(t, data, "asnname")
+		if name.HasValue() {
+			t.Errorf("asnname is %v with evidence %q, want no value",
+				name.AsInterface(), address)
+		}
+		if name.NoValueMessage() != noAddressReason {
+			t.Errorf("asnname gave the message %q with evidence %q, want %q",
+				name.NoValueMessage(), address, noAddressReason)
+		}
 	}
 }
 
