@@ -35,6 +35,10 @@ var errNoData = errors.New("the engine has no data loaded")
 // names of its Properties and its default profile.
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/usage-examples.md?plain=1#L166-L184
 func (e *Engine) Components() ([]dd.ComponentMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errNoData
 	}
@@ -43,6 +47,10 @@ func (e *Engine) Components() ([]dd.ComponentMetadata, error) {
 
 // Profiles gives every profile the data file in use holds, in order of id.
 func (e *Engine) Profiles() ([]dd.ProfileMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errNoData
 	}
@@ -51,6 +59,10 @@ func (e *Engine) Profiles() ([]dd.ProfileMetadata, error) {
 
 // Values gives every value of every Property the data file in use defines.
 func (e *Engine) Values() ([]dd.ValueMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errNoData
 	}
@@ -60,6 +72,10 @@ func (e *Engine) Values() ([]dd.ValueMetadata, error) {
 // ProfileValues gives the values the profile with the id holds, and an
 // error when the data file in use holds no such profile.
 func (e *Engine) ProfileValues(profileId uint32) ([]dd.ValueMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errNoData
 	}
