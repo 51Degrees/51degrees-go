@@ -569,14 +569,18 @@ func (e *Engine) nextUpdateDate() time.Time {
 	return dd.GetNextUpdateDate(e.manager)
 }
 
-// Create a new raw ResultsHash object.
+// NewResultsHash creates a new raw ResultsHash object. A ResultsHash is not
+// safe to use from several goroutines at once, so a reused one belongs to one
+// goroutine at a time. The caller is responsible for thread-safe access to one
+// it shares.
 func (e *Engine) NewResultsHash(evidenceCapacity uint32, overridesCapacity uint32) *dd.ResultsHash {
 	return dd.NewResultsHash(e.manager, evidenceCapacity, overridesCapacity)
 }
 
-// Process detects the device from the provided evidence list
-// returns the dd.ResultsHash object from which various device properties
-// are retrieved
+// Process detects the device from the provided evidence list and returns the
+// dd.ResultsHash object from which various device properties are retrieved.
+// The ResultsHash is not safe to use from several goroutines at once. The
+// caller is responsible for thread-safe access to one it shares.
 func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
 	evidenceHash, err := mapEvidence(evidenceList)
 	if err != nil {

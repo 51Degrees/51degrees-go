@@ -125,7 +125,7 @@ func TestEngineLazyLoading(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	// Accessing the value blocks until the background compute finishes.
+	// Lazy loading has no effect, so the value is ready once Process returns.
 	v, err := d.Get("ua")
 	if err != nil {
 		t.Fatalf("lazy get: %v", err)
@@ -135,6 +135,8 @@ func TestEngineLazyLoading(t *testing.T) {
 	}
 }
 
+// Lazy loading has no effect, so an Engine slower than the lazy loading
+// timeout still gives its value, with no timeout error.
 func TestEngineLazyTimeout(t *testing.T) {
 	e := newCountingEngine()
 	e.delay = 200 * time.Millisecond
@@ -143,8 +145,8 @@ func TestEngineLazyTimeout(t *testing.T) {
 	defer p.Close()
 	fd := process(t, p, "slow")
 	d, _ := fd.Get("counter")
-	if _, err := d.Get("ua"); err == nil {
-		t.Fatal("expected timeout error from lazy access")
+	if v, err := d.Get("ua"); err != nil || v != "slow" {
+		t.Fatalf("ua is %v with error %v, want slow and no error", v, err)
 	}
 }
 

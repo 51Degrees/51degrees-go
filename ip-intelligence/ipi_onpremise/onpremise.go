@@ -588,8 +588,11 @@ func (e *Engine) nextUpdateDate() time.Time {
 	return ipi_interop.GetNextUpdateDate(e.manager)
 }
 
-// NewResultsIpi creates a new ResultsIpi object using this engine's manager
-// Caller is responsible for calling Free() on the returned object
+// NewResultsIpi creates a new ResultsIpi object using this engine's manager.
+// Caller is responsible for calling Free() on the returned object. A
+// ResultsIpi is not safe to use from several goroutines at once, so a reused
+// one belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func (e *Engine) NewResultsIpi() *ipi_interop.ResultsIpi {
 	return ipi_interop.NewResultsIpi(e.manager)
 }
@@ -609,6 +612,9 @@ func (e *Engine) Process(ipAddress string) (ipi_interop.Values, error) {
 // ProcessWithResults processes the given IP address with an optional reusable ResultsIpi object.
 // If results is nil, creates a new ResultsIpi object for this call.
 // If results is provided, reuses it for better performance (caller manages lifecycle).
+// A ResultsIpi is not safe to use from several goroutines at once, so a reused
+// one belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 //
 // Deprecated: ProcessWithResults copies the values of every required Property
 // out of the native results while it processes, and the specification
