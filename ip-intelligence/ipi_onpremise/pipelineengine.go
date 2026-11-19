@@ -105,7 +105,7 @@ func (p *PipelineEngine) Process(fd core.FlowData) error {
 			return nil, err
 		}
 		if evidence == nil {
-			return p.engine.noAddressData(), nil
+			return p.engine.noAddressData()
 		}
 		defer evidence.Free()
 		data, err := p.engine.processEvidence(evidence)

@@ -23,6 +23,7 @@
 package ipi_onpremise
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -56,4 +57,14 @@ func TestMakingADataTakesNoSecondHoldOnTheEngine(t *testing.T) {
 	}
 	e.release()
 	<-stopped
+}
+
+// The Data for evidence with no IP address is made under a hold, like every
+// other Data, so it is refused once the engine has stopped.
+func TestTheNoAddressDataIsRefusedOnceTheEngineHasStopped(t *testing.T) {
+	e := &Engine{}
+	e.freed = true
+	if _, err := e.noAddressData(); !errors.Is(err, errEngineStopped) {
+		t.Fatalf("got %v, want errEngineStopped", err)
+	}
 }

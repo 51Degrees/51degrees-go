@@ -350,13 +350,18 @@ func (e *Engine) processEvidence(evidence *ipi_interop.Evidence) (*Data, error) 
 }
 
 // noAddressData gives a Data in which every Property of the Engine has no
-// value, with the reason that no IP address was supplied.
-func (e *Engine) noAddressData() *Data {
-	return e.newData(noResults{}, noAddressReason)
+// value, with the reason that no IP address was supplied. It gives an error
+// once the engine has stopped.
+func (e *Engine) noAddressData() (*Data, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
+	return e.newData(noResults{}, noAddressReason), nil
 }
 
 // newData wraps results in a Data that gives reason for a Property with no
-// value.
+// value. The caller holds the engine.
 func (e *Engine) newData(results nativeResults, reason string) *Data {
 	var nameAt func(int) string
 	if names := e.names.Load(); names != nil {
@@ -384,7 +389,7 @@ func (e *Engine) weightedProperties() map[string]bool {
 	if weighted := e.weighted.Load(); weighted != nil {
 		return *weighted
 	}
-	properties, err := e.Properties()
+	properties, err := e.properties()
 	if err != nil {
 		return map[string]bool{}
 	}
