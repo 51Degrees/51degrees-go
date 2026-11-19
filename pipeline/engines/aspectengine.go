@@ -23,7 +23,9 @@
 package engines
 
 import (
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -56,11 +58,71 @@ func NewBaseAspectEngine(dataKey string, filter core.EvidenceKeyFilter, logger *
 	return &BaseAspectEngine{BaseElement: core.NewBaseElement(dataKey, filter, logger)}
 }
 
-// SetCache attaches a result cache to the Engine. A cache MUST NOT be attached
-// to an Engine whose Aspect Data requires resource cleanup or is not
-// thread-safe; that is the responsibility of the concrete engine.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/caching.md#data-lifetime-and-concurrency-issues
-func (b *BaseAspectEngine) SetCache(c cache.Cache) { b.cache = c }
+// SetCache attaches a result cache to the Engine. The concrete Engine must
+// not attach one where its Aspect Data needs cleanup or is not safe to read
+// from several goroutines at once. A cache is also refused, with an error
+// logged, while the Engine is in a Pipeline where another Flow Element
+// writes its Element Data, because that Flow Element would write into a
+// cached instance that other requests are reading. Building such a Pipeline
+// with the cache already set fails in the same way.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/caching.md?plain=1#L111-L135
+func (b *BaseAspectEngine) SetCache(c cache.Cache) {
+	if c != nil {
+		for _, p := range b.Pipelines() {
+			if err := b.refuseSharedCache(p); err != nil {
+				b.Logger().Error(err.Error())
+				return
+			}
+		}
+	}
+	b.cache = c
+}
+
+// OnPipelineAdded refuses a Pipeline in which another Flow Element writes
+// the Engine's Element Data while the Engine has a cache.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L234-L237
+func (b *BaseAspectEngine) OnPipelineAdded(p core.Pipeline) error {
+	if b.cache != nil {
+		if err := b.refuseSharedCache(p); err != nil {
+			return err
+		}
+	}
+	return b.BaseElement.OnPipelineAdded(p)
+}
+
+// refuseSharedCache gives an error when another Flow Element of p, a member
+// of a group at any depth included, has the Engine's data key.
+func (b *BaseAspectEngine) refuseSharedCache(p core.Pipeline) error {
+	if !writtenByAnother(p.FlowElements(), b) {
+		return nil
+	}
+	return core.NewConfigurationError(fmt.Sprintf("the Engine '%s' has a "+
+		"cache, so another Flow Element must not write its Element Data, "+
+		"and one in the Pipeline does", b.DataKey()), nil)
+}
+
+// aspectEngine gives the BaseAspectEngine an Engine embeds, so that the
+// Engine can be told apart from another Flow Element with its key.
+func (b *BaseAspectEngine) aspectEngine() *BaseAspectEngine { return b }
+
+// writtenByAnother reports whether any of elements, or a member of a group
+// among them at any depth, has the data key of b and is not b's Engine.
+func writtenByAnother(elements []core.FlowElement, b *BaseAspectEngine) bool {
+	for _, e := range elements {
+		if own, ok := e.(interface{ aspectEngine() *BaseAspectEngine }); ok &&
+			own.aspectEngine() == b {
+			continue
+		}
+		if strings.EqualFold(e.DataKey(), b.DataKey()) {
+			return true
+		}
+		if group, ok := e.(interface{ Children() []core.FlowElement }); ok &&
+			writtenByAnother(group.Children(), b) {
+			return true
+		}
+	}
+	return false
+}
 
 // SetLazyLoading has no effect. The Engine processes on the goroutine that
 // processes the Flow Data and gives the same values whatever is set here,
