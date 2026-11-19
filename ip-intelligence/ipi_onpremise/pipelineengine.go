@@ -45,11 +45,11 @@ const noAddressReason = "No IP address was supplied in the evidence the engine r
 // Aspect Engine, to add to a Pipeline in place of the IP Intelligence Cloud
 // Engine. It looks up the first IP address in the evidence it accepts, in the
 // order the data file gives, and adds the Data ProcessData gives under
-// DataKey, with the lazy loading the Pipeline's engines share. That Data reads
-// each Property from the native results only when it is requested, and holds
-// them until it is released. A Flow Data has no Close, so the caller releases
-// them at once with Close on the Data, got with core.Get[*Data], when it has
-// finished with the Flow Data. A finalizer releases them once nothing holds
+// DataKey. That Data reads each Property from the native results only when it
+// is requested, and holds them until it is released. Closing the Flow Data
+// does not release them, so the caller releases them at once with Close on
+// the Data, got with core.Get[*Data], when it has finished with the Flow
+// Data. A finalizer releases them once nothing holds
 // the Data, as a backstop. The engine takes no results cache, because a
 // cached Data would be read after its release. Closing the engine, or the
 // Pipeline that holds it, stops the engine.

@@ -81,7 +81,24 @@ import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 
 `onpremise.NewPipelineEngine` takes the same options as `onpremise.New` and gives the engine as a Pipeline element,
 which adds `onpremise.DeviceData` to each Flow Data under the Data Key `device`, as the Device Detection Cloud Engine
-does. Used on its own, `Engine.ProcessData` gives the same Aspect Data. To build a Pipeline from a configuration file,
+does. The DeviceData reads each Property from the data file's results only when it is requested, and holds those results
+in memory the Go garbage collector cannot see until it is released. Closing the Flow Data does not release them, so
+call `Close` on the DeviceData when you have finished with the Flow Data, which releases the results at once:
+
+```go
+if data, err := core.Get[*onpremise.DeviceData](flowData); err == nil {
+	defer data.Close()
+}
+```
+
+If a DeviceData is not closed, a finalizer releases its results once nothing holds it, but only when the garbage
+collector next runs, which can be too late under load. A DeviceData is not safe to use from several goroutines at once,
+because reading a value writes into its results, and it takes no lock, so the caller is responsible for thread-safe
+access to one it shares. The engine refuses a results cache, and its `SetCache` returns an error, because a cached
+DeviceData would be read after its results were released. The engine's Property metadata lists the match metric
+Properties (`MatchedNodes`, `Difference`, `Drift`, `DeviceId`, `UserAgents`, `Iterations` and `Method`) after the
+data file's, and the DeviceData gives each of them. Used on its own, `Engine.ProcessData` gives the same DeviceData,
+and the caller calls `Close` on it when it has finished with it. To build a Pipeline from a configuration file,
 register `onpremise.Factory` under `onpremise.BuilderName` with `core.BuilderRegistry`. The build parameters are the
 options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
 

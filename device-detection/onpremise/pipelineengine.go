@@ -27,20 +27,30 @@ import (
 	"log/slog"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/cache"
 )
 
 // PipelineEngine is the on-premise Device Detection engine as an On-premise
 // Aspect Engine, to add to a Pipeline. It reads the evidence it accepts from
-// each Flow Data and adds DeviceData under DataKey, with the caching and lazy
-// loading the Pipeline's engines share. Closing it, or the Pipeline that
-// holds it, stops the engine.
+// each Flow Data and adds the DeviceData ProcessData gives under DataKey.
+// That DeviceData reads each Property from the native results only when it
+// is requested, and holds them until it is released. The caller releases
+// them at once with Close on the DeviceData, got with core.Get[*DeviceData],
+// when it has finished with the Flow Data. A finalizer releases them once
+// nothing holds the DeviceData, as a backstop. The engine takes no results
+// cache, because a cached DeviceData would be read after its release. Its
+// Property metadata lists the match metric Properties after the data
+// file's. Closing the engine, or the Pipeline that holds it, stops the
+// engine.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/data-model.md?plain=1#L10-L12
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L69-L70
 type PipelineEngine struct {
 	*engines.BaseOnPremiseAspectEngine
 	engine    *Engine
@@ -78,15 +88,39 @@ func newPipelineEngine(engine *Engine, logger *slog.Logger) *PipelineEngine {
 func (p *PipelineEngine) Engine() *Engine { return p.engine }
 
 // Process detects the device from the evidence in the Flow Data that the
-// engine accepts, and adds the results as DeviceData.
+// engine accepts, and adds the results as DeviceData, which reads no value
+// until one is requested.
 func (p *PipelineEngine) Process(fd core.FlowData) error {
 	return p.Execute(fd, func() (engines.AspectData, error) {
 		data, err := p.engine.ProcessData(p.evidence(fd))
 		if err != nil {
 			return nil, err
 		}
+		runtime.SetFinalizer(data, (*DeviceData).Free)
 		return data, nil
 	})
+}
+
+// errCacheRefused is the error SetCache gives.
+var errCacheRefused = core.NewConfigurationError("a results cache cannot be "+
+	"added to the on-premise Device Detection engine, because its DeviceData "+
+	"holds native results that are released when the caller has finished "+
+	"with them, and a cached DeviceData would be read after that", nil)
+
+// SetCache refuses a results cache and adds none, because the specification
+// says "the system MUST NOT allow a cache to be added to Engines where the
+// Element Data they produce requires cleanup beyond what normal garbage
+// collection will achieve", and this engine's DeviceData does. A nil cache
+// adds nothing and gives no error.
+//
+// Deprecated: this engine takes no results cache. SetCache is kept because
+// the engine's base type offers it, and always refuses a cache.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L83-L85
+func (p *PipelineEngine) SetCache(c cache.Cache) error {
+	if c == nil {
+		return nil
+	}
+	return errCacheRefused
 }
 
 // Close stops the engine, freeing its data set. A second call does nothing.
@@ -176,14 +210,17 @@ func (p *PipelineEngine) evidence(fd core.FlowData) []Evidence {
 }
 
 // propertyMetadata gives the metadata of each Property the data file defines,
-// naming this engine as the element that populates it.
+// then of each match metric Property, naming this engine as the element that
+// populates it.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L448-L475
 func (p *PipelineEngine) propertyMetadata() []core.PropertyMetadata {
 	properties, err := p.engine.Properties()
 	if err != nil {
 		return nil
 	}
 	text, list := reflect.TypeOf(""), reflect.TypeOf([]string(nil))
-	out := make([]core.PropertyMetadata, 0, len(properties))
+	out := make([]core.PropertyMetadata, 0,
+		len(properties)+len(metricProperties))
 	for _, property := range properties {
 		valueType := text
 		if property.IsList {
@@ -197,6 +234,21 @@ func (p *PipelineEngine) propertyMetadata() []core.PropertyMetadata {
 			Available:             property.Available,
 			DataTiersWherePresent: property.DataTiers,
 			Description:           property.Description,
+		})
+	}
+	for _, metric := range metricProperties {
+		valueType := text
+		if metric.list {
+			valueType = list
+		}
+		out = append(out, core.PropertyMetadata{
+			Name:                  metric.name,
+			Element:               p,
+			Category:              matchMetricCategory,
+			Type:                  valueType,
+			Available:             true,
+			DataTiersWherePresent: matchMetricTiers,
+			Description:           metric.description,
 		})
 	}
 	return out

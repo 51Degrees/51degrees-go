@@ -71,6 +71,7 @@ func TestEngineGivesAspectData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer data.Close()
 	var aspect engines.AspectData = data
 	if got := aspectText(t, aspect, "PlatformName"); got != "iOS" {
 		t.Errorf("PlatformName is %q, want iOS", got)

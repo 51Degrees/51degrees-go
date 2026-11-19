@@ -61,8 +61,8 @@ go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 `ipi_onpremise.NewPipelineEngine` takes the same options as `ipi_onpremise.New` and gives the engine as a Pipeline
 element, which adds `ipi_onpremise.Data` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
 Cloud Engine gives its data in. The Data reads each Property from the data file's results only when it is requested, and
-holds those results in memory the Go garbage collector cannot see until it is released. A Flow Data has no Close, so
-call `Close` on the Data when you have finished with the Flow Data, which releases the results at once:
+holds those results in memory the Go garbage collector cannot see until it is released. Closing the Flow Data does not
+release them, so call `Close` on the Data when you have finished with the Flow Data, which releases the results at once:
 
 ```go
 if data, err := core.Get[*ipi_onpremise.Data](flowData); err == nil {
