@@ -4,7 +4,7 @@
 # came from a device being used by a human who is viewing the page.
 #
 # THIS SCRIPT IS A DRAFT AT VERSION 0.8.0. The thresholds below have not
-# been reviewed by the 51Degrees Senior Data Operators, which is the one
+# been reviewed by 51Degrees, which is the one
 # thing holding it below 1.0.0.
 #
 # How it decides
@@ -59,7 +59,7 @@
 # because that is proof of automation from the request alone, and the
 # same holds for a browser that advertises no visible window. Whether
 # Unknown should instead come first, so that nothing is decided until
-# the JavaScript has run, is a choice for the Senior Data Operators and
+# the JavaScript has run, is a choice for 51Degrees and
 # is the one place this version takes a position rather than following
 # from the rule above.
 #
@@ -202,7 +202,7 @@
 #
 # What holds this script below 1.0.0
 # ----------------------------------
-# The 51Degrees Senior Data Operators have not reviewed the thresholds or
+# 51Degrees has not reviewed the thresholds or
 # the value descriptions, and the numbers above marked as chosen await
 # that review. Being below 1.0.0 is what makes this script a draft, and a
 # draft may be rewritten freely, so the version and removal checks do not

@@ -68,29 +68,115 @@ const (
 )
 
 // CloudRequestData is the Aspect Data produced by the Cloud Request Engine.
+// Its json-response is a lazy property whose task is the HTTP request the
+// engine started while it processed. Every read of json-response waits for
+// that request.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/cloud-request-engine.md?plain=1#L200-L202
 type CloudRequestData struct {
 	*engines.BaseAspectData
 	failed bool
+	// task is the request, nil where the engine failed before starting one.
+	task *requestTask
+	// fd is the Flow Data the data is held in, so that the first reader to
+	// meet a failed request while it is processed can add the error to it.
+	fd atomic.Pointer[flowDataRef]
+}
+
+// flowDataRef holds a Flow Data, so that it can be kept atomically.
+type flowDataRef struct{ core.FlowData }
+
+// requestTask is a request the engine started. done is closed once body or
+// err is set, and neither changes after that.
+type requestTask struct {
+	engine *CloudRequestEngine
+	done   chan struct{}
+	body   string
+	err    error
+	// recorded is set by the first reader to meet err.
+	recorded atomic.Bool
 }
 
 func newCloudRequestData() *CloudRequestData {
 	return &CloudRequestData{BaseAspectData: engines.NewBaseAspectData()}
 }
 
-// Failed reports whether the cloud request ran but failed. It lets a downstream
-// Cloud Aspect Engine distinguish a failed request from one that never ran (so
-// a missing Property can be reported as a cloud-request failure rather than the
-// engine not being present).
-func (d *CloudRequestData) Failed() bool { return d.failed }
+// AddedToFlowData keeps the Flow Data the data is held in, then does what
+// Aspect Data does.
+func (d *CloudRequestData) AddedToFlowData(fd core.FlowData, key string, data core.ElementData) {
+	d.fd.CompareAndSwap(nil, &flowDataRef{fd})
+	d.BaseAspectData.AddedToFlowData(fd, key, data)
+}
 
-// JSONResponse returns the raw JSON response body.
-func (d *CloudRequestData) JSONResponse() string {
-	if v, err := d.Get(JSONResponseProperty); err == nil {
-		if s, ok := v.(string); ok {
-			return s
+// Response waits for the request and gives the raw JSON response body, or
+// the error the request failed with. The first reader to meet a failure
+// while the Flow Data is processed adds it once to the Flow Data's errors as
+// an error of the Cloud Request Engine. A failure met once processing has
+// finished reaches only the reader, because nothing can be added then.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/cloud-request-engine.md?plain=1#L364-L382
+func (d *CloudRequestData) Response() (string, error) {
+	t := d.task
+	if t == nil {
+		if d.failed {
+			return "", core.NewDataError("the cloud request failed")
+		}
+		v, err := d.BaseAspectData.Get(JSONResponseProperty)
+		s, _ := v.(string)
+		return s, err
+	}
+	<-t.done
+	if t.err != nil && t.recorded.CompareAndSwap(false, true) {
+		if ref := d.fd.Load(); ref != nil && !core.ProcessingFinished(ref.FlowData) {
+			ref.AddError(t.err, t.engine)
 		}
 	}
-	return ""
+	return t.body, t.err
+}
+
+// Failed reports whether the cloud request ran but failed, waiting for it to
+// finish. It lets a downstream Cloud Aspect Engine distinguish a failed
+// request from one that never ran (so a missing Property can be reported as
+// a cloud-request failure rather than the engine not being present).
+func (d *CloudRequestData) Failed() bool {
+	if d.failed {
+		return true
+	}
+	if d.task == nil {
+		return false
+	}
+	_, err := d.Response()
+	return err != nil
+}
+
+// JSONResponse returns the raw JSON response body, waiting for the request,
+// or an empty string where the request failed.
+func (d *CloudRequestData) JSONResponse() string {
+	s, _ := d.Response()
+	return s
+}
+
+// Get returns the value of a Property by name. A read of json-response waits
+// for the request, and gives its error where it failed.
+func (d *CloudRequestData) Get(propertyName string) (any, error) {
+	if d.task != nil && strings.EqualFold(propertyName, JSONResponseProperty) {
+		s, err := d.Response()
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
+	}
+	return d.BaseAspectData.Get(propertyName)
+}
+
+// AsMap returns every Property value, json-response included once the
+// request has answered, waiting for it.
+func (d *CloudRequestData) AsMap() map[string]any {
+	m := d.BaseAspectData.AsMap()
+	if d.task != nil {
+		if s, err := d.Response(); err == nil {
+			m[JSONResponseProperty] = s
+		}
+	}
+	return m
 }
 
 // PropertyMeta describes a single Property as reported by the accessible
@@ -187,7 +273,17 @@ type CloudRequestEngine struct {
 	consecutiveRecoveries int
 
 	now func() time.Time // injectable clock for testing
+
+	// tasksMu is held for reading while Process starts a request, and for
+	// writing by Close, so that no request starts once Close waits for
+	// tasks.
+	tasksMu sync.RWMutex
+	closed  bool
+	tasks   sync.WaitGroup
 }
+
+// errEngineClosed is the error Process gives once the engine is closed.
+var errEngineClosed = errors.New("the Cloud Request Engine has been closed")
 
 // KnownPublicProperties returns the accessible Properties, keyed by product,
 // and true once they are known, making no request. It returns false after a
@@ -225,7 +321,11 @@ func (e *CloudRequestEngine) PublicProperties() (map[string]ProductMeta, error) 
 	return cloneProducts(*e.products.Load()), nil
 }
 
-// Process makes the cloud request and stores the raw JSON response.
+// Process builds the cloud request from the Evidence, starts it, and adds
+// Element Data whose json-response is a lazy property whose task is that
+// request, returning without waiting for the response. The task holds only
+// the request, and never reads the Flow Data.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/cloud-request-engine.md?plain=1#L364-L382
 func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 	// While recovering, bypass all outbound calls, discovery included, and
 	// signal temporary unavailability, so a struggling server is not hammered
@@ -242,19 +342,65 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 		return err
 	}
 
-	body, err := e.makeDataRequest(fd)
+	task, err := e.startRequest(e.buildForm(fd))
 	if err != nil {
-		e.recordFailure(err)
-		e.storeFailed(fd)
 		return err
 	}
-
-	e.recordSuccess()
-	e.reportPropertiesNotReturned(body)
 	data := newCloudRequestData()
-	data.Set(JSONResponseProperty, body)
+	data.task = task
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 	return nil
+}
+
+// startRequest starts the data request for form on its own goroutine, and
+// gives its task, or an error once the engine is closed. The goroutine
+// counts the outcome toward the recovery period before the task finishes.
+// A panic on the goroutine fails the task with an error naming the panic,
+// as a panic in Process fails that Flow Element, rather than end the
+// program.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L178-L183
+func (e *CloudRequestEngine) startRequest(form url.Values) (*requestTask, error) {
+	e.tasksMu.RLock()
+	defer e.tasksMu.RUnlock()
+	if e.closed {
+		return nil, errEngineClosed
+	}
+	t := &requestTask{engine: e, done: make(chan struct{})}
+	e.tasks.Add(1)
+	go func() {
+		defer e.tasks.Done()
+		defer close(t.done)
+		// Deferred last, so it runs before done is closed.
+		defer func() {
+			if r := recover(); r != nil {
+				t.body = ""
+				t.err = fmt.Errorf("panic processing element '%s': %v",
+					e.DataKey(), r)
+			}
+		}()
+		body, err := e.makeDataRequest(form)
+		if err != nil {
+			e.recordFailure(err)
+			t.err = err
+			return
+		}
+		e.recordSuccess()
+		e.reportPropertiesNotReturned(body)
+		t.body = body
+	}()
+	return t, nil
+}
+
+// Close waits for every request the engine has started, so that closing the
+// engine or its Pipeline waits for every lazy task, and the engine processes
+// nothing after it.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L33-L40
+func (e *CloudRequestEngine) Close() error {
+	e.tasksMu.Lock()
+	e.closed = true
+	e.tasksMu.Unlock()
+	e.tasks.Wait()
+	return e.BaseAspectEngine.Close()
 }
 
 // storeFailed records that the request ran but failed, so a downstream Cloud
@@ -266,8 +412,8 @@ func (e *CloudRequestEngine) storeFailed(fd core.FlowData) {
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 }
 
-func (e *CloudRequestEngine) makeDataRequest(fd core.FlowData) (string, error) {
-	raw, resp, err := e.postEndpoint(e.dataEndpoint, e.buildForm(fd))
+func (e *CloudRequestEngine) makeDataRequest(form url.Values) (string, error) {
+	raw, resp, err := e.postEndpoint(e.dataEndpoint, form)
 	if err != nil {
 		return "", err
 	}

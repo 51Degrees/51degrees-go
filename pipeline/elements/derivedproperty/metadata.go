@@ -31,9 +31,7 @@ type ScriptMetaData struct {
 	Format          int
 	Deprecated      bool
 	DeprecationNote string
-	// Source is the built-in script's name, the file path, or "code".
-	Source string
-	Output OutputMetaData
+	Output          OutputMetaData
 }
 
 // OutputMetaData is the Output block of a script, with the field names
@@ -114,7 +112,6 @@ func (m *scriptModel) metadata() ScriptMetaData {
 		Format:          m.format,
 		Deprecated:      m.deprecated,
 		DeprecationNote: m.deprecationNote,
-		Source:          m.source,
 		Output:          out,
 	}
 }

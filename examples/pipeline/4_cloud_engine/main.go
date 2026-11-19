@@ -69,10 +69,15 @@ type StarSignData struct {
 	*engines.BaseAspectData
 }
 
-// Process parses the star sign Aspect from the cloud JSON.
+// Process parses the star sign Aspect from the cloud JSON. A failed cloud
+// request is already the Cloud Request Engine's error, so Process returns
+// nil for it rather than record the failure a second time.
 func (e *CloudStarSignEngine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, aspectKey)
 	if err != nil {
+		if e.CloudRequestFailed(fd) {
+			return nil
+		}
 		return err
 	}
 	data := &StarSignData{BaseAspectData: engines.NewBaseAspectData()}

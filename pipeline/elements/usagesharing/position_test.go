@@ -53,6 +53,11 @@ func TestTheUsageSharingElementIsRefusedAnywhereButLast(t *testing.T) {
 		{"in a parallel group", func(e *Element) *core.PipelineBuilder {
 			return core.NewPipelineBuilder().AddParallel(engine(), e)
 		}},
+		{"in a group inside a parallel group", func(e *Element) *core.PipelineBuilder {
+			return core.NewPipelineBuilder().AddFlowElement(engine()).
+				AddFlowElement(core.NewParallelElements(nil,
+					core.NewParallelElements(nil, e)))
+		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			e := sharing()

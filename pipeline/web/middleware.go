@@ -246,25 +246,26 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 }
 
 // addRequestLine adds the method, path and query string of the request line,
-// exactly as it was sent, each only when an element in the Pipeline accepts
-// it, so a Pipeline with no such element carries no new values. The query
-// string is added empty when the request has none. A request that a server
-// did not read has no request line, so none of it is added.
-// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/web-integration.md#populating-evidence
+// exactly as it was sent. All three are added when an element in the
+// Pipeline accepts any one of them, so that an absent key means the request
+// line is not supplied, and none when no element does, so a Pipeline with no
+// such element carries no new values. The query string is added empty when
+// the request has none. A request that a server did not read has no request
+// line, so none of it is added.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/web-integration.md?plain=1#L122-L140
 func (m *Middleware) addRequestLine(fd core.FlowData, r *http.Request, request core.WebRequest) {
 	filter := m.pipeline.EvidenceKeyFilter()
 	if filter == nil || r.RequestURI == "" {
 		return
 	}
-	for key, value := range map[string]string{
-		core.EvidenceRequestMethod: request.Method(),
-		core.EvidenceRequestPath:   request.Path(),
-		core.EvidenceRequestQuery:  request.RawQuery(),
-	} {
-		if filter.Include(key) {
-			fd.AddEvidence(key, value)
-		}
+	if !filter.Include(core.EvidenceRequestMethod) &&
+		!filter.Include(core.EvidenceRequestPath) &&
+		!filter.Include(core.EvidenceRequestQuery) {
+		return
 	}
+	fd.AddEvidence(core.EvidenceRequestMethod, request.Method())
+	fd.AddEvidence(core.EvidenceRequestPath, request.Path())
+	fd.AddEvidence(core.EvidenceRequestQuery, request.RawQuery())
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers

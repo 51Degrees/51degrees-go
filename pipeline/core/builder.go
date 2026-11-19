@@ -127,11 +127,11 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		// Data, so duplicate keys within a group would race a non-synchronized
 		// map. Reject that at build time rather than crash at run time.
 		if group, ok := e.(childLister); ok {
+			if r, c := runsLastWithin(group); r != nil {
+				return nil, misplaced(r, c)
+			}
 			seen := make(map[string]struct{})
 			for _, c := range group.Children() {
-				if r, ok := c.(RunsLast); ok {
-					return nil, misplaced(r, c)
-				}
 				if _, dup := seen[c.DataKey()]; dup {
 					return nil, NewConfigurationError("parallel element '"+e.DataKey()+
 						"' has children with duplicate data key '"+c.DataKey()+
@@ -173,6 +173,22 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		}
 	}
 	return p, nil
+}
+
+// runsLastWithin gives the first member of group, at any depth, that must run
+// last, so that a group inside a group cannot hold one.
+func runsLastWithin(group childLister) (RunsLast, FlowElement) {
+	for _, c := range group.Children() {
+		if r, ok := c.(RunsLast); ok {
+			return r, c
+		}
+		if inner, ok := c.(childLister); ok {
+			if r, e := runsLastWithin(inner); r != nil {
+				return r, e
+			}
+		}
+	}
+	return nil, nil
 }
 
 // writtenKeys gives the keys, in lower case, of the Element Data e writes,

@@ -98,10 +98,10 @@ type Engine struct {
 	languages       languages
 }
 
-// Data is the Translation Element Data that every Translation Engine in a
-// Pipeline writes into. Two Translation Engines must not be members of the
-// same parallel group, and whoever builds the Pipeline keeps them apart, as
-// nothing checks it.
+// Data is the shared Translation Element Data. Several Translation Engines may
+// write this one instance, one after another, so two of them MUST NOT be
+// members of the same parallel group.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/advanced-features/parallel-processing.md#how-a-group-uses-the-flow-data
 type Data struct {
 	core.WriteGuard
 	values typedmap.Map

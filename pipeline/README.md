@@ -154,6 +154,23 @@ The Pipeline adds no lock for this, to keep processing fast for the usual case
 of one goroutine per request. A caller that shares a Flow Data across
 goroutines is responsible for any locking.
 
+Element Data is written only by the Flow Element that provides it, while that
+Flow Element processes. Once processing has finished, a write to the Flow Data
+panics with `core.ErrFlowDataFinished`, and a write to Element Data panics with
+`core.ErrElementDataFinished`. Two Flow Elements that write one Element Data
+instance must not be members of the same parallel group, so two Derived
+Property Elements MUST NOT be members of the same parallel group, nor two
+Translation Engines.
+
+`FlowData.Close` returns its Element Data to a pool, to be used again by a
+later Flow Data. Call it once the Flow Data and its values are no longer
+needed. Keeping a reference to Element Data after its Flow Data is closed is
+not supported, as the instance may by then hold another request's values. The
+web middleware closes the Flow Data when the request ends, so copy the values
+that work outliving the request needs before the handler returns. A custom
+Flow Element that keeps its own Element Data across requests marks it with
+`core.MarkShared`, so it never goes back to a pool.
+
 This follows the Pipeline specification's
 [thread-safety page](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md).
 
@@ -178,7 +195,14 @@ while the internals are idiomatic Go. In particular:
   [lazy loading](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/lazy-loading.md)
   page says. Long-running work belongs in a
   [lazy property](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#lazy-properties)
-  of a Flow Element's own Element Data.
+  of a Flow Element's own Element Data. The Cloud Request Engine works this
+  way. It starts its HTTP request while it processes and returns without
+  waiting, and every read of its `json-response` waits for that request.
+  A request that fails is recorded as the Cloud Request Engine's error by the
+  first Flow Element that reads `json-response` while the Flow Data is
+  processed. Once processing has finished, the failure reaches only the
+  reader, as the error of the read. Closing the engine, or the Pipeline that
+  holds it, waits for every request the engine has started.
 
 ## Project documentation
 

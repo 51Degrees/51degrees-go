@@ -23,6 +23,8 @@
 package dd
 
 import (
+	"bytes"
+	"encoding/binary"
 	"os"
 	"reflect"
 	"testing"
@@ -148,4 +150,71 @@ func TestAFailedReloadFromBytesKeepsTheData(t *testing.T) {
 		t.Errorf("after a failed ReloadFromBytes IsMobile is %q, want True",
 			got)
 	}
+}
+
+// otherCase gives s with the case of each ASCII letter swapped, so it keeps
+// its length.
+func otherCase(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		switch {
+		case 'a' <= c && c <= 'z':
+			b[i] = c - 'a' + 'A'
+		case 'A' <= c && c <= 'Z':
+			b[i] = c - 'A' + 'a'
+		}
+	}
+	return string(b)
+}
+
+// stringRecord is s as the data file holds a string, being its length with
+// the terminating null as a little endian 16 bit number, then its bytes and
+// the null.
+func stringRecord(s string) []byte {
+	record := binary.LittleEndian.AppendUint16(nil, uint16(len(s)+1))
+	return append(append(record, s...), 0)
+}
+
+// valueMarkedData returns data with the string value held in the other case,
+// so results made from it give a different answer.
+func valueMarkedData(t *testing.T, data []byte, value string) []byte {
+	t.Helper()
+	if otherCase(value) == value {
+		t.Fatalf("%q has no letter to change", value)
+	}
+	from := stringRecord(value)
+	if !bytes.Contains(data, from) {
+		t.Fatalf("%q is not held as a string in the data file", value)
+	}
+	return bytes.ReplaceAll(data, from, stringRecord(otherCase(value)))
+}
+
+// Results made before a reload from memory give the values of the data they
+// were made from until they are freed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md?plain=1#L47-L52
+func TestResultsMadeBeforeAReloadFromBytesKeepTheirData(t *testing.T) {
+	manager := memoryManager(t)
+	old := isMobile(t, manager)
+	results := NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(uaMobile); err != nil {
+		t.Fatalf("detection failed: %v", err)
+	}
+	marked := valueMarkedData(t, readTestData(t), old)
+	if err := manager.ReloadFromBytes(marked); err != nil {
+		t.Fatalf("ReloadFromBytes failed: %v", err)
+	}
+	if got := isMobile(t, manager); got != otherCase(old) {
+		t.Errorf("after ReloadFromBytes IsMobile is %q, want %q from the "+
+			"new data", got, otherCase(old))
+	}
+	got, err := results.ValuesString("IsMobile", ",")
+	if err != nil {
+		t.Fatalf("reading IsMobile failed: %v", err)
+	}
+	if got != old {
+		t.Errorf("IsMobile is %q from results made before ReloadFromBytes, "+
+			"want %q from the data they were made from", got, old)
+	}
+	results.Free()
 }
