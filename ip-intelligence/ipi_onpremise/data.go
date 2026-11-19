@@ -324,6 +324,17 @@ func (e *Engine) processInto(results nativeResults, ipAddress string) (*Data, er
 	return e.newData(results, noValueMessage), nil
 }
 
+// processEvidence passes the evidence to the native code, which chooses the
+// IP address from it, and wraps the results in a Data, reading no value.
+func (e *Engine) processEvidence(evidence *ipi_interop.Evidence) (*Data, error) {
+	results := ipi_interop.NewResultsIpi(e.manager)
+	if err := results.ResultsIpiFromEvidence(evidence); err != nil {
+		results.Free()
+		return nil, err
+	}
+	return e.newData(results, noValueMessage), nil
+}
+
 // noAddressData gives a Data in which every Property of the Engine has no
 // value, with the reason that no IP address was supplied.
 func (e *Engine) noAddressData() *Data {

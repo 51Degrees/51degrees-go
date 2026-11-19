@@ -84,6 +84,14 @@ type Engine struct {
 	// made with names.
 	positions atomic.Pointer[map[string]int]
 
+	// profile and concurrency are the Performance Profile and Concurrency
+	// options. nil leaves the option at its default.
+	profile     *ipi_interop.PerformanceProfile
+	concurrency *uint16
+	// defaultConcurrency is the Concurrency used when none is set and no
+	// native configuration was given. 0 leaves the native code's own.
+	defaultConcurrency uint16
+
 	// weighted holds, by lower case name, the Properties the data file
 	// weights, once ProcessData has read them.
 	weighted atomic.Pointer[map[string]bool]
@@ -502,9 +510,7 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 	if e.manager == nil {
 		e.manager = ipi_interop.NewResourceManager()
 		// init manager from file
-		if e.config == nil {
-			e.config = ipi_interop.NewConfigIpi(ipi_interop.Balanced)
-		}
+		e.config = e.nativeConfig()
 
 		if err := ipi_interop.InitManagerFromFile(e.manager, *e.config, strings.Join(e.managerProperties, ","), filePath); err != nil {
 			if e.IsCreateTempDataCopyEnabled() {

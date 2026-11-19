@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 
@@ -76,6 +77,7 @@ var buildParameters = []buildParameter{
 	{[]string{"Logging"}, boolOption(WithLogging)},
 	{[]string{"Properties"}, listOption(WithProperties)},
 	{[]string{"PerformanceProfile"}, performanceProfileOption},
+	{[]string{"Concurrency"}, concurrencyOption},
 }
 
 // Factory builds the engine as a PipelineEngine from the build parameters of a
@@ -89,7 +91,8 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if err != nil {
 		return nil, err
 	}
-	engine, err := New(opts...)
+	engine, err := New(append([]EngineOptions{withDefaultConcurrency()},
+		opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -192,8 +195,19 @@ func listOption(option func([]string) EngineOptions) func(map[string]any, string
 	}
 }
 
+// concurrencyOption reads the Concurrency build parameter, a whole number
+// from 0 to 65535, as WithConcurrency.
+func concurrencyOption(params map[string]any, name string) (EngineOptions, error) {
+	v, ok := core.IntParam(params, name)
+	if !ok || v < 0 || v > math.MaxUint16 {
+		return nil, fmt.Errorf("the build parameter %s is not a whole "+
+			"number from 0 to %d", name, math.MaxUint16)
+	}
+	return WithConcurrency(uint16(v)), nil
+}
+
 // performanceProfileOption reads the PerformanceProfile build parameter, the
-// name of a performance profile, as WithConfigIpi.
+// name of a performance profile, as WithPerformanceProfile.
 func performanceProfileOption(params map[string]any, name string) (EngineOptions, error) {
 	v, _ := core.StringParam(params, name)
 	profile, ok := performanceProfiles[strings.ToLower(strings.TrimSpace(v))]
@@ -202,5 +216,5 @@ func performanceProfileOption(params map[string]any, name string) (EngineOptions
 			"Default, LowMemory, BalancedTemp, Balanced, HighPerformance, "+
 			"InMemory or MaxPerformance", v)
 	}
-	return WithConfigIpi(ipi_interop.NewConfigIpi(profile)), nil
+	return WithPerformanceProfile(profile), nil
 }

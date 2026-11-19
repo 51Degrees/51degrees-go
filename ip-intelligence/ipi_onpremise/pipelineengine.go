@@ -43,10 +43,10 @@ const noAddressReason = "No IP address was supplied in the evidence the engine r
 
 // PipelineEngine is the on-premise IP Intelligence engine as an On-premise
 // Aspect Engine, to add to a Pipeline in place of the IP Intelligence Cloud
-// Engine. It looks up the first IP address in the evidence it accepts, in the
-// order the data file gives, and adds the Data ProcessData gives under
-// DataKey. That Data reads each Property from the native results only when it
-// is requested, and holds them until it is released. Closing the Flow Data
+// Engine. It passes the evidence it accepts to the native code, which
+// chooses the IP address, and adds the Data under DataKey. That Data reads
+// each Property from the native results only when it is requested, and holds
+// them until it is released. Closing the Flow Data
 // releases them at once, as the web middleware does when a request ends, and
 // so does Close on the Data. A finalizer releases them once nothing holds the
 // Data, as a backstop. The engine takes no results cache, because a
@@ -61,9 +61,11 @@ type PipelineEngine struct {
 }
 
 // NewPipelineEngine creates the engine with the options New takes, ready to
-// add to a Pipeline.
+// add to a Pipeline. Concurrency is the processor count unless
+// WithConcurrency or WithConfigIpi sets it.
 func NewPipelineEngine(opts ...EngineOptions) (*PipelineEngine, error) {
-	engine, err := New(opts...)
+	engine, err := New(append([]EngineOptions{withDefaultConcurrency()},
+		opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -90,15 +92,23 @@ func newPipelineEngine(engine *Engine, logger *slog.Logger) *PipelineEngine {
 // data file updates it offers.
 func (p *PipelineEngine) Engine() *Engine { return p.engine }
 
-// Process looks up the IP address in the Flow Data's evidence, and adds the
-// results as a Data, which reads no value until one is requested.
+// Process passes the values of the evidence keys the data file lists to the
+// native code, which chooses the IP address from them, and adds the results
+// as a Data, which reads no value until one is requested. With none of those
+// keys in the evidence, every Property has no value, and the message says
+// why.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L114-L121
 func (p *PipelineEngine) Process(fd core.FlowData) error {
 	return p.Execute(fd, func() (engines.AspectData, error) {
-		address, ok := p.address(fd)
-		if !ok {
+		evidence, err := p.nativeEvidence(fd)
+		if err != nil {
+			return nil, err
+		}
+		if evidence == nil {
 			return p.engine.noAddressData(), nil
 		}
-		data, err := p.engine.ProcessData(address)
+		defer evidence.Free()
+		data, err := p.engine.processEvidence(evidence)
 		if err != nil {
 			return nil, err
 		}
@@ -167,28 +177,37 @@ func (p *PipelineEngine) accepts(key string) bool {
 	return false
 }
 
-// address gives the first IP address in the Flow Data's evidence, trying the
-// keys in the order the data file gives them, every query key before any
-// server key.
-func (p *PipelineEngine) address(fd core.FlowData) (string, bool) {
+// nativeEvidence gives the values of the evidence keys the data file lists,
+// as native evidence for the native code to choose the address from, or nil
+// when the Flow Data holds none of them with a value. The caller frees it.
+func (p *PipelineEngine) nativeEvidence(fd core.FlowData) (*ipi_interop.Evidence, error) {
 	names := map[ipi_interop.EvidencePrefix]string{}
 	for name, native := range evidencePrefixes {
 		names[native] = name
 	}
-	for _, k := range p.engine.GetHttpHeaderKeys() {
+	keys := p.engine.GetHttpHeaderKeys()
+	var evidence *ipi_interop.Evidence
+	for _, k := range keys {
 		value, ok := fd.Evidence().Get(names[k.Prefix] + "." + strings.ToLower(k.Key))
-		if !ok {
+		if !ok || value == nil {
 			continue
 		}
 		text, ok := value.(string)
 		if !ok {
 			text = fmt.Sprint(value)
 		}
-		if text = strings.TrimSpace(text); text != "" {
-			return text, true
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		if evidence == nil {
+			evidence = ipi_interop.NewEvidenceWithCapacity(len(keys))
+		}
+		if err := evidence.Add(k.Prefix, k.Key, text); err != nil {
+			evidence.Free()
+			return nil, err
 		}
 	}
-	return "", false
+	return evidence, nil
 }
 
 // propertyMetadata gives the metadata of each Property the data file defines,
