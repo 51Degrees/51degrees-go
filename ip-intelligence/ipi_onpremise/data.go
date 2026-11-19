@@ -309,8 +309,13 @@ func (d *Data) Close() error {
 // Property is requested. The caller calls Close, or Free, on the Data when it
 // is done with it. The Data is not safe to use from several goroutines at
 // once, so it belongs to one goroutine at a time. The caller is responsible
-// for thread-safe access to one it shares.
+// for thread-safe access to one it shares. It gives an error once the engine
+// has stopped.
 func (e *Engine) ProcessData(ipAddress string) (*Data, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	return e.processInto(ipi_interop.NewResultsIpi(e.manager), ipAddress)
 }
 
@@ -329,6 +334,10 @@ func (e *Engine) processInto(results nativeResults, ipAddress string) (*Data, er
 // When no value was read as one whole address, the results hold no values,
 // and each Property says no IP address was supplied.
 func (e *Engine) processEvidence(evidence *ipi_interop.Evidence) (*Data, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	results := ipi_interop.NewResultsIpi(e.manager)
 	if err := results.ResultsIpiFromEvidence(evidence); err != nil {
 		results.Free()

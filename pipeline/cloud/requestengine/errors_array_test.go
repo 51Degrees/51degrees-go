@@ -49,7 +49,7 @@ func TestEveryEntryOfACloudErrorsArrayIsItsOwnError(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	defer p.Close()
-	err = p.CreateFlowData().Process()
+	err = processAndRead(p.CreateFlowData())
 	if err == nil {
 		t.Fatal("an answer holding two errors entries gave no error")
 	}
@@ -112,7 +112,7 @@ func TestOneEntryOfACloudErrorsArrayIsOneError(t *testing.T) {
 		t.Fatalf("build: %v", err)
 	}
 	defer p.Close()
-	err = p.CreateFlowData().Process()
+	err = processAndRead(p.CreateFlowData())
 	if err == nil {
 		t.Fatal("an answer holding one errors entry gave no error")
 	}

@@ -39,11 +39,12 @@ import (
 // A Flow Data is used by one goroutine at a time and is not safe to use from
 // several at once, apart from the members of a parallel group, which the
 // Pipeline runs itself. Once Process has returned it may pass to another
-// goroutine, which then uses it alone. Using it from another goroutine while
-// Process runs is a data race, which can end the whole program with a fatal
-// error that recover does not catch, rather than return one. The Pipeline adds
-// no lock, to keep processing fast, so a caller that shares a Flow Data across
-// goroutines is responsible for any locking.
+// goroutine, which then uses it alone until it is closed. The web middleware
+// closes the Flow Data it makes when the request ends. Using it from another
+// goroutine while Process runs is a data race, which can end the whole program
+// with a fatal error that recover does not catch, rather than return one. The
+// Pipeline adds no lock, to keep processing fast, so a caller that shares a
+// Flow Data across goroutines is responsible for any locking.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#flow-data
 // See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L12-L22
 type FlowData interface {
@@ -205,6 +206,18 @@ func SuppliedEvidence(fd FlowData) map[string]any {
 		return maps.Clone(f.supplied)
 	}
 	return fd.Evidence().AsMap()
+}
+
+// ProcessingFinished reports whether processing of fd has finished, after
+// which nothing more can be added to it. A lazy property's task uses it to
+// decide whether a failure a reader meets can still be added as an error. It
+// reports false for a Flow Data this package did not make.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/exception-handling.md?plain=1#L64-L75
+func ProcessingFinished(fd FlowData) bool {
+	if f := baseFlowData(fd); f != nil {
+		return f.finished.Load()
+	}
+	return false
 }
 
 func (fd *flowData) Pipeline() Pipeline { return fd.pipeline }

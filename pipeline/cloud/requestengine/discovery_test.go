@@ -159,7 +159,7 @@ func pipelineOf(t *testing.T, e *CloudRequestEngine, suppress bool) core.Pipelin
 func process(p core.Pipeline) (core.FlowData, error) {
 	fd := p.CreateFlowData()
 	fd.AddEvidence("header.user-agent", "ua")
-	return fd, fd.Process()
+	return fd, processAndRead(fd)
 }
 
 // wantCounts fails the test unless the stand-in cloud has received the

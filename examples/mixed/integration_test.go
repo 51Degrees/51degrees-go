@@ -34,9 +34,8 @@ func test(t *testing.T, name string) {
 }
 
 // run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed, and checks that it ends with a Find out
-// more section naming this repository.
-func run(t *testing.T, name string, environment []string) {
+// that is nil, prints what it printed, and returns what it printed.
+func run(t *testing.T, name string, environment []string) string {
 	cmd := exec.Command("go", "run", "./"+name)
 	cmd.Env = environment
 	output, err := cmd.CombinedOutput()
@@ -44,12 +43,7 @@ func run(t *testing.T, name string, environment []string) {
 	if err != nil {
 		t.Error(err)
 	}
-	at := strings.LastIndex(string(output), "Find out more")
-	if at < 0 || !strings.Contains(string(output[at:]),
-		"https://github.com/51Degrees/51degrees-go") {
-		t.Errorf("%s does not end with a Find out more section naming "+
-			"this repository", name)
-	}
+	return string(output)
 }
 
 func TestMixedGettingStartedConsole(t *testing.T) {

@@ -25,8 +25,12 @@ package core
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // elementAdding is a Flow Element that adds its own Element Data, holding its
@@ -211,5 +215,154 @@ func TestAParallelGroupAddsItsMembersErrors(t *testing.T) {
 	}
 	if _, err := fd.Get("good"); err != nil {
 		t.Errorf("the member that succeeded added nothing: %v", err)
+	}
+}
+
+// lateAddWaitMilliseconds is how long the slow member of a group waits, once
+// the other members have returned, before it reads the errors. A group that
+// added each member's error as the member returned would have added both by
+// then. A group that adds them once every member has stopped passes however
+// long the wait is.
+const lateAddWaitMilliseconds = 100
+
+// A parallel group adds the errors its members return, and their panics, only
+// once every member has stopped, in the order the members were added to the
+// group. The slow member is added first and returns last, and sees no error
+// while it runs although the other two members have already failed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L37-L40
+func TestAParallelGroupAddsItsMembersErrorsOnceAllHaveStopped(t *testing.T) {
+	var others sync.WaitGroup
+	others.Add(2)
+	seen := -1
+	slow := newFuncElement("slow", nil, func(fd FlowData) error {
+		others.Wait()
+		time.Sleep(lateAddWaitMilliseconds * time.Millisecond)
+		seen = len(fd.Errors())
+		return errors.New("slow failed")
+	})
+	fast := newFuncElement("fast", nil, func(FlowData) error {
+		defer others.Done()
+		return errors.New("fast failed")
+	})
+	panicking := newFuncElement("panicking", nil, func(FlowData) error {
+		defer others.Done()
+		panic("boom")
+	})
+	p, err := NewPipelineBuilder().SetLogger(quietLogger()).
+		SetSuppressProcessExceptions(true).
+		AddParallel(slow, fast, panicking).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	if err := fd.Process(); err != nil {
+		t.Fatal(err)
+	}
+	if seen != 0 {
+		t.Errorf("the slow member saw %d errors while it ran, want 0", seen)
+	}
+	want := []string{"slow", "fast", "panicking"}
+	var got []string
+	for _, fe := range fd.Errors() {
+		key := ""
+		if fe.Element != nil {
+			key = fe.Element.DataKey()
+		}
+		got = append(got, key)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("errors are from %v, want %v", got, want)
+	}
+	if msg := fd.Errors()[2].Err.Error(); !strings.Contains(msg, "boom") {
+		t.Errorf("the panic was added as %q", msg)
+	}
+}
+
+// listedKeys gives the keys in a Flow Data's list of Element Data, from the
+// head.
+func listedKeys(fd *flowData) []string {
+	var keys []string
+	for n := fd.head.Load(); n != nil; n = n.next {
+		keys = append(keys, n.key)
+	}
+	return keys
+}
+
+// addWaitSeconds bounds how long a test waits for adds that take no lock and
+// so finish at once.
+const addWaitSeconds = 10
+
+// A member of a parallel group that read the head of the list before another
+// member added a node puts its own node on the new head and tries again, so
+// both are kept, the newest first. The first member makes its Element Data
+// only once the other member's add is done, which an add made under a lock
+// held for the whole add would not allow. The test holds the errors lock
+// while the group runs, so an add made under that lock would not finish
+// either. The test reads the list itself, so a Flow Data that kept its
+// Element Data in a map would not pass it.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L92-L103
+func TestAMemberAddsOnceAnotherMemberHasChangedTheHead(t *testing.T) {
+	headRead := make(chan struct{})
+	otherAdded := make(chan struct{})
+	giveUp := make(chan struct{})
+	first := newFuncElement("first", nil, func(fd FlowData) error {
+		fd.GetOrAdd("first", func(FlowData) ElementData {
+			close(headRead)
+			select {
+			case <-otherAdded:
+			case <-giveUp:
+			}
+			return NewBaseElementData()
+		})
+		return nil
+	})
+	second := newFuncElement("second", nil, func(fd FlowData) error {
+		<-headRead
+		fd.GetOrAdd("second", func(FlowData) ElementData {
+			return NewBaseElementData()
+		})
+		close(otherAdded)
+		return nil
+	})
+	p, err := NewPipelineBuilder().SetLogger(quietLogger()).
+		AddParallel(first, second).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	fd := p.CreateFlowData()
+	base := baseFlowData(fd)
+	base.errMu.Lock()
+	done := make(chan error, 1)
+	go func() { done <- fd.Process() }()
+	select {
+	case err = <-done:
+		base.errMu.Unlock()
+	case <-time.After(addWaitSeconds * time.Second):
+		base.errMu.Unlock()
+		close(giveUp)
+		err = <-done
+		t.Error("adding Element Data in a group waited for a lock")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := listedKeys(base); !slices.Equal(got, []string{"first", "second"}) {
+		t.Errorf("the list holds %v, want [first second]", got)
+	}
+}
+
+// The errors lock is the only lock a Flow Data holds, so Element Data is
+// added with none.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L92-L103
+func TestTheErrorsLockIsTheOnlyFlowDataLock(t *testing.T) {
+	locker := reflect.TypeOf((*sync.Locker)(nil)).Elem()
+	fields := reflect.TypeOf((*flowData)(nil)).Elem()
+	for i := 0; i < fields.NumField(); i++ {
+		f := fields.Field(i)
+		if f.Name != "errMu" && reflect.PointerTo(f.Type).Implements(locker) {
+			t.Errorf("flowData.%s is a lock", f.Name)
+		}
 	}
 }

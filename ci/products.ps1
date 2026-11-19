@@ -113,6 +113,12 @@ function Get-ProductPath([string]$RepoPath, [string]$Product) {
     return Join-Path $RepoPath $Product
 }
 
+# How long go test lets one package's tests run, where its default is 10
+# minutes. The slowest package, ip-intelligence/ipi_onpremise, takes 140 to
+# 180 seconds on Ubuntu, about 200 on macOS and 240 to 300 on Windows, and
+# more than 600 on a slow Ubuntu runner, so this is three times that.
+$GoTestTimeoutMinutes = 30
+
 # Runs go test with the given arguments in a module folder, writing JUnit
 # results. Returns the exit code.
 function Invoke-GoTests {
@@ -140,7 +146,8 @@ function Invoke-GoTests {
         # package that failed to build, so those lines go to the log as well.
         # A package that does not build still fails, because go test reports
         # it on standard output as FAIL.
-        go test -v @Packages 2>&1 | ForEach-Object {
+        go test -v -timeout "$($GoTestTimeoutMinutes)m" @Packages 2>&1 |
+        ForEach-Object {
             if ($_ -is [System.Management.Automation.ErrorRecord] -or
                 "$_".StartsWith('# ')) {
                 Write-Host $_.ToString()

@@ -26,11 +26,15 @@ package onpremise
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L36-L41
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 )
@@ -93,7 +97,6 @@ func TestRefreshDataOnDemand(t *testing.T) {
 }
 
 // RefreshData is safe to call while other goroutines process and refresh.
-// Run with -race, a reload that is not made on its own is reported.
 func TestRefreshDataWhileProcessing(t *testing.T) {
 	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, readGoodFile(t))),
 		WithAutoUpdate(false), WithFileWatch(false))
@@ -130,6 +133,304 @@ func TestRefreshDataWhileProcessing(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+// otherCase gives s with the case of each ASCII letter swapped, so it keeps
+// its length.
+func otherCase(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		switch {
+		case 'a' <= c && c <= 'z':
+			b[i] = c - 'a' + 'A'
+		case 'A' <= c && c <= 'Z':
+			b[i] = c - 'A' + 'a'
+		}
+	}
+	return string(b)
+}
+
+// stringRecord is s as the data file holds a string, being its length with
+// the terminating null as a little endian 16 bit number, then its bytes and
+// the null.
+func stringRecord(s string) []byte {
+	record := binary.LittleEndian.AppendUint16(nil, uint16(len(s)+1))
+	return append(append(record, s...), 0)
+}
+
+// valueMarkedFile returns the marked good file with the string value held in
+// the other case, so results made from it give a different answer from
+// results made from the good file.
+func valueMarkedFile(
+	t *testing.T, good []byte, published time.Time, value string) []byte {
+	t.Helper()
+	if otherCase(value) == value {
+		t.Fatalf("%q has no letter to change", value)
+	}
+	from := stringRecord(value)
+	if !bytes.Contains(good, from) {
+		t.Fatalf("%q is not held as a string in the data file", value)
+	}
+	return bytes.ReplaceAll(markedGoodFile(t, good, published), from,
+		stringRecord(otherCase(value)))
+}
+
+// process makes results for the mobile User-Agent, which the caller frees.
+func (e *reloadTestEngine) process() (*dd.ResultsHash, error) {
+	return e.Process([]Evidence{
+		{dd.HttpHeaderString, "User-Agent", reloadTestUserAgent}})
+}
+
+// dataMade is the data results were made from, as far as the refreshes
+// seen before and after they were made tell.
+type dataMade int
+
+const (
+	madeFromEither dataMade = iota
+	madeFromOld
+	madeFromUpdated
+)
+
+// readCheck checks the values read from results against the data they were
+// made from. It counts the reads and the wrong ones and keeps the first
+// wrong one, so a failure is reported once.
+type readCheck struct {
+	old, updated string
+	reads, wrong atomic.Int32
+	first        sync.Once
+	what         string
+}
+
+func (c *readCheck) read(r *dd.ResultsHash, made dataMade) {
+	c.reads.Add(1)
+	got, err := r.ValuesString("IsMobile", ",")
+	switch {
+	case err != nil:
+		c.fail("reading IsMobile failed: %v", err)
+	case made == madeFromOld && got != c.old:
+		c.fail("IsMobile is %q from results made before any refresh, want %q",
+			got, c.old)
+	case made == madeFromUpdated && got != c.updated:
+		c.fail("IsMobile is %q from results made after a refresh, want %q",
+			got, c.updated)
+	case got != c.old && got != c.updated:
+		c.fail("IsMobile is %q, want %q or %q", got, c.old, c.updated)
+	}
+}
+
+func (c *readCheck) fail(format string, v ...interface{}) {
+	c.wrong.Add(1)
+	c.first.Do(func() { c.what = fmt.Sprintf(format, v...) })
+}
+
+func (c *readCheck) report(t *testing.T) {
+	t.Helper()
+	if n := c.wrong.Load(); n > 0 {
+		t.Errorf("%d of %d reads were wrong, the first: %s",
+			n, c.reads.Load(), c.what)
+	}
+}
+
+// keptResults are results kept to be read once the refreshes have ended.
+type keptResults struct {
+	results *dd.ResultsHash
+	made    dataMade
+}
+
+// Results made before and while other goroutines refresh give the values of
+// the data they were made from, when read while the refreshes run and after
+// they end. The refreshes load a file whose IsMobile value differs, so a
+// value read through any other data is seen.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md?plain=1#L47-L52
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/automated-testing.md?plain=1#L183-L185
+func TestRefreshDataWhileReadingValues(t *testing.T) {
+	good := readGoodFile(t)
+	path := writeDataFile(t, good)
+	e := newReloadTestEngine(t, WithDataFile(path), WithAutoUpdate(false),
+		WithFileWatch(false), WithTempDataCopy(true))
+	old := e.isMobile(t)
+	check := &readCheck{old: old, updated: otherCase(old)}
+	before := make([]*dd.ResultsHash, refreshTestProcessors)
+	defer func() {
+		for _, r := range before {
+			if r != nil {
+				r.Free()
+			}
+		}
+	}()
+	for i := range before {
+		r, err := e.process()
+		if err != nil {
+			t.Fatalf("lookup failed: %v", err)
+		}
+		before[i] = r
+	}
+	replaceFile(t, path, valueMarkedFile(t, good, e.published(), old))
+
+	// started counts the refreshes begun and finished those that loaded the
+	// marked file.
+	var started, finished atomic.Int32
+	refreshed := make(chan struct{})
+	var processors sync.WaitGroup
+	for i := 0; i < refreshTestProcessors; i++ {
+		processors.Add(1)
+		go func(first *dd.ResultsHash) {
+			defer processors.Done()
+			kept := make([]keptResults, 0, refreshTestLookups)
+			for j := 0; j < refreshTestLookups; j++ {
+				if first != nil && finished.Load() > 0 {
+					check.read(first, madeFromOld)
+					first.Free()
+					first = nil
+				}
+				made := madeFromEither
+				if finished.Load() > 0 {
+					made = madeFromUpdated
+				}
+				now, err := e.process()
+				if err != nil {
+					check.fail("lookup failed: %v", err)
+					continue
+				}
+				later, err := e.process()
+				if err != nil {
+					now.Free()
+					check.fail("lookup failed: %v", err)
+					continue
+				}
+				if made == madeFromEither && started.Load() == 0 {
+					made = madeFromOld
+				}
+				check.read(now, made)
+				now.Free()
+				kept = append(kept, keptResults{later, made})
+			}
+			<-refreshed
+			if first != nil {
+				check.read(first, madeFromOld)
+				first.Free()
+			}
+			for _, k := range kept {
+				check.read(k.results, k.made)
+				k.results.Free()
+			}
+		}(before[i])
+	}
+	var refreshers sync.WaitGroup
+	for i := 0; i < refreshTestRefreshers; i++ {
+		refreshers.Add(1)
+		go func() {
+			defer refreshers.Done()
+			for j := 0; j < refreshTestRefreshes; j++ {
+				started.Add(1)
+				if err := e.RefreshData(); err != nil {
+					t.Error(err)
+					continue
+				}
+				finished.Add(1)
+			}
+		}()
+	}
+	refreshers.Wait()
+	close(refreshed)
+	processors.Wait()
+	check.report(t)
+	if got := e.isMobile(t); got != check.updated {
+		t.Errorf("IsMobile is %q after the refreshes, want %q from the "+
+			"marked file", got, check.updated)
+	}
+}
+
+// Results made before a refresh give the values of the data they were made
+// from, however many refreshes happen before they are freed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md?plain=1#L47-L52
+func TestResultsMadeBeforeARefreshKeepTheirData(t *testing.T) {
+	good := readGoodFile(t)
+	path := writeDataFile(t, good)
+	e := newReloadTestEngine(t, WithDataFile(path), WithAutoUpdate(false),
+		WithFileWatch(false), WithTempDataCopy(true))
+	old := e.isMobile(t)
+	r, err := e.process()
+	if err != nil {
+		t.Fatalf("lookup failed: %v", err)
+	}
+	defer r.Free()
+	replaceFile(t, path, valueMarkedFile(t, good, e.published(), old))
+	for i := 0; i < refreshTestRefreshes; i++ {
+		if err := e.RefreshData(); err != nil {
+			t.Fatalf("RefreshData gave %v for the marked file", err)
+		}
+	}
+	if got := e.isMobile(t); got != otherCase(old) {
+		t.Errorf("IsMobile is %q after the refreshes, want %q from the "+
+			"marked file", got, otherCase(old))
+	}
+	got, err := r.ValuesString("IsMobile", ",")
+	if err != nil {
+		t.Fatalf("reading IsMobile failed: %v", err)
+	}
+	if got != old {
+		t.Errorf("IsMobile is %q from results made before the refreshes, "+
+			"want %q from the data they were made from", got, old)
+	}
+	r.Free()
+}
+
+// loadCounter is a logger that counts the reloads reporting at once. A
+// reload reports the file it loaded before it ends, and the counter holds
+// each report for a moment, so two reloads running at once are seen
+// reporting at once.
+type loadCounter struct {
+	inProgress atomic.Int32
+	most       atomic.Int32
+	loads      atomic.Int32
+}
+
+// loadReportMilliseconds is how long the counter holds each report.
+const loadReportMilliseconds = 20
+
+func (c *loadCounter) Printf(format string, v ...interface{}) {
+	if !strings.HasPrefix(fmt.Sprintf(format, v...), "data file loaded from ") {
+		return
+	}
+	now := c.inProgress.Add(1)
+	for {
+		most := c.most.Load()
+		if now <= most || c.most.CompareAndSwap(most, now) {
+			break
+		}
+	}
+	c.loads.Add(1)
+	time.Sleep(loadReportMilliseconds * time.Millisecond)
+	c.inProgress.Add(-1)
+}
+
+// Reloads asked for from several goroutines at once are made one at a time.
+func TestRefreshDataReloadsOneAtATime(t *testing.T) {
+	counter := &loadCounter{}
+	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, readGoodFile(t))),
+		WithAutoUpdate(false), WithFileWatch(false), WithCustomLogger(counter))
+	var wg sync.WaitGroup
+	for i := 0; i < refreshTestRefreshers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < refreshTestRefreshes; j++ {
+				if err := e.RefreshData(); err != nil {
+					t.Error(err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	// The first load, when the Engine was made, and each refresh.
+	want := int32(1 + refreshTestRefreshers*refreshTestRefreshes)
+	if got := counter.loads.Load(); got != want {
+		t.Errorf("%d loads were reported, want %d", got, want)
+	}
+	if most := counter.most.Load(); most != 1 {
+		t.Errorf("%d reloads ran at once, want one at a time", most)
 	}
 }
 

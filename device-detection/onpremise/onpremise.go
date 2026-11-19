@@ -81,7 +81,31 @@ type Engine struct {
 	// kinds holds, by lower case name, how ProcessData gives each Property
 	// that is not text, once ProcessData has read them.
 	kinds atomic.Pointer[map[string]propertyKind]
+
+	// useMu is held for reading by each call that reads the manager, and for
+	// writing by Stop while it frees the manager, so Stop waits for those
+	// calls and each later call finds freed set.
+	useMu sync.RWMutex
+	freed bool
 }
+
+// errEngineStopped is the error a call that reads the data gives once Stop
+// has been called.
+var errEngineStopped = errors.New("the engine has stopped, so its data has been freed")
+
+// acquire holds the manager for one call until release, and reports false,
+// holding nothing, once Stop has freed it.
+func (e *Engine) acquire() bool {
+	e.useMu.RLock()
+	if e.freed {
+		e.useMu.RUnlock()
+		return false
+	}
+	return true
+}
+
+// release ends a hold that acquire gave.
+func (e *Engine) release() { e.useMu.RUnlock() }
 
 const (
 	defaultDataFileUrl = "https://distributor.51degrees.com/api/v2/download?Type=HashV41&Download=True&Product=V4TAC"
@@ -249,8 +273,12 @@ func (e *Engine) RefreshData() error {
 	return err
 }
 
-// Stop has to be called to free all the resources of the engine
-// before the instance goes out of scope
+// Stop has to be called to free all the resources of the engine before the
+// instance goes out of scope. It waits for the refreshes and the calls that
+// read the data already running, then frees the data, and each such call
+// made later gives an error or nothing. Results already returned keep the
+// data they were made from until they are freed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L33-L40
 func (e *Engine) Stop() {
 	e.stopping.Store(true)
 	num := 0
@@ -283,11 +311,14 @@ func (e *Engine) Stop() {
 	e.reloadMu.Unlock()
 	close(e.stopCh)
 
+	e.useMu.Lock()
+	e.freed = true
 	if e.manager != nil {
 		e.manager.Free()
 	} else {
 		e.logger.Printf("stopping engine, manager is nil")
 	}
+	e.useMu.Unlock()
 
 	if e.IsCreateTempDataCopyEnabled() {
 		dir := filepath.Dir(e.dataFileLastUsedByManager)
@@ -552,8 +583,12 @@ func (e *Engine) getPublishedDate() time.Time {
 }
 
 // publishedDate is the published date of the loaded data file, or the zero
-// time before a data file is loaded.
+// time before a data file is loaded or once the engine has stopped.
 func (e *Engine) publishedDate() time.Time {
+	if !e.acquire() {
+		return time.Time{}
+	}
+	defer e.release()
 	if e.manager == nil {
 		return time.Time{}
 	}
@@ -561,27 +596,40 @@ func (e *Engine) publishedDate() time.Time {
 }
 
 // nextUpdateDate is the date the loaded data file expects an update after, or
-// the zero time before a data file is loaded.
+// the zero time before a data file is loaded or once the engine has stopped.
 func (e *Engine) nextUpdateDate() time.Time {
+	if !e.acquire() {
+		return time.Time{}
+	}
+	defer e.release()
 	if e.manager == nil {
 		return time.Time{}
 	}
 	return dd.GetNextUpdateDate(e.manager)
 }
 
-// NewResultsHash creates a new raw ResultsHash object. A ResultsHash is not
-// safe to use from several goroutines at once, so a reused one belongs to one
-// goroutine at a time. The caller is responsible for thread-safe access to one
-// it shares.
+// NewResultsHash creates a new raw ResultsHash object, or returns nil once
+// the engine has stopped. A ResultsHash is not safe to use from several
+// goroutines at once, so a reused one belongs to one goroutine at a time.
+// The caller is responsible for thread-safe access to one it shares.
 func (e *Engine) NewResultsHash(evidenceCapacity uint32, overridesCapacity uint32) *dd.ResultsHash {
+	if !e.acquire() {
+		return nil
+	}
+	defer e.release()
 	return dd.NewResultsHash(e.manager, evidenceCapacity, overridesCapacity)
 }
 
 // Process detects the device from the provided evidence list and returns the
 // dd.ResultsHash object from which various device properties are retrieved.
-// The ResultsHash is not safe to use from several goroutines at once. The
-// caller is responsible for thread-safe access to one it shares.
+// It gives an error once the engine has stopped. The ResultsHash is not safe
+// to use from several goroutines at once. The caller is responsible for
+// thread-safe access to one it shares.
 func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	evidenceHash, err := mapEvidence(evidenceList)
 	if err != nil {
 		return nil, err
@@ -599,9 +647,14 @@ func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
 	return results, nil
 }
 
-// GetHttpHeaderKeys returns the Evidence keys the data in use accepts. It is
-// safe to call while the data is refreshed.
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts, or nil
+// once the engine has stopped. It is safe to call while the data is
+// refreshed.
 func (e *Engine) GetHttpHeaderKeys() []dd.EvidenceKey {
+	if !e.acquire() {
+		return nil
+	}
+	defer e.release()
 	return e.manager.HeaderKeys()
 }
 
