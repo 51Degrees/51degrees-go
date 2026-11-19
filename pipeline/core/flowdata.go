@@ -23,6 +23,7 @@
 package core
 
 import (
+	"fmt"
 	"maps"
 	"sync"
 	"sync/atomic"
@@ -48,13 +49,14 @@ type FlowData interface {
 	// under the same key when the case is ignored. The caller adds Evidence
 	// before processing, and a Flow Element may add Evidence while it processes,
 	// for the Flow Elements after it and the caller to read. A call while a
-	// parallel group runs, or after processing has finished, is ignored and
-	// logged. The caller must not add Evidence while processing runs, because
-	// such a call cannot be told apart from one made by a Flow Element.
+	// parallel group runs is ignored and logged, and a call after processing
+	// has finished panics with ErrFlowDataFinished. The caller must not add
+	// Evidence while processing runs, because such a call cannot be told apart
+	// from one made by a Flow Element.
 	// Returns the Flow Data for chaining.
 	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md#adding-evidence-values
 	AddEvidence(key string, value any) FlowData
-	// AddEvidenceMap adds multiple Evidence values.
+	// AddEvidenceMap adds multiple Evidence values, as AddEvidence does.
 	AddEvidenceMap(values map[string]any) FlowData
 	// Evidence returns the (read-only) Evidence collection.
 	Evidence() Evidence
@@ -68,6 +70,8 @@ type FlowData interface {
 	Get(elementDataKey string) (ElementData, error)
 	// GetOrAdd returns the Element Data for key, creating it with ctor if absent.
 	// Flow Elements use this to obtain their own Element Data during Process.
+	// Adding Element Data after processing has finished panics with
+	// ErrFlowDataFinished.
 	GetOrAdd(key string, ctor func(FlowData) ElementData) ElementData
 	// ElementDataAsMap returns all Element Data keyed by element data key.
 	ElementDataAsMap() map[string]ElementData
@@ -76,7 +80,8 @@ type FlowData interface {
 	Errors() []FlowError
 	// HasErrors reports whether any errors were collected during processing.
 	HasErrors() bool
-	// AddError records an error against the element that produced it.
+	// AddError records an error against the element that produced it. A call
+	// after processing has finished panics with ErrFlowDataFinished.
 	AddError(err error, element FlowElement)
 
 	// markStarted is called internally to enforce single processing. It returns
@@ -135,10 +140,16 @@ func newFlowData(p *pipeline) *flowData {
 	return &flowData{pipeline: p, evidence: newEvidence()}
 }
 
+// finishedPanic panics with ErrFlowDataFinished, saying what was added. It is
+// called once processing has finished.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L115-L118
+func finishedPanic(what string) {
+	panic(fmt.Errorf("cannot add %s: %w", what, ErrFlowDataFinished))
+}
+
 func (fd *flowData) AddEvidence(key string, value any) FlowData {
 	if fd.finished.Load() {
-		fd.pipeline.logger.Warn("evidence added after processing finished; ignoring", "key", key)
-		return fd
+		finishedPanic("Evidence '" + key + "'")
 	}
 	if fd.parallel.Load() > 0 {
 		fd.pipeline.logger.Warn("evidence added while a parallel group is running; ignoring", "key", key)
@@ -205,6 +216,9 @@ func (fd *flowData) GetOrAdd(key string, ctor func(FlowData) ElementData) Elemen
 	if n := head.find(k); n != nil {
 		return n.data
 	}
+	if fd.finished.Load() {
+		finishedPanic("Element Data '" + key + "'")
+	}
 	d := ctor(fd)
 	if added, ok := d.(FlowDataAdded); ok {
 		added.AddedToFlowData(fd, key, d)
@@ -258,6 +272,9 @@ func (fd *flowData) HasErrors() bool {
 // errors lock, and the error is added with no lock at any other time.
 // See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L108-L113
 func (fd *flowData) AddError(err error, element FlowElement) {
+	if fd.finished.Load() {
+		finishedPanic(fmt.Sprintf("the error '%v'", err))
+	}
 	if fd.parallel.Load() > 0 {
 		fd.errMu.Lock()
 		defer fd.errMu.Unlock()
@@ -269,10 +286,48 @@ func (fd *flowData) markStarted() bool {
 	return fd.started.CompareAndSwap(false, true)
 }
 
-// markFinished records that processing is complete, after which Evidence takes
-// no more values.
+// markFinished records that processing is complete. Every Element Data is
+// then read only, and nothing more can be added.
 func (fd *flowData) markFinished() {
+	for n := fd.head.Load(); n != nil; n = n.next {
+		if g := guardOf(n.data); g != nil {
+			g.finishWriting()
+		}
+	}
 	fd.finished.Store(true)
+}
+
+// openForWriting opens the Element Data held under keys, in lower case, for
+// writing again, as a Flow Element that shares a key starts to process.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L143-L149
+func (fd *flowData) openForWriting(keys []string) {
+	head := fd.head.Load()
+	for _, k := range keys {
+		if n := head.find(k); n != nil {
+			if g := guardOf(n.data); g != nil {
+				g.openForWriting()
+			}
+		}
+	}
+}
+
+// finishWriting records that a Flow Element has finished, which makes the
+// Element Data under keys, and any added since the list began at since,
+// read only.
+func (fd *flowData) finishWriting(since *elementNode, keys []string) {
+	head := fd.head.Load()
+	for n := head; n != nil && n != since; n = n.next {
+		if g := guardOf(n.data); g != nil {
+			g.finishWriting()
+		}
+	}
+	for _, k := range keys {
+		if n := since.find(k); n != nil {
+			if g := guardOf(n.data); g != nil {
+				g.finishWriting()
+			}
+		}
+	}
 }
 
 // enterParallel and leaveParallel bracket a parallel group, during which

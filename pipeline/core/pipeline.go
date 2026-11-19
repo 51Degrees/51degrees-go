@@ -61,7 +61,10 @@ type Pipeline interface {
 }
 
 type pipeline struct {
-	elements                  []FlowElement
+	elements []FlowElement
+	// writes gives, for each element, the keys in lower case of the Element
+	// Data it writes, being its own and those of a group's members.
+	writes                    [][]string
 	logger                    *slog.Logger
 	concurrent                bool
 	suppressProcessExceptions bool
@@ -195,8 +198,13 @@ func (p *pipeline) process(fd *flowData) error {
 	p.mu.Unlock()
 	defer p.inFlight.Done()
 
-	for _, e := range p.elements {
+	// Each element's Element Data is open for writing while it processes,
+	// and read only once it has finished.
+	for i, e := range p.elements {
+		since := fd.head.Load()
+		fd.openForWriting(p.writes[i])
 		p.processElement(e, fd)
+		fd.finishWriting(since, p.writes[i])
 	}
 
 	if !fd.HasErrors() {

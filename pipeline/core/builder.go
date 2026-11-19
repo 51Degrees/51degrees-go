@@ -142,8 +142,14 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		}
 	}
 
+	writes := make([][]string, len(elements))
+	for i, e := range elements {
+		writes[i] = writtenKeys(e)
+	}
+
 	p := &pipeline{
 		elements:                  elements,
+		writes:                    writes,
 		logger:                    logger,
 		concurrent:                concurrent,
 		suppressProcessExceptions: b.suppressProcessExceptions,
@@ -167,4 +173,16 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		}
 	}
 	return p, nil
+}
+
+// writtenKeys gives the keys, in lower case, of the Element Data e writes,
+// being its own and those of the members of a group.
+func writtenKeys(e FlowElement) []string {
+	keys := []string{lower(e.DataKey())}
+	if group, ok := e.(childLister); ok {
+		for _, c := range group.Children() {
+			keys = append(keys, writtenKeys(c)...)
+		}
+	}
+	return keys
 }

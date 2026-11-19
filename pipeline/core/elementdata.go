@@ -22,24 +22,33 @@
 
 package core
 
-import "github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
+import (
+	"fmt"
+	"sync/atomic"
+
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
+)
 
 // ElementData is a container, within Flow Data, for the Property values relating
 // to a particular Flow Element. Values are set by the Element during processing
 // and retrieved using the string key of the Property.
 //
-// An instance is not safe for writing from several goroutines at once, nor for
-// reading while it is being written. Only the Flow Element that creates it
-// writes it, while that Flow Element processes. Once that Flow Element has
-// finished, the instance may be read from several goroutines at once, as the
-// members of a parallel group read it, so an implementation must allow that.
+// An instance is written only by the Flow Element that provides it, or by
+// the Flow Elements that share its key, and only while they process. A write
+// once they have finished panics with ErrElementDataFinished. An instance is
+// not safe for writing from several goroutines at once, nor for reading
+// while it is being written. Once its Flow Element has finished, the
+// instance may be read from several goroutines at once, as the members of a
+// parallel group read it, so an implementation must allow that.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#element-data
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#element-data
 type ElementData interface {
 	// Get returns the value of a Property by its (case-insensitive) string name.
 	// It returns an error if the Property is not present.
 	Get(propertyName string) (any, error)
-	// Set stores the value of a Property.
+	// Set stores the value of a Property. It panics with
+	// ErrElementDataFinished once the Flow Elements that write the instance
+	// have finished processing.
 	Set(propertyName string, value any)
 	// AsMap returns all Property values keyed by normalized (lower-case) name.
 	AsMap() map[string]any
@@ -56,9 +65,53 @@ type FlowDataAdded interface {
 	AddedToFlowData(fd FlowData, key string, data ElementData)
 }
 
+// WriteGuard records whether the Flow Elements that write an Element Data
+// have finished processing. The Pipeline marks it when they finish, and opens
+// it again when a Flow Element sharing the key starts. Element Data that does
+// not embed BaseElementData embeds a WriteGuard and calls CheckWrite at the
+// start of each method that writes a value.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L141-L149
+type WriteGuard struct {
+	finished atomic.Bool
+}
+
+// CheckWrite panics with ErrElementDataFinished, naming what was written,
+// once the Flow Elements that write the Element Data have finished.
+func (g *WriteGuard) CheckWrite(name string) {
+	if g.finished.Load() {
+		panic(fmt.Errorf("cannot set '%s': %w", name, ErrElementDataFinished))
+	}
+}
+
+func (g *WriteGuard) finishWriting()  { g.finished.Store(true) }
+func (g *WriteGuard) openForWriting() { g.finished.Store(false) }
+
+// writeGuarded is Element Data that holds a WriteGuard.
+type writeGuarded interface {
+	finishWriting()
+	openForWriting()
+}
+
+// guardOf gives the WriteGuard of d, looking through views that wrap other
+// Element Data, or nil.
+func guardOf(d ElementData) writeGuarded {
+	for d != nil {
+		if g, ok := d.(writeGuarded); ok {
+			return g
+		}
+		u, ok := d.(ElementDataUnwrapper)
+		if !ok {
+			return nil
+		}
+		d = u.UnwrapElementData()
+	}
+	return nil
+}
+
 // BaseElementData is the default ElementData implementation that concrete
 // Element Data types embed. It stores Property values in a typed map.
 type BaseElementData struct {
+	WriteGuard
 	values typedmap.Map
 }
 
@@ -80,8 +133,10 @@ func (d *BaseElementData) Get(propertyName string) (any, error) {
 	return v, nil
 }
 
-// Set stores a Property value.
+// Set stores a Property value. It panics with ErrElementDataFinished once the
+// Flow Elements that write the instance have finished processing.
 func (d *BaseElementData) Set(propertyName string, value any) {
+	d.CheckWrite(propertyName)
 	d.values.AddString(propertyName, value)
 }
 
