@@ -26,6 +26,8 @@ package ipi_onpremise
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L36-L41
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"strings"
@@ -126,6 +128,290 @@ func TestRefreshDataWhileProcessing(t *testing.T) {
 	for err := range errs {
 		t.Error(err)
 	}
+}
+
+// otherCase gives s with the case of each ASCII letter swapped, so it keeps
+// its length.
+func otherCase(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		switch {
+		case 'a' <= c && c <= 'z':
+			b[i] = c - 'a' + 'A'
+		case 'A' <= c && c <= 'Z':
+			b[i] = c - 'A' + 'a'
+		}
+	}
+	return string(b)
+}
+
+// stringRecord is s as the data file holds a string, being its length with
+// the terminating null as a little endian 16 bit number, then its bytes and
+// the null.
+func stringRecord(s string) []byte {
+	record := binary.LittleEndian.AppendUint16(nil, uint16(len(s)+1))
+	return append(append(record, s...), 0)
+}
+
+// valueMarkedFile returns the marked good file with each string of values
+// held in the other case, so Data made from it gives a different answer from
+// Data made from the good file.
+func valueMarkedFile(
+	t *testing.T, good []byte, published time.Time, values []string) []byte {
+	t.Helper()
+	marked := markedGoodFile(t, good, published)
+	for _, value := range values {
+		if otherCase(value) == value {
+			t.Fatalf("%q has no letter to change", value)
+		}
+		from := stringRecord(value)
+		if !bytes.Contains(good, from) {
+			t.Fatalf("%q is not held as a string in the data file", value)
+		}
+		marked = bytes.ReplaceAll(marked, from,
+			stringRecord(otherCase(value)))
+	}
+	return marked
+}
+
+// asnNameOf reads the AsnName values of d.
+func asnNameOf(d *Data) ([]string, error) {
+	values, err := d.Values("AsnName")
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(values))
+	for i, v := range values {
+		names[i] = fmt.Sprint(v.Value)
+	}
+	return names, nil
+}
+
+// asnValues makes Data for the test address and reads its AsnName values.
+func (e *reloadTestEngine) asnValues(t *testing.T) []string {
+	t.Helper()
+	d, err := e.ProcessData(reloadTestAddress)
+	if err != nil {
+		t.Fatalf("lookup failed: %v", err)
+	}
+	defer d.Free()
+	names, err := asnNameOf(d)
+	if err != nil {
+		t.Fatalf("reading AsnName failed: %v", err)
+	}
+	if len(names) == 0 {
+		t.Fatalf("%s has no AsnName", reloadTestAddress)
+	}
+	return names
+}
+
+// otherCaseAll gives each of values in the other case, joined by commas.
+func otherCaseAll(values []string) string {
+	changed := make([]string, len(values))
+	for i, value := range values {
+		changed[i] = otherCase(value)
+	}
+	return strings.Join(changed, ",")
+}
+
+// dataMade is the data a Data was made from, as far as the refreshes seen
+// before and after it was made tell.
+type dataMade int
+
+const (
+	madeFromEither dataMade = iota
+	madeFromOld
+	madeFromUpdated
+)
+
+// readCheck checks the values read from Data against the data it was made
+// from. It counts the reads and the wrong ones and keeps the first wrong
+// one, so a failure is reported once.
+type readCheck struct {
+	old, updated string
+	reads, wrong atomic.Int32
+	first        sync.Once
+	what         string
+}
+
+func (c *readCheck) read(d *Data, made dataMade) {
+	c.reads.Add(1)
+	names, err := asnNameOf(d)
+	got := strings.Join(names, ",")
+	switch {
+	case err != nil:
+		c.fail("reading AsnName failed: %v", err)
+	case made == madeFromOld && got != c.old:
+		c.fail("AsnName is %q from Data made before any refresh, want %q",
+			got, c.old)
+	case made == madeFromUpdated && got != c.updated:
+		c.fail("AsnName is %q from Data made after a refresh, want %q",
+			got, c.updated)
+	case got != c.old && got != c.updated:
+		c.fail("AsnName is %q, want %q or %q", got, c.old, c.updated)
+	}
+}
+
+func (c *readCheck) fail(format string, v ...interface{}) {
+	c.wrong.Add(1)
+	c.first.Do(func() { c.what = fmt.Sprintf(format, v...) })
+}
+
+func (c *readCheck) report(t *testing.T) {
+	t.Helper()
+	if n := c.wrong.Load(); n > 0 {
+		t.Errorf("%d of %d reads were wrong, the first: %s",
+			n, c.reads.Load(), c.what)
+	}
+}
+
+// keptData is Data kept to be read once the refreshes have ended.
+type keptData struct {
+	data *Data
+	made dataMade
+}
+
+// Data made before and while other goroutines refresh gives the values of the
+// data it was made from, when first read while the refreshes run and after
+// they end. Data keeps a value once read, so each Data is read once. The
+// refreshes load a file whose AsnName values differ, so a value read through
+// any other data is seen.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md?plain=1#L47-L52
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/automated-testing.md?plain=1#L183-L185
+func TestRefreshDataWhileReadingValues(t *testing.T) {
+	good := readGoodFile(t)
+	path := writeDataFile(t, good)
+	e := newReloadTestEngine(t, WithDataFile(path), WithAutoUpdate(false),
+		WithFileWatch(false), WithTempDataCopy(true))
+	old := e.asnValues(t)
+	check := &readCheck{
+		old:     strings.Join(old, ","),
+		updated: otherCaseAll(old),
+	}
+	before := make([]*Data, refreshTestProcessors)
+	defer func() {
+		for _, d := range before {
+			if d != nil {
+				d.Free()
+			}
+		}
+	}()
+	for i := range before {
+		d, err := e.ProcessData(reloadTestAddress)
+		if err != nil {
+			t.Fatalf("lookup failed: %v", err)
+		}
+		before[i] = d
+	}
+	replaceFile(t, path, valueMarkedFile(t, good, e.published(), old))
+
+	// started counts the refreshes begun and finished those that loaded the
+	// marked file.
+	var started, finished atomic.Int32
+	refreshed := make(chan struct{})
+	var processors sync.WaitGroup
+	for i := 0; i < refreshTestProcessors; i++ {
+		processors.Add(1)
+		go func(first *Data) {
+			defer processors.Done()
+			kept := make([]keptData, 0, refreshTestLookups)
+			for j := 0; j < refreshTestLookups; j++ {
+				if first != nil && finished.Load() > 0 {
+					check.read(first, madeFromOld)
+					first.Free()
+					first = nil
+				}
+				made := madeFromEither
+				if finished.Load() > 0 {
+					made = madeFromUpdated
+				}
+				now, err := e.ProcessData(reloadTestAddress)
+				if err != nil {
+					check.fail("lookup failed: %v", err)
+					continue
+				}
+				later, err := e.ProcessData(reloadTestAddress)
+				if err != nil {
+					now.Free()
+					check.fail("lookup failed: %v", err)
+					continue
+				}
+				if made == madeFromEither && started.Load() == 0 {
+					made = madeFromOld
+				}
+				check.read(now, made)
+				now.Free()
+				kept = append(kept, keptData{later, made})
+			}
+			<-refreshed
+			if first != nil {
+				check.read(first, madeFromOld)
+				first.Free()
+			}
+			for _, k := range kept {
+				check.read(k.data, k.made)
+				k.data.Free()
+			}
+		}(before[i])
+	}
+	var refreshers sync.WaitGroup
+	for i := 0; i < refreshTestRefreshers; i++ {
+		refreshers.Add(1)
+		go func() {
+			defer refreshers.Done()
+			for j := 0; j < refreshTestRefreshes; j++ {
+				started.Add(1)
+				if err := e.RefreshData(); err != nil {
+					t.Error(err)
+					continue
+				}
+				finished.Add(1)
+			}
+		}()
+	}
+	refreshers.Wait()
+	close(refreshed)
+	processors.Wait()
+	check.report(t)
+	if got := strings.Join(e.asnValues(t), ","); got != check.updated {
+		t.Errorf("AsnName is %q after the refreshes, want %q from the "+
+			"marked file", got, check.updated)
+	}
+}
+
+// Data made before a refresh gives the values of the data it was made from,
+// however many refreshes happen before it is freed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md?plain=1#L47-L52
+func TestDataMadeBeforeARefreshKeepsItsData(t *testing.T) {
+	good := readGoodFile(t)
+	path := writeDataFile(t, good)
+	e := newReloadTestEngine(t, WithDataFile(path), WithAutoUpdate(false),
+		WithFileWatch(false), WithTempDataCopy(true))
+	old := e.asnValues(t)
+	d, err := e.ProcessData(reloadTestAddress)
+	if err != nil {
+		t.Fatalf("lookup failed: %v", err)
+	}
+	defer d.Free()
+	replaceFile(t, path, valueMarkedFile(t, good, e.published(), old))
+	for i := 0; i < refreshTestRefreshes; i++ {
+		if err := e.RefreshData(); err != nil {
+			t.Fatalf("RefreshData gave %v for the marked file", err)
+		}
+	}
+	if got := strings.Join(e.asnValues(t), ","); got != otherCaseAll(old) {
+		t.Errorf("AsnName is %q after the refreshes, want %q from the "+
+			"marked file", got, otherCaseAll(old))
+	}
+	names, err := asnNameOf(d)
+	if err != nil {
+		t.Fatalf("reading AsnName failed: %v", err)
+	}
+	if got := strings.Join(names, ","); got != strings.Join(old, ",") {
+		t.Errorf("AsnName is %q from Data made before the refreshes, want "+
+			"%q from the data it was made from", got, strings.Join(old, ","))
+	}
+	d.Free()
 }
 
 // loadCounter is a logger that counts the reloads reporting at once. A
