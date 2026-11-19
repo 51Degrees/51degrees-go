@@ -102,17 +102,43 @@ func onOwnDataFile(tests func() int) int {
 // file's modification time, because with no settings the example finds the
 // free file the tests of other packages read.
 func testFreeOnOwnCopy(t *testing.T, name string) {
-	free := dd_example.GetDataFile(dd_example.LiteDataFile)
-	own := filepath.Join(t.TempDir(), dd_example.LiteDataFile)
-	if err := copyFile(free, own); err != nil {
-		t.Fatalf("%s needs a copy of %s: %v", name, free, err)
-	}
-	environment := append(withoutSettings(os.Environ()),
-		dataFileVariable+"="+own)
+	_, environment := freeOnOwnCopy(t)
 	output := run(t, name, environment)
 	checkEnterprise(t, name, output)
 	if err := dd_example.CheckFindOutMore(output); err != nil {
 		t.Errorf("%s: %v", name, err)
+	}
+}
+
+// freeOnOwnCopy makes a folder holding a copy of the free data file, and
+// returns it with the environment testFreeOnOwnCopy gives the example.
+func freeOnOwnCopy(t *testing.T) (string, []string) {
+	free := dd_example.GetDataFile(dd_example.LiteDataFile)
+	folder := t.TempDir()
+	own := filepath.Join(folder, dd_example.LiteDataFile)
+	if err := copyFile(free, own); err != nil {
+		t.Fatalf("a run on its own copy needs %s: %v", free, err)
+	}
+	return folder, append(withoutSettings(os.Environ()),
+		dataFileVariable+"="+own)
+}
+
+// TestFreeOnOwnCopyGivesNoSettings checks that the run of an example on its
+// own copy of the free data file is given no settings, as someone would run
+// it from a fresh clone, and that its folder holds the copy.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/device-detection-specification/required-examples.md?plain=1#L20-L23
+func TestFreeOnOwnCopyGivesNoSettings(t *testing.T) {
+	folder, environment := freeOnOwnCopy(t)
+	for _, variable := range environment {
+		if len(withoutSettings([]string{variable})) == 0 {
+			name, _, _ := strings.Cut(variable, "=")
+			t.Errorf("the run on its own copy is given the setting %s", name)
+		}
+	}
+	own := filepath.Join(folder, dd_example.LiteDataFile)
+	if _, err := os.Stat(own); err != nil {
+		t.Errorf("the run's folder holds no copy of the free data file: %v",
+			err)
 	}
 }
 
