@@ -74,7 +74,7 @@ func reachableStrings(v reflect.Value, seen map[uintptr]bool, out *[]string) {
 // from.
 func TestTheElementKeepsNoPathToItsScripts(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "band.yaml")
+	path := filepath.Join(dir, "Band.yaml")
 	if err := os.WriteFile(path, []byte(bandYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
