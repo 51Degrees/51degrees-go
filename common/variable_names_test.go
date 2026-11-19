@@ -154,14 +154,14 @@ const (
 func TestOldVariablesAreOnlyVariables(t *testing.T) {
 	const name = fiftyOne + "DATA"
 	for line, want := range map[string]string{
-		`os.Getenv("` + name + `")`:              name,
-		"$env:" + name + " = 1":                  name,
-		"${" + name + ":-x}":                     name,
-		"${{ env." + name + " }}":                name,
+		`os.Getenv("` + name + `")`:               name,
+		"$env:" + name + " = 1":                   name,
+		"${" + name + ":-x}":                      name,
+		"${{ env." + name + " }}":                 name,
 		"cmd.Env = append(env, `" + name + "=1`)": name,
-		"const " + fiftyOne + "LIMIT = 4":        "",
-		"type " + fiftyOne + "THING struct{}":    "",
-		`"` + fiftyOne + `DEGREES_STRING"`:       "",
+		"const " + fiftyOne + "LIMIT = 4":         "",
+		"type " + fiftyOne + "THING struct{}":     "",
+		`"` + fiftyOne + `DEGREES_STRING"`:        "",
 
 		`os.Getenv("` + dataFile + `")`:         dataFile,
 		"$env:DD_" + dataFile + " = $path":      "DD_" + dataFile,
@@ -174,8 +174,8 @@ func TestOldVariablesAreOnlyVariables(t *testing.T) {
 		// A workflow declares a variable as a key in an env: block, and a
 		// readme lists one, so a name at the start of a line counts.
 		"  " + licence + ": ${{ secrets.DEVICE" + "_DETECTION_KEY }}": licence,
-		"- " + dataFile + " names the data file": dataFile,
-		dataFile + "=/data/file.ipi go run ./x":  dataFile,
+		"- " + dataFile + " names the data file":                      dataFile,
+		dataFile + "=/data/file.ipi go run ./x":                       dataFile,
 
 		// The one name each of those variables now carries.
 		`os.Getenv("_51DEGREES_DD_PATH")`:         "",

@@ -64,7 +64,9 @@ func TestEvidenceImmutableAfterProcessing(t *testing.T) {
 	fd := p.CreateFlowData()
 	fd.AddEvidence("query.month", "march")
 	_ = fd.Process()
-	fd.AddEvidence("query.month", "april") // should be ignored
+	wantFinishedPanic(t, "AddEvidence", func() {
+		fd.AddEvidence("query.month", "april")
+	})
 	if v, _ := fd.Evidence().Get("query.month"); v != "march" {
 		t.Fatalf("evidence mutated after processing: %v", v)
 	}

@@ -26,8 +26,51 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
+
+// specialEvidenceKeys are the keys a data set accepts, beyond those of its
+// headers and overridable Properties, when it processes special Evidence, as
+// a data set does unless told not to.
+var specialEvidenceKeys = []EvidenceKey{
+	{HttpEvidenceQuery, "51D_deviceId"},
+	{HttpEvidenceQuery, "51D_gethighentropyvalues"},
+	{HttpEvidenceQuery, "51D_structureduseragent"},
+	{HttpEvidenceCookie, "51D_gethighentropyvalues"},
+	{HttpEvidenceCookie, "51D_structureduseragent"},
+	{HttpEvidenceQuery, "51D_ProfileIds"},
+	{HttpEvidenceCookie, "51D_ProfileIds"},
+}
+
+// The accepted Evidence keys are the list the native getKeys function gives
+// for the data. So they hold the keys of the special Evidence the data set
+// reads, name no pseudo header, which no request carries, and give each key
+// once.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L78-L86
+func TestEvidenceKeysAreTheDataSetsOwnList(t *testing.T) {
+	manager := initResourceManager("", t)
+	defer freeResourceManager(manager, t)
+	keys := manager.HeaderKeys()
+
+	listed := make(map[string]int, len(keys))
+	for _, k := range keys {
+		name := fmt.Sprintf("%d.%s", k.Prefix, k.Key)
+		listed[name]++
+		if listed[name] == 2 {
+			t.Errorf("the key %s is listed more than once", name)
+		}
+		if strings.ContainsRune(k.Key, '\x1f') {
+			t.Errorf("the key %q names a pseudo header", k.Key)
+		}
+	}
+	for _, k := range specialEvidenceKeys {
+		if listed[fmt.Sprintf("%d.%s", k.Prefix, k.Key)] == 0 {
+			t.Errorf("the special Evidence key %d.%s is not listed",
+				k.Prefix, k.Key)
+		}
+	}
+}
 
 // keyNames gives the keys as sorted text, so two lists can be compared.
 func keyNames(keys []EvidenceKey) []string {

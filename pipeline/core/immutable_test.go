@@ -62,3 +62,35 @@ func TestFlowElementsGivesACopy(t *testing.T) {
 		t.Errorf("the Pipeline's elements changed with the copy it gave: %v", got)
 	}
 }
+
+// A Pipeline cannot be changed once built, so using its builder again, which
+// a program may do to build a second Pipeline, leaves the first as it was.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/conceptual-overview.md?plain=1#L118-L119
+func TestABuilderUsedAgainLeavesItsPipelineAsItWas(t *testing.T) {
+	first := &propElement{BaseElement: NewBaseElement("first", NewWhitelistFilter(), nil)}
+	second := &propElement{BaseElement: NewBaseElement("second", NewWhitelistFilter(), nil)}
+	b := NewPipelineBuilder().AddFlowElement(first)
+	p, err := b.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	b.AddFlowElement(second)
+	later, err := b.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer later.Close()
+
+	got := p.FlowElements()
+	if len(got) != 1 || got[0] != FlowElement(first) {
+		t.Errorf("the first Pipeline holds %v, want the first element alone", got)
+	}
+	if p.GetElement("second") != nil {
+		t.Error("the first Pipeline found an element added to its builder after it was built")
+	}
+	if elements := later.FlowElements(); len(elements) != 2 {
+		t.Errorf("the second Pipeline holds %d elements, want 2", len(elements))
+	}
+}
