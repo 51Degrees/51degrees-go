@@ -69,7 +69,7 @@ func TestRecordHasNoBadSchemaOrCDATA(t *testing.T) {
 	e := &Element{}
 	rec := &record{sessionID: "s", evidence: map[string]string{"header.x": "a\x01b"}}
 	var b strings.Builder
-	e.writeDevice(&b, rec, nil)
+	e.writeDevice(&b, rec, nil, true)
 	out := b.String()
 	if strings.Contains(out, "BadSchema") || strings.Contains(out, "CDATA") ||
 		strings.Contains(out, "TRUNCATED BY USAGE SHARING") {

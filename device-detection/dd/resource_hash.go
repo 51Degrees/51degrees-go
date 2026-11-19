@@ -327,29 +327,38 @@ func getUniqueHeaders(manager *ResourceManager) []string {
 	return a
 }
 
-// initHttpHeaderKeys initialized the http keys required for this engine
+// evidenceKeysSeparator is written between the keys the data set lists.
+const evidenceKeysSeparator = ","
+
+// initHttpHeaderKeys keeps the Evidence keys the data in use accepts, being
+// the list the native getKeys function gives for the data set, in its order.
+// That is a header key and a query key for each header the data set reads,
+// leaving out pseudo headers, which no request carries, then, where the data
+// set processes special Evidence, a cookie key and a query key for each
+// overridable Property and the keys of the special Evidence itself. Each key
+// is listed once.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L78-L86
 func initHttpHeaderKeys(manager *ResourceManager) {
-	// Get data set
 	cDataSet := (*C.DataSetHash)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
-	// Release the dataset
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
-	config := (*C.fiftyoneDegreesConfigBase)(unsafe.Pointer(cDataSet.b.b.config))
-	usesUpperPrefixedHeaders := cIntToBool(int(C.BoolToInt(config.usesUpperPrefixedHeaders)))
+	separator := C.CString(evidenceKeysSeparator)
+	defer C.free(unsafe.Pointer(separator))
+	length := C.HashGetEvidenceKeys(cDataSet, nil, 0, separator)
+	buffer := (*C.char)(C.malloc(length + 1))
+	defer C.free(unsafe.Pointer(buffer))
+	C.HashGetEvidenceKeys(cDataSet, buffer, length+1, separator)
 
-	prefixes := []EvidencePrefix{HttpHeaderString, HttpEvidenceQuery}
-	uniqueHeaders := getUniqueHeaders(manager)
-
-	// Create http header keys
-	keys := make([]EvidenceKey, 0, len(prefixes)*len(uniqueHeaders))
-	for _, header := range uniqueHeaders {
-		key := ""
-		if usesUpperPrefixedHeaders {
-			key += "HTTP_"
+	var keys []EvidenceKey
+	for _, key := range strings.Split(C.GoString(buffer),
+		evidenceKeysSeparator) {
+		cKey := C.CString(key)
+		prefix := C.EvidenceMapPrefix(cKey)
+		C.free(unsafe.Pointer(cKey))
+		if prefix == nil {
+			continue
 		}
-		key += header
-		for _, p := range prefixes {
-			keys = append(keys, EvidenceKey{p, key})
-		}
+		name := strings.TrimPrefix(key[int(prefix.prefixLength):], ".")
+		keys = append(keys, EvidenceKey{EvidencePrefix(prefix.prefixEnum), name})
 	}
 	manager.keysMu.Lock()
 	manager.HttpHeaderKeys = keys

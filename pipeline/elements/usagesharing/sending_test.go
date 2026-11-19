@@ -303,19 +303,14 @@ func TestCloseWhilePausedSendsNothing(t *testing.T) {
 	}
 }
 
-// A full queue discards entries without a log entry for each one. A queue
-// smaller than the minimum entries per message is refused, so this test gives
-// the element its small queue itself, before the first request starts the
-// consumer that reads it.
+// A full queue discards entries without a log entry for each one.
 func TestFullQueueLogsOnce(t *testing.T) {
 	u := &usageService{}
 	log := &usageLog{}
 	p := usagePipeline(t, NewBuilder().
 		SetMinimumEntriesPerMessage(100).
-		SetMaximumQueueSize(100).
+		SetMaximumQueueSize(2).
 		SetAddTimeout(time.Millisecond), u, log)
-	e := p.GetElement(DataKey).(*Element)
-	e.queue = make(chan *record, 2)
 	for i := 1; i <= 10; i++ {
 		share(t, p, i)
 	}

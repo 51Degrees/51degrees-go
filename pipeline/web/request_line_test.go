@@ -123,6 +123,18 @@ func TestAnAbsoluteFormRequestLineGivesThePathAsSent(t *testing.T) {
 	wantRequestLine(t, got, "GET", "/a|b/c", "q=%7C")
 }
 
+// A Pipeline whose elements accept one of the three keys gets all three, so
+// that an absent query always means the request line is not supplied.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/web-integration.md?plain=1#L133-L140
+func TestTheWholeRequestLineIsAddedWhereAnElementAsksForPartOfIt(t *testing.T) {
+	for _, key := range []string{requestMethodKey, requestPathKey, requestQueryKey} {
+		t.Run(key, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/page", nil)
+			wantRequestLine(t, requestEvidence(t, r, key), "GET", "/page", "")
+		})
+	}
+}
+
 // A Pipeline with no element that accepts the request line carries none of
 // it, so nothing new reaches a cloud request, a cache key or the ETag.
 func TestTheRequestLineIsLeftOutWhereNoElementAsksForIt(t *testing.T) {

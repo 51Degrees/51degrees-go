@@ -27,7 +27,9 @@
 // background goroutine batches entries into a GZip-compressed XML payload and
 // sends it, pausing after repeated failed sends. Identical Evidence is shared
 // at most once in each repeat Evidence interval, and all errors are logged
-// without disrupting the Pipeline.
+// without disrupting the Pipeline. Every record carries the element's process
+// identifier, and the values that do not change while the element lives are
+// written to its first record and again once each hour after that.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/usage-sharing-element.md
 package usagesharing
@@ -75,26 +77,19 @@ const (
 	maxValueLength         = 10000
 )
 
-// DefaultShareAllQueryStringParameters shares every query string and form
-// parameter unless a user turns it off.
-// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L80-L81
-const DefaultShareAllQueryStringParameters = true
-
 type config struct {
-	includedQueryParams map[string]struct{}
-	shareAllQueryParams bool
-	shareAllEvidence    bool
-	blockedHeaders      map[string]struct{}
-	sharePercentage     float64
-	minEntries          int
-	maxQueueSize        int
-	addTimeout          time.Duration
-	takeTimeout         time.Duration
-	shareURL            string
-	repeatInterval      time.Duration
-	recovery            recoveryConfig
-	trackSession        bool
-	sessionCookieName   string
+	shareAllEvidence  bool
+	blockedHeaders    map[string]struct{}
+	sharePercentage   float64
+	minEntries        int
+	maxQueueSize      int
+	addTimeout        time.Duration
+	takeTimeout       time.Duration
+	shareURL          string
+	repeatInterval    time.Duration
+	recovery          recoveryConfig
+	trackSession      bool
+	sessionCookieName string
 	// err refuses a configuration that cannot work, when the element is
 	// added to a Pipeline.
 	err error
@@ -118,6 +113,9 @@ type Element struct {
 	staticMu  sync.Mutex
 	staticSet bool
 	flowNames []string
+	// packages are the 51Degrees modules in use, read once when the element
+	// is built, as they do not change while the program runs.
+	packages []packageVersion
 
 	closeOnce sync.Once
 
@@ -136,7 +134,21 @@ type Element struct {
 	// cut is the number of entries in a message whose send Close stopped. Only
 	// the sending goroutine uses it.
 	cut int
+
+	// processID is the process identifier, created when the element is
+	// built and written to every record.
+	// See https://github.com/51Degrees/specifications/blob/07e1fcedc2/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L113-L131
+	processID string
+	// invariantsWritten is whether a record has carried the invariant
+	// values, and invariantsAt is when the last one was written. Only the
+	// sending goroutine, which writes the records, uses them.
+	invariantsWritten bool
+	invariantsAt      time.Time
 }
+
+// invariantInterval is how long after the invariant values were last
+// written to a record they are written again.
+const invariantInterval = time.Hour
 
 type record struct {
 	sessionID string
@@ -145,6 +157,13 @@ type record struct {
 	clientIP  string
 	evidence  map[string]string // key: full evidence key, value: raw value
 }
+
+// RunsLast names the element for the error a Pipeline builder gives when it
+// is anywhere but last, or in a parallel group. It runs last so that it
+// shares the Evidence every other Flow Element has added, and outside any
+// group so that nothing changes the Evidence while it reads it.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L106-L119
+func (e *Element) RunsLast() string { return "the usage sharing element" }
 
 // Process samples and enqueues the request's shareable Evidence.
 func (e *Element) Process(fd core.FlowData) error {
@@ -208,8 +227,8 @@ func (e *Element) sample() bool {
 	return e.rng.Float64() < e.cfg.sharePercentage
 }
 
-// shareableEvidence returns the values the element finds that isShared lets
-// through, keyed by their Evidence key. It finds every Evidence value and,
+// shareableEvidence returns the values the element finds that isSharedFor
+// lets through, keyed by their Evidence key. It finds every Evidence value and,
 // when the Evidence holds the web request as core.EvidenceHTTPRequest, the
 // request's parts too. A key found in both keeps the Evidence value, and the
 // request itself is never shared.
@@ -218,13 +237,13 @@ func (e *Element) shareableEvidence(fd core.FlowData) map[string]string {
 	out := map[string]string{}
 	all := fd.Evidence().AsMap()
 	for key, val := range all {
-		if key != core.EvidenceHTTPRequest && e.isShared(key) {
+		if key != core.EvidenceHTTPRequest && e.isSharedFor(fd, key) {
 			out[key] = fmt.Sprintf("%v", val)
 		}
 	}
 	if w, ok := all[core.EvidenceHTTPRequest].(core.WebRequest); ok {
 		for key, val := range requestEvidence(w) {
-			if _, found := all[key]; !found && e.isShared(key) {
+			if _, found := all[key]; !found && e.isSharedFor(fd, key) {
 				out[key] = val
 			}
 		}
@@ -338,7 +357,7 @@ func (e *Element) enqueue(rec *record) bool {
 }
 
 // OnPipelineAdded records the fully-qualified Flow Element names used in the
-// invariant portion of each shared record.
+// invariant values, which a record carries only when invariantsDue says so.
 func (e *Element) OnPipelineAdded(p core.Pipeline) error {
 	if e.cfg.err != nil {
 		return e.cfg.err
@@ -593,7 +612,7 @@ func (e *Element) buildXML(batch []*record) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString("<Devices>")
 	for _, rec := range batch {
-		e.writeDevice(&b, rec, flowNames)
+		e.writeDevice(&b, rec, flowNames, e.invariantsDue())
 	}
 	b.WriteString("</Devices>")
 	return []byte(b.String()), nil
@@ -608,23 +627,49 @@ func (e *Element) flowNamesSnapshot() []string {
 	return out
 }
 
-func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string) {
+// invariantsDue reports whether the next record is to carry the invariant
+// values, being the first record the element writes and the first once an
+// hour or more has passed since they were last written, and if so records
+// that they are written now. The hour runs from when they were written,
+// whether or not the record arrived.
+// See https://github.com/51Degrees/specifications/blob/07e1fcedc2/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L150-L160
+func (e *Element) invariantsDue() bool {
+	now := e.clock.now()
+	if e.invariantsWritten && now.Sub(e.invariantsAt) < invariantInterval {
+		return false
+	}
+	e.invariantsWritten = true
+	e.invariantsAt = now
+	return true
+}
+
+// writeDevice writes one record. Every record starts with the process
+// identifier, and only a record for which invariants is true carries the
+// invariant values.
+func (e *Element) writeDevice(b *strings.Builder, rec *record, flowNames []string,
+	invariants bool) {
 	b.WriteString("<Device>")
 	// Field order and always-present fields are fixed so the payload validates
 	// against the server-side schema.
+	writeElement(b, "ProcessId", e.processID)
 	writeElement(b, "SessionId", rec.sessionID)
 	writeElement(b, "Sequence", strconv.Itoa(rec.sequence))
 	writeElement(b, "DateSent", rec.dateSent.Format("2006-01-02T15:04:05"))
 	writeElement(b, "ClientIP", rec.clientIP)
-	writeElement(b, "Version", coreVersion())
-	writeElement(b, "Product", productName)
-	for _, name := range flowNames {
-		writeElement(b, "FlowElement", name)
+	if invariants {
+		writeElement(b, "Version", coreVersion())
+		writeElement(b, "Product", productName)
+		for _, name := range flowNames {
+			writeElement(b, "FlowElement", name)
+		}
+		for _, p := range e.packages {
+			writePackage(b, p)
+		}
+		writeElement(b, "Language", "Go")
+		writeElement(b, "LanguageVersion", runtime.Version())
+		writeElement(b, "ServerIP", serverIP())
+		writeElement(b, "Platform", platformName())
 	}
-	writeElement(b, "Language", "Go")
-	writeElement(b, "LanguageVersion", runtime.Version())
-	writeElement(b, "ServerIP", serverIP())
-	writeElement(b, "Platform", platformName())
 
 	// Evidence entries, deterministically ordered.
 	keys := make([]string, 0, len(rec.evidence))

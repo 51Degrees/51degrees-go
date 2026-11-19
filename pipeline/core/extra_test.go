@@ -94,7 +94,9 @@ func TestGetEvidenceOrProperty(t *testing.T) {
 	}
 
 	// A key not produced by any element falls back to evidence.
-	fd.AddEvidence("query.other", "ev") // ignored (post-process) but evidence already has platform
+	wantFinishedPanic(t, "AddEvidence", func() {
+		fd.AddEvidence("query.other", "ev")
+	})
 	v2, ok2, _ := GetEvidenceOrProperty(fd, "query.missing")
 	if ok2 || v2 != nil {
 		t.Fatalf("expected miss, got %v %v", v2, ok2)
