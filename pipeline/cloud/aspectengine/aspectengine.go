@@ -216,8 +216,18 @@ func NewBaseCloudAspectEngine(dataKey string, logger *slog.Logger) *BaseCloudAsp
 	return e
 }
 
+// ErrCloudRequestFailed is the error ResponseJSON and ParseAspect give when
+// the Cloud Request Engine's request failed. While the Flow Data is
+// processed, that failure is recorded once, as the Cloud Request Engine's
+// error, so a Cloud Aspect Engine's Process returns nil for this error
+// rather than record the failure again as its own.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L79-L85
+var ErrCloudRequestFailed error = core.NewDataError(
+	"cloud response not available; the cloud request failed")
+
 // ResponseJSON returns the raw JSON response produced by the Cloud Request
-// Engine for this Flow Data.
+// Engine for this Flow Data, or ErrCloudRequestFailed where its request
+// failed.
 func ResponseJSON(fd core.FlowData) (string, error) {
 	data, err := fd.Get(requestengine.DataKey)
 	if err != nil {
@@ -226,7 +236,7 @@ func ResponseJSON(fd core.FlowData) (string, error) {
 	// Distinguish a request that ran but failed (data present, marked failed)
 	// from one that never ran (no data), so downstream diagnostics are accurate.
 	if crd, ok := data.(*requestengine.CloudRequestData); ok && crd.Failed() {
-		return "", core.NewDataError("cloud response not available; the cloud request failed")
+		return "", ErrCloudRequestFailed
 	}
 	v, err := data.Get(requestengine.JSONResponseProperty)
 	if err != nil {
@@ -247,7 +257,9 @@ func ResponseJSON(fd core.FlowData) (string, error) {
 // Properties, for the Aspect, the response has no section for it. That is
 // not an error, so ParseAspect returns an empty map, and the engine built on
 // BaseCloudAspectEngine whose data key is aspectKey logs the missing product
-// once.
+// once. Where the cloud request failed, ParseAspect gives
+// ErrCloudRequestFailed, for which a Cloud Aspect Engine's Process returns
+// nil.
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
 func ParseAspect(fd core.FlowData, aspectKey string) (map[string]json.RawMessage, error) {
 	raw, err := ResponseJSON(fd)
