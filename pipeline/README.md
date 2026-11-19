@@ -154,8 +154,9 @@ The Pipeline adds no lock for this, to keep processing fast for the usual case
 of one goroutine per request. A caller that shares a Flow Data across
 goroutines is responsible for any locking.
 
-Element Data is written only by the Flow Element that provides it, while that
-Flow Element processes. Once processing has finished, a write to the Flow Data
+Element Data is written only by the Flow Element that provides it, or the Flow
+Elements that share it, and only while they process. Once processing has
+finished, a write to the Flow Data
 panics with `core.ErrFlowDataFinished`, and a write to Element Data panics with
 `core.ErrElementDataFinished`. Two Flow Elements that write one Element Data
 instance must not be members of the same parallel group, so two Derived
@@ -166,10 +167,16 @@ Translation Engines.
 later Flow Data. Call it once the Flow Data and its values are no longer
 needed. Keeping a reference to Element Data after its Flow Data is closed is
 not supported, as the instance may by then hold another request's values. The
-web middleware closes the Flow Data when the request ends, so copy the values
-that work outliving the request needs before the handler returns. A custom
-Flow Element that keeps its own Element Data across requests marks it with
-`core.MarkShared`, so it never goes back to a pool.
+web middleware closes the Flow Data when the handler it wraps returns, so copy
+the values that work outliving the request needs before the handler returns.
+Put a time limit such as `http.TimeoutHandler` around the middleware, not
+inside it, because the handler that a time limit gives up on keeps running
+after the time limit has returned. Code still reading a closed Flow Data reads
+values that are gone or belong to another request, and a read that meets a
+write can end the program with a fatal error that `recover` does not catch. A
+custom Flow Element that gives the same Element Data to more than one Flow
+Data, or keeps it across requests, marks it with `core.MarkShared`, so it never
+goes back to a pool.
 
 This follows the Pipeline specification's
 [thread-safety page](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md).
