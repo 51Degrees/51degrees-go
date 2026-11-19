@@ -294,6 +294,33 @@ func TestTheEvidenceKeyFilterIsTheKeysTheDataFileLists(t *testing.T) {
 	}
 }
 
+// The accepted Evidence keys and the Property metadata are worked out again
+// each time the data is refreshed, as they are at start-up. Both are cleared
+// here, so only the refresh can put them back.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L78-L84
+func TestTheEvidenceKeyFilterFollowsADataRefresh(t *testing.T) {
+	a := newTestAspectEngine(t)
+	query, server := acceptedNames(t, a)
+	a.accepted.Store(&[]acceptedKey{})
+	a.metadata.Store(&[]core.PropertyMetadata{})
+	filter := a.EvidenceKeyFilter()
+	if filter.Include(query) {
+		t.Fatalf("the filter includes %s with no accepted keys", query)
+	}
+
+	if err := a.Engine().RefreshData(); err != nil {
+		t.Fatalf("RefreshData: %v", err)
+	}
+	for _, name := range []string{query, server} {
+		if !filter.Include(name) {
+			t.Errorf("after a refresh the filter does not include %s", name)
+		}
+	}
+	if len(a.Properties()) == 0 {
+		t.Error("after a refresh the Engine has no Property metadata")
+	}
+}
+
 // The native code chooses the address. A query key is used ahead of a server
 // key, and a value that is not one whole address is passed over for the next
 // key, without an error.
