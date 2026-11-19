@@ -204,10 +204,12 @@ func firstKeys(t *testing.T, e *Engine) (query, server string) {
 	return query, server
 }
 
-// rangeStartValues gives the IpRangeStart values in values.
-func rangeStartValues(values ipi_interop.Values) []*ipi_interop.WeightedValue {
+// asnNameValues gives the AsnName values in values. The free ASN data file
+// holds AsnName, which differs between compatibleAddress and otherAddress,
+// and has no IpRangeStart.
+func asnNameValues(values ipi_interop.Values) []*ipi_interop.WeightedValue {
 	for name, list := range values {
-		if strings.EqualFold(name, "IpRangeStart") {
+		if strings.EqualFold(name, "AsnName") {
 			return list
 		}
 	}
@@ -256,11 +258,11 @@ func TestTheNativeCodeChoosesTheAddress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := rangeStartValues(processValues(t, p.Engine(), c.address))
+			want := asnNameValues(processValues(t, p.Engine(), c.address))
 			if len(want) == 0 {
-				t.Fatalf("%s has no IpRangeStart", c.address)
+				t.Fatalf("%s has no AsnName", c.address)
 			}
-			checkText(t, data, "IpRangeStart", want)
+			checkText(t, data, "asnname", want)
 		})
 	}
 }
