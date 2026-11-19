@@ -73,7 +73,7 @@ func TestClientErrorsDoNotCountTowardRecovery(t *testing.T) {
 			cs := &cloudServer{jsonStatus: status, jsonBody: `{"errors":["refused"]}`}
 			e, p := recoveryPipeline(t, cs, "")
 			for i := 1; i <= 3; i++ {
-				err := p.CreateFlowData().Process()
+				err := processAndRead(p.CreateFlowData())
 				var cloudErr *CloudRequestError
 				if !errors.As(err, &cloudErr) || cloudErr.StatusCode != status {
 					t.Fatalf("request %d gives %v, want the cloud's %d", i, err, status)
@@ -113,13 +113,13 @@ func TestServiceTroubleCountsTowardRecovery(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			cs := &cloudServer{jsonStatus: c.status, jsonBody: c.body}
 			_, p := recoveryPipeline(t, cs, c.dataEndpoint)
-			first := p.CreateFlowData().Process()
+			first := processAndRead(p.CreateFlowData())
 			var unavailable *TemporarilyUnavailableError
 			if first == nil || errors.As(first, &unavailable) {
 				t.Fatalf("the first request gives %v, want the failure", first)
 			}
 			sent := cs.jsonRequests.Load()
-			if err := p.CreateFlowData().Process(); !errors.As(err, &unavailable) {
+			if err := processAndRead(p.CreateFlowData()); !errors.As(err, &unavailable) {
 				t.Fatalf("the second request gives %v, want "+
 					"TemporarilyUnavailableError", err)
 			}

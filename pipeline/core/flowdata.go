@@ -202,6 +202,18 @@ func SuppliedEvidence(fd FlowData) map[string]any {
 	return fd.Evidence().AsMap()
 }
 
+// ProcessingFinished reports whether processing of fd has finished, after
+// which nothing more can be added to it. A lazy property's task uses it to
+// decide whether a failure a reader meets can still be added as an error. It
+// reports false for a Flow Data this package did not make.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/exception-handling.md?plain=1#L64-L75
+func ProcessingFinished(fd FlowData) bool {
+	if f := baseFlowData(fd); f != nil {
+		return f.finished.Load()
+	}
+	return false
+}
+
 func (fd *flowData) Pipeline() Pipeline { return fd.pipeline }
 
 func (fd *flowData) Get(elementDataKey string) (ElementData, error) {

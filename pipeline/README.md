@@ -178,7 +178,14 @@ while the internals are idiomatic Go. In particular:
   [lazy loading](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/lazy-loading.md)
   page says. Long-running work belongs in a
   [lazy property](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#lazy-properties)
-  of a Flow Element's own Element Data.
+  of a Flow Element's own Element Data. The Cloud Request Engine works this
+  way. It starts its HTTP request while it processes and returns without
+  waiting, and every read of its `json-response` waits for that request.
+  A request that fails is recorded as the Cloud Request Engine's error by the
+  first Flow Element that reads `json-response` while the Flow Data is
+  processed. Once processing has finished, the failure reaches only the
+  reader, as the error of the read. Closing the engine, or the Pipeline that
+  holds it, waits for every request the engine has started.
 
 ## Project documentation
 
