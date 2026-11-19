@@ -30,6 +30,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 // dataFileVariable names the data file the examples use, and
@@ -92,6 +94,26 @@ func onOwnDataFile(tests func() int) int {
 		return code
 	}
 	return 1
+}
+
+// testFreeOnOwnCopy runs an example as testFree does, but with
+// dataFileVariable naming a copy of the free data file, and checks it ends
+// with a Find out more section. It is for an example that sets its data
+// file's modification time, because with no settings the example finds the
+// free file the tests of other packages read.
+func testFreeOnOwnCopy(t *testing.T, name string) {
+	free := dd_example.GetDataFile(dd_example.LiteDataFile)
+	own := filepath.Join(t.TempDir(), dd_example.LiteDataFile)
+	if err := copyFile(free, own); err != nil {
+		t.Fatalf("%s needs a copy of %s: %v", name, free, err)
+	}
+	environment := append(withoutSettings(os.Environ()),
+		dataFileVariable+"="+own)
+	output := run(t, name, environment)
+	checkEnterprise(t, name, output)
+	if err := dd_example.CheckFindOutMore(output); err != nil {
+		t.Errorf("%s: %v", name, err)
+	}
 }
 
 // namedDataFile gives the data file environment names under

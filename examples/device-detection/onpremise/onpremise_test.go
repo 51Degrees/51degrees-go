@@ -145,7 +145,7 @@ func TestReloadFromFile(t *testing.T) {
 }
 
 func TestReloadFromFileFreeDataFile(t *testing.T) {
-	testFree(t, "reload_from_file")
+	testFreeOnOwnCopy(t, "reload_from_file")
 }
 
 func TestUpdatePollingInterval(t *testing.T) {
