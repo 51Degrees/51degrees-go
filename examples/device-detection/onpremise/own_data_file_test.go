@@ -26,7 +26,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -96,31 +98,51 @@ func onOwnDataFile(tests func() int) int {
 	return 1
 }
 
-// testFreeOnOwnCopy runs an example as testFree does, but with
-// dataFileVariable naming a copy of the free data file, and checks it ends
-// with a Find out more section. It is for an example that sets its data
-// file's modification time, because with no settings the example finds the
-// free file the tests of other packages read.
+// testFreeOnOwnCopy runs an example as testFree does, with no arguments or
+// settings, but builds it first and runs it in a folder of its own holding
+// copies of the free data file and the evidence. The example looks in its
+// working folder first, so it finds those copies. It is for an example that
+// sets its data file's modification time, because run from its package the
+// example finds the free file the tests of other packages read.
 func testFreeOnOwnCopy(t *testing.T, name string) {
-	_, environment := freeOnOwnCopy(t)
-	output := run(t, name, environment)
-	checkEnterprise(t, name, output)
-	if err := dd_example.CheckFindOutMore(output); err != nil {
+	folder, environment := freeOnOwnCopy(t)
+	program := filepath.Join(folder, name)
+	if runtime.GOOS == "windows" {
+		program += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", program, "./"+name)
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("%s cannot be built: %v\n%s", name, err, output)
+	}
+	cmd := exec.Command(program)
+	cmd.Dir = folder
+	cmd.Env = environment
+	output, err := cmd.CombinedOutput()
+	os.Stdout.Write(output)
+	if err != nil {
+		t.Error(err)
+	}
+	if err := dd_example.CheckFindOutMore(string(output)); err != nil {
 		t.Errorf("%s: %v", name, err)
 	}
+	checkEnterprise(t, name, string(output))
 }
 
-// freeOnOwnCopy makes a folder holding a copy of the free data file, and
-// returns it with the environment testFreeOnOwnCopy gives the example.
+// freeOnOwnCopy makes a folder holding copies of the free data file and the
+// evidence, found as the examples find them, and returns it with the
+// environment testFreeOnOwnCopy gives the example, which has no settings.
 func freeOnOwnCopy(t *testing.T) (string, []string) {
-	free := dd_example.GetDataFile(dd_example.LiteDataFile)
 	folder := t.TempDir()
-	own := filepath.Join(folder, dd_example.LiteDataFile)
-	if err := copyFile(free, own); err != nil {
-		t.Fatalf("a run on its own copy needs %s: %v", free, err)
+	for _, file := range []string{
+		dd_example.GetDataFile(dd_example.LiteDataFile),
+		dd_example.GetFilePathByPath(dd_example.EvidenceFileYaml),
+	} {
+		own := filepath.Join(folder, filepath.Base(file))
+		if err := copyFile(file, own); err != nil {
+			t.Fatalf("a run on its own copy needs %s: %v", file, err)
+		}
 	}
-	return folder, append(withoutSettings(os.Environ()),
-		dataFileVariable+"="+own)
+	return folder, withoutSettings(os.Environ())
 }
 
 // TestFreeOnOwnCopyGivesNoSettings checks that the run of an example on its
