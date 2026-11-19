@@ -114,6 +114,7 @@ var evidenceKeyLine = regexp.MustCompile(`(?m)^\t(query|server)\.[A-Za-z0-9-]+\r
 func TestMetadataFreeDataFile(t *testing.T) {
 	output := run(t, "metadata", withoutSettings(os.Environ()))
 	checkEnterprise(t, "metadata", output)
+	checkFindOutMore(t, "metadata", output)
 	for _, want := range []string{"\tPublished: ", "\nComponent "} {
 		if !strings.Contains(output, want) {
 			t.Errorf("metadata prints no %q", strings.TrimSpace(want))
@@ -170,6 +171,7 @@ var configureLink = regexp.MustCompile(
 func TestGettingStartedCloudWithNoResourceKey(t *testing.T) {
 	output := run(t, "getting_started_cloud",
 		withoutResourceKey(os.Environ()))
+	checkFindOutMore(t, "getting_started_cloud", output)
 	if !strings.Contains(output, resourceKeyVariable) {
 		t.Errorf("getting_started_cloud does not name %s", resourceKeyVariable)
 	}

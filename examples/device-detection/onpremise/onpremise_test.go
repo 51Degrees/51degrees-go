@@ -88,7 +88,7 @@ func TestMatchDeviceId(t *testing.T) {
 }
 
 func TestMatchDeviceIdFreeDataFile(t *testing.T) {
-	testFree(t, "match_device_id")
+	testFreeEndsWithFindOutMore(t, "match_device_id")
 }
 
 func TestMatchMetrics(t *testing.T) {
@@ -96,7 +96,7 @@ func TestMatchMetrics(t *testing.T) {
 }
 
 func TestMatchMetricsFreeDataFile(t *testing.T) {
-	testFree(t, "match_metrics")
+	testFreeEndsWithFindOutMore(t, "match_metrics")
 }
 
 func TestMetadata(t *testing.T) {
@@ -111,6 +111,7 @@ func TestMetadata(t *testing.T) {
 func TestMetadataFreeDataFile(t *testing.T) {
 	output := run(t, "metadata", withoutSettings(os.Environ()))
 	checkEnterprise(t, "metadata", output)
+	checkFindOutMore(t, "metadata", output)
 	for _, want := range []string{
 		"\theader.",
 		"Component HardwarePlatform",
@@ -129,7 +130,7 @@ func TestOfflineProcessing(t *testing.T) {
 }
 
 func TestOfflineProcessingFreeDataFile(t *testing.T) {
-	testFree(t, "offline_processing")
+	testFreeEndsWithFindOutMore(t, "offline_processing")
 }
 
 func TestPerformance(t *testing.T) {
@@ -137,7 +138,7 @@ func TestPerformance(t *testing.T) {
 }
 
 func TestPerformanceFreeDataFile(t *testing.T) {
-	testFree(t, "performance")
+	testFreeEndsWithFindOutMore(t, "performance")
 }
 
 func TestReloadFromFile(t *testing.T) {
@@ -145,7 +146,7 @@ func TestReloadFromFile(t *testing.T) {
 }
 
 func TestReloadFromFileFreeDataFile(t *testing.T) {
-	testFree(t, "reload_from_file")
+	testFreeEndsWithFindOutMore(t, "reload_from_file")
 }
 
 func TestUpdatePollingInterval(t *testing.T) {
