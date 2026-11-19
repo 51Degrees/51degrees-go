@@ -66,6 +66,9 @@ func TestAnElementThatMustRunLastIsRefusedAnywhereElse(t *testing.T) {
 			AddParallel(other(), newLastElement())},
 		{"in a parallel group at the end", NewPipelineBuilder().
 			AddFlowElement(other()).AddParallel(newLastElement())},
+		{"in a group inside a parallel group", NewPipelineBuilder().
+			AddFlowElement(other()).AddFlowElement(NewParallelElements(nil,
+			NewParallelElements(nil, newLastElement())))},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p, err := c.builder.SetLogger(quietLogger()).Build()
@@ -98,6 +101,30 @@ func TestAnElementThatMustRunLastIsRefusedAnywhereElseFromAConfiguration(t *test
 	})
 	p, err := registry.BuildFromConfiguration(PipelineOptions{Elements: []ElementOptions{
 		{BuilderName: "Last"}, {BuilderName: "Other"},
+	}}, quietLogger())
+	if err == nil {
+		p.Close()
+		t.Fatal("the Pipeline was built")
+	}
+	if !isRefusedForItsPlace(err) {
+		t.Errorf("the error %q does not say the element must be the last "+
+			"Flow Element and outside any parallel group", err)
+	}
+}
+
+// A configuration that puts the element in a parallel group is refused, even
+// with the group last.
+func TestAnElementThatMustRunLastIsRefusedInAGroupFromAConfiguration(t *testing.T) {
+	registry := NewBuilderRegistry()
+	registry.Register("Last", func(map[string]any, *slog.Logger) (FlowElement, error) {
+		return newLastElement(), nil
+	})
+	registry.Register("Other", func(map[string]any, *slog.Logger) (FlowElement, error) {
+		return newFuncElement("other", nil, func(FlowData) error { return nil }), nil
+	})
+	p, err := registry.BuildFromConfiguration(PipelineOptions{Elements: []ElementOptions{
+		{BuilderName: "Other"},
+		{SubElements: []ElementOptions{{BuilderName: "Last"}}},
 	}}, quietLogger())
 	if err == nil {
 		p.Close()
