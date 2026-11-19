@@ -131,6 +131,9 @@ const nullReasonSuffix = "nullreason"
 func (e *Engine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, DataKey)
 	if err != nil {
+		if e.CloudRequestFailed(fd) {
+			return nil
+		}
 		return err
 	}
 	data := &Data{BaseAspectData: engines.NewBaseAspectData()}
