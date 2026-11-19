@@ -167,7 +167,8 @@ Translation Engines.
 later Flow Data. Call it once the Flow Data and its values are no longer
 needed. Keeping a reference to Element Data after its Flow Data is closed is
 not supported, as the instance may by then hold another request's values. The
-web middleware closes the Flow Data when the handler it wraps returns, so copy
+web middleware closes the Flow Data when the request ends, that is when the
+handler it wraps returns, so copy
 the values that work outliving the request needs before the handler returns.
 Put a time limit such as `http.TimeoutHandler` around the middleware, not
 inside it, because the handler that a time limit gives up on keeps running
