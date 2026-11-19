@@ -194,9 +194,14 @@ func (a *AspectEngine) DataSourceTier() string {
 // Process chooses the IP address from the Evidence, looks it up, and adds an
 // AspectData under DataKey. It reads no Property value. Evidence that holds
 // no address the Engine can read is not an error, and gives an AspectData
-// whose Properties have no value.
+// whose Properties have no value. Once the Engine has stopped it gives an
+// error, and Stop waits for a Process already running.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L108-L136
 func (a *AspectEngine) Process(fd core.FlowData) error {
+	if !a.engine.acquire() {
+		return errEngineStopped
+	}
+	defer a.engine.release()
 	data, err := a.processInto(
 		ipi_interop.NewResultsIpi(a.engine.manager), fd.Evidence())
 	if err != nil {
