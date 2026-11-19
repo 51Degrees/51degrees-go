@@ -159,6 +159,18 @@ type sharable interface{ markShared() }
 
 func (d *BaseElementData) markShared() { d.shared.Store(true) }
 
+// sharedFlag is Element Data that records whether it is shared.
+type sharedFlag interface{ isShared() bool }
+
+func (d *BaseElementData) isShared() bool { return d.shared.Load() }
+
+// isShared reports whether d is marked shared, as Element Data a cache holds
+// is.
+func isShared(d ElementData) bool {
+	s, ok := d.(sharedFlag)
+	return ok && s.isShared()
+}
+
 // MarkShared records that d is held beyond the Flow Data that holds it, as a
 // cache holds Element Data for other requests, so it never goes back to a
 // pool when that Flow Data is closed.

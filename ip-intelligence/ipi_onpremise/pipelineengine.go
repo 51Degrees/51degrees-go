@@ -47,10 +47,9 @@ const noAddressReason = "No IP address was supplied in the evidence the engine r
 // order the data file gives, and adds the Data ProcessData gives under
 // DataKey. That Data reads each Property from the native results only when it
 // is requested, and holds them until it is released. Closing the Flow Data
-// does not release them, so the caller releases them at once with Close on
-// the Data, got with core.Get[*Data], when it has finished with the Flow
-// Data. A finalizer releases them once nothing holds
-// the Data, as a backstop. The engine takes no results cache, because a
+// releases them at once, as the web middleware does when a request ends, and
+// so does Close on the Data. A finalizer releases them once nothing holds the
+// Data, as a backstop. The engine takes no results cache, because a
 // cached Data would be read after its release. Closing the engine, or the
 // Pipeline that holds it, stops the engine.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L24-L26

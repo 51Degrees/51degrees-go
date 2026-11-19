@@ -80,10 +80,11 @@ type deviceResults interface {
 //
 // The native results hold memory the Go garbage collector does not manage or
 // see, so call Close, or Free, when the DeviceData is no longer needed, which
-// releases them at once. A read after that returns ErrDataFreed. A DeviceData
-// the Pipeline engine adds to a Flow Data also has a finalizer that releases
-// them once nothing holds the DeviceData, as a backstop for a caller that
-// does not.
+// releases them at once. A read after that returns ErrDataFreed. Closing the
+// Flow Data that holds a DeviceData closes it. A DeviceData the Pipeline
+// engine adds to a Flow Data also has a finalizer that releases them once
+// nothing holds the DeviceData, as a backstop for a caller that closes
+// neither.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/data-model.md?plain=1#L10-L12
 // See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L152-L160
 // See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L327-L332

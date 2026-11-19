@@ -23,7 +23,9 @@
 package core
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"sync"
 	"sync/atomic"
@@ -85,13 +87,16 @@ type FlowData interface {
 	// after processing has finished panics with ErrFlowDataFinished.
 	AddError(err error, element FlowElement)
 
-	// Close gives the Element Data back to the pools it came from, apart from
-	// any that a cache holds, and leaves the Flow Data holding none. Call it
-	// once the Flow Data and its Element Data are no longer needed. Keeping a
-	// reference to the Element Data after Close is not supported, because a
-	// pool may give the instance to another request, and nothing checks for
-	// it. A closed Flow Data cannot be processed, and a second Close does
-	// nothing. It returns nil.
+	// Close cleans up the Element Data that needs it, being each one that is
+	// an io.Closer, such as Element Data holding native results, gives the
+	// Element Data back to the pools it came from, and leaves the Flow Data
+	// holding none. Element Data that a cache holds is neither closed nor
+	// pooled. Call it once the Flow Data and its Element Data are no longer
+	// needed. Keeping a reference to the Element Data after Close is not
+	// supported, because a pool may give the instance to another request, and
+	// nothing checks for it. A closed Flow Data cannot be processed, and a
+	// second Close does nothing. It returns the errors the Element Data gave
+	// when closed, joined, or nil.
 	// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/resource-cleanup.md?plain=1#L87-L101
 	Close() error
 
@@ -305,8 +310,12 @@ func (fd *flowData) markFinished() {
 	fd.finished.Store(true)
 }
 
-// Close gives each Element Data that came from a pool back to it. A view of
-// a cached instance, and an instance marked shared, stay where they are.
+// Close cleans up each Element Data that needs it, being one that is an
+// io.Closer, such as Element Data holding native results, and gives each
+// Element Data that came from a pool back to it. A view of a cached instance,
+// and an instance marked shared, stay where they are and are not closed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L5-L13
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L103-L112
 func (fd *flowData) Close() error {
 	if fd.closed {
 		return nil
@@ -314,13 +323,19 @@ func (fd *flowData) Close() error {
 	fd.closed = true
 	fd.started.Store(true)
 	fd.finished.Store(true)
+	var errs []error
 	for n := fd.head.Load(); n != nil; n = n.next {
+		if c, ok := n.data.(io.Closer); ok && !isShared(n.data) {
+			if err := c.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
 		if p, ok := n.data.(pooled); ok {
 			p.release()
 		}
 	}
 	fd.head.Store(nil)
-	return nil
+	return errors.Join(errs...)
 }
 
 // openForWriting opens the Element Data held under keys, in lower case, for

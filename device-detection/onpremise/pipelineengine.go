@@ -41,10 +41,10 @@ import (
 // Aspect Engine, to add to a Pipeline. It reads the evidence it accepts from
 // each Flow Data and adds the DeviceData ProcessData gives under DataKey.
 // That DeviceData reads each Property from the native results only when it
-// is requested, and holds them until it is released. The caller releases
-// them at once with Close on the DeviceData, got with core.Get[*DeviceData],
-// when it has finished with the Flow Data. A finalizer releases them once
-// nothing holds the DeviceData, as a backstop. The engine takes no results
+// is requested, and holds them until it is released. Closing the Flow Data
+// releases them at once, as the web middleware does when a request ends, and
+// so does Close on the DeviceData. A finalizer releases them once nothing
+// holds the DeviceData, as a backstop. The engine takes no results
 // cache, because a cached DeviceData would be read after its release. Its
 // Property metadata lists the match metric Properties after the data
 // file's. Closing the engine, or the Pipeline that holds it, stops the
