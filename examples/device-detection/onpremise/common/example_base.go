@@ -24,6 +24,7 @@ package common
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -42,14 +43,14 @@ type ExampleParams struct {
 type ExampleFunc func(params ExampleParams) error
 
 func RunExample(exampleFunc ExampleFunc) {
-	licenseKey := fromEnvironment("_51DEGREES_LICENSE_KEY")
+	licenseKey := os.Getenv("_51DEGREES_LICENSE_KEY")
 
-	dataFile := fromEnvironment("_51DEGREES_DD_PATH")
+	dataFile := os.Getenv("_51DEGREES_DD_PATH")
 	if dataFile == "" {
 		dataFile = "51Degrees-LiteV4.1.hash"
 	}
 
-	evidenceYaml := fromEnvironment("_51DEGREES_EVIDENCE_YAML")
+	evidenceYaml := os.Getenv("_51DEGREES_EVIDENCE_YAML")
 	if evidenceYaml == "" {
 		evidenceYaml = "20000 Evidence Records.yml"
 	}
