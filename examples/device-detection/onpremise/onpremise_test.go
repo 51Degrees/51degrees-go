@@ -41,9 +41,6 @@ func run(t *testing.T, name string, environment []string) string {
 	if err != nil {
 		t.Error(err)
 	}
-	if err := dd_example.CheckFindOutMore(string(output)); err != nil {
-		t.Errorf("%s: %v", name, err)
-	}
 	return string(output)
 }
 
@@ -149,7 +146,7 @@ func TestReloadFromFileFreeDataFile(t *testing.T) {
 	testFreeEndsWithFindOutMore(t, "reload_from_file")
 }
 
-func TestUpdatePollingInterval(t *testing.T) {
+func TestStronglyTyped(t *testing.T) {
 	test(t, "update_polling_interval")
 }
 

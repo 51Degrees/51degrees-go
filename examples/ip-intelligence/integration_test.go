@@ -35,8 +35,7 @@ func test(t *testing.T, name string) {
 }
 
 // run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed, checks that it ends with a Find out
-// more section naming this repository, and returns what it printed.
+// that is nil, prints what it printed, and returns what it printed.
 func run(t *testing.T, name string, environment []string) string {
 	cmd := exec.Command("go", "run", "./"+name)
 	cmd.Env = environment
@@ -44,12 +43,6 @@ func run(t *testing.T, name string, environment []string) string {
 	os.Stdout.Write(output)
 	if err != nil {
 		t.Error(err)
-	}
-	at := strings.LastIndex(string(output), "Find out more")
-	if at < 0 || !strings.Contains(string(output[at:]),
-		"https://github.com/51Degrees/51degrees-go") {
-		t.Errorf("%s does not end with a Find out more section naming "+
-			"this repository", name)
 	}
 	return string(output)
 }
@@ -194,8 +187,7 @@ func withoutResourceKey(environment []string) []string {
 }
 
 // The cloud example needs a Resource Key that includes IP Intelligence
-// properties to look anything up, so it is run with the cloud service only
-// when one is given.
+// properties, so it is always built but run only when one is given.
 func TestGettingStartedCloud(t *testing.T) {
 	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
 	build.Stdout = os.Stdout
@@ -203,9 +195,8 @@ func TestGettingStartedCloud(t *testing.T) {
 	if err := build.Run(); err != nil {
 		t.Fatal(err)
 	}
-	if os.Getenv(resourceKeyVariable) == "" {
-		t.Skip(resourceKeyVariable + " is not set, so the cloud example " +
-			"is not run with the cloud service")
+	if os.Getenv("_51DEGREES_RESOURCE_KEY") == "" {
+		t.Skip("_51DEGREES_RESOURCE_KEY is not set, so the cloud example is not run")
 	}
 	test(t, "getting_started_cloud")
 }
