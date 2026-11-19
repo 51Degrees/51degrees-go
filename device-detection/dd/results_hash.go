@@ -55,7 +55,13 @@ var cMethodMap = map[C.HashMatchMethod]MatchMethod{
 	C.FIFTYONE_DEGREES_HASH_MATCH_METHOD_PREDICTIVE:  Predictive,
 }
 
-// ResultsHash wraps around a pointer to a value of C ResultsHash structure
+// ResultsHash wraps around a pointer to a value of C ResultsHash structure.
+//
+// A ResultsHash is not safe to use from several goroutines at once, because
+// reading a value writes into the native results, and ResultsHash takes no
+// lock. The caller is responsible for thread-safe access, so a caller that
+// shares one between goroutines coordinates that itself, for example with a
+// sync.Mutex of its own.
 type ResultsHash struct {
 	CPtr     *C.ResultsHash
 	CResults *interface{} // Pointer to a slice holding C results
@@ -81,6 +87,10 @@ func resultsFinalizer(res *ResultsHash) {
 // turned the synonym into a two-argument function-like macro, which cgo cannot
 // expand. Passing 0 mirrors what that macro injects; uaCapacity is ignored but
 // kept to keep the public signature stable for callers.
+//
+// A ResultsHash is not safe to use from several goroutines at once, so one
+// belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func NewResultsHash(
 	manager *ResourceManager,
 	uaCapacity uint32,

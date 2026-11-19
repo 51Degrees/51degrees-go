@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 )
 
 // Evidence is the set of input values added to a Flow Data instance, stored as
@@ -45,10 +44,11 @@ type Evidence interface {
 	Keys() []string
 }
 
-// evidence is the default implementation. Flow Data writes to it, and the
-// lock lets Flow Elements in a parallel group read it at the same time.
+// evidence is the default implementation. It takes no lock. It is written
+// only by the caller before processing and by Flow Elements outside any
+// parallel group, so the members of a group can read it at the same time.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L128-L139
 type evidence struct {
-	mu   sync.RWMutex
 	data map[string]any
 }
 
@@ -57,21 +57,15 @@ func newEvidence() *evidence { return &evidence{data: make(map[string]any)} }
 // put stores value under key, replacing any value held under the same key
 // when the case is ignored.
 func (e *evidence) put(key string, value any) {
-	e.mu.Lock()
 	e.data[lower(key)] = value
-	e.mu.Unlock()
 }
 
 func (e *evidence) Get(key string) (any, bool) {
-	e.mu.RLock()
 	v, ok := e.data[lower(key)]
-	e.mu.RUnlock()
 	return v, ok
 }
 
 func (e *evidence) AsMap() map[string]any {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
 	out := make(map[string]any, len(e.data))
 	for k, v := range e.data {
 		out[k] = v
@@ -80,8 +74,6 @@ func (e *evidence) AsMap() map[string]any {
 }
 
 func (e *evidence) Keys() []string {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
 	keys := make([]string, 0, len(e.data))
 	for k := range e.data {
 		keys = append(keys, k)

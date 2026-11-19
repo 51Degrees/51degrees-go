@@ -102,6 +102,7 @@ type Engine struct {
 // Data is the shared Translation Element Data. It uses a concurrent map because
 // multiple Translation Engines may write to it in parallel.
 type Data struct {
+	core.WriteGuard
 	values typedmap.Map
 }
 
@@ -116,8 +117,13 @@ func (d *Data) Get(name string) (any, error) {
 	return v, nil
 }
 
-// Set stores a translated Property value.
-func (d *Data) Set(name string, value any) { d.values.AddString(name, value) }
+// Set stores a translated Property value. It panics with
+// core.ErrElementDataFinished once the engines that write the instance have
+// finished processing.
+func (d *Data) Set(name string, value any) {
+	d.CheckWrite(name)
+	d.values.AddString(name, value)
+}
 
 // AsMap returns all translated Property values.
 func (d *Data) AsMap() map[string]any { return d.values.AsMap() }

@@ -36,19 +36,17 @@ import (
 
 // Builder constructs a Usage Sharing Element.
 type Builder struct {
-	logger              *slog.Logger
-	httpClient          *http.Client
-	includedQueryParams []string
-	shareAllQueryParams bool
-	shareAllEvidence    bool
-	blockedHeaders      []string
-	sharePercentage     float64
-	minEntries          int
-	maxQueueSize        int
-	addTimeout          time.Duration
-	takeTimeout         time.Duration
-	shareURL            string
-	repeatInterval      time.Duration
+	logger           *slog.Logger
+	httpClient       *http.Client
+	shareAllEvidence bool
+	blockedHeaders   []string
+	sharePercentage  float64
+	minEntries       int
+	maxQueueSize     int
+	addTimeout       time.Duration
+	takeTimeout      time.Duration
+	shareURL         string
+	repeatInterval   time.Duration
 
 	// maxQueueSizeSet is whether SetMaximumQueueSize was called, so the
 	// default can follow the minimum entries per message otherwise.
@@ -61,20 +59,23 @@ type Builder struct {
 
 	trackSession      bool
 	sessionCookieName string
+
+	// packages gives the 51Degrees modules in use. It reads the program's
+	// build information unless a test sets it.
+	packages func() []packageVersion
 }
 
 // NewBuilder creates a Usage Sharing Element builder with specification defaults.
 func NewBuilder() *Builder {
 	return &Builder{
-		blockedHeaders:      []string{"cookie"},
-		shareAllQueryParams: DefaultShareAllQueryStringParameters,
-		sharePercentage:     DefaultSharePercentage,
-		minEntries:          DefaultMinEntries,
-		maxQueueSize:        DefaultMaxQueueSize,
-		addTimeout:          DefaultAddTimeout,
-		takeTimeout:         DefaultTakeTimeout,
-		shareURL:            DefaultShareURL,
-		repeatInterval:      DefaultRepeatInterval,
+		blockedHeaders:  []string{"cookie"},
+		sharePercentage: DefaultSharePercentage,
+		minEntries:      DefaultMinEntries,
+		maxQueueSize:    DefaultMaxQueueSize,
+		addTimeout:      DefaultAddTimeout,
+		takeTimeout:     DefaultTakeTimeout,
+		shareURL:        DefaultShareURL,
+		repeatInterval:  DefaultRepeatInterval,
 	}
 }
 
@@ -84,23 +85,28 @@ func (b *Builder) SetLogger(l *slog.Logger) *Builder { b.logger = l; return b }
 // SetHTTPClient overrides the HTTP client (mainly for testing).
 func (b *Builder) SetHTTPClient(c *http.Client) *Builder { b.httpClient = c; return b }
 
-// SetIncludedQueryStringParameters sets the allow-list of query/form parameters
-// to share (in addition to those starting with 51D_).
+// SetIncludedQueryStringParameters does nothing. Only query string and form
+// parameters whose names start 51D_, or that the Pipeline uses, are shared,
+// whatever is set here.
+//
+// Deprecated: no setting shares any other parameter.
 func (b *Builder) SetIncludedQueryStringParameters(params ...string) *Builder {
-	b.includedQueryParams = params
 	return b
 }
 
-// SetShareAllQueryStringParameters shares all query/form parameters when true,
-// which is the default. When false, only those starting 51D_ and those
-// SetIncludedQueryStringParameters names are shared.
+// SetShareAllQueryStringParameters does nothing. Only query string and form
+// parameters whose names start 51D_, or that the Pipeline uses, are shared,
+// whatever is set here.
+//
+// Deprecated: no setting shares any other parameter.
 func (b *Builder) SetShareAllQueryStringParameters(v bool) *Builder {
-	b.shareAllQueryParams = v
 	return b
 }
 
 // SetShareAllEvidence shares all Evidence values when true, apart from the
-// keys that are never shared and any cookie whose name does not start 51D_.
+// keys that are never shared, any cookie whose name does not start 51D_, and
+// any query string or form parameter whose name does not start 51D_ and that
+// the Pipeline does not use.
 func (b *Builder) SetShareAllEvidence(v bool) *Builder { b.shareAllEvidence = v; return b }
 
 // SetBlockedHTTPHeaders sets HTTP headers that must not be shared.
@@ -218,29 +224,27 @@ func (b *Builder) queueSize() int {
 }
 
 // Build creates the Usage Sharing Element. A back-off option outside its
-// range, a queue that cannot hold the entries a message needs, and an add
-// timeout of zero or less are each refused with a *core.ConfigurationError
-// when the element is added to a Pipeline or processes.
+// range, a negative queue size, and an add timeout of zero or less are each
+// refused with a *core.ConfigurationError when the element is added to a
+// Pipeline or processes.
 func (b *Builder) Build() *Element {
 	recovery := defaultRecovery()
 	if b.recovery != nil {
 		recovery = *b.recovery
 	}
 	cfg := config{
-		includedQueryParams: toLowerSet(b.includedQueryParams),
-		shareAllQueryParams: b.shareAllQueryParams,
-		shareAllEvidence:    b.shareAllEvidence,
-		blockedHeaders:      toLowerSet(b.blockedHeaders),
-		sharePercentage:     b.sharePercentage,
-		minEntries:          b.minEntries,
-		maxQueueSize:        b.queueSize(),
-		addTimeout:          b.addTimeout,
-		takeTimeout:         b.takeTimeout,
-		shareURL:            b.shareURL,
-		repeatInterval:      b.repeatInterval,
-		recovery:            recovery,
-		trackSession:        b.trackSession,
-		sessionCookieName:   strings.TrimSpace(b.sessionCookieName),
+		shareAllEvidence:  b.shareAllEvidence,
+		blockedHeaders:    toLowerSet(b.blockedHeaders),
+		sharePercentage:   b.sharePercentage,
+		minEntries:        b.minEntries,
+		maxQueueSize:      b.queueSize(),
+		addTimeout:        b.addTimeout,
+		takeTimeout:       b.takeTimeout,
+		shareURL:          b.shareURL,
+		repeatInterval:    b.repeatInterval,
+		recovery:          recovery,
+		trackSession:      b.trackSession,
+		sessionCookieName: strings.TrimSpace(b.sessionCookieName),
 	}
 	cfg.err = recovery.validate()
 	if cfg.err == nil && cfg.trackSession && cfg.sessionCookieName == "" {
@@ -248,13 +252,10 @@ func (b *Builder) Build() *Element {
 			"is on but no session cookie name is set, so there is no session "+
 			"to compare", nil)
 	}
-	if minimum := max(1, cfg.minEntries); cfg.err == nil && cfg.maxQueueSize < minimum {
+	if cfg.err == nil && cfg.maxQueueSize < 0 {
 		cfg.err = core.NewConfigurationError(fmt.Sprintf("usage sharing: the "+
-			"maximum queue size %d is below the %d entries a message "+
-			"needs, so no message would ever be sent. Set the maximum "+
-			"queue size to %d or more, or set the minimum entries per "+
-			"message no higher than the queue size",
-			cfg.maxQueueSize, minimum, minimum), nil)
+			"maximum queue size %d is negative. Set it to zero or more",
+			cfg.maxQueueSize), nil)
 	}
 	if cfg.err == nil && cfg.addTimeout <= 0 {
 		cfg.err = core.NewConfigurationError(fmt.Sprintf("usage sharing: the "+
@@ -274,13 +275,15 @@ func (b *Builder) Build() *Element {
 	}
 	// A refused configuration still gives an Element, which answers with
 	// its error, so the queue is made at a size make accepts.
-	queueSize := cfg.maxQueueSize
-	if queueSize < 1 {
-		queueSize = 1
-	}
+	queueSize := max(0, cfg.maxQueueSize)
 	tr := newTracker(cfg.repeatInterval)
 	tr.clock = clk
 	sendCtx, cancelSends := context.WithCancel(context.Background())
+
+	packages := b.packages
+	if packages == nil {
+		packages = linkedPackages
+	}
 
 	e := &Element{
 		BaseElement: core.NewBaseElement(DataKey, nil, b.logger),
@@ -293,6 +296,8 @@ func (b *Builder) Build() *Element {
 		clock:       clk,
 		sendCtx:     sendCtx,
 		cancelSends: cancelSends,
+		packages:    packages(),
+		processID:   newProcessID(),
 	}
 	return e
 }
@@ -317,19 +322,49 @@ func isNeverShared(key string) bool {
 }
 
 // isShared implements the rules for which of the keys the element finds are
-// shared. The element accepts no Evidence (its filter is empty), so these
+// shared, counting a parameter as used when a Pipeline the element is in
+// accepts it. The element accepts no Evidence (its filter is empty), so these
 // rules never widen a Pipeline's cache keys or ETag.
-// See https://github.com/51Degrees/specifications/blob/b6fae7fe24e0cde33c5b9d4dd12026c0e7727188/pipeline-specification/pipeline-elements/usage-sharing-element.md#shared-evidence
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L31-L104
 func (e *Element) isShared(key string) bool {
+	return e.isSharedIn(key, e.pipelinesAccept)
+}
+
+// isSharedFor is isShared for a key of fd, counting a parameter as used when
+// the Pipeline processing fd accepts it.
+func (e *Element) isSharedFor(fd core.FlowData, key string) bool {
+	if p := fd.Pipeline(); p != nil {
+		return e.isSharedIn(key, p.EvidenceKeyFilter().Include)
+	}
+	return e.isSharedIn(key, func(string) bool { return false })
+}
+
+// pipelinesAccept reports whether a Pipeline the element is in accepts key.
+func (e *Element) pipelinesAccept(key string) bool {
+	for _, p := range e.Pipelines() {
+		if p.EvidenceKeyFilter().Include(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSharedIn is isShared with used saying whether the Pipeline uses a key.
+func (e *Element) isSharedIn(key string, used func(string) bool) bool {
 	if isNeverShared(key) {
 		return false
 	}
 	prefix, field := core.SplitEvidenceKey(key)
 	field = strings.ToLower(field)
-	// Only the 51D_ cookies are shared, whatever the configuration, so a
-	// cookie a site sets for itself, such as its session cookie, is not.
+	// Only the 51D_ cookies are shared, and only the query string and form
+	// parameters whose names start 51D_ or that the Pipeline uses, whatever
+	// the configuration, so a name a site uses for itself, such as its
+	// session cookie or a password, is not.
 	if prefix == core.PrefixCookie {
 		return strings.HasPrefix(field, "51d_")
+	}
+	if prefix == core.PrefixQuery {
+		return strings.HasPrefix(field, "51d_") || used(key)
 	}
 	if e.cfg.shareAllEvidence {
 		return true
@@ -340,15 +375,6 @@ func (e *Element) isShared(key string) bool {
 		return !blocked
 	case prefixSession:
 		return strings.HasPrefix(field, "51d_")
-	case core.PrefixQuery:
-		if e.cfg.shareAllQueryParams {
-			return true
-		}
-		if strings.HasPrefix(field, "51d_") {
-			return true
-		}
-		_, included := e.cfg.includedQueryParams[field]
-		return included
 	default:
 		return true
 	}
@@ -357,12 +383,6 @@ func (e *Element) isShared(key string) bool {
 // Factory builds a Usage Sharing Element from configuration.
 func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 	b := NewBuilder().SetLogger(logger)
-	if v, ok := core.StringListParam(params, "IncludedQueryStringParameters"); ok {
-		b.SetIncludedQueryStringParameters(v...)
-	}
-	if v, ok := core.BoolParam(params, "ShareAllQueryStringParameters"); ok {
-		b.SetShareAllQueryStringParameters(v)
-	}
 	if v, ok := core.BoolParam(params, "ShareAllEvidence"); ok {
 		b.SetShareAllEvidence(v)
 	}

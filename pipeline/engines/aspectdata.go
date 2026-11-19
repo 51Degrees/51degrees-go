@@ -22,8 +22,8 @@
 
 // Package engines builds on the core Pipeline package to add the features that
 // are common to 51Degrees Aspect Engines: result caching, data-file updates,
-// missing-property reporting, lazy loading, and the null-supporting
-// AspectPropertyValue type.
+// missing-property reporting, and the null-supporting AspectPropertyValue
+// type.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#engines
 package engines

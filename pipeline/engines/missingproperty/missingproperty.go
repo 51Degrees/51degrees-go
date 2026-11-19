@@ -23,9 +23,12 @@
 // Package missingproperty constructs the errors returned when a Property that is
 // defined for an Engine is not present in the result set.
 //
-// The messages match those defined in the specification exactly so they are
-// consistent across language implementations.
-// See https://github.com/51Degrees/specifications/blob/a667c4e262ada7ee48ce93d8545dfb1092ec4de4/pipeline-specification/features/properties.md#missing-properties
+// The messages are those of the specification's table, so they are consistent
+// across language implementations, apart from the configuration page address
+// in the two Resource Key messages. That address stays
+// https://configure.51degrees.com, as programs may match on the text and the
+// specification asks for the table's text only as a SHOULD.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/properties.md?plain=1#L116-L139
 package missingproperty
 
 import (
@@ -108,8 +111,8 @@ func ForProductNotInResourceKey(property, element, product string) *core.Propert
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		fmt.Sprintf("This is because your resource key does not include "+
 			"access to any properties under '%s'. Check or create a "+
-			"resource key with the properties you need on the "+
-			"configuration page at https://51degrees.com/configure.", product)
+			"resource key with the properties you need in the configurator "+
+			"at https://configure.51degrees.com.", product)
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonProductNotInKey}
 }
 
@@ -130,8 +133,8 @@ func ForPropertyNotInResourceKey(property, element, product string, includedProp
 	msg := fmt.Sprintf(messagePrefix, property, element) +
 		fmt.Sprintf("This is because your resource key does not include "+
 			"access to this property. The properties included for your key "+
-			"under '%s' are %s. Check or change your key on the "+
-			"configuration page at https://51degrees.com/configure.",
+			"under '%s' are %s. Check or change your key in the "+
+			"configurator at https://configure.51degrees.com.",
 			product, strings.Join(includedProperties, ","))
 	return &core.PropertyMissingError{PropertyName: property, ElementName: element, Message: msg, Reason: ReasonPropertyNotInKey}
 }

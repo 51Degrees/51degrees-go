@@ -151,7 +151,8 @@ func getValue(
 
 // Handler for web request
 func handler(w http.ResponseWriter, r *http.Request) {
-	// Create results
+	// Create results. A results instance is not safe to use from several
+	// goroutines at once, so each request makes its own.
 	results := dd.NewResultsHash(manager, 1, 0)
 
 	// Make sure results object is freed after function execution.

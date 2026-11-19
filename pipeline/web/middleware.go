@@ -59,6 +59,11 @@ var flowDataKey = contextKey{}
 // it, sets any requested response headers, and makes the Flow Data available via
 // FromContext. It also serves the intercepted client-side JavaScript and JSON
 // endpoints.
+//
+// A Flow Data cannot be used by two goroutines at once. A handler that hands
+// work to another goroutine copies the values that work needs out of the
+// Flow Data first, and passes those values rather than the Flow Data.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L25-L40
 type Middleware struct {
 	pipeline       core.Pipeline
 	javaScriptURL  string
@@ -108,6 +113,8 @@ func NewMiddleware(pipeline core.Pipeline, opts ...Option) *Middleware {
 }
 
 // FromContext returns the processed Flow Data stored on the request context.
+// Use it on the request's goroutine. Work handed to another goroutine gets the
+// values it needs copied out of the Flow Data, never the Flow Data.
 func FromContext(ctx context.Context) (core.FlowData, bool) {
 	fd, ok := ctx.Value(flowDataKey).(core.FlowData)
 	return fd, ok
@@ -115,7 +122,10 @@ func FromContext(ctx context.Context) (core.FlowData, bool) {
 
 // Handler wraps next so that every request is processed by the Pipeline and the
 // resulting Flow Data is attached to the request context. The intercepted
-// endpoints are served directly and do not call next.
+// endpoints are served directly and do not call next. The Flow Data is closed
+// when the request ends, which gives its Element Data back to the pools, so
+// neither may be kept once next returns.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L27-L28
 func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -128,6 +138,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		fd, _ := m.process(r)
+		defer fd.Close()
 		m.applyResponseHeaders(w, fd)
 		ctx := context.WithValue(r.Context(), flowDataKey, fd)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -235,25 +246,26 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 }
 
 // addRequestLine adds the method, path and query string of the request line,
-// exactly as it was sent, each only when an element in the Pipeline accepts
-// it, so a Pipeline with no such element carries no new values. The query
-// string is added empty when the request has none. A request that a server
-// did not read has no request line, so none of it is added.
-// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/web-integration.md#populating-evidence
+// exactly as it was sent. All three are added when an element in the
+// Pipeline accepts any one of them, so that an absent key means the request
+// line is not supplied, and none when no element does, so a Pipeline with no
+// such element carries no new values. The query string is added empty when
+// the request has none. A request that a server did not read has no request
+// line, so none of it is added.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/web-integration.md?plain=1#L122-L140
 func (m *Middleware) addRequestLine(fd core.FlowData, r *http.Request, request core.WebRequest) {
 	filter := m.pipeline.EvidenceKeyFilter()
 	if filter == nil || r.RequestURI == "" {
 		return
 	}
-	for key, value := range map[string]string{
-		core.EvidenceRequestMethod: request.Method(),
-		core.EvidenceRequestPath:   request.Path(),
-		core.EvidenceRequestQuery:  request.RawQuery(),
-	} {
-		if filter.Include(key) {
-			fd.AddEvidence(key, value)
-		}
+	if !filter.Include(core.EvidenceRequestMethod) &&
+		!filter.Include(core.EvidenceRequestPath) &&
+		!filter.Include(core.EvidenceRequestQuery) {
+		return
 	}
+	fd.AddEvidence(core.EvidenceRequestMethod, request.Method())
+	fd.AddEvidence(core.EvidenceRequestPath, request.Path())
+	fd.AddEvidence(core.EvidenceRequestQuery, request.RawQuery())
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
@@ -322,6 +334,7 @@ const failedCacheControl = "private, no-cache"
 func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request,
 	contentType string, content func(core.FlowData) []byte) {
 	fd := m.newFlowData(r)
+	defer fd.Close()
 	etag := m.etag(fd)
 	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
