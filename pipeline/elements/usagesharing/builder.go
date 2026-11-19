@@ -59,6 +59,10 @@ type Builder struct {
 
 	trackSession      bool
 	sessionCookieName string
+
+	// packages gives the 51Degrees modules in use. It reads the program's
+	// build information unless a test sets it.
+	packages func() []packageVersion
 }
 
 // NewBuilder creates a Usage Sharing Element builder with specification defaults.
@@ -276,6 +280,11 @@ func (b *Builder) Build() *Element {
 	tr.clock = clk
 	sendCtx, cancelSends := context.WithCancel(context.Background())
 
+	packages := b.packages
+	if packages == nil {
+		packages = linkedPackages
+	}
+
 	e := &Element{
 		BaseElement: core.NewBaseElement(DataKey, nil, b.logger),
 		cfg:         cfg,
@@ -287,6 +296,8 @@ func (b *Builder) Build() *Element {
 		clock:       clk,
 		sendCtx:     sendCtx,
 		cancelSends: cancelSends,
+		packages:    packages(),
+		processID:   newProcessID(),
 	}
 	return e
 }
