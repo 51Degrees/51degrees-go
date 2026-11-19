@@ -1,11 +1,40 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+// Package onpremise is the on-premise Device Detection engine and User-Agent
+// parser for Go. It reads a 51Degrees Hash data file on your server to detect
+// the device type and model, browser, operating system, and crawlers from the
+// User-Agent and User-Agent Client Hints. An alternative to UAParser.js,
+// DeviceAtlas, and WURFL.
 package onpremise
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
@@ -29,19 +58,32 @@ type Engine struct {
 	reloadFileEvents chan struct{}
 	// reloadLoop is done once reloadFileEvent has returned.
 	reloadLoop sync.WaitGroup
+	// reloadMu makes each reload of the data file run on its own, whether
+	// update polling, the file watcher or RefreshData asked for it.
+	reloadMu sync.Mutex
 
 	licenseKey                string
 	product                   string
 	dataFileLastUsedByManager string
 	managerProperties         string
+	// indexedProperties are the Properties whose values are indexed to the
+	// profiles holding them.
+	indexedProperties []string
 
 	maxRetries int
 
 	isStopped bool
+
+	// stopping is set as Stop begins, so a check waiting for the watched
+	// file ends at once rather than holding up Stop.
+	stopping atomic.Bool
 }
 
 const (
 	defaultDataFileUrl = "https://distributor.51degrees.com/api/v2/download?Type=HashV41&Download=True&Product=V4TAC"
+
+	// engineTypeName names the engine in the data update log messages.
+	engineTypeName = "DeviceDetectionHashEngine"
 )
 
 // New creates an instance of the on-premise device detection engine.  WithDataFile must be provided
@@ -60,6 +102,10 @@ func New(opts ...EngineOptions) (*Engine, error) {
 		managerProperties: "",
 	}
 
+	fileUpdater.SetEngineName(engineTypeName)
+	fileUpdater.SetPublishedDateFunc(engine.publishedDate)
+	fileUpdater.SetNextUpdateFunc(engine.nextUpdateDate)
+
 	for _, opt := range opts {
 		err := opt(engine)
 		if err != nil {
@@ -70,6 +116,10 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 	if !engine.IsDataFileProvided() {
 		return nil, common_go.ErrNoDataFileProvided
+	}
+
+	if err := engine.CheckDataFile(); err != nil {
+		return nil, err
 	}
 
 	if err := engine.InitCreateTempDataCopy(); err != nil {
@@ -101,28 +151,74 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	return engine, nil
 }
 
-// handleFileExternallyChanged handles events where a file has been externally modified, ensuring proper processing and logging.
+// handleFileExternallyChanged reloads the data file the file watcher saw
+// change, once it can be opened for reading, and reports the check. A file
+// another process still holds is waited for, and one that cannot be opened in
+// time is reported as a timeout and not logged, as the error table gives it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L512
 func (e *Engine) handleFileExternallyChanged() {
-	if err := e.processFileExternallyChanged(); err != nil {
-		e.logger.Printf("failed to handle file externally changed: %v", err)
+	if !common_go.WaitUntilReadable(openWatchedFile, e.GetDataFile(),
+		watchedFileReadableWait, e.stopped) {
+		if !e.stopped() {
+			e.reportTimeout()
+		}
+		e.IncreaseFileExternallyChangedCount()
+		return
 	}
+	tries, err := e.reload()
+	if err != nil {
+		e.logReloadError(tries, err)
+	}
+	e.reportReload(err)
 
 	e.IncreaseFileExternallyChangedCount()
 }
 
 // run starts the engine
 func (e *Engine) run() error {
-	e.recoverEngine()
-
 	e.reloadLoop.Add(1)
 	go e.reloadFileEvent()
 
-	if err := e.processFileExternallyChanged(); err != nil {
+	// The update URL is completed first, as the update on start-up uses it
+	// and runs before the data file is loaded.
+	if err := e.validateAndAppendUrlParams(); err != nil {
 		return err
 	}
 
-	if err := e.validateAndAppendUrlParams(); err != nil {
-		return err
+	// A data file that is already there is loaded first, so that the update
+	// asks for data newer than its published date, and is loaded again only if
+	// the update replaced it.
+	loaded := false
+	if e.IsUpdateOnStartEnabled() {
+		if e.HasLocalDataFile() {
+			if err := e.processFileExternallyChanged(); err != nil {
+				return err
+			}
+			loaded = true
+		}
+		downloaded, err := e.PullOnStart()
+		if err != nil {
+			return err
+		}
+		if downloaded {
+			// The update on start-up ends once the new file has loaded or
+			// failed to, so it is reported here.
+			loadErr := e.processFileExternallyChanged()
+			callbackErr := e.ReportUpdateComplete(reloadStatus(loadErr))
+			if loadErr != nil {
+				return loadErr
+			}
+			if callbackErr != nil {
+				return callbackErr
+			}
+			loaded = true
+		}
+	}
+
+	if !loaded {
+		if err := e.processFileExternallyChanged(); err != nil {
+			return err
+		}
 	}
 
 	if e.IsAutoUpdateEnabled() {
@@ -133,9 +229,26 @@ func (e *Engine) run() error {
 	return nil
 }
 
+// errStopped is the error RefreshData gives once the engine has stopped.
+var errStopped = errors.New("the engine has stopped, so it has no data to refresh")
+
+// RefreshData loads the Engine's data file again now, for an application
+// that has replaced the file and does not leave it to the file watcher. It
+// is safe to call while the Engine processes and while an update runs, as
+// each reload runs on its own. When the file cannot be used it returns the
+// error, after the tries a watched file gets, and the Engine goes on with the
+// data it had. The caller gets the error, so it is not logged, and nothing is
+// reported to the update callbacks, which hear the checks for an update.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L36-L41
+func (e *Engine) RefreshData() error {
+	_, err := e.reload()
+	return err
+}
+
 // Stop has to be called to free all the resources of the engine
 // before the instance goes out of scope
 func (e *Engine) Stop() {
+	e.stopping.Store(true)
 	num := 0
 	if e.IsAutoUpdateEnabled() && e.IsFilePullerStarted() {
 		num++ // file puller is enabled and started
@@ -159,7 +272,11 @@ func (e *Engine) Stop() {
 	close(e.reloadFileEvents)
 	e.reloadLoop.Wait()
 
+	// A reload in progress, such as one RefreshData asked for, ends before the
+	// manager is freed, and one asked for later refuses.
+	e.reloadMu.Lock()
 	e.isStopped = true
+	e.reloadMu.Unlock()
 	close(e.stopCh)
 
 	if e.manager != nil {
@@ -174,18 +291,111 @@ func (e *Engine) Stop() {
 	}
 }
 
-// recoverEngine handles recovery from a panic during file pulling, logs the error, and restarts the file pulling process if needed.
-func (e *Engine) recoverEngine() {
-	// recover from panic
-	// if panic occurs, we will log the error and restart the file pulling
+// How often a reload of the data file is tried, as .NET and Java do, because
+// the file can be held by another process for a moment.
+const (
+	// reloadTries is how many times a reload is tried before it is reported
+	// as failed.
+	reloadTries = 10
+	// reloadRetryWaitMilliseconds is the wait between tries.
+	reloadRetryWaitMilliseconds = 200
+)
+
+// reload loads the data file again, trying up to reloadTries times. It
+// returns the tries made and the last error. A panic ends the tries, being a
+// fault rather than a file another process holds, and is returned as a
+// reloadPanic so the goroutine that asked for the reload carries on and a
+// later file is loaded.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
+func (e *Engine) reload() (int, error) {
+	for tries := 1; ; tries++ {
+		err := e.reloadOnce()
+		var p *reloadPanic
+		if err == nil || errors.As(err, &p) || errors.Is(err, errStopped) ||
+			tries == reloadTries {
+			return tries, err
+		}
+		time.Sleep(reloadRetryWaitMilliseconds * time.Millisecond)
+	}
+}
+
+// reloadOnce loads the data file again, on its own, returning a panic as a
+// reloadPanic.
+func (e *Engine) reloadOnce() (err error) {
+	e.reloadMu.Lock()
+	defer e.reloadMu.Unlock()
+	if e.isStopped {
+		return errStopped
+	}
 	defer func() {
 		if r := recover(); r != nil {
-			e.logger.Printf("error occurred when pulling data: %v", r)
-			if !e.isStopped {
-				go e.ScheduleFilePulling(e.stopCh, e.reloadFileEvents)
-			}
+			err = &reloadPanic{r}
 		}
 	}()
+	return e.processFileExternallyChanged()
+}
+
+// reloadPanic is a panic in a reload, returned as an error.
+type reloadPanic struct{ value interface{} }
+
+func (p *reloadPanic) Error() string { return fmt.Sprintf("panic: %v", p.value) }
+
+// logReloadError logs a reload of a pulled or watched file that failed, as
+// the specification's error table gives it, which follows .NET. A panic is
+// logged with the table's last row, and any other failure as a refresh that
+// failed after the tries made.
+func (e *Engine) logReloadError(tries int, err error) {
+	var p *reloadPanic
+	if errors.As(err, &p) {
+		e.logUnhandledError(p.value)
+		return
+	}
+	e.logger.Errorf("Error during check for data update. An error occurred when applying a data update to "+
+		"engine '%s' after %d tries. Error detail: %v", engineTypeName, tries, err)
+}
+
+// logUnhandledError logs a failure the error table has no row for, with its
+// last row.
+func (e *Engine) logUnhandledError(detail interface{}) {
+	e.logger.Errorf("An unhandled error occurred while checking for automatic updates for engine '%s'. "+
+		"Error detail: %v", engineTypeName, detail)
+}
+
+// reportReload reports a reload made by update polling or the file watcher to
+// the update callbacks, and logs a callback's panic with the error table's
+// last row.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#reporting-each-check
+func (e *Engine) reportReload(err error) {
+	if callbackErr := e.ReportUpdateComplete(reloadStatus(err)); callbackErr != nil {
+		e.logUnhandledError(callbackErr)
+	}
+}
+
+// stopped says whether the engine is stopping or has stopped.
+func (e *Engine) stopped() bool {
+	return e.stopping.Load()
+}
+
+// reportTimeout reports a watched file that could not be opened in time to
+// the update callbacks, and logs an error a callback gives back.
+func (e *Engine) reportTimeout() {
+	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
+		e.logUnhandledError(err)
+	}
+}
+
+// reloadStatus gives the status a reload that ended with err reports: success,
+// the refresh failure, or the unknown error for a panic.
+func reloadStatus(err error) common_go.UpdateStatus {
+	var p *reloadPanic
+	switch {
+	case err == nil:
+		return common_go.UpdateSuccess
+	case errors.As(err, &p):
+		return common_go.UpdateUnknownError
+	default:
+		return common_go.UpdateRefreshFailed
+	}
 }
 
 // reloadFileEvent reloads the data file each time the file puller has pulled a
@@ -194,19 +404,22 @@ func (e *Engine) recoverEngine() {
 func (e *Engine) reloadFileEvent() {
 	defer e.reloadLoop.Done()
 	for range e.reloadFileEvents {
-		if err := e.processFileExternallyChanged(); err != nil {
-			e.logger.Printf("failed to reload pulled data file: %v", err)
+		tries, err := e.reload()
+		if err != nil {
+			e.logReloadError(tries, err)
 		}
+		e.reportReload(err)
 	}
 }
 
 // validateAndAppendUrlParams validates and appends necessary URL parameters based on the engine's configuration and state.
 func (e *Engine) validateAndAppendUrlParams() error {
-	if e.isDefaultDataFileUrl() && !e.hasDefaultDistributorParams() && e.IsAutoUpdateEnabled() {
+	downloads := e.IsAutoUpdateEnabled() || e.IsUpdateOnStartEnabled()
+	if e.isDefaultDataFileUrl() && !e.hasDefaultDistributorParams() && downloads {
 		return common_go.ErrLicenseKeyRequired
 	}
 
-	if e.isDefaultDataFileUrl() && e.IsAutoUpdateEnabled() {
+	if e.isDefaultDataFileUrl() && downloads {
 		if err := e.appendLicenceKey(); err != nil {
 			return err
 		}
@@ -266,9 +479,11 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		return nil
 	}
 	// Only a load that worked is logged, as a manager whose first load failed
-	// has no data set to read the published date from.
+	// has no data set to read the published date from. Each return that loaded
+	// sets loaded first, because err is still nil while a panic unwinds.
+	loaded := false
 	defer func() {
-		if err != nil {
+		if !loaded {
 			return
 		}
 		year, month, day := e.getPublishedDate().Date()
@@ -281,7 +496,8 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		if e.config == nil {
 			e.config = dd.NewConfigHash(dd.Balanced)
 		}
-		err = dd.InitManagerFromFile(e.manager, *e.config, e.managerProperties, filePath)
+		err = dd.InitManagerFromFileWithIndexedProperties(e.manager, *e.config,
+			e.managerProperties, filePath, e.indexedProperties)
 		if err != nil {
 			if e.IsCreateTempDataCopyEnabled() {
 				e.removeCopy(filePath)
@@ -289,16 +505,19 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 			return fmt.Errorf("failed to init manager from file: %w", err)
 		}
 		e.dataFileLastUsedByManager = filePath
-		// return nil is created for the first time
+		loaded = true
 		return nil
 	} else if !e.IsCreateTempDataCopyEnabled() {
+		e.logger.Infof("Attempting to refresh Engine '%s' with new data", engineTypeName)
 		err = e.manager.ReloadFromOriginalFile()
 		if err != nil {
 			return fmt.Errorf("failed to reload manager from original file: %w", err)
 		}
+		loaded = true
 		return nil
 	}
 
+	e.logger.Infof("Attempting to refresh Engine '%s' with new data", engineTypeName)
 	err = e.manager.ReloadFromFile(filePath)
 	if err != nil {
 		// The data set in use is kept, so the copy made for this reload is
@@ -309,6 +528,7 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 
 	e.removeCopy(e.dataFileLastUsedByManager)
 	e.dataFileLastUsedByManager = filePath
+	loaded = true
 
 	return nil
 }
@@ -327,14 +547,36 @@ func (e *Engine) getPublishedDate() time.Time {
 	return dd.GetPublishedDate(e.manager)
 }
 
-// Create a new raw ResultsHash object.
+// publishedDate is the published date of the loaded data file, or the zero
+// time before a data file is loaded.
+func (e *Engine) publishedDate() time.Time {
+	if e.manager == nil {
+		return time.Time{}
+	}
+	return e.getPublishedDate()
+}
+
+// nextUpdateDate is the date the loaded data file expects an update after, or
+// the zero time before a data file is loaded.
+func (e *Engine) nextUpdateDate() time.Time {
+	if e.manager == nil {
+		return time.Time{}
+	}
+	return dd.GetNextUpdateDate(e.manager)
+}
+
+// NewResultsHash creates a new raw ResultsHash object. A ResultsHash is not
+// safe to use from several goroutines at once, so a reused one belongs to one
+// goroutine at a time. The caller is responsible for thread-safe access to one
+// it shares.
 func (e *Engine) NewResultsHash(evidenceCapacity uint32, overridesCapacity uint32) *dd.ResultsHash {
 	return dd.NewResultsHash(e.manager, evidenceCapacity, overridesCapacity)
 }
 
-// Process detects the device from the provided evidence list
-// returns the dd.ResultsHash object from which various device properties
-// are retrieved
+// Process detects the device from the provided evidence list and returns the
+// dd.ResultsHash object from which various device properties are retrieved.
+// The ResultsHash is not safe to use from several goroutines at once. The
+// caller is responsible for thread-safe access to one it shares.
 func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
 	evidenceHash, err := mapEvidence(evidenceList)
 	if err != nil {
@@ -353,9 +595,10 @@ func (e *Engine) Process(evidenceList []Evidence) (*dd.ResultsHash, error) {
 	return results, nil
 }
 
-// GetHttpHeaderKeys returns all HTTP headers that can be used as evidence for device detection
+// GetHttpHeaderKeys returns the Evidence keys the data in use accepts. It is
+// safe to call while the data is refreshed.
 func (e *Engine) GetHttpHeaderKeys() []dd.EvidenceKey {
-	return e.manager.HttpHeaderKeys
+	return e.manager.HeaderKeys()
 }
 
 // appendLicenceKey updates the data file URL by appending a license key to its query parameters and returns an error if it fails.

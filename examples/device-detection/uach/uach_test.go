@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
 /*
@@ -253,15 +254,11 @@ func TestHandler(t *testing.T) {
 			manager = dd.NewResourceManager()
 			config = dd.NewConfigHash(dd.Balanced)
 			config.SetUseUpperPrefixHeaders(false)
-			dataFiles := []string{"51Degrees-LiteV4.1.hash"}
-			filePath, err := dd.GetFilePath("../..", dataFiles)
-			if err != nil {
-				manager.Free()
-				log.Fatalf("Cannot find file that matches any of \"%s\".\n",
-					strings.Join(dataFiles, ", "))
-			}
+			// Found as the example finds it, so a fresh clone downloads it.
+			filePath := examples.GetFilePathByName(
+				[]string{examples.LiteDataFile})
 
-			err = dd.InitManagerFromFile(
+			err := dd.InitManagerFromFile(
 				manager,
 				*config,
 				data.properties,
@@ -324,5 +321,29 @@ func TestHandler(t *testing.T) {
 			// Make sure manager object will be freed after the function execution
 			manager.Free()
 		}
+	}
+}
+
+// TestHandlerShowsEnterprise checks the page shows the properties only the
+// Enterprise data file has, with the link to ask for a copy when the data file
+// lacks them.
+func TestHandlerShowsEnterprise(t *testing.T) {
+	manager = dd.NewResourceManager()
+	defer manager.Free()
+	config = dd.NewConfigHash(dd.Balanced)
+	config.SetUseUpperPrefixHeaders(false)
+	filePath := examples.GetFilePathByName([]string{examples.LiteDataFile})
+	if err := dd.InitManagerFromFile(manager, *config, "", filePath); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("User-Agent", chromeUA)
+	rr := httptest.NewRecorder()
+	http.HandlerFunc(handler).ServeHTTP(rr, r)
+	if err := examples.CheckFindOutMore(rr.Body.String()); err != nil {
+		t.Error(err)
+	}
+	if err := examples.CheckEnterprise(rr.Body.String()); err != nil {
+		t.Error(err)
 	}
 }

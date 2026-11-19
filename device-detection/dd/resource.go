@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -27,14 +27,34 @@ package dd
 import "C"
 import (
 	"runtime"
+	"sync"
 )
 
 // ResourceManagers wraps around a pointer to a value of C ResourceManager
 // structure
 type ResourceManager struct {
-	setHeaders     map[string]([]string) // Headers to be set in a Http response
-	HttpHeaderKeys []EvidenceKey         // Http header keys required by this engine
-	CPtr           *C.ResourceManager    // Pointer to C resource
+	setHeaders map[string]([]string) // Headers to be set in a Http response
+	// HttpHeaderKeys are the Evidence keys the data in use accepts. Read them
+	// with HeaderKeys, which is safe while the data is refreshed.
+	HttpHeaderKeys []EvidenceKey
+	CPtr           *C.ResourceManager // Pointer to C resource
+	// indexes holds the required property index of each property name the
+	// manager was created with, or with no names, of each name of the first
+	// data file it loaded, built once when it is created.
+	indexes propertyIndexes
+	// fromMemory says the manager was made from data in memory, whose data
+	// sets free their copy of the data, so it can reload from memory.
+	fromMemory bool
+	// keysMu guards HttpHeaderKeys, which a refresh replaces.
+	keysMu sync.RWMutex
+}
+
+// HeaderKeys returns the Evidence keys the data in use accepts. It is safe
+// to call while the data is refreshed.
+func (manager *ResourceManager) HeaderKeys() []EvidenceKey {
+	manager.keysMu.RLock()
+	defer manager.keysMu.RUnlock()
+	return manager.HttpHeaderKeys
 }
 
 // Finalizer function for Resource Manager
@@ -48,7 +68,7 @@ func resourceFinalizer(m *ResourceManager) {
 // NewResourceManager creats a new object of ResourceManager
 func NewResourceManager() *ResourceManager {
 	cManager := new(C.ResourceManager)
-	manager := &ResourceManager{nil, nil, cManager}
+	manager := &ResourceManager{CPtr: cManager}
 	runtime.SetFinalizer(manager, resourceFinalizer)
 	return manager
 }
@@ -65,7 +85,7 @@ func (manager *ResourceManager) Free() {
 	if manager.setHeaders != nil {
 		manager.setHeaders = nil
 	}
-	if manager.HttpHeaderKeys != nil {
-		manager.HttpHeaderKeys = nil
-	}
+	manager.keysMu.Lock()
+	manager.HttpHeaderKeys = nil
+	manager.keysMu.Unlock()
 }

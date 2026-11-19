@@ -23,22 +23,41 @@
 package core
 
 import (
+	"fmt"
+	"maps"
 	"sync"
-
-	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
+	"sync/atomic"
 )
 
 // FlowData is the fundamental unit of work within the Pipeline API. It carries
 // the input Evidence into the Pipeline and the output Element Data back to the
 // caller. A Flow Data belongs to exactly one Pipeline and can be processed only
 // once.
+//
+// A Flow Data is used by one goroutine at a time and is not safe to use from
+// several at once, apart from the members of a parallel group, which the
+// Pipeline runs itself. Once Process has returned it may pass to another
+// goroutine, which then uses it alone. Using it from another goroutine while
+// Process runs is a data race, which can end the whole program with a fatal
+// error that recover does not catch, rather than return one. The Pipeline adds
+// no lock, to keep processing fast, so a caller that shares a Flow Data across
+// goroutines is responsible for any locking.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#flow-data
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L12-L22
 type FlowData interface {
-	// AddEvidence adds a single Evidence key-value pair. It must be called before
-	// processing; calls after processing has started are ignored (and logged), as
-	// Evidence is immutable once created. Returns the Flow Data for chaining.
+	// AddEvidence adds a single Evidence key-value pair, replacing any value held
+	// under the same key when the case is ignored. The caller adds Evidence
+	// before processing, and a Flow Element may add Evidence while it processes,
+	// for the Flow Elements after it and the caller to read. A member of a
+	// parallel group adds to its own view of the Flow Data, so what it adds is
+	// dropped when the group finishes, as FlowElement.Process says. A call
+	// after processing has finished panics with ErrFlowDataFinished. The
+	// caller must not add Evidence while processing runs, because such a call
+	// cannot be told apart from one made by a Flow Element.
+	// Returns the Flow Data for chaining.
+	// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md#adding-evidence-values
 	AddEvidence(key string, value any) FlowData
-	// AddEvidenceMap adds multiple Evidence values.
+	// AddEvidenceMap adds multiple Evidence values, as AddEvidence does.
 	AddEvidenceMap(values map[string]any) FlowData
 	// Evidence returns the (read-only) Evidence collection.
 	Evidence() Evidence
@@ -52,6 +71,8 @@ type FlowData interface {
 	Get(elementDataKey string) (ElementData, error)
 	// GetOrAdd returns the Element Data for key, creating it with ctor if absent.
 	// Flow Elements use this to obtain their own Element Data during Process.
+	// Adding Element Data after processing has finished panics with
+	// ErrFlowDataFinished.
 	GetOrAdd(key string, ctor func(FlowData) ElementData) ElementData
 	// ElementDataAsMap returns all Element Data keyed by element data key.
 	ElementDataAsMap() map[string]ElementData
@@ -60,8 +81,19 @@ type FlowData interface {
 	Errors() []FlowError
 	// HasErrors reports whether any errors were collected during processing.
 	HasErrors() bool
-	// AddError records an error against the element that produced it.
+	// AddError records an error against the element that produced it. A call
+	// after processing has finished panics with ErrFlowDataFinished.
 	AddError(err error, element FlowElement)
+
+	// Close gives the Element Data back to the pools it came from, apart from
+	// any that a cache holds, and leaves the Flow Data holding none. Call it
+	// once the Flow Data and its Element Data are no longer needed. Keeping a
+	// reference to the Element Data after Close is not supported, because a
+	// pool may give the instance to another request, and nothing checks for
+	// it. A closed Flow Data cannot be processed, and a second Close does
+	// nothing. It returns nil.
+	// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/resource-cleanup.md?plain=1#L87-L101
+	Close() error
 
 	// markStarted is called internally to enforce single processing. It returns
 	// false if processing has already started.
@@ -70,38 +102,66 @@ type FlowData interface {
 	isStarted() bool
 }
 
-// flowData is the default FlowData implementation.
+// flowData is the default FlowData implementation. It takes no lock, apart
+// from the one the members of a parallel group add their errors under.
+//
+// Element Data is held in a list, newest first. A node never changes once it
+// is in the list, so readers follow it with no lock. A Pipeline with a
+// parallel group puts each new node in place with one compare and swap, so
+// members can add at the same time, and any other Pipeline with a plain
+// store.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L90-L118
 type flowData struct {
 	pipeline *pipeline
 	evidence *evidence
-	data     typedmap.Map
+	head     atomic.Pointer[elementNode]
 
-	mu      sync.Mutex
-	errs    []FlowError
-	started bool
+	// errs is appended to with no lock, except by the members of a parallel
+	// group, which hold errMu.
+	errMu sync.Mutex
+	errs  []FlowError
 
-	goaMu sync.Mutex // serializes GetOrAdd so it is atomic under parallel processing
+	started  atomic.Bool
+	finished atomic.Bool
+	closed   bool
+	// parallel counts the parallel groups running, whose members add their
+	// errors under errMu.
+	parallel atomic.Int32
+	// supplied is the Evidence as it was when processing started.
+	supplied map[string]any
+}
+
+// elementNode holds one Element Data in a Flow Data's list.
+type elementNode struct {
+	key  string
+	data ElementData
+	next *elementNode
+}
+
+// find gives the node for key, already in lower case, from n onwards.
+func (n *elementNode) find(key string) *elementNode {
+	for ; n != nil; n = n.next {
+		if n.key == key {
+			return n
+		}
+	}
+	return nil
 }
 
 func newFlowData(p *pipeline) *flowData {
-	var data typedmap.Map
-	if p.concurrent {
-		data = typedmap.NewConcurrentMap()
-	} else {
-		data = typedmap.NewMap()
-	}
-	return &flowData{pipeline: p, evidence: newEvidence(), data: data}
+	return &flowData{pipeline: p, evidence: newEvidence()}
+}
+
+// finishedPanic panics with ErrFlowDataFinished, saying what was added. It is
+// called once processing has finished.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L115-L118
+func finishedPanic(what string) {
+	panic(fmt.Errorf("cannot add %s: %w", what, ErrFlowDataFinished))
 }
 
 func (fd *flowData) AddEvidence(key string, value any) FlowData {
-	// Hold the lock across the started-check and the write so the
-	// "evidence is immutable once processing starts" guarantee actually holds
-	// and concurrent adds do not race the underlying map.
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
-	if fd.started {
-		fd.pipeline.logger.Warn("evidence added after processing started; ignoring", "key", key)
-		return fd
+	if fd.finished.Load() {
+		finishedPanic("Evidence '" + key + "'")
 	}
 	fd.evidence.put(key, value)
 	return fd
@@ -125,7 +185,21 @@ func (fd *flowData) Process() error {
 	if !fd.markStarted() {
 		return ErrAlreadyProcessed
 	}
+	fd.supplied = fd.evidence.AsMap()
+	defer fd.markFinished()
 	return fd.pipeline.process(fd)
+}
+
+// SuppliedEvidence returns the Evidence as it was when processing of the Flow
+// Data started, without the values that Flow Elements added while processing.
+// Before processing starts it returns the Evidence held now. Each call returns
+// a new map. It is for work that depends on the request alone, such as a cache
+// validator.
+func SuppliedEvidence(fd FlowData) map[string]any {
+	if f := baseFlowData(fd); f != nil && f.supplied != nil {
+		return maps.Clone(f.supplied)
+	}
+	return fd.Evidence().AsMap()
 }
 
 func (fd *flowData) Pipeline() Pipeline { return fd.pipeline }
@@ -134,71 +208,166 @@ func (fd *flowData) Get(elementDataKey string) (ElementData, error) {
 	if !fd.isStarted() {
 		return nil, ErrNotProcessed
 	}
-	raw, ok := fd.data.GetString(elementDataKey)
-	if !ok {
+	n := fd.head.Load().find(lower(elementDataKey))
+	if n == nil {
 		return nil, NewDataError("no element data found for key '" + elementDataKey + "'")
 	}
-	return raw.(ElementData), nil
+	return n.data, nil
 }
 
+// GetOrAdd gives the Element Data held under key, or adds the one ctor makes.
+// In a Pipeline with a parallel group the new node goes in with a compare
+// and swap, retried when another member added first.
 func (fd *flowData) GetOrAdd(key string, ctor func(FlowData) ElementData) ElementData {
-	// Serialize so the check-then-add is atomic; this matters when elements run
-	// in parallel (e.g. two Translation Engines sharing one Element Data).
-	fd.goaMu.Lock()
-	defer fd.goaMu.Unlock()
-	if raw, ok := fd.data.GetString(key); ok {
-		return raw.(ElementData)
+	k := lower(key)
+	head := fd.head.Load()
+	if n := head.find(k); n != nil {
+		return n.data
+	}
+	if fd.finished.Load() {
+		finishedPanic("Element Data '" + key + "'")
 	}
 	d := ctor(fd)
-	fd.data.AddString(key, d)
+	if added, ok := d.(FlowDataAdded); ok {
+		added.AddedToFlowData(fd, key, d)
+	}
+	n := &elementNode{key: k, data: d, next: head}
+	if !fd.pipeline.concurrent {
+		fd.head.Store(n)
+		return d
+	}
+	for !fd.head.CompareAndSwap(head, n) {
+		head = fd.head.Load()
+		if m := head.find(k); m != nil {
+			return m.data
+		}
+		n.next = head
+	}
 	return d
 }
 
 func (fd *flowData) ElementDataAsMap() map[string]ElementData {
-	keys := fd.data.Keys()
-	out := make(map[string]ElementData, len(keys))
-	for _, k := range keys {
-		if raw, ok := fd.data.GetString(k); ok {
-			out[k] = raw.(ElementData)
+	out := make(map[string]ElementData)
+	for n := fd.head.Load(); n != nil; n = n.next {
+		if _, ok := out[n.key]; !ok {
+			out[n.key] = n.data
 		}
 	}
 	return out
 }
 
+// Errors gives a copy of the errors. It takes the errors lock only while a
+// parallel group runs.
 func (fd *flowData) Errors() []FlowError {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+	if fd.parallel.Load() > 0 {
+		fd.errMu.Lock()
+		defer fd.errMu.Unlock()
+	}
 	out := make([]FlowError, len(fd.errs))
 	copy(out, fd.errs)
 	return out
 }
 
 func (fd *flowData) HasErrors() bool {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
+	if fd.parallel.Load() > 0 {
+		fd.errMu.Lock()
+		defer fd.errMu.Unlock()
+	}
 	return len(fd.errs) > 0
 }
 
+// AddError records an error. The members of a parallel group add under the
+// errors lock, and the error is added with no lock at any other time.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L108-L113
 func (fd *flowData) AddError(err error, element FlowElement) {
-	fd.mu.Lock()
+	if fd.finished.Load() {
+		finishedPanic(fmt.Sprintf("the error '%v'", err))
+	}
+	if fd.parallel.Load() > 0 {
+		fd.errMu.Lock()
+		defer fd.errMu.Unlock()
+	}
 	fd.errs = append(fd.errs, FlowError{Element: element, Err: err})
-	fd.mu.Unlock()
 }
 
 func (fd *flowData) markStarted() bool {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
-	if fd.started {
-		return false
+	return fd.started.CompareAndSwap(false, true)
+}
+
+// markFinished records that processing is complete. Every Element Data is
+// then read only, and nothing more can be added.
+func (fd *flowData) markFinished() {
+	for n := fd.head.Load(); n != nil; n = n.next {
+		if g := guardOf(n.data); g != nil {
+			g.finishWriting()
+		}
 	}
-	fd.started = true
-	return true
+	fd.finished.Store(true)
+}
+
+// Close gives each Element Data that came from a pool back to it. A view of
+// a cached instance, and an instance marked shared, stay where they are.
+func (fd *flowData) Close() error {
+	if fd.closed {
+		return nil
+	}
+	fd.closed = true
+	fd.started.Store(true)
+	fd.finished.Store(true)
+	for n := fd.head.Load(); n != nil; n = n.next {
+		if p, ok := n.data.(pooled); ok {
+			p.release()
+		}
+	}
+	fd.head.Store(nil)
+	return nil
+}
+
+// openForWriting opens the Element Data held under keys, in lower case, for
+// writing again, as a Flow Element that shares a key starts to process.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L143-L149
+func (fd *flowData) openForWriting(keys []string) {
+	head := fd.head.Load()
+	for _, k := range keys {
+		if n := head.find(k); n != nil {
+			if g := guardOf(n.data); g != nil {
+				g.openForWriting()
+			}
+		}
+	}
+}
+
+// finishWriting records that a Flow Element has finished, which makes the
+// Element Data under keys, and any added since the list began at since,
+// read only.
+func (fd *flowData) finishWriting(since *elementNode, keys []string) {
+	head := fd.head.Load()
+	for n := head; n != nil && n != since; n = n.next {
+		if g := guardOf(n.data); g != nil {
+			g.finishWriting()
+		}
+	}
+	for _, k := range keys {
+		if n := since.find(k); n != nil {
+			if g := guardOf(n.data); g != nil {
+				g.finishWriting()
+			}
+		}
+	}
+}
+
+// enterParallel and leaveParallel bracket a parallel group, during which
+// errors are added under the errors lock.
+func (fd *flowData) enterParallel() {
+	fd.parallel.Add(1)
+}
+
+func (fd *flowData) leaveParallel() {
+	fd.parallel.Add(-1)
 }
 
 func (fd *flowData) isStarted() bool {
-	fd.mu.Lock()
-	defer fd.mu.Unlock()
-	return fd.started
+	return fd.started.Load()
 }
 
 // ElementDataUnwrapper is implemented by per-Flow-Data Element Data views that

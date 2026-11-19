@@ -33,10 +33,12 @@ import (
 // executes them concurrently when processed. It is the mechanism behind the
 // optional parallel-processing feature and the AddParallel builder method.
 //
-// A Pipeline that contains ParallelElements MUST be configured as concurrent so
-// that Flow Data uses thread-safe storage. Each child element MUST write to a
-// distinct Element Data key.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/advanced-features/parallel-processing.md
+// A Pipeline that contains ParallelElements is concurrent, so its Flow Data
+// adds Element Data with a compare and swap. Each child element MUST write to
+// a distinct Element Data key, and MUST NOT add Evidence. Each child processes
+// its own view of the Flow Data, so Evidence a child adds stays in that view,
+// and the group drops it when it finishes, with no log and no error.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L14-L59
 type ParallelElements struct {
 	*BaseElement
 	children []FlowElement
@@ -45,20 +47,30 @@ type ParallelElements struct {
 // NewParallelElements groups children to be executed in parallel.
 func NewParallelElements(logger *slog.Logger, children ...FlowElement) *ParallelElements {
 	keys := make([]string, len(children))
-	var props []PropertyMetadata
 	filters := make([]EvidenceKeyFilter, 0, len(children))
 	for i, c := range children {
 		keys[i] = c.DataKey()
-		props = append(props, c.Properties()...)
 		filters = append(filters, c.EvidenceKeyFilter())
 	}
 	base := NewBaseElement("parallel["+strings.Join(keys, "+")+"]", NewAggregateFilter(filters...), logger)
-	base.SetProperties(props)
 	return &ParallelElements{BaseElement: base, children: children}
 }
 
+// Properties returns the children's Property metadata as it is now, so a
+// child whose Properties arrive later is seen once they have.
+func (pe *ParallelElements) Properties() []PropertyMetadata {
+	props, _ := gatherProperties(pe.children)
+	return props
+}
+
+// PropertiesLoaded reports whether every child has loaded its Properties.
+func (pe *ParallelElements) PropertiesLoaded() bool {
+	_, loaded := gatherProperties(pe.children)
+	return loaded
+}
+
 // IsConcurrent reports that this element processes its children on multiple
-// goroutines, so a Pipeline containing it must use thread-safe Flow Data.
+// goroutines, so a Pipeline containing it is concurrent.
 func (pe *ParallelElements) IsConcurrent() bool { return true }
 
 // Children returns the contained elements.
@@ -69,25 +81,41 @@ func (pe *ParallelElements) Children() []FlowElement {
 }
 
 // Process runs all child elements concurrently and waits for them to complete.
-// Errors and panics from children are recorded against the Flow Data rather
-// than aborting the others.
+// The errors children return, and their panics, are added to the Flow Data
+// once every child has stopped, in the order the children were added, rather
+// than aborting the others. Errors a child adds itself go in while it runs.
 func (pe *ParallelElements) Process(data FlowData) error {
+	// The children read Evidence at the same time, so each adds to its own
+	// view, and they add their own errors under the errors lock.
+	fd := baseFlowData(data)
+	if fd != nil {
+		fd.enterParallel()
+	}
+	errs := make([]error, len(pe.children))
+	views := make([]memberView, len(pe.children))
 	var wg sync.WaitGroup
-	for _, c := range pe.children {
+	for i, c := range pe.children {
+		views[i].FlowData = data
 		wg.Add(1)
-		go func(c FlowElement) {
+		go func(i int, c FlowElement) {
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					data.AddError(fmt.Errorf("panic processing element '%s': %v", c.DataKey(), r), c)
+					errs[i] = fmt.Errorf("panic processing element '%s': %v", c.DataKey(), r)
 				}
 			}()
-			if err := c.Process(data); err != nil {
-				data.AddError(err, c)
-			}
-		}(c)
+			errs[i] = c.Process(&views[i])
+		}(i, c)
 	}
 	wg.Wait()
+	if fd != nil {
+		fd.leaveParallel()
+	}
+	for i, err := range errs {
+		if err != nil {
+			data.AddError(err, pe.children[i])
+		}
+	}
 	return nil
 }
 
@@ -136,4 +164,83 @@ func (b *PipelineBuilder) AddParallel(elements ...FlowElement) *PipelineBuilder 
 		logger = slog.Default()
 	}
 	return b.AddFlowElement(NewParallelElements(logger, elements...))
+}
+
+// memberView is the Flow Data a member of a parallel group processes. It
+// passes every call to the group's Flow Data apart from Evidence the member
+// adds, which stays in the view. The group adds nothing on its members'
+// behalf, so that Evidence is dropped when the group finishes.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L133-L139
+// and https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L16-L18
+type memberView struct {
+	FlowData
+	added map[string]any
+}
+
+func (v *memberView) AddEvidence(key string, value any) FlowData {
+	if v.added == nil {
+		v.added = make(map[string]any)
+	}
+	v.added[lower(key)] = value
+	return v
+}
+
+func (v *memberView) AddEvidenceMap(values map[string]any) FlowData {
+	for k, value := range values {
+		v.AddEvidence(k, value)
+	}
+	return v
+}
+
+func (v *memberView) Evidence() Evidence {
+	if v.added == nil {
+		return v.FlowData.Evidence()
+	}
+	return memberEvidence{shared: v.FlowData.Evidence(), added: v.added}
+}
+
+// memberEvidence is the Evidence of the group's Flow Data with the values a
+// member added on top.
+type memberEvidence struct {
+	shared Evidence
+	added  map[string]any
+}
+
+func (e memberEvidence) Get(key string) (any, bool) {
+	if v, ok := e.added[lower(key)]; ok {
+		return v, true
+	}
+	return e.shared.Get(key)
+}
+
+func (e memberEvidence) AsMap() map[string]any {
+	out := e.shared.AsMap()
+	for k, v := range e.added {
+		out[k] = v
+	}
+	return out
+}
+
+func (e memberEvidence) Keys() []string {
+	all := e.AsMap()
+	keys := make([]string, 0, len(all))
+	for k := range all {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// baseFlowData gives the Flow Data a member's view is over, or the Flow Data
+// itself, or nil for another implementation.
+func baseFlowData(data FlowData) *flowData {
+	for {
+		switch d := data.(type) {
+		case *flowData:
+			return d
+		case *memberView:
+			data = d.FlowData
+		default:
+			return nil
+		}
+	}
 }

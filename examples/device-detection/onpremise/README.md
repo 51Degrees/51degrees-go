@@ -4,16 +4,15 @@
 
 ## update_polling_interval
 
-Demonstrates how to set up periodic data file updates by either polling the 51degrees [distributor](https://51degrees.com/documentation/_info__distributor.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-onpremise-readme.md&utm_term=update_polling_interval) server or a custom URL. 
+Demonstrates how to set up periodic data file updates by either polling the 51degrees [distributor](https://51degrees.com/documentation/_services__distributor.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-onpremise-readme.md&utm_term=update_polling_interval) server or a custom URL. 
 
-To run the example, execute the following command:
+To run the example, execute the following command from `examples/device-detection`:
 
 ```bash
-LICENSE_KEY=my_license_key go run onpremise/update_polling_interval.go
+_51DEGREES_LICENSE_KEY=my_license_key go run ./onpremise/update_polling_interval
 ```
 
 # onpremise API Usage
-```bash
 
 #### Create config
 ```go
@@ -91,10 +90,13 @@ default is Balanced profile
    WithPollingInterval(seconds int) EngineOptions
 ```
 
-#### WithRandomizationSeed Provides randomization of seconds for data file fetching
-* seed - randomization seed
+#### WithRandomization Provides the maximum random time added to each polling interval
+* seconds - maximum random time in seconds, default 600 (10 minutes). A new
+  time from 0 up to this maximum is drawn for each interval, so that several
+  servers with the same setting do not fetch the data file at the same time.
+  0 adds nothing.
 ```go
-    WithRandomizationSeed(seconds int) EngineOptions
+    WithRandomization(seconds int) EngineOptions
 ```
 
 #### WithLogging Enables or disables logger
@@ -116,7 +118,7 @@ this option can only be used when using the default data file url from 51Degrees
     WithProduct(product string) EngineOptions
 ```
 
-#### WithLicenceKey sets the license key to use when pulling the data file
+#### WithLicenseKey sets the license key to use when pulling the data file
 this option can only be used when using the default data file url from 51Degrees, it will be appended as a query parameter
 ```go
     WithLicenseKey(key string) EngineOptions
@@ -134,10 +136,23 @@ default is true
 default is true
 if enabled, engine will automatically pull the data file from the distributor
 if disabled, engine will not pull the data file from the distributor
-options like WithDataUpdateUrl, WithLicenceKey will be ignored since auto update is disabled
+options like WithDataUpdateUrl, WithLicenseKey will be ignored since auto update is disabled
 
 ```go
     WithAutoUpdate(enabled bool) EngineOptions
+```
+
+#### WithUpdateCallback registers a callback that each check for an update reports to
+* fn - called once each check ends, with the data file's path and a status
+  named as the .NET data update service names it, such as
+  `AUTO_UPDATE_SUCCESS`, `AUTO_UPDATE_NOT_NEEDED` or
+  `AUTO_UPDATE_REFRESH_FAILED`
+* the update on start-up, each pull and each change the file watcher sees
+  are reported. A callback that panics is logged, apart from the update on
+  start-up, where New returns the panic as an error
+
+```go
+    WithUpdateCallback(fn func(common_go.UpdateComplete)) EngineOptions
 ```
 
 #### WithTempDataCopy enables or disables creating a temp copy of the data file

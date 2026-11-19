@@ -22,11 +22,18 @@
 
 package core
 
-import "strings"
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+)
 
 // Evidence is the set of input values added to a Flow Data instance, stored as
-// case-insensitive key-value pairs. Evidence is immutable once Flow Data
-// processing has begun.
+// case-insensitive key-value pairs. The caller adds values before processing,
+// and a Flow Element outside a parallel group may add values while it
+// processes. Later Flow Elements, and the caller once processing is complete,
+// read them.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/evidence.md
 type Evidence interface {
 	// Get returns the value for a key (case-insensitive) and whether it was present.
@@ -37,15 +44,21 @@ type Evidence interface {
 	Keys() []string
 }
 
-// evidence is the default immutable implementation. It is populated by Flow Data
-// before processing and is then only read.
+// evidence is the default implementation. It takes no lock. It is written
+// only by the caller before processing and by Flow Elements outside any
+// parallel group, so the members of a group can read it at the same time.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md?plain=1#L128-L139
 type evidence struct {
 	data map[string]any
 }
 
 func newEvidence() *evidence { return &evidence{data: make(map[string]any)} }
 
-func (e *evidence) put(key string, value any) { e.data[lower(key)] = value }
+// put stores value under key, replacing any value held under the same key
+// when the case is ignored.
+func (e *evidence) put(key string, value any) {
+	e.data[lower(key)] = value
+}
 
 func (e *evidence) Get(key string) (any, bool) {
 	v, ok := e.data[lower(key)]
@@ -78,6 +91,168 @@ const (
 	PrefixFiftyOne = "fiftyone"
 	PrefixLocation = "location"
 )
+
+// EvidenceHTTPRequest is the Evidence key under which the web integration
+// adds the request, as a WebRequest. No element accepts it, so it never takes
+// part in a cache key or an ETag, and the Usage Sharing Element reads the
+// request's headers, cookies and query string from it.
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/web-integration.md#populating-evidence
+const EvidenceHTTPRequest = PrefixServer + ".http-request"
+
+// The Evidence keys of the request line's method, path and query string,
+// each exactly as the request line carried it, with no decoding. The web
+// integration adds each only when an element in the Pipeline accepts it.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/web-integration.md#populating-evidence
+const (
+	EvidenceRequestMethod = PrefixServer + ".request-method"
+	EvidenceRequestPath   = PrefixServer + ".request-path"
+	EvidenceRequestQuery  = PrefixServer + ".request-query"
+)
+
+// webRequestPlaceholder is what formatting a WebRequest prints.
+const webRequestPlaceholder = "[web request]"
+
+// WebRequest is the read-only view of the request added as
+// EvidenceHTTPRequest. Its named parts are the headers, cookies, query, session,
+// client IP address, protocol, method, path and raw query string. Each part is
+// returned as a copy, so changing it never changes the request. Formatting a
+// WebRequest with any fmt verb, or calling String, gives a fixed placeholder,
+// so printing or logging the Evidence never writes out the request's headers
+// and cookies.
+type WebRequest struct {
+	request  *http.Request
+	clientIP string
+	protocol string
+	session  map[string]string
+}
+
+// NewWebRequest returns a view of r.
+func NewWebRequest(r *http.Request) WebRequest { return WebRequest{request: r} }
+
+// WithClientIP returns the view with its client IP address set.
+func (w WebRequest) WithClientIP(ip string) WebRequest { w.clientIP = ip; return w }
+
+// WithProtocol returns the view with its protocol set.
+func (w WebRequest) WithProtocol(p string) WebRequest { w.protocol = p; return w }
+
+// WithSession returns the view with a copy of the session values given.
+func (w WebRequest) WithSession(s map[string]string) WebRequest {
+	w.session = copyStringMap(s)
+	return w
+}
+
+// Headers returns the request's headers, with the Host as the Host header.
+func (w WebRequest) Headers() http.Header {
+	if w.request == nil {
+		return http.Header{}
+	}
+	h := w.request.Header.Clone()
+	if h == nil {
+		h = http.Header{}
+	}
+	if w.request.Host != "" {
+		h.Set("Host", w.request.Host)
+	}
+	return h
+}
+
+// Cookies returns the request's cookies.
+func (w WebRequest) Cookies() []*http.Cookie {
+	if w.request == nil {
+		return nil
+	}
+	return w.request.Cookies()
+}
+
+// Query returns the query string parameters, and the form parameters when the
+// request was already parsed. The body is never read.
+func (w WebRequest) Query() url.Values {
+	if w.request == nil {
+		return url.Values{}
+	}
+	src := w.request.Form
+	if src == nil && w.request.URL != nil {
+		src = w.request.URL.Query()
+	}
+	out := make(url.Values, len(src))
+	for k, v := range src {
+		out[k] = append([]string(nil), v...)
+	}
+	return out
+}
+
+// Session returns the session values.
+func (w WebRequest) Session() map[string]string { return copyStringMap(w.session) }
+
+// ClientIP returns the client IP address.
+func (w WebRequest) ClientIP() string { return w.clientIP }
+
+// Protocol returns the request protocol.
+func (w WebRequest) Protocol() string { return w.protocol }
+
+// Method returns the request method.
+func (w WebRequest) Method() string {
+	if w.request == nil {
+		return ""
+	}
+	return w.request.Method
+}
+
+// Path returns the path of the request line exactly as it was sent, with no
+// decoding and without the query string. It is empty for a request that a
+// server did not read, as such a request has no request line.
+func (w WebRequest) Path() string {
+	path, _ := w.requestTarget()
+	return path
+}
+
+// RawQuery returns the query string of the request line exactly as it was
+// sent, with no decoding and without the "?", or nothing when it has none.
+func (w WebRequest) RawQuery() string {
+	_, query := w.requestTarget()
+	return query
+}
+
+// requestTarget splits the request line's target into its path and query
+// string. An absolute-form target, which a client sends to a proxy, gives the
+// path after its authority. The asterisk form is its own path and the
+// authority form has none (RFC 9112 section 3.2).
+func (w WebRequest) requestTarget() (path, query string) {
+	if w.request == nil {
+		return "", ""
+	}
+	target := w.request.RequestURI
+	if i := strings.IndexByte(target, '?'); i >= 0 {
+		target, query = target[:i], target[i+1:]
+	}
+	if strings.HasPrefix(target, "/") || target == "*" {
+		return target, query
+	}
+	if i := strings.Index(target, "://"); i >= 0 {
+		authorityAndPath := target[i+len("://"):]
+		if j := strings.IndexByte(authorityAndPath, '/'); j >= 0 {
+			return authorityAndPath[j:], query
+		}
+	}
+	return "", query
+}
+
+func copyStringMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// String returns a fixed placeholder.
+func (w WebRequest) String() string { return webRequestPlaceholder }
+
+// Format writes the fixed placeholder whatever the verb, so %v, %+v, %#v and
+// %s all print the same.
+func (w WebRequest) Format(f fmt.State, _ rune) {
+	_, _ = f.Write([]byte(webRequestPlaceholder))
+}
 
 // prefixPrecedence maps known prefixes to their precedence rank (lower wins).
 var prefixPrecedence = map[string]int{

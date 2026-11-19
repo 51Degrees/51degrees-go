@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -27,6 +27,7 @@ package dd
 // #include "device-detection-cxx.h"
 import (
 	"testing"
+	"unsafe"
 )
 
 func TestNewConfigHashPerformanceProfiles(t *testing.T) {
@@ -78,6 +79,45 @@ func TestNewConfigHashSetGetNumeric(t *testing.T) {
 	if actualCon != uint16(expectedCon) {
 		t.Errorf("Expected difference \"%d\" but get \"%d\"\n",
 			expectedCon, actualCon)
+	}
+}
+
+// SetConcurrency sets the concurrency of every collection the native
+// configuration holds, as the C++ ConfigHash::setConcurrency does, so each
+// collection's file handles and cache parts follow it.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L518
+func TestConfigHash_SetConcurrency(t *testing.T) {
+	for _, concurrency := range []uint16{1, 7, 65535} {
+		config := NewConfigHash(Default)
+		config.SetConcurrency(concurrency)
+		for name, got := range map[string]uint16{
+			"strings":        uint16(config.CPtr.strings.concurrency),
+			"components":     uint16(config.CPtr.components.concurrency),
+			"maps":           uint16(config.CPtr.maps.concurrency),
+			"properties":     uint16(config.CPtr.properties.concurrency),
+			"values":         uint16(config.CPtr.values.concurrency),
+			"profiles":       uint16(config.CPtr.profiles.concurrency),
+			"rootNodes":      uint16(config.CPtr.rootNodes.concurrency),
+			"nodes":          uint16(config.CPtr.nodes.concurrency),
+			"profileOffsets": uint16(config.CPtr.profileOffsets.concurrency),
+		} {
+			if got != concurrency {
+				t.Errorf("SetConcurrency(%d) left %s at %d", concurrency, name,
+					got)
+			}
+		}
+	}
+}
+
+// Concurrency gives the lowest concurrency of the nine collections, as the
+// C++ ConfigHash::getConcurrency does.
+func TestConfigHash_ConcurrencyIsTheLowest(t *testing.T) {
+	config := NewConfigHash(Default)
+	config.SetConcurrency(7)
+	config.CPtr.rootNodes.concurrency = 3
+	if got := config.Concurrency(); got != 3 {
+		t.Errorf("Concurrency() = %d with rootNodes at 3 and the rest at 7, "+
+			"want 3", got)
 	}
 }
 
@@ -147,6 +187,27 @@ func TestSizeManagerFromFile(t *testing.T) {
 	performMultiPerfProfiles(testFunc, t)
 }
 
+// A manager made from a data file in memory is sized from that memory with
+// each performance profile, and data that fails to load gives an error
+// rather than a size.
 func TestSizeManagerFromMemory(t *testing.T) {
-	// TODO: Size the manager from memory
+	data := readTestData(t)
+	testFunc := func(perf PerformanceProfile, t *testing.T) {
+		s, err := NewConfigHash(perf).SizeManagerFromMemory("",
+			unsafe.Pointer(&data[0]), uint64(len(data)))
+		if err != nil {
+			t.Errorf("SizeManagerFromMemory failed for profile %d: %v", perf,
+				err)
+		}
+		if s == 0 {
+			t.Errorf("SizeManagerFromMemory gave 0 for profile %d, want the "+
+				"size", perf)
+		}
+	}
+	performMultiPerfProfiles(testFunc, t)
+	if _, err := NewConfigHash(InMemory).SizeManagerFromMemory("",
+		unsafe.Pointer(&data[0]), 512); err == nil {
+		t.Error("SizeManagerFromMemory gave no error for the first 512 bytes " +
+			"of the data file")
+	}
 }

@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // Pipeline is an immutable container that groups multiple Flow Elements into a
@@ -45,8 +46,8 @@ type Pipeline interface {
 	// EvidenceKeyFilter returns a filter that includes the Evidence keys of every
 	// element in the Pipeline.
 	EvidenceKeyFilter() EvidenceKeyFilter
-	// IsConcurrent reports whether Flow Data created by this Pipeline uses
-	// thread-safe storage (required for parallel processing).
+	// IsConcurrent reports whether Flow Data created by this Pipeline adds
+	// Element Data with a compare and swap, as parallel processing needs.
 	IsConcurrent() bool
 	// IsSuppressProcessExceptions reports whether processing errors are logged
 	// rather than returned. Exposed so wrappers such as the web integration can
@@ -60,13 +61,22 @@ type Pipeline interface {
 }
 
 type pipeline struct {
-	elements                  []FlowElement
+	elements []FlowElement
+	// writes gives, for each element, the keys in lower case of the Element
+	// Data it writes, being its own and those of a group's members.
+	writes                    [][]string
 	logger                    *slog.Logger
 	concurrent                bool
 	suppressProcessExceptions bool
 	closeElements             bool
-	properties                []PropertyMetadata
 	filter                    EvidenceKeyFilter
+
+	// properties is the elements' Property metadata, gathered on first use
+	// and again until every element has loaded its Properties, after which
+	// it is kept.
+	properties       []PropertyMetadata
+	propertiesMu     sync.Mutex
+	propertiesLoaded atomic.Bool
 
 	closeOnce sync.Once
 	closeErr  error
@@ -116,10 +126,54 @@ func findElement(elements []FlowElement, dataKey string) FlowElement {
 	return nil
 }
 
+// Properties returns the Property metadata of every element. An element
+// whose Properties arrive after the Pipeline is built, such as a Cloud Aspect
+// Engine after a transient failure, is asked again on each call until it has
+// loaded them, so a consumer that reads the metadata then sees them.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#consequences-for-consumers-of-the-engine
 func (p *pipeline) Properties() []PropertyMetadata {
-	out := make([]PropertyMetadata, len(p.properties))
-	copy(out, p.properties)
+	props := p.currentProperties()
+	out := make([]PropertyMetadata, len(props))
+	copy(out, props)
 	return out
+}
+
+func (p *pipeline) currentProperties() []PropertyMetadata {
+	if p.propertiesLoaded.Load() {
+		return p.properties
+	}
+	p.propertiesMu.Lock()
+	defer p.propertiesMu.Unlock()
+	if !p.propertiesLoaded.Load() {
+		var loaded bool
+		p.properties, loaded = gatherProperties(p.elements)
+		p.propertiesLoaded.Store(loaded)
+	}
+	return p.properties
+}
+
+// PropertiesLoader is implemented by a Flow Element whose Property metadata
+// can arrive after it is built, such as a Cloud Aspect Engine whose
+// Properties come from the cloud service. Until PropertiesLoaded is true, a
+// Pipeline gathers the elements' Property metadata again each time it is
+// asked for.
+type PropertiesLoader interface {
+	// PropertiesLoaded reports whether the element's Properties are known.
+	PropertiesLoaded() bool
+}
+
+// gatherProperties returns the Property metadata of elements, and whether
+// every element has loaded its Properties.
+func gatherProperties(elements []FlowElement) ([]PropertyMetadata, bool) {
+	var props []PropertyMetadata
+	loaded := true
+	for _, e := range elements {
+		props = append(props, e.Properties()...)
+		if l, ok := e.(PropertiesLoader); ok && !l.PropertiesLoaded() {
+			loaded = false
+		}
+	}
+	return props, loaded
 }
 
 func (p *pipeline) EvidenceKeyFilter() EvidenceKeyFilter { return p.filter }
@@ -144,8 +198,13 @@ func (p *pipeline) process(fd *flowData) error {
 	p.mu.Unlock()
 	defer p.inFlight.Done()
 
-	for _, e := range p.elements {
+	// Each element's Element Data is open for writing while it processes,
+	// and read only once it has finished.
+	for i, e := range p.elements {
+		since := fd.head.Load()
+		fd.openForWriting(p.writes[i])
 		p.processElement(e, fd)
+		fd.finishWriting(since, p.writes[i])
 	}
 
 	if !fd.HasErrors() {

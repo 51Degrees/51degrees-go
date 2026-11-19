@@ -1,0 +1,30 @@
+name: Release Pull Request
+
+# Builds and tests the release pull request, rc into main, on every entry in
+# ci/options.json, and never merges it. A pull request into rc is built only on
+# the entries its changes need, so this is the full build of a release before
+# it reaches main. See common-ci .github/workflows/release-pull-request.yml.
+on:
+  pull_request:
+    branches: [main]
+
+# A push to rc while the release is open builds it again, in place of the
+# build of the older rc.
+concurrency:
+  group: release-pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  Release:
+    name: Release Pull Request
+    uses: 51Degrees/common-ci/.github/workflows/release-pull-request.yml@main
+    with:
+      repo-name: ${{ github.event.repository.name }}
+      org-name: ${{ github.event.repository.owner.login }}
+      cache-assets: true
+    secrets:
+      token: ${{ secrets.ACCESS_TOKEN }}
+      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
+      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
+      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
+      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}

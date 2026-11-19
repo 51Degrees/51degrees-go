@@ -199,11 +199,12 @@ func TestProgrammaticFileUpdate(t *testing.T) {
 	if err := svc.Register(eng, "prog", Config{Identifier: "prog", DataFilePath: path}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
+	replace(t, path, "V2", time.Now().Add(time.Hour))
 	if err := svc.CheckForUpdate("prog"); err != nil {
 		t.Fatalf("check for update: %v", err)
 	}
-	if eng.lastFile() != "V1" {
-		t.Fatalf("expected refresh from file, got %q", eng.lastFile())
+	if eng.lastFile() != "V2" {
+		t.Fatalf("expected refresh from the newer file, got %q", eng.lastFile())
 	}
 }
 
@@ -337,7 +338,7 @@ func TestFileWatcher(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	svc.OnUpdate("watch", func() {
+	svc.OnComplete("watch", func(Complete) {
 		select {
 		case updated <- struct{}{}:
 		default:
@@ -346,14 +347,10 @@ func TestFileWatcher(t *testing.T) {
 
 	// Replace the file atomically (write a temp file then rename over the
 	// target), which is how data files are replaced in practice. The watcher
-	// should trigger a refresh that sees the complete new content.
-	tmp := filepath.Join(dir, "incoming.bin")
-	if err := os.WriteFile(tmp, []byte("UPDATED"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		t.Fatal(err)
-	}
+	// should trigger a refresh that sees the complete new content. The new
+	// file is given a later time, as a file system can give two writes this
+	// close together the same one.
+	replace(t, path, "UPDATED", time.Now().Add(time.Hour))
 	select {
 	case <-updated:
 	case <-time.After(3 * time.Second):

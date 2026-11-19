@@ -20,12 +20,13 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
-// Package ipi_cloud is the IP Intelligence Cloud Aspect Engine. It reads the
+// Package ipi_cloud is the IP Intelligence and IP geolocation Cloud Aspect
+// Engine for Go, an alternative to MaxMind and IPinfo. It reads the
 // IP Intelligence section of the response a Cloud Request Engine gets from
 // the 51Degrees cloud service, so a Pipeline gives IP Intelligence values
 // from the cloud as ipi_onpremise gives them from a data file.
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-aspect-engine.md
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md
 package ipi_cloud
 
 import (
@@ -65,17 +66,25 @@ func New(logger *slog.Logger) *Engine {
 	}
 }
 
+// Factory builds the engine from configuration for core.BuilderRegistry, so
+// a Pipeline holding it can be built from a configuration file. The engine
+// has no options, so it takes no build parameters.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/pipeline-configuration.md?plain=1#L8-L10
+func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
+	return New(logger), nil
+}
+
 // Process reads the IP Intelligence section of the cloud response into Data.
 func (e *Engine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, DataKey)
 	if err != nil {
 		return err
 	}
-	properties, err := cloudProperties(fd)
-	if err != nil {
-		return err
-	}
 	data := &Data{BaseAspectData: engines.NewBaseAspectData()}
+	properties, err := cloudProperties(fd)
+	if err != nil || len(properties) == 0 {
+		setInferredValues(data, aspect)
+	}
 	for _, p := range properties {
 		name := strings.ToLower(p.Name)
 		if strings.Contains(strings.ToLower(p.Type), "weighted") {
@@ -86,6 +95,56 @@ func (e *Engine) Process(fd core.FlowData) error {
 	}
 	fd.GetOrAdd(DataKey, func(core.FlowData) core.ElementData { return data })
 	return nil
+}
+
+// nullReasonSuffix ends the name of the member that gives the reason a
+// Property has no value.
+const nullReasonSuffix = "nullreason"
+
+// setInferredValues sets every Property in the section with no Property
+// metadata to go by, taking a list of values that each have a weighting as
+// weighted and anything else as text. A reason member is read with the
+// Property it explains, not set as a Property of its own.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/pipeline-elements/cloud-aspect-engine.md#start-up-activity
+func setInferredValues(data *Data, aspect map[string]json.RawMessage) {
+	for name, raw := range aspect {
+		if explained, ok := strings.CutSuffix(name, nullReasonSuffix); ok {
+			if _, ok := aspect[explained]; ok {
+				continue
+			}
+		}
+		if isWeighted(raw) {
+			data.Set(strings.ToLower(name), weightedValue(aspect, name))
+		} else {
+			data.Set(strings.ToLower(name), textValue(aspect, name))
+		}
+	}
+}
+
+// isWeighted reports whether raw is a list of values that each have a
+// weighting, the form the cloud gives a weighted Property in.
+func isWeighted(raw json.RawMessage) bool {
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil || len(items) == 0 {
+		return false
+	}
+	for _, item := range items {
+		if !hasMember(item, "rawweighting") {
+			return false
+		}
+	}
+	return true
+}
+
+// hasMember reports whether object has a member named name, ignoring case,
+// as encoding/json matches the weighting when it reads a weighted value.
+func hasMember(object map[string]json.RawMessage, name string) bool {
+	for member := range object {
+		if strings.EqualFold(member, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // cloudProperties gives the IP Intelligence Properties the Resource Key
@@ -128,12 +187,20 @@ func weightedValue(aspect map[string]json.RawMessage, name string) engines.Aspec
 	return engines.NewAspectPropertyValue(values)
 }
 
-// jsonText gives a JSON string as it is, and any other JSON value as it is
-// written.
+// jsonText gives a JSON string as it is, a WKT value written as an object with
+// one member, value, as the WKT text it holds, and any other JSON value as it
+// is written.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/value-types.md#wkt
 func jsonText(raw json.RawMessage) string {
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
 		return text
+	}
+	var wkt map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wkt); err == nil && len(wkt) == 1 {
+		if value, ok := wkt["value"]; ok && json.Unmarshal(value, &text) == nil {
+			return text
+		}
 	}
 	return string(raw)
 }

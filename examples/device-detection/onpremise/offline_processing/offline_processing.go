@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -19,6 +19,17 @@
  * in the end user terms of the application under an appropriate heading,
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
+
+/**
+@example onpremise/offline_processing/offline_processing.go
+This example shows how to process a list of Evidence Records from a file
+with the onpremise Engine, writing the detection metrics and properties of
+each record to another file for further evaluation.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/onpremise/offline_processing).
+
+@include{doc} example-require-datafile.txt
+*/
 
 package main
 
@@ -37,7 +48,10 @@ go test -run Example_offline_processing
 
 This example will output to a file next to the evidence file, named
 "20000 Evidence Records.processed.yml".
-This contains IsMobile, BrowserName, BrowserVersion, PlatformName, PlatformVersion, DeviceId
+This contains IsMobile, BrowserName, BrowserVersion, PlatformName, PlatformVersion, DeviceId,
+and HardwareVendor, HardwareName and DeviceType, which only the Enterprise data
+file has. With the free Lite data file, the example says those need the
+Enterprise data file, and where to ask for a copy.
 */
 
 import (
@@ -56,11 +70,16 @@ import (
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
 )
 
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-offline_processing-offline_processing.go&utm_term=enterprise-data-file"
+
 // function match performs a match on an input Evidence, calulates
-// configured properties and returns them as yaml entry
+// configured properties and returns them as yaml entry, with the properties
+// only the Enterprise data file has that the data file in use lacks.
 func processEvidence(
 	engine *onpremise.Engine,
-	evidence []onpremise.Evidence) map[string]string {
+	evidence []onpremise.Evidence) (map[string]string, []string) {
 
 	// Process the evidence
 	results, err := engine.Process(evidence)
@@ -69,10 +88,21 @@ func processEvidence(
 	}
 	defer results.Free()
 
+	lacks := make([]string, 0)
+	for _, property := range dd_example.EnterpriseProperties {
+		if !dd_example.HasProperty(results, property) {
+			lacks = append(lacks, property)
+		}
+	}
+
 	available := results.AvailableProperties()
 	// Get the values in string
 	res := make(map[string]string)
 	for i := 0; i < len(available); i++ {
+		// A name given that the data file does not have has no type.
+		if results.PropertyType(i) == nil {
+			continue
+		}
 		hasValues, err := results.HasValuesByIndex(i)
 		if err != nil {
 			log.Fatalln(err)
@@ -93,13 +123,16 @@ func processEvidence(
 	if err != nil {
 		log.Fatalf("ERROR: Failed to get unique DeviceID: %v", err)
 	}
-	return res
+	return res, lacks
 }
 
+// process writes the values of each Evidence Record to the output file, and
+// returns the properties only the Enterprise data file has that the data file
+// in use lacks.
 func process(
 	engine *onpremise.Engine,
 	evidenceFilePath string,
-	outputFilePath string) {
+	outputFilePath string) []string {
 	outFile, err := os.Create(outputFilePath)
 	if err != nil {
 		log.Fatalf("ERROR: Failed to create file %s.\n", outputFilePath)
@@ -123,6 +156,7 @@ func process(
 
 	enc := yaml.NewEncoder(outFile)
 	dec := yaml.NewDecoder(file)
+	var lacks []string
 	for {
 		// Decode Evidence file by line
 		var doc map[string]string
@@ -135,7 +169,8 @@ func process(
 		// Prepare evidence for usage
 		evidence := common.ConvertToEvidence(doc)
 
-		values := processEvidence(engine, evidence)
+		var values map[string]string
+		values, lacks = processEvidence(engine, evidence)
 
 		err = enc.Encode(values)
 		if err != nil {
@@ -149,6 +184,27 @@ func process(
 	if err != nil {
 		log.Fatalf("ERROR: Failed to write end for file \"%s\". %v\n", outputFilePath, err)
 	}
+	return lacks
+}
+
+// enterpriseOutput returns a line for each property only the Enterprise data
+// file has, saying it is in the output file or needs the Enterprise data file,
+// and where to ask for a copy when the data file lacks any of them.
+func enterpriseOutput(lacks []string) string {
+	output := ""
+	for _, property := range dd_example.EnterpriseProperties {
+		shown := "in the output file"
+		for _, lacked := range lacks {
+			if lacked == property {
+				shown = dd_example.NeedsEnterprise
+			}
+		}
+		output += fmt.Sprintf("\t%s: %s\n", property, shown)
+	}
+	if len(lacks) > 0 {
+		output += dd_example.EnterpriseNote(contactUs)
+	}
+	return output
 }
 
 func runOfflineProcessing(engine *onpremise.Engine, params common.ExampleParams) {
@@ -169,8 +225,9 @@ func runOfflineProcessing(engine *onpremise.Engine, params common.ExampleParams)
 	// Convert path separators to '/'
 	relOutputFilePath = filepath.ToSlash(relOutputFilePath)
 
-	process(engine, evidenceFilePath, outputFilePath)
+	lacks := process(engine, evidenceFilePath, outputFilePath)
 	fmt.Printf("Output to \"%s\".\n", relOutputFilePath)
+	fmt.Print(enterpriseOutput(lacks))
 }
 
 func main() {
@@ -186,12 +243,12 @@ func main() {
 				// Optimized config provided
 				onpremise.WithConfigHash(config),
 				// List of selected properties for detection
-				onpremise.WithProperties([]string{
+				onpremise.WithProperties(append([]string{
 					"IsMobile",
 					"BrowserName",
 					"BrowserVersion",
 					"PlatformName",
-					"PlatformVersion"}),
+					"PlatformVersion"}, dd_example.EnterpriseProperties...)),
 				// Path to your data file
 				onpremise.WithDataFile(params.DataFile),
 				// Enable automatic updates.
@@ -213,5 +270,9 @@ func main() {
 	)
 }
 
-// Output:
+// Output, with the free Lite data file:
 // Output to "../20000 Evidence Records.processed.yml".
+//	HardwareVendor: needs the Enterprise data file
+//	HardwareName: needs the Enterprise data file
+//	DeviceType: needs the Enterprise data file
+// Some of these properties need the Enterprise data file. Contact us for a copy at <contactUs>

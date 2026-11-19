@@ -1,8 +1,10 @@
 # 51Degrees IP Intelligence API
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-ip-intelligence-api "Data rewards the curious") **IP Intelligence in GO**
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **IP Intelligence in GO**
 
 ## Introduction
+
+IP Intelligence and IP geolocation for Go. It finds an IP address's likely location (country, region, town, and coordinates), connection type, and network, by reading a data file on your server or using the 51Degrees cloud service. An alternative to MaxMind and IPinfo.
 
 This repository contains a Go implementation of the IP Intelligence engine.
 This module allows you to call functions for determining to set up with an IP Intelligence engine and begin using it to process IP addresses.
@@ -16,7 +18,7 @@ This Go version contains the following packages:
 - `ipi_onpremise` - a higher level Engine API providing IP Intelligence library and file update functions
 
 ### Minimum Go Version
-- Go 1.19
+- Go 1.22
 
 ## Setup Instructions
 
@@ -57,6 +59,21 @@ go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ### Vendored C Library
 
 Implementation wraps an amalgamated C library from [ip-intelligence-cxx](https://github.com/51Degrees/51degrees-cxx) repo
+
+## Thread safety
+
+A results instance, being the `ipi_interop.ResultsIpi` that
+`Engine.NewResultsIpi` and `ipi_interop.NewResultsIpi` return and that
+`Engine.ProcessWithResults` reuses, is not safe to use from several goroutines
+at once, because reading a value writes into the native results, and it takes
+no lock. So a results instance belongs to one goroutine at a time, and the
+caller is responsible for thread-safe access to one it shares, for example
+with a `sync.Mutex` of its own. A web server makes one for each request. The
+`Data` that `Engine.ProcessData` returns reads its values from a results
+instance of its own, so it is not safe to use from several goroutines at once
+either, and the caller is responsible for thread-safe access to one it shares
+in the same way. See the
+[results instances rules](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L196-L221).
 
 ## Development
 

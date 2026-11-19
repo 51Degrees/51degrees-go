@@ -8,32 +8,74 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 $cxx = Join-Path $RepoName cxx
 
-# Move cxx to the latest 51degrees-cxx release, and make the engines' C sources
-# from it.
+# Move cxx forward to the latest 51degrees-cxx release, and make the engines'
+# C sources from it. cxx moves only to a release that holds the commit it is
+# at, so a commit ahead of the latest release, such as the head of a cxx
+# release pull request, stays until a release holds it.
 git -C $cxx fetch --quiet --tags origin
 $release = git -C $cxx tag --list | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } |
     Sort-Object { [version]$_ } | Select-Object -Last 1
 $current = git -C $cxx describe --tags --always
 Write-Output "cxx is at $current, the latest release is $release"
 if ($release -and $release -ne $current) {
-    git -C $cxx checkout --quiet $release
-    git -C $RepoName submodule update --init --recursive cxx
+    $PSNativeCommandUseErrorActionPreference = $false
+    git -C $cxx merge-base --is-ancestor HEAD $release
+    $holds = $LASTEXITCODE -eq 0
+    $PSNativeCommandUseErrorActionPreference = $true
+    $global:LASTEXITCODE = 0
+    if ($holds) {
+        git -C $cxx checkout --quiet $release
+        # The submodules inside cxx follow the release. Updating cxx itself
+        # from this repository would put it back at the commit this
+        # repository records.
+        git -C $cxx submodule update --init --recursive
+    } else {
+        Write-Output "$release does not hold $current, so cxx stays where it is"
+    }
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
+
+# The JavaScript Builder Element keeps a committed copy of the templates,
+# because a Go module is built from git's archive of a tag, which leaves a
+# submodule empty. The submodule moves to the head of javascript-templates
+# first, so the copy and the commit it came from change in the same pull
+# request. ci/check-javascript-templates.ps1 fails when they differ.
+git -C $RepoName submodule update --init --remote javascript-templates
+Copy-Item -Path (Join-Path $RepoName 'javascript-templates/*.mustache') `
+    -Destination (Join-Path $RepoName 'pipeline/elements/javascriptbuilder/javascript-templates') -Force
+
+# The Derived Property Element keeps a committed copy of the scripts it ships,
+# for the same reason, and the copy moves with the derived-properties
+# submodule. ci/check-derived-properties.ps1 fails when they differ.
+git -C $RepoName submodule update --init --remote derived-properties
+$scripts = Join-Path $RepoName 'pipeline/elements/derivedproperty/scripts'
+Remove-Item -Path (Join-Path $scripts '*') -Force
+Copy-Item -Path (Join-Path $RepoName 'derived-properties/scripts/*') -Destination $scripts -Force
 
 # Update the dependencies of each module, without the workspace. The examples
 # move to the latest release of the published modules. A change to them alone
 # doesn't make a release. An example that requires a module not released yet
-# is left as it is until that release is out.
+# is left as it is until that release is out, and so is a published module
+# that requires the version of another the next release publishes.
+. $PSScriptRoot/products.ps1
+$repoRoot = (Resolve-Path $RepoName).Path
 foreach ($module in 'common', 'device-detection', 'ip-intelligence', 'pipeline',
     'examples/device-detection', 'examples/ip-intelligence', 'examples/mixed',
     'examples/pipeline') {
+    if ($module -notlike 'examples/*' -and
+        @(Get-UnreleasedRequirementReplaces $repoRoot $module)) {
+        Write-Warning "$module requires a module at the version the next release publishes, so it is left as it is"
+        continue
+    }
     Push-Location (Join-Path $RepoName $module)
     try {
         $env:GOWORK = 'off'
         if ($module -like 'examples/*') {
+            # tidy, not go list, which also fails when go.sum only lacks the
+            # lines for a release, as it does when an example is first moved
+            # from the workspace to a published module.
             $PSNativeCommandUseErrorActionPreference = $false
-            go list -m all *> $null
+            go mod tidy *> $null
             $resolved = $LASTEXITCODE -eq 0
             $PSNativeCommandUseErrorActionPreference = $true
             if (!$resolved) {
@@ -43,9 +85,18 @@ foreach ($module in 'common', 'device-detection', 'ip-intelligence', 'pipeline',
             }
         }
         # The go line stays as it is, so an update never asks for a newer Go
-        # than CI tests with. When the latest versions would, only patch
-        # versions are taken.
+        # than CI tests with, except that an example's go line moves with the
+        # published modules it requires, so it can take their latest release.
+        # When the latest versions need a newer Go still, only patch versions
+        # are taken.
         $goVersion = (go mod edit -json | ConvertFrom-Json).Go
+        if ($module -like 'examples/*') {
+            $needed = Get-ReleaseGoVersion $repoRoot $module
+            if ($needed -and (ConvertTo-GoVersion $needed) -gt (ConvertTo-GoVersion $goVersion)) {
+                Write-Output "Raising the go line of $module from $goVersion to $needed, as the published modules it requires ask"
+                $goVersion = $needed
+            }
+        }
         Write-Output "Updating the dependencies of $module"
         $PSNativeCommandUseErrorActionPreference = $false
         go get -u ./... "go@$goVersion" toolchain@none
@@ -64,3 +115,6 @@ foreach ($module in 'common', 'device-detection', 'ip-intelligence', 'pipeline',
         Pop-Location
     }
 }
+
+# The committed go.work follows the requirements updated above.
+& $PSScriptRoot/create-workspace.ps1

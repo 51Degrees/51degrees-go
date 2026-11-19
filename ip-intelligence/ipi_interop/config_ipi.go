@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -83,6 +83,7 @@ func (config *ConfigIpi) SetConcurrency(concurrency uint16) {
 	config.CPtr.graphs.concurrency = C.ushort(concurrency)
 	config.CPtr.profileGroups.concurrency = C.ushort(concurrency)
 	config.CPtr.profileOffsets.concurrency = C.ushort(concurrency)
+	config.CPtr.propertyTypes.concurrency = C.ushort(concurrency)
 
 }
 

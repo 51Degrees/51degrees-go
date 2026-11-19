@@ -62,14 +62,25 @@ const (
 )
 
 // ParseMissingBehavior converts a configuration string to a MissingBehavior.
+// An unrecognized value gives Original.
 func ParseMissingBehavior(s string) MissingBehavior {
+	mb, _ := lookupMissingBehavior(s)
+	return mb
+}
+
+// lookupMissingBehavior converts a configuration string to a MissingBehavior,
+// ignoring case and surrounding space, and reports whether the value is one of
+// Original, EmptyString or FlowError.
+func lookupMissingBehavior(s string) (MissingBehavior, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "original":
+		return Original, true
 	case "emptystring":
-		return EmptyString
+		return EmptyString, true
 	case "flowerror":
-		return FlowError
+		return FlowError, true
 	default:
-		return Original
+		return Original, false
 	}
 }
 
@@ -91,6 +102,7 @@ type Engine struct {
 // Data is a Translation Element Data. It uses a concurrent map because multiple
 // Translation Engines may write to a shared instance in parallel.
 type Data struct {
+	core.WriteGuard
 	values typedmap.Map
 }
 
@@ -105,8 +117,13 @@ func (d *Data) Get(name string) (any, error) {
 	return v, nil
 }
 
-// Set stores a translated Property value.
-func (d *Data) Set(name string, value any) { d.values.AddString(name, value) }
+// Set stores a translated Property value. It panics with
+// core.ErrElementDataFinished once the engines that write the instance have
+// finished processing.
+func (d *Data) Set(name string, value any) {
+	d.CheckWrite(name)
+	d.values.AddString(name, value)
+}
 
 // AsMap returns all translated Property values.
 func (d *Data) AsMap() map[string]any { return d.values.AsMap() }

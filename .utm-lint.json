@@ -4,6 +4,7 @@
     "^ip-intelligence/ipi_interop/ip-intelligence-cxx\\.[ch]$"
   ],
   "allowUntagged": [
-    "^pipeline/engines/missingproperty/missingproperty\\.go$"
+    "^pipeline/engines/missingproperty/missingproperty\\.go$",
+    "^pipeline/engines/missingproperty/missingproperty_test\\.go$"
   ]
 }

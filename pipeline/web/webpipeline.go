@@ -25,7 +25,7 @@
 // request, managing the Flow Data lifecycle, setting response headers, and
 // serving the client-side JavaScript and JSON endpoints.
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md
 package web
 
 import (
@@ -69,10 +69,13 @@ type PipelineConfig struct {
 // AssemblePipeline builds a Pipeline containing the supplied elements plus the
 // client-side elements required by the web integration, in the required order:
 // the Sequence Element first, then the supplied elements, then the Set Headers
-// Element, with the JSON Builder penultimate and the JavaScript Builder last.
-// Any client-side element already present among the supplied elements (matched
-// by data key) is not added again.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#pipeline-configuration
+// Element, then the JSON Builder and the JavaScript Builder. A supplied element
+// that must run last, such as usage sharing, goes after all of them.
+// Where the supplied elements hold a JavaScript Builder and no JSON Builder,
+// the JSON Builder goes immediately before that JavaScript Builder, which
+// wraps the JSON it builds. Any client-side element already present among the
+// supplied elements (matched by data key) is not added again.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#pipeline-configuration
 func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pipeline, error) {
 	present := map[string]bool{}
 	for _, e := range elements {
@@ -86,13 +89,25 @@ func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pi
 	if !cfg.DisableSequence && !present[sequence.DataKey] {
 		builder.AddFlowElement(sequence.New(cfg.Logger))
 	}
+	addJSONBuilder := !cfg.DisableJSONBuilder && !present[jsonbuilder.DataKey]
+	// An element that must run last, such as usage sharing, goes after every
+	// element added here.
+	var last []core.FlowElement
 	for _, e := range elements {
+		if _, ok := e.(core.RunsLast); ok {
+			last = append(last, e)
+			continue
+		}
+		if addJSONBuilder && e.DataKey() == javascriptbuilder.DataKey {
+			builder.AddFlowElement(jsonbuilder.New(cfg.Logger, nil))
+			addJSONBuilder = false
+		}
 		builder.AddFlowElement(e)
 	}
 	if !cfg.DisableSetHeaders && !present[setheaders.DataKey] {
 		builder.AddFlowElement(setheaders.New(cfg.Logger))
 	}
-	if !cfg.DisableJSONBuilder && !present[jsonbuilder.DataKey] {
+	if addJSONBuilder {
 		builder.AddFlowElement(jsonbuilder.New(cfg.Logger, nil))
 	}
 	if !cfg.DisableJavaScriptBuilder && !present[javascriptbuilder.DataKey] {
@@ -107,6 +122,9 @@ func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pi
 			SetLogger(cfg.Logger).
 			SetEndpoint(jsonEndpoint).
 			Build())
+	}
+	for _, e := range last {
+		builder.AddFlowElement(e)
 	}
 	return builder.Build()
 }
