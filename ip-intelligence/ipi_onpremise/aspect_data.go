@@ -41,8 +41,13 @@ import (
 // reason.
 //
 // A Property's values are read from the native results the first time the
-// Property is requested, and kept. Processing reads none. AspectData is safe
-// to read from several goroutines at once.
+// Property is requested, and kept. Processing reads none.
+//
+// AspectData is not safe to use from several goroutines at once, because
+// reading a value writes into the native results, and AspectData takes no
+// lock. The caller is responsible for thread-safe access to one it shares,
+// for example with a sync.Mutex of its own.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L525
 //
 // The native results hold memory the Go garbage collector does not manage.
 // Close frees it, and a read after Close returns ErrDataFreed. An AspectData
@@ -93,8 +98,8 @@ func (d *AspectData) AsMap() map[string]any {
 	return all
 }
 
-// Close frees the native results. It is safe to call more than once, and
-// from a goroutine other than one that is reading.
+// Close frees the native results. It is safe to call more than once, but not
+// while another goroutine reads the AspectData.
 func (d *AspectData) Close() error {
 	d.data.Free()
 	return nil

@@ -26,19 +26,11 @@ import (
 	"errors"
 	"io"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
-)
-
-const (
-	// aspectDataReaders is how many goroutines read one AspectData at once.
-	aspectDataReaders = 16
-	// aspectDataReads is how many times each of them reads.
-	aspectDataReads = 50
 )
 
 // evidenceCounting is countingResults populated from Evidence. It records
@@ -185,44 +177,6 @@ func TestAnAspectDataNeverClosedIsFreedByTheGarbageCollector(t *testing.T) {
 	}
 	if freed := results.freed.Load(); freed != 1 {
 		t.Errorf("the native results were freed %d times, want once", freed)
-	}
-}
-
-// Finished Element Data MUST be safe to read from several threads at once,
-// and only one thread at a time reads from its results.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L525
-func TestAspectDataIsReadFromSeveralGoroutines(t *testing.T) {
-	data, results := newCountingAspect(t)
-	defer data.Close()
-	var wg sync.WaitGroup
-	for i := 0; i < aspectDataReaders; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			names := []string{"a", "b", "c"}
-			for j := 0; j < aspectDataReads; j++ {
-				name := names[(i+j)%len(names)]
-				raw, err := data.Get(name)
-				if err != nil {
-					t.Errorf("Get(%s): %v", name, err)
-					return
-				}
-				values, err := raw.(weightedText).Value()
-				if err != nil || len(values) != 1 || values[0].Value() != name {
-					t.Errorf("%s is %v, %v", name, values, err)
-					return
-				}
-				if len(data.AsMap()) != len(names) {
-					t.Errorf("AsMap does not hold the %d Properties",
-						len(names))
-					return
-				}
-			}
-		}(i)
-	}
-	wg.Wait()
-	if reads := results.readsMade(); len(reads) != 3 {
-		t.Errorf("the reads were %v, want one of each Property", reads)
 	}
 }
 

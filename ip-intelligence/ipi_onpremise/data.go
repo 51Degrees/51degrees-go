@@ -25,7 +25,6 @@ package ipi_onpremise
 import (
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
 )
@@ -46,14 +45,17 @@ type nativeResults interface {
 // is requested, keeping what it has read so a second request does not call
 // the native code again. Processing reads no value.
 //
-// Data is safe to read from several goroutines at once. Only one goroutine at
-// a time reads from the native results.
+// Data is not safe to use from several goroutines at once, because reading a
+// value writes into the native results and into the values Data keeps, and
+// Data takes no lock. The caller is responsible for thread-safe access to one
+// it shares, for example with a sync.Mutex of its own.
 //
 // The native results hold memory the Go garbage collector does not manage, so
 // call Free when the Data is no longer needed. A read after Free returns
 // ErrDataFreed.
+//
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L520-L525
 type Data struct {
-	mu        sync.Mutex
 	results   nativeResults
 	hasValues bool
 	nameAt    func(int) string
@@ -84,8 +86,6 @@ func (d *Data) Values(property string) ([]*ipi_interop.WeightedValue, error) {
 // the Properties the Engine was created with, reading them from the native
 // results the first time the Property is requested.
 func (d *Data) ValuesByIndex(index int) ([]*ipi_interop.WeightedValue, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.results == nil {
 		return nil, ErrDataFreed
 	}
@@ -113,8 +113,6 @@ func (d *Data) ValuesByIndex(index int) ([]*ipi_interop.WeightedValue, error) {
 
 // Free releases the native results. It is safe to call more than once.
 func (d *Data) Free() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.results != nil {
 		d.results.Free()
 		d.results = nil
