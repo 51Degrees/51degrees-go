@@ -28,18 +28,17 @@
 package translation
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
-	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
-// DataKey is the default Element Data key for a Translation Engine. Engines that
-// share it write their translated Properties into a single instance; an Engine
-// can be given a distinct key via Builder.SetElementDataKey.
+// DataKey is the Element Data key of every Translation Engine. The Engines
+// in a Pipeline write their translated Properties into one instance under
+// it, so two of them must not be members of the same parallel group.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/translation-engine.md?plain=1#L131-L136
 const DataKey = "translation"
 
 // Evidence keys used for language selection, in order of precedence.
@@ -96,11 +95,13 @@ type Engine struct {
 	translations    []mapping
 	fixedLanguage   string
 	missingBehavior MissingBehavior
-	languages       *Languages
+	languages       languages
 }
 
-// Data is a Translation Element Data. It uses a concurrent map because multiple
-// Translation Engines may write to a shared instance in parallel.
+// Data is the Translation Element Data that every Translation Engine in a
+// Pipeline writes into. Two Translation Engines must not be members of the
+// same parallel group, and whoever builds the Pipeline keeps them apart, as
+// nothing checks it.
 type Data struct {
 	core.WriteGuard
 	values typedmap.Map
@@ -142,52 +143,30 @@ func GetAs[T any](d *Data, name string) (T, error) {
 	return v, nil
 }
 
-// Process translates the configured Properties for the request's target language.
+// Process translates the configured Properties for the request's target
+// language. Every destination is written, even when the source element or
+// the source Property is absent.
 func (e *Engine) Process(fd core.FlowData) error {
 	source, sourceErr := fd.Get(e.sourceKey)
-	if sourceErr != nil {
-		// The whole source element is absent: record a single error and write no
-		// destination Properties.
-		fd.AddError(fmt.Errorf(
-			"no source element '%s' was available to translate", e.sourceKey), e)
-		return nil
+	t := translator{
+		table:    e.languages.resolve(candidatesFromEvidence(fd, e.fixedLanguage)),
+		behavior: e.missingBehavior,
 	}
 
-	candidates := CandidatesFromEvidence(fd, e.fixedLanguage)
-	_, table, ok := e.languages.Resolve(candidates)
-
-	// Under FlowError, a request that names no language, or names only languages
-	// with no configured translator (and no base-language fallback), is reported
-	// as a single engine-level error and no Properties are written. Under the
-	// other behaviors a nil table simply yields identity/empty translations.
-	if !ok && e.missingBehavior == FlowError && !containsBaseLanguage(candidates) {
-		if len(candidates) == 0 {
-			fd.AddError(errors.New(
-				"the evidence did not contain a language to translate to"), e)
-		} else {
-			fd.AddError(fmt.Errorf(
-				"there was no translator configured for the language '%s'",
-				candidates[0]), e)
-		}
-		return nil
-	}
-
-	translator := NewTranslator(table, e.missingBehavior)
-
-	out := fd.GetOrAdd(e.DataKey(),
+	out := fd.GetOrAdd(DataKey,
 		func(core.FlowData) core.ElementData { return newData() }).(*Data)
 
 	for _, m := range e.translations {
-		raw, err := source.Get(m.source)
-		if err != nil {
-			// The source element is present but this Property is not: write a
-			// no-value result and record no error.
-			out.Set(m.destination, engines.NoValue[string](fmt.Sprintf(
-				"The source property '%s' was not present in the source data.",
-				m.source)))
+		if sourceErr != nil {
+			out.Set(m.destination, e.missingSource(fd, m.source))
 			continue
 		}
-		value, errs := translator.TranslateValue(raw)
+		raw, err := source.Get(m.source)
+		if err != nil {
+			out.Set(m.destination, e.missingSource(fd, m.source))
+			continue
+		}
+		value, errs := t.translateValue(raw)
 		out.Set(m.destination, value)
 		for _, translationErr := range errs {
 			fd.AddError(translationErr, e)
@@ -196,15 +175,12 @@ func (e *Engine) Process(fd core.FlowData) error {
 	return nil
 }
 
-// containsBaseLanguage reports whether any candidate requests the base language
-// (e.g. "en" / "en_gb"). In that case the source values are already in that
-// language, so translation is intentionally skipped rather than treated as a
-// missing translator under FlowError.
-func containsBaseLanguage(candidates []string) bool {
-	for _, c := range candidates {
-		if c != "" && strings.HasPrefix(c, BaseLanguage) {
-			return true
-		}
+// missingSource gives the destination value when a source value is absent,
+// an empty string, recording an error under FlowError.
+func (e *Engine) missingSource(fd core.FlowData, propName string) string {
+	if e.missingBehavior == FlowError {
+		fd.AddError(fmt.Errorf(
+			"no source value for translation property '%s'", propName), e)
 	}
-	return false
+	return ""
 }
