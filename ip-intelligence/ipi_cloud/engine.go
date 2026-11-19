@@ -31,7 +31,6 @@ package ipi_cloud
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"strings"
 
@@ -81,10 +80,10 @@ func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 // See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L79-L85
 func (e *Engine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, DataKey)
-	if errors.Is(err, aspectengine.ErrCloudRequestFailed) {
-		return nil
-	}
 	if err != nil {
+		if e.CloudRequestFailed(fd) {
+			return nil
+		}
 		return err
 	}
 	data := &Data{BaseAspectData: engines.NewBaseAspectData()}

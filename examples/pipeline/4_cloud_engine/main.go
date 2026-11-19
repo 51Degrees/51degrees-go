@@ -35,7 +35,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -75,10 +74,10 @@ type StarSignData struct {
 // nil for it rather than record the failure a second time.
 func (e *CloudStarSignEngine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, aspectKey)
-	if errors.Is(err, aspectengine.ErrCloudRequestFailed) {
-		return nil
-	}
 	if err != nil {
+		if e.CloudRequestFailed(fd) {
+			return nil
+		}
 		return err
 	}
 	data := &StarSignData{BaseAspectData: engines.NewBaseAspectData()}

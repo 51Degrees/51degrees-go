@@ -20,7 +20,4 @@ replace github.com/51Degrees/51degrees-go/device-detection/v4 v4.5.173 => ./devi
 
 replace github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.173 => ./ip-intelligence
 
-replace (
-	github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173 => ./pipeline
-	github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.174 => ./pipeline
-)
+replace github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173 => ./pipeline
