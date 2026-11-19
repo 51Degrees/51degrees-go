@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 178371ac8d5dec71e625fcdcb833d1dcd1ce3480 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx ad2ccae59e59a647ca8d760ae3dc5fb921f250e9 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -8090,7 +8090,8 @@ void fiftyoneDegreesDataSetFree(fiftyoneDegreesDataSetBase *dataSet);
  *
  * If the data passed in is successfully initialised, the current data set is
  * replaced The old data will remain in memory until the last reference to it
- * is released.
+ * is released. The new data set keeps the master file name of the one it
+ * replaces, so a later reload from the original file reads that file.
  * @param manager pointer to the resource manager to reload the data set for
  * @param source pointer to the memory location where the new data file is
  * stored
@@ -13875,6 +13876,14 @@ fiftyoneDegreesStatusCode fiftyoneDegreesDataSetReloadManagerFromMemory(
 		return status;
 	}
 
+	// Memory has no file name, so the replacement keeps the name of the file
+	// the existing data set came from, and a reload from the original file
+	// still finds it.
+	memcpy(
+		(char*)replacement->masterFileName,
+		existing->masterFileName,
+		sizeof(replacement->masterFileName));
+
 	status = replace(manager, replacement);
 	DataSetRelease(existing);
 	return status;
@@ -15377,7 +15386,8 @@ static fiftyoneDegreesStatusCode createTempFileWithPaths(
 	StatusCode status = NOT_SET;
 	const char* masterFileName = getNameFromPath(masterFile);
 
-	for (int i = 0; i < count; i++) {
+	// The paths are in order of preference, so stop at the first that works.
+	for (int i = 0; i < count && status != SUCCESS; i++) {
 		int charAdded = 0;
 		nameStart = strlen(paths[i]);
 		if (nameStart != 0 &&
@@ -26947,6 +26957,28 @@ EXTERNAL bool fiftyoneDegreesIpiGetNextUpdate(
 	fiftyoneDegreesDate *date);
 
 /**
+ * Gets the date an IP Intelligence data file was published from its header,
+ * reading the header alone rather than loading the file, so that an update
+ * can tell whether a new file is newer before loading it.
+ * @param fileName path to the data file
+ * @param date pointer to the date to set, to the published date in the
+ * header when the file is an IP Intelligence data file of the version this
+ * library reads and the date is valid (see #fiftyoneDegreesDateIsValid),
+ * otherwise to a year, month and day of zero
+ * @return #FIFTYONE_DEGREES_STATUS_SUCCESS when the date is set from the
+ * header, the status of opening the file when it cannot be opened,
+ * #FIFTYONE_DEGREES_STATUS_CORRUPT_DATA when the file is shorter than the
+ * header or the date is not valid,
+ * #FIFTYONE_DEGREES_STATUS_INCORRECT_VERSION when the file is not of the
+ * version this library reads, and
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_MEMORY when the header cannot be
+ * allocated
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesIpiGetPublishedFromFile(
+	const char *fileName,
+	fiftyoneDegreesDate *date);
+
+/**
  * Gets the total size in bytes which will be allocated when intialising a
  * IP Intelligence resource and associated manager with the same parameters. If any of
  * the configuration options prevent the memory from being constant (i.e. more
@@ -28233,6 +28265,7 @@ MAP_TYPE(WeightedValuesCollection)
 #define IpiGetEvidenceKeys fiftyoneDegreesIpiGetEvidenceKeys /**< Synonym for #fiftyoneDegreesIpiGetEvidenceKeys function. */
 #define IpiGetPublished fiftyoneDegreesIpiGetPublished /**< Synonym for #fiftyoneDegreesIpiGetPublished function. */
 #define IpiGetNextUpdate fiftyoneDegreesIpiGetNextUpdate /**< Synonym for #fiftyoneDegreesIpiGetNextUpdate function. */
+#define IpiGetPublishedFromFile fiftyoneDegreesIpiGetPublishedFromFile /**< Synonym for #fiftyoneDegreesIpiGetPublishedFromFile function. */
 #define IpiReloadManagerFromOriginalFile fiftyoneDegreesIpiReloadManagerFromOriginalFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromOriginalFile function. */
 #define IpiReloadManagerFromFile fiftyoneDegreesIpiReloadManagerFromFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromFile function. */
 #define IpiReloadManagerFromMemory fiftyoneDegreesIpiReloadManagerFromMemory /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromMemory function. */
@@ -29010,10 +29043,10 @@ static StatusCode readHeaderFromMemory(
 		SUCCESS : CORRUPT_DATA;
 }
 
-static StatusCode checkVersion(DataSetIpi* dataSet) {
-	if (!(dataSet->header.versionMajor ==
+static StatusCode checkHeaderVersion(const DataSetIpiHeader* header) {
+	if (!(header->versionMajor ==
 		FIFTYONE_DEGREES_IPI_TARGET_VERSION_MAJOR &&
-		dataSet->header.versionMinor ==
+		header->versionMinor ==
 		FIFTYONE_DEGREES_IPI_TARGET_VERSION_MINOR)) {
 		return INCORRECT_VERSION;
 	}
@@ -29023,8 +29056,8 @@ static StatusCode checkVersion(DataSetIpi* dataSet) {
 	// outside the range is one this API cannot use, so it is reported as an
 	// unsupported version. The message for corrupt data would send the reader
 	// to check the file is uncompressed, which it is.
-	if (dataSet->header.profilesOffsetShift < 0 ||
-		dataSet->header.profilesOffsetShift >
+	if (header->profilesOffsetShift < 0 ||
+		header->profilesOffsetShift >
 		FIFTYONE_DEGREES_IPI_MAX_PROFILES_OFFSET_SHIFT) {
 		return INCORRECT_VERSION;
 	}
@@ -29035,11 +29068,15 @@ static StatusCode checkVersion(DataSetIpi* dataSet) {
 	// collection positions in the header are read as 4 bytes where every IP
 	// Intelligence data file has 8. The builds in this repository always
 	// define it for IP Intelligence.
-	if (dataSet->header.profilesOffsetShift != 0) {
+	if (header->profilesOffsetShift != 0) {
 		return INCORRECT_VERSION;
 	}
 #endif
 	return SUCCESS;
+}
+
+static StatusCode checkVersion(DataSetIpi* dataSet) {
+	return checkHeaderVersion(&dataSet->header);
 }
 
 /**
@@ -30717,6 +30754,42 @@ bool fiftyoneDegreesIpiGetNextUpdate(
 	fiftyoneDegreesResourceManager *manager,
 	fiftyoneDegreesDate *date) {
 	return getHeaderDate(manager, true, date);
+}
+
+fiftyoneDegreesStatusCode fiftyoneDegreesIpiGetPublishedFromFile(
+	const char *fileName,
+	fiftyoneDegreesDate *date) {
+	FILE *file = NULL;
+	fiftyoneDegreesDate published;
+	DataSetIpiHeader *header;
+	StatusCode status;
+	date->year = 0;
+	date->month = 0;
+	date->day = 0;
+
+	// The header's members are constant, so it is read into allocated memory
+	// rather than into a local that would have to be initialised.
+	header = (DataSetIpiHeader*)Malloc(sizeof(DataSetIpiHeader));
+	if (header == NULL) {
+		return INSUFFICIENT_MEMORY;
+	}
+	status = FileOpen(fileName, &file);
+	if (status == SUCCESS) {
+		status = fread((void*)header, sizeof(DataSetIpiHeader), 1, file) == 1 ?
+			checkHeaderVersion(header) : CORRUPT_DATA;
+		fclose(file);
+	}
+	if (status == SUCCESS) {
+		published = header->published;
+		if (DateIsValid(&published)) {
+			*date = published;
+		}
+		else {
+			status = CORRUPT_DATA;
+		}
+	}
+	Free(header);
+	return status;
 }
 
 /**
