@@ -24,6 +24,7 @@ package core
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core/typedmap"
@@ -40,6 +41,10 @@ import (
 // while it is being written. Once its Flow Element has finished, the
 // instance may be read from several goroutines at once, as the members of a
 // parallel group read it, so an implementation must allow that.
+//
+// Keeping a reference to Element Data after the Flow Data that holds it is
+// closed is not supported, because a pool may give the instance to another
+// request, and nothing checks for it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#element-data
 // See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#element-data
 type ElementData interface {
@@ -113,15 +118,62 @@ func guardOf(d ElementData) writeGuarded {
 type BaseElementData struct {
 	WriteGuard
 	values typedmap.Map
+	// shared is set when something beyond the Flow Data holds the instance,
+	// as a cache does, so it never goes back to the pool.
+	shared atomic.Bool
 }
 
-// NewBaseElementData creates a BaseElementData. Its values are held in a map
-// that is not safe for writing from several goroutines at once, because only
-// the Flow Element that creates the instance writes it. Once that Flow Element
-// has finished, several goroutines can read the instance at once.
+// baseElementDataPool holds BaseElementData for reuse. NewBaseElementData
+// takes from it, and a Flow Data's Close gives back what it holds.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/resource-cleanup.md?plain=1#L87-L101
+var baseElementDataPool = sync.Pool{New: func() any {
+	return &BaseElementData{values: typedmap.NewMap()}
+}}
+
+// NewBaseElementData gives a BaseElementData with no values, open for
+// writing, from a pool. Its values are held in a map that is not safe for
+// writing from several goroutines at once, because only the Flow Element that
+// creates the instance writes it. Once that Flow Element has finished,
+// several goroutines can read the instance at once.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
 func NewBaseElementData() *BaseElementData {
-	return &BaseElementData{values: typedmap.NewMap()}
+	return baseElementDataPool.Get().(*BaseElementData)
+}
+
+// pooled is Element Data that goes back to a pool when the Flow Data that
+// holds it is closed.
+type pooled interface{ release() }
+
+// release empties d and gives it back to the pool, unless it is shared.
+func (d *BaseElementData) release() {
+	if d.shared.Load() || d.values == nil {
+		return
+	}
+	typedmap.Clear(d.values)
+	d.openForWriting()
+	baseElementDataPool.Put(d)
+}
+
+// sharable is Element Data that can be marked as shared.
+type sharable interface{ markShared() }
+
+func (d *BaseElementData) markShared() { d.shared.Store(true) }
+
+// MarkShared records that d is held beyond the Flow Data that holds it, as a
+// cache holds Element Data for other requests, so it never goes back to a
+// pool when that Flow Data is closed.
+func MarkShared(d ElementData) {
+	for d != nil {
+		if s, ok := d.(sharable); ok {
+			s.markShared()
+			return
+		}
+		u, ok := d.(ElementDataUnwrapper)
+		if !ok {
+			return
+		}
+		d = u.UnwrapElementData()
+	}
 }
 
 // Get returns the value of a Property by name, or an error if absent.

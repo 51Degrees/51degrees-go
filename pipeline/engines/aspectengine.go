@@ -106,8 +106,10 @@ func (b *BaseAspectEngine) Execute(fd core.FlowData, compute func() (AspectData,
 			return core.NewDataError("engine compute returned no data and no error")
 		}
 		// The data is told its Engine before the cache can serve it to
-		// another Flow Data.
+		// another Flow Data, and is marked shared so that closing this Flow
+		// Data leaves it in the cache rather than giving it to a pool.
 		attach(fd, b.DataKey(), data)
+		core.MarkShared(data)
 		b.cache.Set(key, data)
 		b.store(fd, data)
 		return nil

@@ -122,7 +122,10 @@ func FromContext(ctx context.Context) (core.FlowData, bool) {
 
 // Handler wraps next so that every request is processed by the Pipeline and the
 // resulting Flow Data is attached to the request context. The intercepted
-// endpoints are served directly and do not call next.
+// endpoints are served directly and do not call next. The Flow Data is closed
+// when the request ends, which gives its Element Data back to the pools, so
+// neither may be kept once next returns.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L27-L28
 func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -135,6 +138,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		fd, _ := m.process(r)
+		defer fd.Close()
 		m.applyResponseHeaders(w, fd)
 		ctx := context.WithValue(r.Context(), flowDataKey, fd)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -329,6 +333,7 @@ const failedCacheControl = "private, no-cache"
 func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request,
 	contentType string, content func(core.FlowData) []byte) {
 	fd := m.newFlowData(r)
+	defer fd.Close()
 	etag := m.etag(fd)
 	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
