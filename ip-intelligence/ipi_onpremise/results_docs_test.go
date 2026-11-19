@@ -99,3 +99,69 @@ func TestEveryWayToGetAResultsInstanceSaysItIsNotShared(t *testing.T) {
 		}
 	}
 }
+
+// typeDoc gives the doc comment, on one line, of the type name in the Go file
+// at path.
+func typeDoc(t *testing.T, path, name string) string {
+	t.Helper()
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil,
+		parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
+		for _, s := range gd.Specs {
+			ts := s.(*ast.TypeSpec)
+			if ts.Name.Name != name {
+				continue
+			}
+			doc := ts.Doc
+			if doc == nil {
+				doc = gd.Doc
+			}
+			return strings.Join(strings.Fields(doc.Text()), " ")
+		}
+	}
+	t.Fatalf("%s has no type %q", path, name)
+	return ""
+}
+
+// Data reads its values from a results instance, so ProcessData, which gives
+// it, the Data type and the README's thread safety section say the same of
+// it as of the results instance.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L219-L221
+func TestDataThatReadsAResultsInstanceSaysItIsNotShared(t *testing.T) {
+	docs := map[string]string{
+		"Engine ProcessData": funcDoc(t, "data.go", "Engine", "ProcessData"),
+		"type Data":          typeDoc(t, "data.go", "Data"),
+	}
+	for name, doc := range docs {
+		for _, want := range []string{notSharedWords, callerWords} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("the doc comment of %s does not say %q, in: %s",
+					name, want, doc)
+			}
+		}
+	}
+	readme, err := os.ReadFile("../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(readme)
+	start := strings.Index(text, "## Thread safety")
+	if start < 0 {
+		t.Fatal("the README has no Thread safety section")
+	}
+	section := text[start+len("## Thread safety"):]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	if !strings.Contains(section, "`Engine.ProcessData`") {
+		t.Errorf("the README's Thread safety section does not name "+
+			"`Engine.ProcessData`, in: %s", section)
+	}
+}
