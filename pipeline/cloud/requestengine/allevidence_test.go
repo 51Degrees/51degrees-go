@@ -60,7 +60,7 @@ func TestEvidenceTheServiceDoesNotListIsStillSent(t *testing.T) {
 	fd.AddEvidence(unlistedHeader, "Windows")
 	fd.AddEvidence("query.my-own-thing", "alpha")
 	fd.AddEvidence("cookie.51d_experiment", "beta")
-	if err := fd.Process(); err != nil {
+	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestEvidenceWithNoPrefixIsSentUnderItsWholeKey(t *testing.T) {
 	fd.AddEvidence("header.x-thing", "header")
 	fd.AddEvidence("query", "bare-query")
 	fd.AddEvidence("header.query", "header-query")
-	if err := fd.Process(); err != nil {
+	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestTheReservedNamesAreNeverSentFromEvidence(t *testing.T) {
 	fd.AddEvidence("other.VALUES", "not-the-property-list")
 	fd.AddEvidence("RESOURCE", "bare-and-still-reserved")
 	fd.AddEvidence("values", "bare-and-still-reserved-too")
-	if err := fd.Process(); err != nil {
+	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 
@@ -170,7 +170,7 @@ func TestTheWebRequestKeyIsNeverSentInAnyLetterCase(t *testing.T) {
 		fd := p.CreateFlowData()
 		fd.AddEvidence("header.user-agent", "ua-header")
 		fd.AddEvidence(key, "not-a-value")
-		if err := fd.Process(); err != nil {
+		if err := processAndRead(fd); err != nil {
 			p.Close()
 			srv.Close()
 			t.Fatalf("process: %v", err)
@@ -206,7 +206,7 @@ func TestTheCacheKeyStaysOnTheAcceptedEvidence(t *testing.T) {
 
 	first := p.CreateFlowData()
 	first.AddEvidence("header.user-agent", "ua-header")
-	if err := first.Process(); err != nil {
+	if err := processAndRead(first); err != nil {
 		t.Fatalf("process the first: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestTheCacheKeyStaysOnTheAcceptedEvidence(t *testing.T) {
 	second := p.CreateFlowData()
 	second.AddEvidence("header.user-agent", "ua-header")
 	second.AddEvidence(unlistedHeader, "Windows")
-	if err := second.Process(); err != nil {
+	if err := processAndRead(second); err != nil {
 		t.Fatalf("process the second: %v", err)
 	}
 

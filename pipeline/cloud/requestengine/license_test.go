@@ -146,7 +146,7 @@ func processWith(t *testing.T, p core.Pipeline, evidence map[string]string) erro
 	for key, value := range evidence {
 		fd.AddEvidence(key, value)
 	}
-	return fd.Process()
+	return processAndRead(fd)
 }
 
 // recordText returns a log record's message and the values of its
