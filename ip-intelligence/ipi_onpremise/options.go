@@ -56,6 +56,18 @@ func WithConfigIpi(configIpi *ipi_interop.ConfigIpi) EngineOptions {
 	}
 }
 
+// WithPerformanceProfile sets the Performance Profile the engine is created
+// with. It has no effect yet.
+func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOptions {
+	return func(cfg *Engine) error { return nil }
+}
+
+// WithConcurrency sets the expected number of operations that use the engine
+// at the same time. It has no effect yet.
+func WithConcurrency(concurrency uint16) EngineOptions {
+	return func(cfg *Engine) error { return nil }
+}
+
 // WithLicenseKey sets the license key to use when pulling the data file
 // this option can only be used when using the default data file url from 51Degrees, it will be appended as a query parameter
 func WithLicenseKey(key string) EngineOptions {
