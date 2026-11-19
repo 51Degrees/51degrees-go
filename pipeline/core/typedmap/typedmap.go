@@ -126,14 +126,28 @@ func (m *simpleMap) AsMap() map[string]any {
 	return out
 }
 
+// Clear removes every value from a Map made by NewMap or NewConcurrentMap,
+// keeping its storage so the Map can be used again. Any other Map is left as
+// it is.
+func Clear(m Map) {
+	switch t := m.(type) {
+	case *simpleMap:
+		clear(t.data)
+	case *concurrentMap:
+		t.mu.Lock()
+		clear(t.data)
+		t.mu.Unlock()
+	}
+}
+
 // concurrentMap is a Map safe for concurrent use via an RWMutex.
 type concurrentMap struct {
 	mu   sync.RWMutex
 	data map[string]any
 }
 
-// NewConcurrentMap returns a Map that is safe for concurrent use. This is used
-// where the Pipeline is configured for concurrent or parallel processing.
+// NewConcurrentMap returns a Map that is safe for concurrent use, for state
+// that several goroutines write.
 func NewConcurrentMap() Map {
 	return &concurrentMap{data: make(map[string]any)}
 }

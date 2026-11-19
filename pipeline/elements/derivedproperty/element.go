@@ -47,6 +47,7 @@ const DataKey = "derived"
 // engines.AspectPropertyValue per script, keyed by the script's output
 // Property name. Several elements write it, so it is safe for concurrent use.
 type Data struct {
+	core.WriteGuard
 	values typedmap.Map
 }
 
@@ -61,8 +62,13 @@ func (d *Data) Get(name string) (any, error) {
 	return v, nil
 }
 
-// Set stores a derived Property value.
-func (d *Data) Set(name string, value any) { d.values.AddString(name, value) }
+// Set stores a derived Property value. It panics with
+// core.ErrElementDataFinished once the elements that write the instance have
+// finished processing.
+func (d *Data) Set(name string, value any) {
+	d.CheckWrite(name)
+	d.values.AddString(name, value)
+}
 
 // AsMap returns every derived Property value.
 func (d *Data) AsMap() map[string]any { return d.values.AsMap() }
@@ -87,7 +93,12 @@ func GetAs[T any](d *Data, name string) (T, error) {
 // is built, so concurrent requests need nothing further.
 type Element struct {
 	*core.BaseElement
-	scripts  []*compiledScript
+	// scripts holds the scripts in the order they were added, which is the
+	// order of the metadata.
+	scripts []*compiledScript
+	// run holds the same scripts in the order they are evaluated, each
+	// after the scripts whose derived properties it reads.
+	run      []*compiledScript
 	reads    []sourceRead
 	keys     []string
 	metadata []ScriptMetaData
@@ -138,7 +149,7 @@ func (e *Element) Process(fd core.FlowData) error {
 			slots[i] = readSource(sources[r.key], found[r.key], r.property)
 		}
 	}
-	for _, s := range e.scripts {
+	for _, s := range e.run {
 		e.processScript(s, slots, found, out)
 	}
 	return nil

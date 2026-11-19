@@ -55,25 +55,31 @@ func refuses(t *testing.T, b *Builder, params map[string]any) error {
 	return err
 }
 
-// A queue that cannot hold the entries a message needs never starts one, so
-// nothing is shared until the element closes. The configuration is refused
-// rather than left to fail quietly.
-func TestAQueueSizeBelowTheMinimumEntriesIsRefused(t *testing.T) {
-	// 20 against the default minimum of 50.
-	err := refuses(t, NewBuilder().SetMaximumQueueSize(20),
-		map[string]any{"MaximumQueueSize": 20})
-	for _, want := range []string{"20", "50"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the message leaves out %s: %v", want, err)
+// The specification sets no lower limit on the queue size, so a size below
+// the minimum entries per message builds, zero included, with a queue of that
+// size.
+func TestAQueueSizeBelowTheMinimumEntriesBuilds(t *testing.T) {
+	// 20 and zero against the default minimum of 50.
+	for _, n := range []int{20, 0} {
+		e := NewBuilder().SetMaximumQueueSize(n).Build()
+		if _, err := core.NewPipelineBuilder().AddFlowElement(e).Build(); err != nil {
+			t.Errorf("a queue size of %d is refused: %v", n, err)
 		}
+		if got := cap(e.queue); got != n {
+			t.Errorf("a queue size of %d makes a queue of %d", n, got)
+		}
+		e.Close()
+		f, err := Factory(map[string]any{"MaximumQueueSize": n}, nil)
+		if err != nil {
+			t.Errorf("Factory refuses a queue size of %d: %v", n, err)
+			continue
+		}
+		f.Close()
 	}
-	// Zero makes the queue unbuffered, which holds nothing at all.
-	refuses(t, NewBuilder().SetMaximumQueueSize(0),
-		map[string]any{"MaximumQueueSize": 0})
 }
 
-// A negative queue size is refused in the same way, and does not panic where
-// the queue is made.
+// A negative queue size, which no queue can have, is refused, and does not
+// panic where the queue is made.
 func TestANegativeQueueSizeIsRefusedWithoutAPanic(t *testing.T) {
 	refuses(t, NewBuilder().SetMaximumQueueSize(-1),
 		map[string]any{"MaximumQueueSize": -1})

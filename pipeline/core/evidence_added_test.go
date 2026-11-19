@@ -159,7 +159,8 @@ func TestParallelGroupAddsNoEvidence(t *testing.T) {
 	}
 }
 
-// The caller cannot add Evidence once processing is complete.
+// The caller cannot add Evidence once processing is complete, and trying to
+// panics.
 func TestCallerAddsNoEvidenceAfterProcessing(t *testing.T) {
 	p, err := NewPipelineBuilder().SetLogger(quietLogger()).AddFlowElement(
 		newFuncElement("noop", nil, func(FlowData) error { return nil })).Build()
@@ -172,8 +173,12 @@ func TestCallerAddsNoEvidenceAfterProcessing(t *testing.T) {
 	if err := fd.Process(); err != nil {
 		t.Fatal(err)
 	}
-	fd.AddEvidence("query.month", "april")
-	fd.AddEvidence("query.new", "value")
+	wantFinishedPanic(t, "AddEvidence", func() {
+		fd.AddEvidence("query.month", "april")
+	})
+	wantFinishedPanic(t, "AddEvidence", func() {
+		fd.AddEvidence("query.new", "value")
+	})
 	if v, _ := fd.Evidence().Get("query.month"); v != "march" {
 		t.Errorf("value = %v, want march", v)
 	}
