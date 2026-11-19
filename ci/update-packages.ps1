@@ -51,6 +51,14 @@ git -C $RepoName submodule update --init --remote derived-properties
 $scripts = Join-Path $RepoName 'pipeline/elements/derivedproperty/scripts'
 Remove-Item -Path (Join-Path $scripts '*') -Force
 Copy-Item -Path (Join-Path $RepoName 'derived-properties/scripts/*') -Destination $scripts -Force
+# A script whose comments are reworded here keeps its committed copy. Once
+# the submodule's script has changed, the check fails until the new version
+# is reworded by hand.
+$reworded = Get-Content (Join-Path $PSScriptRoot 'derived-properties-reworded.json') -Raw |
+    ConvertFrom-Json
+foreach ($name in $reworded.PSObject.Properties.Name) {
+    git -C $RepoName checkout HEAD -- "pipeline/elements/derivedproperty/scripts/$name"
+}
 
 # Update the dependencies of each module, without the workspace. The examples
 # move to the latest release of the published modules. A change to them alone

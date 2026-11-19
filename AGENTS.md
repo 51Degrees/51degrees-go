@@ -368,7 +368,13 @@ them in `pipeline/elements/derivedproperty/scripts`, embedded in the module.
 Never edit the copy by hand. The derived properties check
 (`ci/check-derived-properties.ps1`) fails when the copy differs from the
 submodule, and the nightly package update moves the submodule and the copy
-together. A script added to the submodule needs a `BuiltInScript` constant,
+together. The one exception is a script listed in
+`ci/derived-properties-reworded.json`, whose copy rewords some comment lines
+for the reason the list gives. Its other lines must be the submodule's, and
+the list records the git blob of the submodule's script it was made from. When
+that script changes upstream, the nightly update keeps the old copy and the
+check fails, so copy the new version, reword the same comments and record its
+blob. A script added to the submodule needs a `BuiltInScript` constant,
 which `TestBuiltInScriptsAreTheSubmodule` checks. The package's tests run every
 case file and every rejection case in the submodule's `tests` folder, so its
 answers and its faults are checked against the other languages'.

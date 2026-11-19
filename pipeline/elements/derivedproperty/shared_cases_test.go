@@ -23,6 +23,7 @@
 package derivedproperty
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -399,10 +400,53 @@ func TestRejectedScripts(t *testing.T) {
 	}
 }
 
+// rewordedScripts gives the names of the scripts listed in
+// ci/derived-properties-reworded.json, whose shipped copy has comment lines
+// reworded. ci/check-derived-properties.ps1 checks that each is still the
+// submodule's script at the blob the list records.
+func rewordedScripts(t *testing.T) map[string]json.RawMessage {
+	t.Helper()
+	list, err := os.ReadFile(filepath.Join(
+		"..", "..", "..", "ci", "derived-properties-reworded.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names map[string]json.RawMessage
+	if err := json.Unmarshal(list, &names); err != nil {
+		t.Fatal(err)
+	}
+	return names
+}
+
+// onlyCommentsDiffer reports whether copied has the lines of original, in the
+// same places, apart from comment lines, which may differ where both lines
+// are comments.
+func onlyCommentsDiffer(copied, original string) bool {
+	c := strings.Split(strings.ReplaceAll(copied, "\r\n", "\n"), "\n")
+	o := strings.Split(strings.ReplaceAll(original, "\r\n", "\n"), "\n")
+	if len(c) != len(o) {
+		return false
+	}
+	for i := range c {
+		if c[i] != o[i] && !(isComment(c[i]) && isComment(o[i])) {
+			return false
+		}
+	}
+	return true
+}
+
+// isComment reports whether a line of a script is a YAML comment.
+func isComment(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "#")
+}
+
 // The scripts this package ships are the scripts in the submodule, and every
-// one of them has a BuiltInScript.
+// one of them has a BuiltInScript. A script whose comments are reworded here
+// differs from the submodule's in comment lines only, and does differ, or it
+// would not be listed.
 func TestBuiltInScriptsAreTheSubmodule(t *testing.T) {
 	folder := sharedFolder(t)
+	reworded := rewordedScripts(t)
 	shipped, err := builtInFiles.ReadDir("scripts")
 	if err != nil {
 		t.Fatal(err)
@@ -411,6 +455,11 @@ func TestBuiltInScriptsAreTheSubmodule(t *testing.T) {
 	if len(shipped) != len(inSubmodule) {
 		t.Errorf("%d scripts are shipped and the submodule has %d", len(shipped), len(inSubmodule))
 	}
+	for name := range reworded {
+		if _, err := builtInFiles.ReadFile("scripts/" + name); err != nil {
+			t.Errorf("%s is listed as reworded and is not shipped", name)
+		}
+	}
 	for _, entry := range shipped {
 		copied, _ := builtInFiles.ReadFile("scripts/" + entry.Name())
 		original, err := os.ReadFile(filepath.Join(folder, "scripts", entry.Name()))
@@ -418,7 +467,15 @@ func TestBuiltInScriptsAreTheSubmodule(t *testing.T) {
 			t.Errorf("%s is not in the submodule: %v", entry.Name(), err)
 			continue
 		}
-		if string(copied) != string(original) {
+		if _, ok := reworded[entry.Name()]; ok {
+			if string(copied) == string(original) {
+				t.Errorf("the shipped %s is listed as reworded and is the "+
+					"submodule's", entry.Name())
+			} else if !onlyCommentsDiffer(string(copied), string(original)) {
+				t.Errorf("the shipped %s differs from the submodule's in "+
+					"more than its comments", entry.Name())
+			}
+		} else if string(copied) != string(original) {
 			t.Errorf("the shipped %s differs from the submodule's", entry.Name())
 		}
 		name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
