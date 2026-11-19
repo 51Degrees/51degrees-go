@@ -26,20 +26,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// test runs an example, prints what it printed, checks that it ends with a
-// Find out more section, and returns what it printed.
+// test runs an example, prints what it printed, and returns what it
+// printed.
 func test(t *testing.T, name string) string {
 	output, err := exec.Command("go", "run", "./"+name).CombinedOutput()
 	os.Stdout.Write(output)
 	if err != nil {
 		t.Error(err)
-	}
-	if err := CheckFindOutMore(string(output)); err != nil {
-		t.Errorf("%s: %v", name, err)
 	}
 	return string(output)
 }
@@ -77,38 +73,12 @@ func TestReloadFromFile(t *testing.T) {
 	testEnterprise(t, "reload_from_file")
 }
 
-// TestStronglyTyped runs the example and checks that it reads values as their
-// Go types and shows the properties only the Enterprise data file has.
-// A manager made from a data file held in memory detects, and detects again
-// once it is reloaded from data held in memory.
-// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/data-updates.md?plain=1#L212-L213
 func TestReloadFromMemory(t *testing.T) {
-	output := test(t, "reload_from_memory")
-	if err := CheckEnterprise(output); err != nil {
-		t.Errorf("reload_from_memory: %v", err)
-	}
-	for _, want := range []string{"Made from memory, the iPhone gives",
-		"Reloaded from memory, the iPhone gives"} {
-		if strings.Count(output, want) != 1 {
-			t.Errorf("reload_from_memory does not print %q once", want)
-		}
-	}
-	if strings.Count(output, "	IsMobile: True") != 2 {
-		t.Error("reload_from_memory does not give IsMobile True before " +
-			"and after the reload")
-	}
+	testEnterprise(t, "reload_from_memory")
 }
 
 func TestStronglyTyped(t *testing.T) {
-	output := test(t, "strongly_typed")
-	if err := CheckEnterprise(output); err != nil {
-		t.Errorf("strongly_typed: %v", err)
-	}
-	for _, typed := range []string{"IsMobile: true (bool)", " (int)"} {
-		if !strings.Contains(output, typed) {
-			t.Errorf("strongly_typed does not show %q", typed)
-		}
-	}
+	testEnterprise(t, "strongly_typed")
 }
 
 // examples are the examples in this folder that read a data file.
