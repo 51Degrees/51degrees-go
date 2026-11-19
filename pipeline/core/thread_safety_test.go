@@ -38,11 +38,12 @@ func (e *manyValuesElement) Process(fd FlowData) error {
 	return nil
 }
 
-// Once the Flow Element that writes an Element Data has finished, every
-// member of a parallel group reads that instance at the same time, so reading
-// it from several goroutines at once is safe. The throwaway workflow runs this
-// test with the race detector as well as without it.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/thread-safety.md?plain=1#L50-L57
+// Once the Flow Element that writes an Element Data has finished, the members
+// of a parallel group may read that instance at the same time, so reading the
+// Element Data from several goroutines at once is safe. The Flow Data itself
+// is used by one goroutine at a time, so only the test's goroutine reads it.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L12-L16
+// and https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L41-L43
 func TestElementDataIsReadFromSeveralGoroutinesAtOnce(t *testing.T) {
 	const (
 		readers        = 16
@@ -58,6 +59,13 @@ func TestElementDataIsReadFromSeveralGoroutinesAtOnce(t *testing.T) {
 	if err := fd.Process(); err != nil {
 		t.Fatalf("process: %v", err)
 	}
+	data, err := fd.Get("device")
+	if err != nil {
+		t.Fatalf("Flow Data gave no device data: %v", err)
+	}
+	if byKey := fd.ElementDataAsMap(); len(byKey) != 1 {
+		t.Fatalf("the Flow Data holds %d Element Data, want 1", len(byKey))
+	}
 
 	// Process has returned, so the only write is over before any read below.
 	var wg sync.WaitGroup
@@ -69,11 +77,6 @@ func TestElementDataIsReadFromSeveralGoroutinesAtOnce(t *testing.T) {
 			defer wg.Done()
 			<-start
 			for n := 0; n < readsPerReader; n++ {
-				data, err := fd.Get("device")
-				if err != nil {
-					failures <- "Flow Data gave no device data: " + err.Error()
-					return
-				}
 				value, err := data.Get("platform")
 				if err != nil {
 					failures <- "platform is missing: " + err.Error()
@@ -90,10 +93,6 @@ func TestElementDataIsReadFromSeveralGoroutinesAtOnce(t *testing.T) {
 				}
 				if all := data.AsMap(); len(all) != 2 {
 					failures <- "the Element Data holds other than its two values"
-					return
-				}
-				if byKey := fd.ElementDataAsMap(); len(byKey) != 1 {
-					failures <- "the Flow Data holds other than one Element Data"
 					return
 				}
 			}

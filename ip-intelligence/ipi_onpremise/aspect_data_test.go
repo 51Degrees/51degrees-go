@@ -22,196 +22,215 @@
 
 package ipi_onpremise
 
+// These tests follow the Engine rules for the data an IP Intelligence Engine
+// gives, which bind the on-premise Engine used on its own, outside a
+// Pipeline, as they bind it in one.
+
 import (
-	"errors"
-	"io"
-	"runtime"
-	"sync/atomic"
+	"math"
+	"reflect"
 	"testing"
-	"time"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
-// evidenceCounting is countingResults populated from Evidence. It records
-// being freed where another goroutine can see it.
-type evidenceCounting struct {
-	*countingResults
-	freed atomic.Int32
-}
+// weightedValues is what Get gives for a Property of the Engine.
+type weightedValues = engines.AspectPropertyValue[[]core.WeightedValue[any]]
 
-func (c *evidenceCounting) ResultsIpiFromEvidence(*ipi_interop.Evidence) error {
-	return nil
-}
-
-func (c *evidenceCounting) Free() { c.freed.Add(1) }
-
-// noEvidence is Evidence that holds nothing.
-type noEvidence struct{}
-
-func (noEvidence) Get(string) (any, bool) { return nil, false }
-func (noEvidence) AsMap() map[string]any  { return map[string]any{} }
-func (noEvidence) Keys() []string         { return nil }
-
-// newCountingAspect gives an AspectEngine whose Properties are A, B and C,
-// with results that count each read, and the AspectData of one lookup.
-func newCountingAspect(t *testing.T) (*AspectData, *evidenceCounting) {
+// aspectData gives the Data as Aspect Data, failing the test when it is not.
+func aspectData(t *testing.T, data *Data) engines.AspectData {
 	t.Helper()
-	engine, counting := newCountingEngine()
-	a := &AspectEngine{
-		engine:    engine,
-		names:     []string{"a", "b", "c"},
-		positions: map[string]int{"a": 0, "b": 1, "c": 2},
+	var v any = data
+	a, ok := v.(engines.AspectData)
+	if !ok {
+		t.Fatalf("the Data ProcessData gives is a %T, which does not "+
+			"implement Aspect Data", data)
 	}
-	results := &evidenceCounting{countingResults: counting}
-	data, err := a.processInto(results, noEvidence{})
+	return a
+}
+
+// propertyValues gets the named Property from the Aspect Data, failing the
+// test when it is missing or not weighted values.
+func propertyValues(t *testing.T, a engines.AspectData, name string) weightedValues {
+	t.Helper()
+	v, err := a.Get(name)
+	if err != nil {
+		t.Fatalf("Get(%q) gave %v", name, err)
+	}
+	values, ok := v.(weightedValues)
+	if !ok {
+		t.Fatalf("Get(%q) gave a %T, want a %T", name, v, weightedValues{})
+	}
+	return values
+}
+
+// rawWeighting is the raw weighting of a weight from 0 to 1.
+func rawWeighting(weight float64) uint16 {
+	return uint16(math.Round(weight * core.MaxRawWeighting))
+}
+
+// All Engines MUST populate data objects that implement Aspect Data, and
+// Element data returned by an IP Intelligence Engine MUST extend IAspectData.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L10-L12
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L34-L35
+func TestDataIsAspectData(t *testing.T) {
+	e, results := newCountingEngine()
+	data, err := e.processInto(results, "203.0.113.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newAspectData(a, data), results
+	defer data.Free()
+	a := aspectData(t, data)
+	if a.CacheHit() {
+		t.Error("the Data says it came from a cache, which no Data made " +
+			"by processing does")
+	}
 }
 
-// The Element Data MUST read a Property value from ResultsIpi only when that
-// Property is requested, and MUST NOT copy Property values out of ResultsIpi
-// while the Engine processes the Flow Data. The Element Data MAY keep a
-// value once it has been read.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L128-L136
-func TestAspectDataReadsAPropertyOnlyWhenItIsRequested(t *testing.T) {
-	data, results := newCountingAspect(t)
-	defer data.Close()
-	if reads := results.readsMade(); len(reads) != 0 {
-		t.Fatalf("processing read %v, want no read", reads)
-	}
-
-	for _, name := range []string{"B", "b"} {
-		values, err := readWeighted(t, data, name).Value()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(values) != 1 || values[0].Value() != "b" ||
-			values[0].RawWeighting() != 65535 {
-			t.Errorf("%s is %v, want b with the raw weighting 65535", name,
-				values)
-		}
-	}
-	reads := results.readsMade()
-	if len(reads) != 1 || len(reads[0]) != 1 || reads[0][0] != 1 {
-		t.Errorf("two requests for B read %v, want one read of position 1",
-			reads)
-	}
-
-	values, err := readWeighted(t, data, "c").Value()
+// Each property MUST also be exposed as a weighted value. Get gives each
+// Property of the Engine, by its name in any case, as its weighted values,
+// reading only that Property, and only when it is requested.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/data-model.md?plain=1#L37
+func TestGetGivesEachPropertyAsWeightedValues(t *testing.T) {
+	e, results := newCountingEngine()
+	data, err := e.processInto(results, "203.0.113.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(values) != 1 || values[0].Value() != "c" ||
-		values[0].RawWeighting() != 32768 {
-		t.Errorf("c is %v, want c with the raw weighting 32768", values)
-	}
-}
+	defer data.Free()
+	a := aspectData(t, data)
 
-// AsMap is a request for every Property, so it reads each one that has not
-// been read, and reads none a second time.
-func TestAsMapReadsEachPropertyOnce(t *testing.T) {
-	data, results := newCountingAspect(t)
-	defer data.Close()
-	readWeighted(t, data, "a")
-	for i := 0; i < 2; i++ {
-		all := data.AsMap()
-		for _, name := range []string{"a", "b", "c"} {
-			if _, ok := all[name].(weightedText); !ok {
-				t.Errorf("AsMap holds a %T for %s", all[name], name)
-			}
-		}
-	}
-	if reads := results.readsMade(); len(reads) != 3 {
-		t.Errorf("the reads were %v, want one of each Property", reads)
-	}
-}
-
-// There MUST be some mechanism to ensure that such resources are cleaned up
-// when the Element Data is no longer needed. Close is that mechanism, and a
-// read after it gives ErrDataFreed.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L54-L61
-func TestCloseFreesTheNativeResults(t *testing.T) {
-	data, results := newCountingAspect(t)
-	var closer io.Closer = data
-	readWeighted(t, data, "a")
-	if err := closer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if freed := results.freed.Load(); freed != 1 {
-		t.Fatalf("Close freed the native results %d times, want once", freed)
-	}
-	for _, name := range []string{"a", "b"} {
-		if _, err := data.Get(name); !errors.Is(err, ErrDataFreed) {
-			t.Errorf("Get(%s) after Close gave %v, want ErrDataFreed", name,
-				err)
-		}
-	}
-	if all := data.AsMap(); len(all) != 0 {
-		t.Errorf("AsMap after Close holds %v, want nothing", all)
-	}
-	if err := closer.Close(); err != nil {
-		t.Errorf("a second Close gave %v", err)
-	}
-	if freed := results.freed.Load(); freed != 1 {
-		t.Errorf("the native results were freed %d times, want once", freed)
-	}
-}
-
-// An AspectData that is never closed has its native results freed once
-// nothing uses it any more, when the garbage collector finds it.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L47-L52
-func TestAnAspectDataNeverClosedIsFreedByTheGarbageCollector(t *testing.T) {
-	var results *evidenceCounting
-	func() {
-		var data *AspectData
-		data, results = newCountingAspect(t)
-		readWeighted(t, data, "a")
-	}()
-	deadline := time.Now().Add(leakCheckTimeoutSeconds * time.Second)
-	for results.freed.Load() == 0 && time.Now().Before(deadline) {
-		runtime.GC()
-		time.Sleep(leakCheckPollMs * time.Millisecond)
-	}
-	if freed := results.freed.Load(); freed != 1 {
-		t.Errorf("the native results were freed %d times, want once", freed)
-	}
-}
-
-// A value is given as the text the cloud service writes for it, and a weight
-// as a raw weighting from 0 to 65535.
-func TestValuesAreTextWithARawWeighting(t *testing.T) {
 	for _, c := range []struct {
+		name  string
+		index int
 		value any
-		text  string
+		raw   uint16
 	}{
-		{"GB", "GB"},
-		{15169, "15169"},
-		{51.5, "51.5"},
-		{-0.127, "-0.127"},
-		{float64(250), "250"},
-		{true, "true"},
+		{"b", 1, "b", core.MaxRawWeighting},
+		{"C", 2, "c", rawWeighting(0.5)},
 	} {
-		if got := valueText(c.value); got != c.text {
-			t.Errorf("%v is given as %q, want %q", c.value, got, c.text)
+		got, err := propertyValues(t, a, c.name).Value()
+		if err != nil {
+			t.Fatalf("%s has no value: %v", c.name, err)
+		}
+		want := []core.WeightedValue[any]{core.NewWeightedValue(c.value, c.raw)}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s gave %v, want %v", c.name, got, want)
 		}
 	}
-	for _, c := range []struct {
-		weight float64
-		raw    uint16
-	}{
-		{1, 65535},
-		{0, 0},
-		{0.5, 32768},
-		{0.25, 16384},
-		{-1, 0},
-		{2, 65535},
-	} {
-		if got := rawWeighting(c.weight); got != c.raw {
-			t.Errorf("the weight %v is given as %d, want %d", c.weight, got,
-				c.raw)
+	if reads := results.readsMade(); !reflect.DeepEqual(reads, [][]int{{1}, {2}}) {
+		t.Errorf("getting b then C read the positions %v, want [[1] [2]]", reads)
+	}
+}
+
+// A Property of the Engine with no value for the address gives weighted
+// values that say there is no value, with a message, as a Property with no
+// value does in any Aspect Data.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/properties.md#null-values
+func TestAPropertyWithNoValueSaysSo(t *testing.T) {
+	e := &Engine{}
+	e.setPositions([]string{"A", "D"})
+	results := &countingResults{values: map[int][]*ipi_interop.WeightedValue{
+		0: {{Value: "a", Weight: 1}},
+	}}
+	data, err := e.processInto(results, "203.0.113.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer data.Free()
+	d := propertyValues(t, aspectData(t, data), "D")
+	if d.HasValue() {
+		t.Errorf("D gave the value %v, want no value", d.AsInterface())
+	}
+	if d.NoValueMessage() == "" {
+		t.Error("D has no value and no message saying why")
+	}
+}
+
+// A name that is not a Property of the Engine gives an error and reads
+// nothing.
+func TestGetOfAnUnknownPropertyGivesAnError(t *testing.T) {
+	e, results := newCountingEngine()
+	data, err := e.processInto(results, "203.0.113.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer data.Free()
+	if v, err := aspectData(t, data).Get("D"); err == nil {
+		t.Errorf("D gave %v and no error, want an error", v)
+	}
+	if reads := results.readsMade(); len(reads) != 0 {
+		t.Errorf("getting D read %v, want nothing read", reads)
+	}
+}
+
+// AsMap gives every Property of the Engine under its name in lower case, as
+// its weighted values.
+func TestAsMapGivesEveryProperty(t *testing.T) {
+	e, results := newCountingEngine()
+	data, err := e.processInto(results, "203.0.113.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer data.Free()
+	m := aspectData(t, data).AsMap()
+	for name, value := range map[string]any{"a": "a", "b": "b", "c": "c"} {
+		v, ok := m[name].(weightedValues)
+		if !ok {
+			t.Errorf("AsMap holds %T under %q, want weighted values", m[name], name)
+			continue
+		}
+		got, err := v.Value()
+		if err != nil || len(got) != 1 || got[0].Value() != value {
+			t.Errorf("AsMap holds %v (%v) under %q, want the one value %v",
+				got, err, name, value)
+		}
+	}
+}
+
+// With a data file, Get gives each Property the values and weights Process
+// gives for it.
+func TestGetGivesTheValuesOfProcess(t *testing.T) {
+	e := newReloadTestEngine(t, WithDataFile(writeDataFile(t, readGoodFile(t))),
+		WithAutoUpdate(false), WithFileWatch(false))
+	want, err := e.Process(reloadTestAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) == 0 {
+		t.Fatalf("%s gave no values", reloadTestAddress)
+	}
+	data, err := e.ProcessData(reloadTestAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer data.Free()
+	a := aspectData(t, data)
+	for name, values := range want {
+		v := propertyValues(t, a, name)
+		if len(values) == 0 {
+			if v.HasValue() {
+				t.Errorf("%s gave %v, want no value", name, v.AsInterface())
+			}
+			continue
+		}
+		got, err := v.Value()
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if len(got) != len(values) {
+			t.Errorf("%s gave %d values, want %d", name, len(got), len(values))
+			continue
+		}
+		for i, w := range values {
+			if !reflect.DeepEqual(got[i].Value(), w.Value) ||
+				got[i].RawWeighting() != rawWeighting(w.Weight) {
+				t.Errorf("%s value %d is %v, want %v with the weight %v",
+					name, i, got[i], w.Value, w.Weight)
+			}
 		}
 	}
 }

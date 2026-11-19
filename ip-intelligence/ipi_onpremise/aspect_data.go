@@ -119,7 +119,7 @@ func (d *AspectData) value(index int, name string) (any, error) {
 	values := make([]core.WeightedValue[string], 0, len(read))
 	for _, v := range read {
 		values = append(values, core.NewWeightedValue(
-			valueText(v.Value), rawWeighting(v.Weight)))
+			valueText(v.Value), toRawWeighting(v.Weight)))
 	}
 	return engines.NewAspectPropertyValue(values), nil
 }

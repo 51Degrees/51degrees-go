@@ -149,11 +149,11 @@ func checkValues(t *testing.T, a *AspectEngine, data *AspectData, address string
 		}
 		for i, v := range values {
 			if v.Value() != valueText(expected[i].Value) ||
-				v.RawWeighting() != rawWeighting(expected[i].Weight) {
+				v.RawWeighting() != toRawWeighting(expected[i].Weight) {
 				t.Errorf("%s of %s value %d is %q weighted %d, want %q "+
 					"weighted %d", name, address, i, v.Value(),
 					v.RawWeighting(), valueText(expected[i].Value),
-					rawWeighting(expected[i].Weight))
+					toRawWeighting(expected[i].Weight))
 			}
 		}
 	}

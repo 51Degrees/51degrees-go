@@ -338,7 +338,7 @@ func TestMetadata(t *testing.T) {
 		t.Errorf("properties %+v", props)
 	}
 	scripts := e.Scripts()
-	if len(scripts) != 1 || scripts[0].Source != "HumanConfidence" || scripts[0].Format != 1 {
+	if len(scripts) != 1 || scripts[0].Name != "HumanConfidence" || scripts[0].Format != 1 {
 		t.Fatalf("scripts %+v", scripts)
 	}
 	var values []string

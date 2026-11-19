@@ -31,6 +31,10 @@ import "errors"
 // through the native code's index, and any other by reading every profile.
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L477-L499
 func (e *Engine) ProfileIdsForPropertyValue(property, value string) ([]uint32, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errors.New("the engine has no data loaded")
 	}

@@ -118,6 +118,10 @@ func (b *Builder) Build() (*Element, error) {
 	if len(faults) > 0 {
 		return nil, &ValidationError{Faults: faults}
 	}
+	order, faults := runOrder(models)
+	if len(faults) > 0 {
+		return nil, &ValidationError{Faults: faults}
+	}
 
 	logger := b.logger
 	if logger == nil {
@@ -127,8 +131,10 @@ func (b *Builder) Build() (*Element, error) {
 	keyIndex := map[string]int{}
 	readIndex := map[string]int{}
 	var properties []core.PropertyMetadata
+	compiled := make(map[*scriptModel]*compiledScript, len(models))
 	for _, m := range models {
 		s := &compiledScript{model: m}
+		compiled[m] = s
 		for _, p := range m.properties {
 			id := p.key + "|" + string(p.typ)
 			index, ok := readIndex[id]
@@ -163,9 +169,71 @@ func (b *Builder) Build() (*Element, error) {
 			Description: m.output.description,
 		})
 		logScript(logger, m)
+		// The source is for the build log only, so no path is kept.
+		m.source = ""
+	}
+	for _, m := range order {
+		e.run = append(e.run, compiled[m])
 	}
 	e.SetProperties(properties)
 	return e, nil
+}
+
+// runOrder gives the scripts in the order they run, so that a script which
+// reads derived.X runs after the script of this element that produces X,
+// whatever order the two were added in. Scripts that do not read one another
+// keep the order they were added in. A derived property no script here
+// produces is an earlier element's and changes nothing. Scripts that read
+// one another in a ring have no order to run in, and each ring is a fault.
+// See https://github.com/51Degrees/derived-properties/blob/cc30638632050795d9acc80d5118a290ffaba085/docs/format-1.md?plain=1#L274-L276
+func runOrder(models []*scriptModel) ([]*scriptModel, []Fault) {
+	producer := make(map[string]int, len(models))
+	for i, m := range models {
+		producer[strings.ToLower(m.output.name)] = i
+	}
+	const (
+		waiting = iota
+		started
+		placed
+	)
+	state := make([]int, len(models))
+	order := make([]*scriptModel, 0, len(models))
+	var faults []Fault
+	var place func(i int)
+	place = func(i int) {
+		state[i] = started
+		for _, p := range models[i].properties {
+			if p.elementKey() != DataKey {
+				continue
+			}
+			j, ok := producer[strings.ToLower(p.propertyName())]
+			if !ok {
+				continue
+			}
+			switch state[j] {
+			case waiting:
+				place(j)
+			case started:
+				faults = append(faults, Fault{
+					Script: models[i].name,
+					Source: models[i].source,
+					Message: fmt.Sprintf("the script '%s' reads '%s', and the "+
+						"script '%s' that produces it reads '%s.%s' in turn, "+
+						"directly or through other scripts, so there is no "+
+						"order the scripts can run in", models[i].name, p.name,
+						models[j].name, DataKey, models[i].output.name),
+				})
+			}
+		}
+		state[i] = placed
+		order = append(order, models[i])
+	}
+	for i := range models {
+		if state[i] == waiting {
+			place(i)
+		}
+	}
+	return order, faults
 }
 
 // duplicates reports two scripts with the same name, or producing the same

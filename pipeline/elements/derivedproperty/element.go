@@ -23,7 +23,9 @@
 // Package derivedproperty implements the Derived Property Element, which
 // produces new Property values from Property values other Flow Elements have
 // already produced, following rules written in a script, and writes them into
-// the Element Data under the key derived.
+// the Element Data under the key derived. Every Derived Property Element in a
+// Pipeline writes the same Element Data, so two of them MUST NOT be members of
+// the same parallel group.
 //
 // See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/pipeline-elements/derived-property-element.md
 package derivedproperty
@@ -45,12 +47,16 @@ const DataKey = "derived"
 
 // Data is the Element Data of the Derived Property Elements, holding one
 // engines.AspectPropertyValue per script, keyed by the script's output
-// Property name. Several elements write it, so it is safe for concurrent use.
+// Property name. Every Derived Property Element in a Pipeline writes this one
+// instance, one after another, so two Derived Property Elements MUST NOT be
+// members of the same parallel group, and it takes no lock.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/derived-property-element.md#key-considerations
 type Data struct {
+	core.WriteGuard
 	values typedmap.Map
 }
 
-func newData() *Data { return &Data{values: typedmap.NewConcurrentMap()} }
+func newData() *Data { return &Data{values: typedmap.NewMap()} }
 
 // Get returns a derived Property value by name.
 func (d *Data) Get(name string) (any, error) {
@@ -61,8 +67,13 @@ func (d *Data) Get(name string) (any, error) {
 	return v, nil
 }
 
-// Set stores a derived Property value.
-func (d *Data) Set(name string, value any) { d.values.AddString(name, value) }
+// Set stores a derived Property value. It panics with
+// core.ErrElementDataFinished once the elements that write the instance have
+// finished processing.
+func (d *Data) Set(name string, value any) {
+	d.CheckWrite(name)
+	d.values.AddString(name, value)
+}
 
 // AsMap returns every derived Property value.
 func (d *Data) AsMap() map[string]any { return d.values.AsMap() }
@@ -87,7 +98,12 @@ func GetAs[T any](d *Data, name string) (T, error) {
 // is built, so concurrent requests need nothing further.
 type Element struct {
 	*core.BaseElement
-	scripts  []*compiledScript
+	// scripts holds the scripts in the order they were added, which is the
+	// order of the metadata.
+	scripts []*compiledScript
+	// run holds the same scripts in the order they are evaluated, each
+	// after the scripts whose derived properties it reads.
+	run      []*compiledScript
 	reads    []sourceRead
 	keys     []string
 	metadata []ScriptMetaData
@@ -138,7 +154,7 @@ func (e *Element) Process(fd core.FlowData) error {
 			slots[i] = readSource(sources[r.key], found[r.key], r.property)
 		}
 	}
-	for _, s := range e.scripts {
+	for _, s := range e.run {
 		e.processScript(s, slots, found, out)
 	}
 	return nil

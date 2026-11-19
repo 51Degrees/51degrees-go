@@ -25,7 +25,6 @@ package ipi_onpremise
 import (
 	"fmt"
 	"log/slog"
-	"math"
 	"reflect"
 	"runtime"
 	"strings"
@@ -294,17 +293,4 @@ func (a *AspectEngine) processInto(results evidenceResults, evidence core.Eviden
 		return nil, err
 	}
 	return a.engine.newData(results), nil
-}
-
-// rawWeighting gives a weight from 0 to 1 as the raw weighting a weighted
-// value holds, from 0 to 65535.
-func rawWeighting(weight float64) uint16 {
-	raw := math.Round(weight * math.MaxUint16)
-	if raw <= 0 {
-		return 0
-	}
-	if raw >= math.MaxUint16 {
-		return math.MaxUint16
-	}
-	return uint16(raw)
 }

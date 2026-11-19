@@ -44,6 +44,12 @@ var maxWeighting = uint16Max * uint16Max
 
 // ResultsIpi represents a structure to manage IP-related results in the C library.
 // It contains a pointer to the C.ResultsIpi structure and a dynamic C result slice.
+//
+// A ResultsIpi is not safe to use from several goroutines at once, because
+// reading a value writes into the native results, and ResultsIpi takes no
+// lock. The caller is responsible for thread-safe access, so a caller that
+// shares one between goroutines coordinates that itself, for example with a
+// sync.Mutex of its own.
 type ResultsIpi struct {
 	CPtr     *C.ResultsIpi
 	CResults *interface{} // Pointer to a slice holding C results
@@ -52,6 +58,10 @@ type ResultsIpi struct {
 // NewResultsIpi creates a new ResultsIpi instance using the provided ResourceManager.
 // The instance handles C.ResultsIpi creation and associated memory management.
 // A finalizer is set to ensure resources are explicitly freed.
+//
+// A ResultsIpi is not safe to use from several goroutines at once, so one
+// belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func NewResultsIpi(manager *ResourceManager) *ResultsIpi {
 	r := C.ResultsIpiCreate(manager.CPtr)
 

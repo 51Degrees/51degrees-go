@@ -33,6 +33,10 @@ import (
 // hold it, and whether the engine was made with it.
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/usage-examples.md?plain=1#L148-L151
 func (e *Engine) Properties() ([]dd.PropertyMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errors.New("the engine has no data loaded")
 	}

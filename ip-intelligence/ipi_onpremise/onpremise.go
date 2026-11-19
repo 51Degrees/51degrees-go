@@ -94,7 +94,31 @@ type Engine struct {
 	// afterLoad, when set, is called each time a data file has loaded, the
 	// first included, so that what depends on the data is worked out again.
 	afterLoad func(*Engine)
+
+	// useMu is held for reading by each call that reads the manager, and for
+	// writing by Stop while it frees the manager, so Stop waits for those
+	// calls and each later call finds freed set.
+	useMu sync.RWMutex
+	freed bool
 }
+
+// errEngineStopped is the error a call that reads the data gives once Stop
+// has been called.
+var errEngineStopped = errors.New("the engine has stopped, so its data has been freed")
+
+// acquire holds the manager for one call until release, and reports false,
+// holding nothing, once Stop has freed it.
+func (e *Engine) acquire() bool {
+	e.useMu.RLock()
+	if e.freed {
+		e.useMu.RUnlock()
+		return false
+	}
+	return true
+}
+
+// release ends a hold that acquire gave.
+func (e *Engine) release() { e.useMu.RUnlock() }
 
 const (
 	defaultDataFileUrl = "" // TODO: set default file path url (when it will be available)
@@ -262,8 +286,12 @@ func (e *Engine) RefreshData() error {
 	return err
 }
 
-// Stop has to be called to free all the resources of the engine
-// before the instance goes out of scope
+// Stop has to be called to free all the resources of the engine before the
+// instance goes out of scope. It waits for the refreshes and the calls that
+// read the data already running, then frees the data, and each such call
+// made later gives an error or nothing. Results and Data already returned
+// keep the data they were made from until they are freed.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md?plain=1#L33-L40
 func (e *Engine) Stop() {
 	e.stopping.Store(true)
 	num := 0
@@ -296,11 +324,14 @@ func (e *Engine) Stop() {
 	e.reloadMu.Unlock()
 	close(e.stopCh)
 
+	e.useMu.Lock()
+	e.freed = true
 	if e.manager != nil {
 		e.manager.Free()
 	} else {
 		e.logger.Printf("stopping engine, manager is nil")
 	}
+	e.useMu.Unlock()
 
 	if e.IsCreateTempDataCopyEnabled() {
 		dir := filepath.Dir(e.dataFileLastUsedByManager)
@@ -569,9 +600,14 @@ func (e *Engine) getPublishedDate() time.Time {
 }
 
 // GetHttpHeaderKeys returns the Evidence keys the data in use accepts, worked
-// out from the data when it is loaded and each time it is refreshed. It is
-// safe to call while the data is refreshed.
+// out from the data when it is loaded and each time it is refreshed, or nil
+// once the engine has stopped. It is safe to call while the data is
+// refreshed.
 func (e *Engine) GetHttpHeaderKeys() []ipi_interop.EvidenceKey {
+	if !e.acquire() {
+		return nil
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil
 	}
@@ -579,8 +615,12 @@ func (e *Engine) GetHttpHeaderKeys() []ipi_interop.EvidenceKey {
 }
 
 // publishedDate is the published date of the loaded data file, or the zero
-// time before a data file is loaded.
+// time before a data file is loaded or once the engine has stopped.
 func (e *Engine) publishedDate() time.Time {
+	if !e.acquire() {
+		return time.Time{}
+	}
+	defer e.release()
 	if e.manager == nil {
 		return time.Time{}
 	}
@@ -588,17 +628,28 @@ func (e *Engine) publishedDate() time.Time {
 }
 
 // nextUpdateDate is the date the loaded data file expects an update after, or
-// the zero time before a data file is loaded.
+// the zero time before a data file is loaded or once the engine has stopped.
 func (e *Engine) nextUpdateDate() time.Time {
+	if !e.acquire() {
+		return time.Time{}
+	}
+	defer e.release()
 	if e.manager == nil {
 		return time.Time{}
 	}
 	return ipi_interop.GetNextUpdateDate(e.manager)
 }
 
-// NewResultsIpi creates a new ResultsIpi object using this engine's manager
-// Caller is responsible for calling Free() on the returned object
+// NewResultsIpi creates a new ResultsIpi object using this engine's manager,
+// or returns nil once the engine has stopped. Caller is responsible for
+// calling Free() on the returned object. A ResultsIpi is not safe to use from
+// several goroutines at once, so a reused one belongs to one goroutine at a
+// time. The caller is responsible for thread-safe access to one it shares.
 func (e *Engine) NewResultsIpi() *ipi_interop.ResultsIpi {
+	if !e.acquire() {
+		return nil
+	}
+	defer e.release()
 	return ipi_interop.NewResultsIpi(e.manager)
 }
 
@@ -617,12 +668,19 @@ func (e *Engine) Process(ipAddress string) (ipi_interop.Values, error) {
 // ProcessWithResults processes the given IP address with an optional reusable ResultsIpi object.
 // If results is nil, creates a new ResultsIpi object for this call.
 // If results is provided, reuses it for better performance (caller manages lifecycle).
+// A ResultsIpi is not safe to use from several goroutines at once, so a reused
+// one belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 //
 // Deprecated: ProcessWithResults copies the values of every required Property
 // out of the native results while it processes, and the specification
 // requires a value to be read only when its Property is requested. Use
 // ProcessData, which does that, and call Free on the Data it returns.
 func (e *Engine) ProcessWithResults(ipAddress string, results *ipi_interop.ResultsIpi) (ipi_interop.Values, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	var shouldFree bool
 
 	if results == nil {
