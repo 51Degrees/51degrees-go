@@ -214,6 +214,8 @@ func (a *AspectEngine) Process(fd core.FlowData) error {
 	if held != core.ElementData(aspect) {
 		// Another element has added Element Data under the key, so this one
 		// is not held and is closed here.
+		a.Logger().Warn("another Flow Element holds Element Data under the "+
+			"key, so this Engine's results are not added", "engine", DataKey)
 		aspect.Close()
 	}
 	return nil
