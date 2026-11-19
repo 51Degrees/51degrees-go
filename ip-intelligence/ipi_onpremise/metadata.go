@@ -37,6 +37,10 @@ var errNoData = errors.New("the engine has no data loaded")
 // hold its values, and whether the engine was made with it.
 // See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/ip-intelligence-specification/required-examples.md?plain=1#L167-L173
 func (e *Engine) Properties() ([]ipi_interop.PropertyMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errNoData
 	}
@@ -46,6 +50,10 @@ func (e *Engine) Properties() ([]ipi_interop.PropertyMetadata, error) {
 // Components gives every component the data file in use defines, with the
 // names of its Properties.
 func (e *Engine) Components() ([]ipi_interop.ComponentMetadata, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	if e.manager == nil {
 		return nil, errNoData
 	}
