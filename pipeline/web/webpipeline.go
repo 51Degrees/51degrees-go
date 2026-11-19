@@ -69,7 +69,8 @@ type PipelineConfig struct {
 // AssemblePipeline builds a Pipeline containing the supplied elements plus the
 // client-side elements required by the web integration, in the required order:
 // the Sequence Element first, then the supplied elements, then the Set Headers
-// Element, with the JSON Builder penultimate and the JavaScript Builder last.
+// Element, then the JSON Builder and the JavaScript Builder. A supplied element
+// that must run last, such as usage sharing, goes after all of them.
 // Where the supplied elements hold a JavaScript Builder and no JSON Builder,
 // the JSON Builder goes immediately before that JavaScript Builder, which
 // wraps the JSON it builds. Any client-side element already present among the
@@ -89,7 +90,14 @@ func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pi
 		builder.AddFlowElement(sequence.New(cfg.Logger))
 	}
 	addJSONBuilder := !cfg.DisableJSONBuilder && !present[jsonbuilder.DataKey]
+	// An element that must run last, such as usage sharing, goes after every
+	// element added here.
+	var last []core.FlowElement
 	for _, e := range elements {
+		if _, ok := e.(core.RunsLast); ok {
+			last = append(last, e)
+			continue
+		}
 		if addJSONBuilder && e.DataKey() == javascriptbuilder.DataKey {
 			builder.AddFlowElement(jsonbuilder.New(cfg.Logger, nil))
 			addJSONBuilder = false
@@ -114,6 +122,9 @@ func AssemblePipeline(cfg PipelineConfig, elements ...core.FlowElement) (core.Pi
 			SetLogger(cfg.Logger).
 			SetEndpoint(jsonEndpoint).
 			Build())
+	}
+	for _, e := range last {
+		builder.AddFlowElement(e)
 	}
 	return builder.Build()
 }
