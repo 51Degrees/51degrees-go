@@ -17,7 +17,7 @@ concurrency:
 jobs:
   Release:
     name: Release Pull Request
-    uses: 51Degrees/common-ci/.github/workflows/release-pull-request.yml@main
+    uses: 51Degrees/common-ci/.github/workflows/release-pull-request.yml@6f756057e5252a27df60d7722dc036f5bebd4369
     with:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}

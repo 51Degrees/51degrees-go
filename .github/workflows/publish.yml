@@ -17,7 +17,7 @@ on:
 jobs:
   Publish:
     name: Publish
-    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@main
+    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@6f756057e5252a27df60d7722dc036f5bebd4369
     with:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}
