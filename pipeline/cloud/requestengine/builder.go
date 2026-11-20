@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -61,36 +60,26 @@ type Builder struct {
 	state *DiscoveryState
 	// discovered is the discovery state of the last build, when known.
 	discovered *DiscoveryState
-	// endpointFromOldName is whether endpoint came from the deprecated
-	// environment variable.
-	endpointFromOldName bool
 }
 
 // EnvCloudEndpoint is the environment variable that overrides the default
 // cloud base endpoint when SetEndpoint is not used.
 const EnvCloudEndpoint = "_51DEGREES_CLOUD_ENDPOINT"
 
-// EnvCloudAPIURL is the environment variable the cloud base endpoint is read
-// from when EnvCloudEndpoint is unset or empty.
+// EnvCloudAPIURL is the old name of the environment variable EnvCloudEndpoint
+// names. It is no longer read.
 //
 // Deprecated: Use EnvCloudEndpoint, which names the variable that replaces
 // this one.
 const EnvCloudAPIURL = "FOD_CLOUD_API_URL"
 
-// oldEndpointLogged is whether this process has logged that the endpoint
-// came from the deprecated variable, so that it is logged once.
-var oldEndpointLogged atomic.Bool
-
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
 // recovery settings. The base endpoint is the _51DEGREES_CLOUD_ENDPOINT
-// environment variable when set, then the deprecated variable that
-// EnvCloudAPIURL names when set, otherwise DefaultEndpoint, and SetEndpoint
-// overrides all three.
+// environment variable when set, otherwise DefaultEndpoint, and SetEndpoint
+// overrides both.
 func NewBuilder() *Builder {
-	endpoint, fromOldName := endpointFromEnvironment()
 	return &Builder{
-		endpoint:                endpoint,
-		endpointFromOldName:     fromOldName,
+		endpoint:                endpointFromEnvironment(),
 		timeout:                 DefaultTimeout,
 		failuresToEnterRecovery: DefaultFailures,
 		failureWindow:           DefaultFailureWindow,
@@ -101,28 +90,13 @@ func NewBuilder() *Builder {
 }
 
 // endpointFromEnvironment returns the base endpoint the environment gives,
-// or DefaultEndpoint when it gives none, and whether the endpoint came from
-// the deprecated variable. A value that is empty or only whitespace counts as
-// unset.
-func endpointFromEnvironment() (endpoint string, fromOldName bool) {
+// or DefaultEndpoint when it gives none. A value that is empty or only
+// whitespace counts as unset.
+func endpointFromEnvironment() string {
 	if env := strings.TrimSpace(os.Getenv(EnvCloudEndpoint)); env != "" {
-		return env, false
+		return env
 	}
-	if env := strings.TrimSpace(os.Getenv(EnvCloudAPIURL)); env != "" {
-		return env, true
-	}
-	return DefaultEndpoint, false
-}
-
-// warnOfOldEndpointName logs to logger that the endpoint in use came from
-// the deprecated variable, once in the life of the process.
-func (b *Builder) warnOfOldEndpointName(logger *slog.Logger) {
-	if b.endpointFromOldName && oldEndpointLogged.CompareAndSwap(false, true) {
-		logger.Warn("The cloud endpoint was read from the environment " +
-			"variable " + EnvCloudAPIURL + ", which is deprecated. " +
-			EnvCloudEndpoint + " replaces it, so set that variable to the " +
-			"endpoint instead.")
-	}
+	return DefaultEndpoint
 }
 
 // SetLogger sets the engine's logger.
@@ -156,7 +130,6 @@ func (b *Builder) SetRequestedProperties(names ...string) *Builder {
 // explicitly.
 func (b *Builder) SetEndpoint(url string) *Builder {
 	b.endpoint = url
-	b.endpointFromOldName = false
 	return b
 }
 
@@ -281,7 +254,6 @@ func (b *Builder) Build() (*CloudRequestEngine, error) {
 	e.BaseAspectEngine = engines.NewBaseAspectEngine(DataKey,
 		acceptedEvidence{e}, b.logger)
 	e.SetDataSourceTier("cloud")
-	b.warnOfOldEndpointName(e.Logger())
 
 	if b.state != nil {
 		e.useState(b.state)
