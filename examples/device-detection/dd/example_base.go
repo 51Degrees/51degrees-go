@@ -250,7 +250,7 @@ func ReportDataFile(path string) string {
 // _51DEGREES_DD_PATH environment variable names, as for the on-premise
 // examples, and otherwise the free Lite file, found or downloaded.
 func DataFilePath() string {
-	if path := fromEnvironment("_51DEGREES_DD_PATH"); path != "" {
+	if path := os.Getenv("_51DEGREES_DD_PATH"); path != "" {
 		return ReportDataFile(path)
 	}
 	return ReportDataFile(GetFilePathByName([]string{LiteDataFile}))
@@ -260,7 +260,7 @@ func DataFilePath() string {
 // the _51DEGREES_EVIDENCE_YAML environment variable names, and otherwise the
 // free Evidence file, found or downloaded.
 func EvidenceFilePath() string {
-	if path := fromEnvironment("_51DEGREES_EVIDENCE_YAML"); path != "" {
+	if path := os.Getenv("_51DEGREES_EVIDENCE_YAML"); path != "" {
 		return path
 	}
 	return GetFilePathByName([]string{EvidenceFileYaml})
@@ -561,10 +561,10 @@ func ParseOptions() Options {
 	options := Options{}
 
 	dataFile, evidenceFile := "../"+LiteDataFile, "../"+EvidenceFileYaml
-	if path := fromEnvironment("_51DEGREES_DD_PATH"); path != "" {
+	if path := os.Getenv("_51DEGREES_DD_PATH"); path != "" {
 		dataFile = path
 	}
-	if path := fromEnvironment("_51DEGREES_EVIDENCE_YAML"); path != "" {
+	if path := os.Getenv("_51DEGREES_EVIDENCE_YAML"); path != "" {
 		evidenceFile = path
 	}
 

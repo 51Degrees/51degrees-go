@@ -24,21 +24,14 @@ package common
 
 import (
 	"os"
-	"strings"
 	"testing"
 )
 
-// The variables the examples read, and the deprecated names they are also
-// read from, each of which is written in two parts so that this file does not
-// name an old variable.
+// The variables the examples read.
 const (
 	licenceVariable  = "_51DEGREES_LICENSE_KEY"
 	dataVariable     = "_51DEGREES_DD_PATH"
 	evidenceVariable = "_51DEGREES_EVIDENCE_YAML"
-	oldLicence       = "LICENSE" + "_KEY"
-	oldDeviceLicence = "DEVICE" + "_DETECTION_KEY"
-	oldData          = "DATA" + "_FILE"
-	oldEvidence      = "EVIDENCE" + "_YAML"
 )
 
 // The data and evidence files RunExample uses when no variable names one.
@@ -48,17 +41,14 @@ const (
 )
 
 // setVariables gives each variable the examples read the value given for it,
-// and makes it empty when none is given, in an empty working folder, with no
-// old name reported yet.
+// and makes it empty when none is given, in an empty working folder.
 func setVariables(t *testing.T, values map[string]string) {
 	t.Helper()
 	for _, name := range []string{licenceVariable, dataVariable,
-		evidenceVariable, oldLicence, oldDeviceLicence, oldData,
-		oldEvidence} {
+		evidenceVariable} {
 		t.Setenv(name, values[name])
 	}
 	inAnEmptyFolder(t)
-	forgetReports(t)
 }
 
 // parameters returns the parameters RunExample gives an example.
@@ -72,8 +62,7 @@ func parameters() ExampleParams {
 }
 
 // TestRunExampleReadsTheEnvironment checks each parameter comes from its
-// 51Degrees variable first, then from the deprecated names in the order they
-// were read before, and is the default when none is set.
+// 51Degrees variable, and is the default when none is set.
 func TestRunExampleReadsTheEnvironment(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -83,26 +72,6 @@ func TestRunExampleReadsTheEnvironment(t *testing.T) {
 		{"only the new names", map[string]string{
 			licenceVariable: "new-key", dataVariable: "new.hash",
 			evidenceVariable: "new.yml",
-		}, ExampleParams{LicenseKey: "new-key", DataFile: "new.hash",
-			EvidenceYaml: "new.yml"}},
-		{"only the old names", map[string]string{
-			oldLicence: "old-key", oldData: "old.hash",
-			oldEvidence: "old.yml",
-		}, ExampleParams{LicenseKey: "old-key", DataFile: "old.hash",
-			EvidenceYaml: "old.yml"}},
-		{"only the old Device Detection key", map[string]string{
-			oldDeviceLicence: "device-key",
-		}, ExampleParams{LicenseKey: "device-key", DataFile: defaultData,
-			EvidenceYaml: defaultEvidence}},
-		{"both old keys", map[string]string{
-			oldLicence: "old-key", oldDeviceLicence: "device-key",
-		}, ExampleParams{LicenseKey: "old-key", DataFile: defaultData,
-			EvidenceYaml: defaultEvidence}},
-		{"the new and the old names", map[string]string{
-			licenceVariable: "new-key", dataVariable: "new.hash",
-			evidenceVariable: "new.yml", oldLicence: "old-key",
-			oldDeviceLicence: "device-key", oldData: "old.hash",
-			oldEvidence: "old.yml",
 		}, ExampleParams{LicenseKey: "new-key", DataFile: "new.hash",
 			EvidenceYaml: "new.yml"}},
 		{"no names", nil, ExampleParams{DataFile: defaultData,
@@ -115,64 +84,6 @@ func TestRunExampleReadsTheEnvironment(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestAnOldNameIsReportedOnce checks a value read from a deprecated name is
-// reported on the standard error stream, naming the variable that replaces
-// it, and only once however often the name is read.
-func TestAnOldNameIsReportedOnce(t *testing.T) {
-	setVariables(t, map[string]string{oldLicence: "old-key"})
-	printed := standardError(t, func() {
-		parameters()
-		parameters()
-	})
-	if got := reportsOf(printed, oldLicence, licenceVariable); got != 1 {
-		t.Errorf("two runs with only %s set reported it %d times, want 1, "+
-			"in %q", oldLicence, got, printed)
-	}
-}
-
-// TestNothingIsReportedWithoutAnOldName checks nothing is printed when no
-// value comes from a deprecated name.
-func TestNothingIsReportedWithoutAnOldName(t *testing.T) {
-	for _, c := range []struct {
-		name   string
-		values map[string]string
-	}{
-		{"only the new names", map[string]string{
-			licenceVariable: "new-key", dataVariable: "new.hash",
-			evidenceVariable: "new.yml",
-		}},
-		{"the new and the old names", map[string]string{
-			licenceVariable: "new-key", dataVariable: "new.hash",
-			evidenceVariable: "new.yml", oldLicence: "old-key",
-			oldDeviceLicence: "device-key", oldData: "old.hash",
-			oldEvidence: "old.yml",
-		}},
-		{"no names", nil},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			setVariables(t, c.values)
-			printed := standardError(t, func() { parameters() })
-			if printed != "" {
-				t.Errorf("the run printed %q, want nothing", printed)
-			}
-		})
-	}
-}
-
-// forgetReports makes the examples forget which old names they have
-// reported, now and when the test ends, so that each test starts as a new
-// process does.
-func forgetReports(t *testing.T) {
-	t.Helper()
-	forget := func() {
-		reportedLock.Lock()
-		defer reportedLock.Unlock()
-		reported = map[string]bool{}
-	}
-	forget()
-	t.Cleanup(forget)
 }
 
 // inAnEmptyFolder makes a new empty folder the working folder for the test,
@@ -192,38 +103,4 @@ func inAnEmptyFolder(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-}
-
-// standardError returns what f writes to the standard error stream.
-func standardError(t *testing.T, f func()) string {
-	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := os.Stderr
-	os.Stderr = file
-	defer func() { os.Stderr = before }()
-	f()
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	written, err := os.ReadFile(file.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(written)
-}
-
-// reportsOf returns how many lines of printed say that the variable old is
-// deprecated and that the variable name replaces it.
-func reportsOf(printed, old, name string) int {
-	count := 0
-	for _, line := range strings.Split(printed, "\n") {
-		if strings.Contains(line, " "+old+" is deprecated") &&
-			strings.Contains(line, " "+name+" replaces it") {
-			count++
-		}
-	}
-	return count
 }
