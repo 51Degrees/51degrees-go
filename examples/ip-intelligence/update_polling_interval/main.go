@@ -54,12 +54,8 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// Path to your data file
 		ipi_onpremise.WithDataFile(params.DataFile),
 
-		// To test this example, you need to:
-		// 1. Host an IP Intelligence data file (.ipi) at a custom URL accessible to this application
-		// 2. Provide that custom URL using WithDataUpdateUrl parameter
-		// 3. No license key is required when using a custom URL
-		// For production use, you will eventually need to use a Distributor service and
-		// license key to keep your data file updated.
+		// Updates download the Enterprise data file from the Distributor
+		// with the license key, which _51DEGREES_LICENSE_KEY gives.
 		// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=top
 		ipi_onpremise.WithLicenseKey(params.LicenseKey),
 
@@ -85,9 +81,6 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// will be used to check for an update before the
 		// IP intelligence engine is created.
 		ipi_onpremise.WithUpdateOnStart(false),
-
-		// Optionally provide your own file URL
-		ipi_onpremise.WithDataUpdateUrl("<custom URL>"),
 
 		// LowMemory keeps the data file open, so the engine reads a
 		// temp copy and an update can replace the original.
@@ -159,7 +152,7 @@ var evidences = common.IpEvidences{
 }
 
 // runWithoutUpdates shows the data file the example has, once, when there is
-// neither a licence key nor an address to download updates from.
+// no license key to download updates with.
 func runWithoutUpdates(params *common.ExampleParams) {
 	engine, err := ipi_onpremise.New(
 		ipi_onpremise.WithConfigIpi(ipi_interop.NewConfigIpi(ipi_interop.InMemory)),
@@ -177,16 +170,15 @@ func runWithoutUpdates(params *common.ExampleParams) {
 	processEvidence(engine, free, evidences[0])
 	processEvidence(engine, free, evidences[1])
 
-	fmt.Printf("\nAutomatic updates download the Enterprise data file with a "+
-		"licence key, which _51DEGREES_LICENSE_KEY gives, or from a copy "+
-		"you host, whose address _51DEGREES_IPI_DATA_FILE_URL gives. "+
-		"Contact us for a key and a copy at %s\n", contactUs)
+	fmt.Printf("\nAutomatic updates download the Enterprise data file from "+
+		"the Distributor with a license key, which _51DEGREES_LICENSE_KEY "+
+		"gives. Contact us for a key at %s\n", contactUs)
 }
 
 func main() {
 	common.RunExampleWithDataFile(common.AsnDataFile,
 		func(params *common.ExampleParams) error {
-			if params.LicenseKey == "" && params.DataFileUrl == "" {
+			if params.LicenseKey == "" {
 				runWithoutUpdates(params)
 				return nil
 			}
@@ -203,12 +195,9 @@ func main() {
 				// Path to your data file
 				ipi_onpremise.WithDataFile(params.DataFile),
 
-				// To test this example, you need to:
-				// 1. Host an IP Intelligence data file (.ipi) at a custom URL accessible to this application
-				// 2. Provide that custom URL using WithDataUpdateUrl parameter
-				// 3. No license key is required when using a custom URL
-				// For production use, you will eventually need to use a Distributor service and
-				// license key to keep your data file updated.
+				// Updates download the Enterprise data file from the
+				// Distributor with the license key, which
+				// _51DEGREES_LICENSE_KEY gives.
 				// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=main
 				ipi_onpremise.WithLicenseKey(params.LicenseKey),
 
@@ -234,9 +223,6 @@ func main() {
 				// will be used to check for an update before the
 				// IP intelligence engine is created.
 				ipi_onpremise.WithUpdateOnStart(false),
-
-				// Optionally provide your own file URL
-				ipi_onpremise.WithDataUpdateUrl(params.DataFileUrl),
 
 				// LowMemory keeps the data file open, so the engine reads a
 				// temp copy and an update can replace the original.

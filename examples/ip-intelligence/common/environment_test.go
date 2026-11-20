@@ -32,7 +32,6 @@ const (
 	licenceVariable  = "_51DEGREES_LICENSE_KEY"
 	dataVariable     = "_51DEGREES_IPI_PATH"
 	evidenceVariable = "_51DEGREES_EVIDENCE_YAML"
-	urlVariable      = "_51DEGREES_IPI_DATA_FILE_URL"
 )
 
 // setVariables gives each variable the examples read the value given for it,
@@ -40,7 +39,7 @@ const (
 func setVariables(t *testing.T, values map[string]string) {
 	t.Helper()
 	for _, name := range []string{licenceVariable, dataVariable,
-		evidenceVariable, urlVariable} {
+		evidenceVariable} {
 		t.Setenv(name, values[name])
 	}
 	inAnEmptyFolder(t)
@@ -66,9 +65,9 @@ func TestRunExampleReadsTheEnvironment(t *testing.T) {
 	}{
 		{"only the new names", map[string]string{
 			licenceVariable: "new-key", dataVariable: "new.ipi",
-			evidenceVariable: "new.yml", urlVariable: "https://new.example/",
+			evidenceVariable: "new.yml",
 		}, ExampleParams{LicenseKey: "new-key", DataFile: "new.ipi",
-			EvidenceYaml: "new.yml", DataFileUrl: "https://new.example/"}},
+			EvidenceYaml: "new.yml"}},
 		{"no names", nil, ExampleParams{DataFile: LiteDataFile,
 			EvidenceYaml: EvidenceFile}},
 	} {

@@ -98,14 +98,13 @@ func testFree(t *testing.T, name string) {
 }
 
 // withoutSettings returns the environment without the variables that name a
-// data file, evidence, a key or an update address.
+// data file, evidence or a key.
 func withoutSettings(environment []string) []string {
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
 		switch strings.ToUpper(strings.SplitN(variable, "=", 2)[0]) {
 		case "_51DEGREES_IPI_PATH", "_51DEGREES_DD_PATH",
-			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY",
-			"_51DEGREES_IPI_DATA_FILE_URL":
+			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY":
 			continue
 		}
 		kept = append(kept, variable)
@@ -119,7 +118,7 @@ func TestWithoutSettingsDropsTheNames(t *testing.T) {
 	got := withoutSettings([]string{
 		"_51DEGREES_DD_PATH=a", "_51DEGREES_LICENSE_KEY=b",
 		"_51DEGREES_IPI_PATH=j", "_51DEGREES_EVIDENCE_YAML=k",
-		"_51DEGREES_IPI_DATA_FILE_URL=l", "PATH=kept",
+		"PATH=kept",
 	})
 	if len(got) != 1 || got[0] != "PATH=kept" {
 		t.Errorf("withoutSettings kept %q, want only PATH", got)
