@@ -143,7 +143,7 @@ func TestReloadFromFile(t *testing.T) {
 }
 
 func TestReloadFromFileFreeDataFile(t *testing.T) {
-	testFreeEndsWithFindOutMore(t, "reload_from_file")
+	testFreeOnOwnCopy(t, "reload_from_file")
 }
 
 func TestStronglyTyped(t *testing.T) {
