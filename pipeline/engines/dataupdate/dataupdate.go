@@ -166,6 +166,9 @@ const (
 	// StatusNotNeeded is a check that applied no update because none was
 	// needed, such as a 304 (Not modified) response.
 	StatusNotNeeded Status = "AUTO_UPDATE_NOT_NEEDED"
+	// StatusInProgress is a file watcher check that found nothing left to do,
+	// having waited while another check of the same file loaded it.
+	StatusInProgress Status = "AUTO_UPDATE_IN_PROGRESS"
 	// StatusHTTPSError is a request to the update URL that failed, a
 	// download that ended before the whole file arrived, or a response that
 	// was neither a success nor a 304 (Not modified).
@@ -417,7 +420,7 @@ func (s *Service) CheckForUpdate(identifier string) error {
 	var err error
 	if reg.cfg.DataUpdateURL != "" {
 		status, err = reg.httpUpdate()
-	} else if loaded, refreshErr := reg.refreshFromNewerFile(); refreshErr != nil {
+	} else if loaded, _, refreshErr := reg.refreshFromNewerFile(); refreshErr != nil {
 		status, err = StatusRefreshFailed, refreshErr
 	} else if !loaded {
 		status = StatusNotNeeded
@@ -629,9 +632,11 @@ func (r *registration) startWatcher() error {
 					status := StatusSuccess
 					if !readable {
 						status = StatusTimeout
-					} else if loaded, err := r.refreshFromNewerFile(); err != nil {
+					} else if loaded, waited, err := r.refreshFromNewerFile(); err != nil {
 						status = StatusRefreshFailed
 						r.logCheckFailure(err)
+					} else if !loaded && waited {
+						status = StatusInProgress
 					} else if !loaded {
 						status = StatusNotNeeded
 					}
@@ -713,17 +718,22 @@ func (r *registration) refreshFromFile() error {
 }
 
 // refreshFromNewerFile reloads the Engine from its data file when the file is
-// newer than the one the Engine holds, and says whether it was loaded. A
+// newer than the one the Engine holds. It says whether the file was loaded,
+// and whether the check waited for another check of the file first, which
+// the watcher reports as in progress when nothing was left to load. A
 // watched or programmatically checked file that is not newer is left alone,
 // as .NET leaves it.
-// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
-func (r *registration) refreshFromNewerFile() (bool, error) {
-	r.refreshMu.Lock()
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md#reporting-each-check
+func (r *registration) refreshFromNewerFile() (loaded, waited bool, err error) {
+	waited = !r.refreshMu.TryLock()
+	if waited {
+		r.refreshMu.Lock()
+	}
 	defer r.refreshMu.Unlock()
 	if modified, ok := r.currentDataTime(); ok && !modified.After(r.loadedFileTime) {
-		return false, nil
+		return false, waited, nil
 	}
-	return true, r.loadDataFile()
+	return true, waited, r.loadDataFile()
 }
 
 // loadDataFile makes the tries of a refresh from the data file. It records the
