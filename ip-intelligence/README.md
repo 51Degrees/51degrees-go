@@ -56,6 +56,33 @@ Import the package as usual and it will get build automatically:
 go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ```
 
+### In a Pipeline
+
+`ipi_onpremise.NewPipelineEngine` takes the same options as `ipi_onpremise.New` and gives the engine as a Pipeline
+element, which adds `ipi_onpremise.Data` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
+Cloud Engine gives its data in. The Data reads each Property from the data file's results only when it is requested, and
+holds those results in memory the Go garbage collector cannot see until it is released. Closing the Flow Data releases
+them at once, and the web middleware closes each request's Flow Data when the request ends, so call `Close` on the Flow
+Data when you have finished with it:
+
+```go
+flowData := pipeline.CreateFlowData()
+defer flowData.Close()
+```
+
+`Close` on the Data releases them at once as well. If neither is closed, a finalizer releases the results once nothing
+holds the Data, but only when the garbage collector next runs, which can be too late under load. A Data is not safe to use from several goroutines at once, because reading
+a value writes into its results, and it takes no lock, so the caller is responsible for any locking. The engine refuses a results cache, and its `SetCache` returns an error,
+because a cached Data would be read after its results were released. Used on its own, `Engine.ProcessData` gives the
+same Data, and the caller calls `Close` on it when it has finished with it. To build a Pipeline from a configuration
+file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with `core.BuilderRegistry`. The build
+parameters are the options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
+
+```
+{"PipelineOptions": {"Elements": [{"BuilderName": "IpiOnPremiseEngine",
+  "BuildParameters": {"DataFile": "51Degrees-LiteV41.ipi", "AutoUpdate": false}}]}}
+```
+
 ### Vendored C Library
 
 Implementation wraps an amalgamated C library from [ip-intelligence-cxx](https://github.com/51Degrees/51degrees-cxx) repo

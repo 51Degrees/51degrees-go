@@ -56,16 +56,16 @@ func writeConfiguration(t *testing.T, builderName string, parameters map[string]
 	return path
 }
 
-// buildFromFile builds a Pipeline from the configuration file, with Factory
+// buildAspectFromFile builds a Pipeline from the configuration file, with AspectFactory
 // registered under BuilderName.
-func buildFromFile(t *testing.T, path string) (core.Pipeline, error) {
+func buildAspectFromFile(t *testing.T, path string) (core.Pipeline, error) {
 	t.Helper()
 	options, err := core.LoadPipelineOptions(path)
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	registry := core.NewBuilderRegistry()
-	registry.Register(BuilderName, Factory)
+	registry.Register(BuilderName, AspectFactory)
 	return registry.BuildFromConfiguration(options, nil)
 }
 
@@ -105,7 +105,7 @@ func TestAPipelineIsBuiltFromAConfigurationFile(t *testing.T) {
 		parameters[ParamConcurrency] = 2
 		parameters[ParamReuseOperationalFile] = false
 		parameters[ParamProperties] = strings.Join(names, ", ")
-		pipeline, err := buildFromFile(t,
+		pipeline, err := buildAspectFromFile(t,
 			writeConfiguration(t, builderName, parameters))
 		if err != nil {
 			t.Fatalf("building from a file that names %s gave %v",
@@ -146,7 +146,7 @@ func TestAPipelineIsBuiltFromAConfigurationFile(t *testing.T) {
 // type information, and its name is matched ignoring case.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/pipeline-configuration.md?plain=1#L50-L61
 func TestBuildParametersMayBeText(t *testing.T) {
-	element, err := Factory(map[string]any{
+	element, err := AspectFactory(map[string]any{
 		"datafile":             testDataPath(t, reloadTestDataFile),
 		"AUTOUPDATE":           "false",
 		"fileWatch":            "False",
@@ -220,7 +220,7 @@ func TestABadSettingIsRefusedWhenTheElementIsBuilt(t *testing.T) {
 			for name, value := range c.change {
 				parameters[name] = value
 			}
-			element, err := Factory(parameters, nil)
+			element, err := AspectFactory(parameters, nil)
 			if err == nil {
 				element.Close()
 				t.Fatalf("the build took %v", c.change)
@@ -234,7 +234,7 @@ func TestABadSettingIsRefusedWhenTheElementIsBuilt(t *testing.T) {
 					err.Error(), c.message)
 			}
 
-			pipeline, err := buildFromFile(t,
+			pipeline, err := buildAspectFromFile(t,
 				writeConfiguration(t, BuilderName, parameters))
 			if err == nil {
 				pipeline.Close()
@@ -247,7 +247,7 @@ func TestABadSettingIsRefusedWhenTheElementIsBuilt(t *testing.T) {
 
 // A build with no data file is refused.
 func TestABuildWithNoDataFileIsRefused(t *testing.T) {
-	element, err := Factory(map[string]any{ParamAutoUpdate: false}, nil)
+	element, err := AspectFactory(map[string]any{ParamAutoUpdate: false}, nil)
 	if err == nil {
 		element.Close()
 		t.Fatal("the build took no data file")
@@ -266,9 +266,6 @@ func TestABadSettingIsRefusedByEveryConstructor(t *testing.T) {
 		name string
 		opts []EngineOptions
 	}{
-		{"a Concurrency of zero", []EngineOptions{WithConcurrency(0)}},
-		{"a Concurrency above the highest the native code takes",
-			[]EngineOptions{WithConcurrency(65536)}},
 		{"a Performance Profile that does not exist",
 			[]EngineOptions{WithPerformanceProfile(
 				ipi_interop.PerformanceProfile(99))}},

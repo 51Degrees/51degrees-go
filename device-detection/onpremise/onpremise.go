@@ -61,6 +61,10 @@ type Engine struct {
 	// reloadMu makes each reload of the data file run on its own, whether
 	// update polling, the file watcher or RefreshData asked for it.
 	reloadMu sync.Mutex
+	// loadedFileTime is the modification time, in Unix nanoseconds, of the
+	// data file when it was last loaded, so a watched file that is not newer
+	// is not loaded again.
+	loadedFileTime atomic.Int64
 
 	licenseKey                string
 	product                   string
@@ -77,6 +81,10 @@ type Engine struct {
 	// stopping is set as Stop begins, so a check waiting for the watched
 	// file ends at once rather than holding up Stop.
 	stopping atomic.Bool
+
+	// kinds holds, by lower case name, how ProcessData gives each Property
+	// that is not text, once ProcessData has read them.
+	kinds atomic.Pointer[map[string]propertyKind]
 
 	// useMu is held for reading by each call that reads the manager, and for
 	// writing by Stop while it frees the manager, so Stop waits for those
@@ -189,11 +197,17 @@ func (e *Engine) handleFileExternallyChanged() {
 		e.IncreaseFileExternallyChangedCount()
 		return
 	}
-	tries, err := e.reload()
-	if err != nil {
-		e.logReloadError(tries, err)
+	switch tries, err := e.reloadIfNewer(); {
+	case errors.Is(err, errNotNewer):
+		e.reportCheck(common_go.UpdateNotNeeded)
+	case errors.Is(err, errLoadedMeanwhile):
+		e.reportCheck(common_go.UpdateInProgress)
+	default:
+		if err != nil {
+			e.logReloadError(tries, err)
+		}
+		e.reportReload(err)
 	}
-	e.reportReload(err)
 
 	e.IncreaseFileExternallyChangedCount()
 }
@@ -339,10 +353,30 @@ const (
 // later file is loaded.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#errors
 func (e *Engine) reload() (int, error) {
+	return e.reloadTrying(false)
+}
+
+// errNotNewer and errLoadedMeanwhile say why reloadIfNewer did not load the
+// data file, the second for a check that waited while another reload ran.
+var (
+	errNotNewer        = errors.New("the data file is not newer than the one loaded")
+	errLoadedMeanwhile = errors.New("another reload loaded the data file while this one waited")
+)
+
+// reloadIfNewer reloads the watched data file as reload does, but only when
+// it is newer than the one loaded.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
+func (e *Engine) reloadIfNewer() (int, error) {
+	return e.reloadTrying(true)
+}
+
+// reloadTrying makes the tries of reload and reloadIfNewer.
+func (e *Engine) reloadTrying(onlyNewer bool) (int, error) {
 	for tries := 1; ; tries++ {
-		err := e.reloadOnce()
+		err := e.reloadOnce(onlyNewer)
 		var p *reloadPanic
 		if err == nil || errors.As(err, &p) || errors.Is(err, errStopped) ||
+			errors.Is(err, errNotNewer) || errors.Is(err, errLoadedMeanwhile) ||
 			tries == reloadTries {
 			return tries, err
 		}
@@ -351,12 +385,22 @@ func (e *Engine) reload() (int, error) {
 }
 
 // reloadOnce loads the data file again, on its own, returning a panic as a
-// reloadPanic.
-func (e *Engine) reloadOnce() (err error) {
-	e.reloadMu.Lock()
+// reloadPanic. With onlyNewer, a data file no newer than the one loaded is
+// not loaded.
+func (e *Engine) reloadOnce(onlyNewer bool) (err error) {
+	waited := !e.reloadMu.TryLock()
+	if waited {
+		e.reloadMu.Lock()
+	}
 	defer e.reloadMu.Unlock()
 	if e.isStopped {
 		return errStopped
+	}
+	if onlyNewer && !e.dataFileIsNewer() {
+		if waited {
+			return errLoadedMeanwhile
+		}
+		return errNotNewer
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -410,9 +454,23 @@ func (e *Engine) stopped() bool {
 // reportTimeout reports a watched file that could not be opened in time to
 // the update callbacks, and logs an error a callback gives back.
 func (e *Engine) reportTimeout() {
-	if err := e.ReportUpdateComplete(common_go.UpdateTimeout); err != nil {
+	e.reportCheck(common_go.UpdateTimeout)
+}
+
+// reportCheck reports a check that loaded nothing to the update callbacks,
+// and logs an error a callback gives back.
+func (e *Engine) reportCheck(status common_go.UpdateStatus) {
+	if err := e.ReportUpdateComplete(status); err != nil {
 		e.logUnhandledError(err)
 	}
+}
+
+// dataFileIsNewer says whether the data file was modified after the one last
+// loaded. A file that cannot be read counts as newer, so the load is tried
+// and its failure reported.
+func (e *Engine) dataFileIsNewer() bool {
+	info, err := os.Stat(e.GetDataFile())
+	return err != nil || info.ModTime().UnixNano() > e.loadedFileTime.Load()
 }
 
 // reloadStatus gives the status a reload that ended with err reports: success,
@@ -490,6 +548,8 @@ func (e *Engine) hasDefaultDistributorParams() bool {
 
 // processFileExternallyChanged handles updates when a file is changed externally by reloading its content.
 func (e *Engine) processFileExternallyChanged() error {
+	// The time is read before the load, so a file written during it is newer.
+	info, statErr := os.Stat(e.GetDataFile())
 	reloadFilePath, err := e.GetReloadFilePath()
 	if err != nil {
 		return err
@@ -497,6 +557,9 @@ func (e *Engine) processFileExternallyChanged() error {
 
 	if err := e.reloadManager(reloadFilePath); err != nil {
 		return err
+	}
+	if statErr == nil {
+		e.loadedFileTime.Store(info.ModTime().UnixNano())
 	}
 
 	return nil

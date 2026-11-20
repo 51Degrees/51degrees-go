@@ -7,7 +7,7 @@
 This directory contains examples of how to use module [device-detection-go](https://github.com/51Degrees/51degrees-go/tree/main/device-detection)
 
 ## Pre-requisites
-To run these examples you will need a data file and example evidence for some of the tests. The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to both. To download them into `cxx/data/device-detection`, run one of these from the repository root.
+To run the examples under `dd`, `onpremise`, `web` and `uach` you will need a data file and example evidence for some of the tests. The cloud example under `cloud` needs neither, nor a C compiler, but needs a Resource Key, as the table below says. The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to both. To download them into `cxx/data/device-detection`, run one of these from the repository root.
 
 ```
 sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash "20000 Evidence Records.yml"
@@ -38,6 +38,7 @@ go env -w CGO_ENABLED=1
 
 - All examples under `dd` / `onpremise` directories are console program examples and are run using `go run`.
 - Example under the `web` and `uach` directories are Go web applications that can also be run using `go run`.
+- The example under `cloud` is a console program that calls the 51Degrees cloud service. Run it with `go run .` from its own folder, because it reads the options file `getting_started.json` from the folder it runs in.
 
 Below is a table that describes the examples:
 
@@ -57,6 +58,7 @@ Below is a table that describes the examples:
 | onpremise/reload_from_file/reload_from_file.go               | A demo the file watcher feature of the onpremise Engine API, while one goroutine performs device detections - the other simulates the data file update in the file system so that engine picks it up and reloads                                                                                                               |
 | onpremise/performance/performance.go                         | Performance tests implemented using onpremise Engine API                                                                                                                                                                                                                                                                       |
 | onpremise/metadata/metadata.go                               | An example listing the Evidence keys the engine reads, each component with its profiles and properties, each property's description and values, and the values of the profiles an iPhone is matched to. |
+| cloud/getting_started/main.go                                | An example that gets Device Detection properties from the 51Degrees cloud service through a Pipeline built from the options file `getting_started.json`. It needs a Resource Key in `_51DEGREES_RESOURCE_KEY`, and no data file or C compiler. Run with no key, it says where to create one and ends without an error. |
 ## Run examples
 
 In a clone of this repository, the `go.work` at its root makes the examples use the code in the repository, so they run with no settings. Copied out of it, they use the published module their `go.mod` names, as your own code would.
@@ -65,6 +67,7 @@ In a clone of this repository, the `go.work` at its root makes the examples use 
 go run ./[dd/onpremise]/example_dir
 go run ./web
 go run ./uach
+cd cloud/getting_started && go run .
 ```
 For further details of how to run each example, please read more in the comment section located at the top of each example file.
 

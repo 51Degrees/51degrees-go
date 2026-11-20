@@ -355,6 +355,10 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 // startRequest starts the data request for form on its own goroutine, and
 // gives its task, or an error once the engine is closed. The goroutine
 // counts the outcome toward the recovery period before the task finishes.
+// A panic on the goroutine fails the task with an error naming the panic,
+// as a panic in Process fails that Flow Element, rather than end the
+// program.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L178-L183
 func (e *CloudRequestEngine) startRequest(form url.Values) (*requestTask, error) {
 	e.tasksMu.RLock()
 	defer e.tasksMu.RUnlock()
@@ -366,6 +370,14 @@ func (e *CloudRequestEngine) startRequest(form url.Values) (*requestTask, error)
 	go func() {
 		defer e.tasks.Done()
 		defer close(t.done)
+		// Deferred last, so it runs before done is closed.
+		defer func() {
+			if r := recover(); r != nil {
+				t.body = ""
+				t.err = fmt.Errorf("panic processing element '%s': %v",
+					e.DataKey(), r)
+			}
+		}()
 		body, err := e.makeDataRequest(form)
 		if err != nil {
 			e.recordFailure(err)

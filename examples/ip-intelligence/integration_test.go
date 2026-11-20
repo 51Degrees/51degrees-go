@@ -35,8 +35,7 @@ func test(t *testing.T, name string) {
 }
 
 // run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed, checks that it ends with a Find out
-// more section naming this repository, and returns what it printed.
+// that is nil, prints what it printed, and returns what it printed.
 func run(t *testing.T, name string, environment []string) string {
 	cmd := exec.Command("go", "run", "./"+name)
 	cmd.Env = environment
@@ -44,12 +43,6 @@ func run(t *testing.T, name string, environment []string) string {
 	os.Stdout.Write(output)
 	if err != nil {
 		t.Error(err)
-	}
-	at := strings.LastIndex(string(output), "Find out more")
-	if at < 0 || !strings.Contains(string(output[at:]),
-		"https://github.com/51Degrees/51degrees-go") {
-		t.Errorf("%s does not end with a Find out more section naming "+
-			"this repository", name)
 	}
 	return string(output)
 }
@@ -114,6 +107,7 @@ var evidenceKeyLine = regexp.MustCompile(`(?m)^\t(query|server)\.[A-Za-z0-9-]+\r
 func TestMetadataFreeDataFile(t *testing.T) {
 	output := run(t, "metadata", withoutSettings(os.Environ()))
 	checkEnterprise(t, "metadata", output)
+	checkFindOutMore(t, "metadata", output)
 	for _, want := range []string{"\tPublished: ", "\nComponent "} {
 		if !strings.Contains(output, want) {
 			t.Errorf("metadata prints no %q", strings.TrimSpace(want))
@@ -170,6 +164,7 @@ var configureLink = regexp.MustCompile(
 func TestGettingStartedCloudWithNoResourceKey(t *testing.T) {
 	output := run(t, "getting_started_cloud",
 		withoutResourceKey(os.Environ()))
+	checkFindOutMore(t, "getting_started_cloud", output)
 	if !strings.Contains(output, resourceKeyVariable) {
 		t.Errorf("getting_started_cloud does not name %s", resourceKeyVariable)
 	}
@@ -192,8 +187,7 @@ func withoutResourceKey(environment []string) []string {
 }
 
 // The cloud example needs a Resource Key that includes IP Intelligence
-// properties to look anything up, so it is run with the cloud service only
-// when one is given.
+// properties, so it is always built but run only when one is given.
 func TestGettingStartedCloud(t *testing.T) {
 	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
 	build.Stdout = os.Stdout
@@ -201,9 +195,8 @@ func TestGettingStartedCloud(t *testing.T) {
 	if err := build.Run(); err != nil {
 		t.Fatal(err)
 	}
-	if os.Getenv(resourceKeyVariable) == "" {
-		t.Skip(resourceKeyVariable + " is not set, so the cloud example " +
-			"is not run with the cloud service")
+	if os.Getenv("_51DEGREES_RESOURCE_KEY") == "" {
+		t.Skip("_51DEGREES_RESOURCE_KEY is not set, so the cloud example is not run")
 	}
 	test(t, "getting_started_cloud")
 }
@@ -219,8 +212,7 @@ func testFree(t *testing.T, name string) {
 }
 
 // withoutSettings returns the environment without the variables that name a
-// data file, evidence, a key or an update address, under their 51Degrees
-// names and their deprecated ones.
+// data file, evidence, a key or an update address.
 func withoutSettings(environment []string) []string {
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
@@ -229,29 +221,19 @@ func withoutSettings(environment []string) []string {
 			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY",
 			"_51DEGREES_IPI_DATA_FILE_URL":
 			continue
-		// The deprecated names of those variables, each written in two
-		// parts so that this file does not name an old variable.
-		case "DATA" + "_FILE", "DD_DATA" + "_FILE", "EVIDENCE" + "_YAML",
-			"LICENSE" + "_KEY", "IPI" + "_KEY", "DEVICE" + "_DETECTION_KEY",
-			"IPI_DATA" + "_FILE_URL":
-			continue
 		}
 		kept = append(kept, variable)
 	}
 	return kept
 }
 
-// TestWithoutSettingsDropsBothNames checks a variable is left out under its
-// 51Degrees name and under its deprecated names, and others are kept.
-func TestWithoutSettingsDropsBothNames(t *testing.T) {
+// TestWithoutSettingsDropsTheNames checks each of those variables is left
+// out, and others are kept.
+func TestWithoutSettingsDropsTheNames(t *testing.T) {
 	got := withoutSettings([]string{
 		"_51DEGREES_DD_PATH=a", "_51DEGREES_LICENSE_KEY=b",
 		"_51DEGREES_IPI_PATH=j", "_51DEGREES_EVIDENCE_YAML=k",
-		"_51DEGREES_IPI_DATA_FILE_URL=l",
-		"DATA" + "_FILE=c", "DD_DATA" + "_FILE=d", "EVIDENCE" + "_YAML=e",
-		"LICENSE" + "_KEY=f", "IPI" + "_KEY=g",
-		"DEVICE" + "_DETECTION_KEY=h", "IPI_DATA" + "_FILE_URL=i",
-		"PATH=kept",
+		"_51DEGREES_IPI_DATA_FILE_URL=l", "PATH=kept",
 	})
 	if len(got) != 1 || got[0] != "PATH=kept" {
 		t.Errorf("withoutSettings kept %q, want only PATH", got)

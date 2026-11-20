@@ -46,6 +46,7 @@ jobs:
         run: |
           $env:COMMON_CI = (Resolve-Path common-ci).Path
           $paths = @(
+            '51degrees-go/ci/benchmark.Tests.ps1',
             '51degrees-go/ci/packages.Tests.ps1',
             '51degrees-go/ci/select-options.Tests.ps1')
           # Pester passes over a path that does not exist, so a test file that

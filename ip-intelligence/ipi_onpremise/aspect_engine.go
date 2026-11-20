@@ -36,11 +36,6 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
-// DataKey is the key of the Element Data the AspectEngine adds to a Flow
-// Data. It is the key the IP Intelligence Cloud Aspect Engine uses, so code
-// that reads the Element Data by key works with either.
-const DataKey = "ip"
-
 // The prefixes of the Evidence keys the Engine accepts, as a Flow Data
 // writes them.
 const (
@@ -299,5 +294,5 @@ func (a *AspectEngine) processInto(results evidenceResults, evidence core.Eviden
 		results.Free()
 		return nil, err
 	}
-	return a.engine.newData(results), nil
+	return a.engine.newData(results, noValueMessage), nil
 }

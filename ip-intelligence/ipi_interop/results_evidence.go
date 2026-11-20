@@ -44,7 +44,7 @@ func NewEvidenceWithCapacity(capacity int) *Evidence {
 // keys, each in the data file's order, and using the first value it reads as
 // one whole address. When it reads none the results hold no values, which is
 // not an error.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L150-L166
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L150-L175
 func (r *ResultsIpi) ResultsIpiFromEvidence(evidence *Evidence) error {
 	exception := NewException()
 	defer exception.Free()

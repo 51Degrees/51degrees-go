@@ -35,8 +35,8 @@ BeforeAll {
     function Set-GoMods([string]$Repo, [string]$Common, [string]$Pipeline) {
         Write-File $Repo 'common/go.mod' (Get-GoModText 'common')
         Write-File $Repo 'pipeline/go.mod' (Get-GoModText 'pipeline')
-        Write-File $Repo 'device-detection/go.mod' `
-            (Get-GoModText 'device-detection' @{ common = $Common })
+        Write-File $Repo 'device-detection/go.mod' (Get-GoModText `
+            'device-detection' @{ common = $Common; pipeline = $Pipeline })
         Write-File $Repo 'ip-intelligence/go.mod' (Get-GoModText `
             'ip-intelligence' @{ common = $Common; pipeline = $Pipeline })
     }
@@ -129,7 +129,8 @@ Describe 'Get-ModuleReleasePlan' {
         $null = Add-Commit $script:Repo @('pipeline/core/core_test.go',
             'pipeline/core/util.go')
         Get-Planned $script:Repo | Should -Be @(
-            'pipeline 4.5.181', 'ip-intelligence 4.5.181')
+            'pipeline 4.5.181', 'device-detection 4.5.181',
+            'ip-intelligence 4.5.181')
     }
 
     # After a release of common, its dependents are tagged on commits that
@@ -176,7 +177,8 @@ Describe 'Get-ModuleReleasePlan' {
         Set-GoMods $script:Repo '4.5.180' '4.5.181'
         $null = Add-Commit $script:Repo @('pipeline/core/util.go')
         Get-Planned $script:Repo | Should -Be @(
-            'pipeline 4.5.181', 'ip-intelligence 4.5.181')
+            'pipeline 4.5.181', 'device-detection 4.5.181',
+            'ip-intelligence 4.5.181')
     }
 
     It 'stops when a module requires a version with no tag that <What>' -ForEach @(
@@ -188,7 +190,7 @@ Describe 'Get-ModuleReleasePlan' {
         $script:Repo = New-Repo
         Set-GoMods $script:Repo '4.5.180' $Pipeline
         $null = Add-Commit $script:Repo $Files
-        { Get-Planned $script:Repo } | Should -Throw ("ip-intelligence/go.mod " +
+        { Get-Planned $script:Repo } | Should -Throw ("device-detection/go.mod " +
             "requires $script:ModulePrefix/pipeline/v4 v$Pipeline, which has no " +
             "tag pipeline/v$Pipeline, and this publish $Planned.")
     }

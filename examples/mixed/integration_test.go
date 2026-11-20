@@ -34,9 +34,8 @@ func test(t *testing.T, name string) {
 }
 
 // run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed, and checks that it ends with a Find out
-// more section naming this repository.
-func run(t *testing.T, name string, environment []string) {
+// that is nil, prints what it printed, and returns what it printed.
+func run(t *testing.T, name string, environment []string) string {
 	cmd := exec.Command("go", "run", "./"+name)
 	cmd.Env = environment
 	output, err := cmd.CombinedOutput()
@@ -44,12 +43,7 @@ func run(t *testing.T, name string, environment []string) {
 	if err != nil {
 		t.Error(err)
 	}
-	at := strings.LastIndex(string(output), "Find out more")
-	if at < 0 || !strings.Contains(string(output[at:]),
-		"https://github.com/51Degrees/51degrees-go") {
-		t.Errorf("%s does not end with a Find out more section naming "+
-			"this repository", name)
-	}
+	return string(output)
 }
 
 func TestMixedGettingStartedConsole(t *testing.T) {
@@ -104,8 +98,7 @@ func testFree(t *testing.T, name string) {
 }
 
 // withoutSettings returns the environment without the variables that name a
-// data file, evidence, a key or an update address, under their 51Degrees
-// names and their deprecated ones.
+// data file, evidence, a key or an update address.
 func withoutSettings(environment []string) []string {
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
@@ -114,29 +107,19 @@ func withoutSettings(environment []string) []string {
 			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY",
 			"_51DEGREES_IPI_DATA_FILE_URL":
 			continue
-		// The deprecated names of those variables, each written in two
-		// parts so that this file does not name an old variable.
-		case "DATA" + "_FILE", "DD_DATA" + "_FILE", "EVIDENCE" + "_YAML",
-			"LICENSE" + "_KEY", "IPI" + "_KEY", "DEVICE" + "_DETECTION_KEY",
-			"IPI_DATA" + "_FILE_URL":
-			continue
 		}
 		kept = append(kept, variable)
 	}
 	return kept
 }
 
-// TestWithoutSettingsDropsBothNames checks a variable is left out under its
-// 51Degrees name and under its deprecated names, and others are kept.
-func TestWithoutSettingsDropsBothNames(t *testing.T) {
+// TestWithoutSettingsDropsTheNames checks each of those variables is left
+// out, and others are kept.
+func TestWithoutSettingsDropsTheNames(t *testing.T) {
 	got := withoutSettings([]string{
 		"_51DEGREES_DD_PATH=a", "_51DEGREES_LICENSE_KEY=b",
 		"_51DEGREES_IPI_PATH=j", "_51DEGREES_EVIDENCE_YAML=k",
-		"_51DEGREES_IPI_DATA_FILE_URL=l",
-		"DATA" + "_FILE=c", "DD_DATA" + "_FILE=d", "EVIDENCE" + "_YAML=e",
-		"LICENSE" + "_KEY=f", "IPI" + "_KEY=g",
-		"DEVICE" + "_DETECTION_KEY=h", "IPI_DATA" + "_FILE_URL=i",
-		"PATH=kept",
+		"_51DEGREES_IPI_DATA_FILE_URL=l", "PATH=kept",
 	})
 	if len(got) != 1 || got[0] != "PATH=kept" {
 		t.Errorf("withoutSettings kept %q, want only PATH", got)

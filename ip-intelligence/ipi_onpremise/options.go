@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
@@ -99,11 +100,11 @@ func ParsePerformanceProfile(name string) (ipi_interop.PerformanceProfile, error
 	return profile, nil
 }
 
-// WithPerformanceProfile sets the Performance Profile the Engine is created
+// WithPerformanceProfile sets the Performance Profile the engine is created
 // with, which decides how much of the data file is held in memory. The
 // default is Balanced. A value that is not a Performance Profile is refused.
 // It cannot be used with WithConfigIpi.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L619
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L619
 func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOptions {
 	return func(cfg *Engine) error {
 		if profile < ipi_interop.Default || profile > ipi_interop.InMemory {
@@ -121,20 +122,14 @@ func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOption
 // maxConcurrency is the highest Concurrency the native code can be given.
 const maxConcurrency = math.MaxUint16
 
-// WithConcurrency sets the expected number of operations that use the Engine
+// WithConcurrency sets the expected number of operations that use the engine
 // at the same time, which the native code uses for every collection it reads
 // from the data file. It has no effect when the whole data file is held in
-// memory. A number below 1 or above 65535 is refused.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L620
-func WithConcurrency(concurrency int) EngineOptions {
+// memory. It applies to a configuration given with WithConfigIpi as well.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L620
+func WithConcurrency(concurrency uint16) EngineOptions {
 	return func(cfg *Engine) error {
-		if concurrency < 1 || concurrency > maxConcurrency {
-			return fmt.Errorf("Concurrency is %d, and it has to be from 1 "+
-				"to %d. Leave it out to use the default", concurrency,
-				maxConcurrency)
-		}
-		value := uint16(concurrency)
-		cfg.concurrency = &value
+		cfg.concurrency = &concurrency
 		return nil
 	}
 }
@@ -154,6 +149,21 @@ func WithReuseOperationalFile(reuse bool) EngineOptions {
 				"it stops, so there is no earlier copy to use again. Leave " +
 				"ReuseOperationalFile out or set it to false")
 		}
+		return nil
+	}
+}
+
+// withDefaultConcurrency makes the processor count the Concurrency when
+// neither WithConcurrency nor WithConfigIpi sets one, as the options table
+// gives it.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L620
+func withDefaultConcurrency() EngineOptions {
+	return func(cfg *Engine) error {
+		processors := runtime.NumCPU()
+		if processors > math.MaxUint16 {
+			processors = math.MaxUint16
+		}
+		cfg.defaultConcurrency = uint16(processors)
 		return nil
 	}
 }

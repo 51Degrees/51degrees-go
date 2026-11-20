@@ -23,9 +23,7 @@
 package ipi_onpremise
 
 import (
-	"fmt"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -152,21 +150,4 @@ func (d *AspectData) missing(name string) (any, error) {
 		}
 	}
 	return d.BaseAspectData.Get(name)
-}
-
-// valueText gives a value the native code read as text, as the cloud
-// service's response writes it.
-func valueText(value any) string {
-	switch v := value.(type) {
-	case string:
-		return v
-	case int:
-		return strconv.Itoa(v)
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(v)
-	default:
-		return fmt.Sprint(v)
-	}
 }

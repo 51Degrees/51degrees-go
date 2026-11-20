@@ -199,6 +199,13 @@ func main() {
 	if err := os.WriteFile(dataFile, customData(), 0o644); err != nil {
 		log.Fatal(err)
 	}
+	// A check loads the file only when it is newer than the one loaded, and
+	// some file systems keep times to the second, so the rewritten file is
+	// given a later time.
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(dataFile, later, later); err != nil {
+		log.Fatal(err)
+	}
 	if err := updates.CheckForUpdate("starsign"); err != nil {
 		log.Fatal(err)
 	}

@@ -30,7 +30,8 @@ import (
 // builtInFiles is a copy of the scripts folder of the derived-properties
 // submodule, because a Go module is built from git's archive of a tag, which
 // leaves a submodule empty. ci/check-derived-properties.ps1 fails when the
-// copy differs from the submodule.
+// copy differs from the submodule, apart from the comment lines reworded in
+// the scripts that ci/derived-properties-reworded.json lists.
 //
 //go:embed scripts
 var builtInFiles embed.FS

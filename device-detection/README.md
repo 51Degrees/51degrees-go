@@ -16,10 +16,12 @@ Go Lite implementation is currently supporting the following platforms and archi
 - Windows 64bit, Intel
 
 Go version:
-- 1.19
+- 1.22
 
-Compiles with go 1.19 and higher.  The minimum version of 1.19 is dictated by the fact that this library is used
-by the [prebid-server](https://github.com/prebid/prebid-server/) module and it has a minimum version requirement of go 1.19.
+Compiles with go 1.22 and higher, the version the Pipeline module asks for. The on-premise engine gives its results
+as Aspect Data, the Pipeline module's type, and can be added to a Pipeline (`onpremise.PipelineEngine`), so the module
+requires the Pipeline module. [prebid-server](https://github.com/prebid/prebid-server/) uses the earlier
+`device-detection-go` module and itself asks for a later Go than 1.22.
 
 ## Pre-requisites
 
@@ -73,6 +75,36 @@ Import the package as usual and it will get build automatically:
 
 ```
 import "github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+```
+
+### In a Pipeline
+
+`onpremise.NewPipelineEngine` takes the same options as `onpremise.New` and gives the engine as a Pipeline element,
+which adds `onpremise.DeviceData` to each Flow Data under the Data Key `device`, as the Device Detection Cloud Engine
+does. The DeviceData reads each Property from the data file's results only when it is requested, and holds those results
+in memory the Go garbage collector cannot see until it is released. Closing the Flow Data releases them at once, and
+the web middleware closes each request's Flow Data when the request ends, so call `Close` on the Flow Data when you
+have finished with it:
+
+```go
+flowData := pipeline.CreateFlowData()
+defer flowData.Close()
+```
+
+`Close` on the DeviceData releases them at once as well. If neither is closed, a finalizer releases the results once
+nothing holds the DeviceData, but only when the garbage collector next runs, which can be too late under load. A DeviceData is not safe to use from several goroutines at once,
+because reading a value writes into its results, and it takes no lock, so the caller is responsible for thread-safe
+access to one it shares. The engine refuses a results cache, and its `SetCache` returns an error, because a cached
+DeviceData would be read after its results were released. The engine's Property metadata lists the match metric
+Properties (`MatchedNodes`, `Difference`, `Drift`, `DeviceId`, `UserAgents`, `Iterations` and `Method`) after the
+data file's, and the DeviceData gives each of them. Used on its own, `Engine.ProcessData` gives the same DeviceData,
+and the caller calls `Close` on it when it has finished with it. To build a Pipeline from a configuration file,
+register `onpremise.Factory` under `onpremise.BuilderName` with `core.BuilderRegistry`. The build parameters are the
+options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
+
+```
+{"PipelineOptions": {"Elements": [{"BuilderName": "DeviceDetectionHashEngine",
+  "BuildParameters": {"DataFile": "51Degrees-LiteV4.1.hash", "AutoUpdate": false}}]}}
 ```
 
 ### Vendored C Library

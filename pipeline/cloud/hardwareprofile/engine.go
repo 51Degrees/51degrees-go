@@ -147,10 +147,16 @@ func holds(el core.FlowElement, e *Engine) bool {
 }
 
 // Process reads the hardware section of the cloud response into Data, with a
-// DeviceData for each profile.
+// DeviceData for each profile. Where the cloud request failed, the failure
+// is already the Cloud Request Engine's error, so Process adds no Data and
+// returns nil.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/cloud-aspect-engine.md?plain=1#L79-L85
 func (e *Engine) Process(fd core.FlowData) error {
 	aspect, err := aspectengine.ParseAspect(fd, DataKey)
 	if err != nil {
+		if e.CloudRequestFailed(fd) {
+			return nil
+		}
 		return err
 	}
 	data := &Data{BaseAspectData: engines.NewBaseAspectData()}
