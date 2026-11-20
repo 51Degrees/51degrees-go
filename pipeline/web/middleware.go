@@ -124,7 +124,9 @@ func FromContext(ctx context.Context) (core.FlowData, bool) {
 // resulting Flow Data is attached to the request context. The intercepted
 // endpoints are served directly and do not call next. The Flow Data is closed
 // when the request ends, which gives its Element Data back to the pools, so
-// neither may be kept once next returns.
+// neither may be kept once next returns. A time limit such as
+// http.TimeoutHandler goes around the handler Handler returns, not inside it,
+// because the handler inside a time limit keeps running after it has given up.
 // See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L27-L28
 func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -36,6 +36,9 @@ const (
 	// UpdateNotNeeded is a check that applied no update because none was
 	// needed, such as a 304 (Not modified) response.
 	UpdateNotNeeded UpdateStatus = "AUTO_UPDATE_NOT_NEEDED"
+	// UpdateInProgress is a check of a watched data file that found nothing
+	// left to do, having waited while another reload of the file ran.
+	UpdateInProgress UpdateStatus = "AUTO_UPDATE_IN_PROGRESS"
 	// UpdateHTTPSError is a request to the update URL that failed, a download
 	// that ended before the whole file arrived, or a response that was
 	// neither a success nor a 304 (Not modified).

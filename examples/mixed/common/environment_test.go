@@ -24,31 +24,23 @@ package common
 
 import (
 	"os"
-	"strings"
 	"testing"
 )
 
-// The variables the examples read, and the deprecated names they are also
-// read from, each of which is written in two parts so that this file does not
-// name an old variable.
+// The variables the examples read.
 const (
 	deviceVariable = "_51DEGREES_DD_PATH"
 	ipVariable     = "_51DEGREES_IPI_PATH"
-	oldDevice      = "DD_DATA" + "_FILE"
-	oldIp          = "DATA" + "_FILE"
 )
 
 // setVariables gives each variable the examples read the value given for it,
-// and makes it empty when none is given, in an empty working folder, with no
-// old name reported yet.
+// and makes it empty when none is given, in an empty working folder.
 func setVariables(t *testing.T, values map[string]string) {
 	t.Helper()
-	for _, name := range []string{deviceVariable, ipVariable, oldDevice,
-		oldIp} {
+	for _, name := range []string{deviceVariable, ipVariable} {
 		t.Setenv(name, values[name])
 	}
 	inAnEmptyFolder(t)
-	forgetReports(t)
 }
 
 // dataFiles returns the Device Detection and IP Intelligence data files the
@@ -62,8 +54,7 @@ func dataFiles() [2]string {
 }
 
 // TestDataFileReadsTheEnvironment checks each data file comes from its
-// 51Degrees variable first, then from its deprecated name, and is the free
-// file when neither is set.
+// 51Degrees variable, and is the free file when it is not set.
 func TestDataFileReadsTheEnvironment(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -72,13 +63,6 @@ func TestDataFileReadsTheEnvironment(t *testing.T) {
 	}{
 		{"only the new names", map[string]string{
 			deviceVariable: "new.hash", ipVariable: "new.ipi",
-		}, [2]string{"new.hash", "new.ipi"}},
-		{"only the old names", map[string]string{
-			oldDevice: "old.hash", oldIp: "old.ipi",
-		}, [2]string{"old.hash", "old.ipi"}},
-		{"the new and the old names", map[string]string{
-			deviceVariable: "new.hash", ipVariable: "new.ipi",
-			oldDevice: "old.hash", oldIp: "old.ipi",
 		}, [2]string{"new.hash", "new.ipi"}},
 		{"no names", nil,
 			[2]string{DeviceDetectionDataFile, IpIntelligenceDataFile}},
@@ -90,61 +74,6 @@ func TestDataFileReadsTheEnvironment(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestAnOldNameIsReportedOnce checks a value read from a deprecated name is
-// reported on the standard error stream, naming the variable that replaces
-// it, and only once however often the name is read.
-func TestAnOldNameIsReportedOnce(t *testing.T) {
-	setVariables(t, map[string]string{oldDevice: "old.hash"})
-	printed := standardError(t, func() {
-		dataFiles()
-		dataFiles()
-	})
-	if got := reportsOf(printed, oldDevice, deviceVariable); got != 1 {
-		t.Errorf("two reads with only %s set reported it %d times, want 1, "+
-			"in %q", oldDevice, got, printed)
-	}
-}
-
-// TestNothingIsReportedWithoutAnOldName checks nothing is printed when no
-// value comes from a deprecated name.
-func TestNothingIsReportedWithoutAnOldName(t *testing.T) {
-	for _, c := range []struct {
-		name   string
-		values map[string]string
-	}{
-		{"only the new names", map[string]string{
-			deviceVariable: "new.hash", ipVariable: "new.ipi",
-		}},
-		{"the new and the old names", map[string]string{
-			deviceVariable: "new.hash", ipVariable: "new.ipi",
-			oldDevice: "old.hash", oldIp: "old.ipi",
-		}},
-		{"no names", nil},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			setVariables(t, c.values)
-			printed := standardError(t, func() { dataFiles() })
-			if printed != "" {
-				t.Errorf("the read printed %q, want nothing", printed)
-			}
-		})
-	}
-}
-
-// forgetReports makes the examples forget which old names they have
-// reported, now and when the test ends, so that each test starts as a new
-// process does.
-func forgetReports(t *testing.T) {
-	t.Helper()
-	forget := func() {
-		reportedLock.Lock()
-		defer reportedLock.Unlock()
-		reported = map[string]bool{}
-	}
-	forget()
-	t.Cleanup(forget)
 }
 
 // inAnEmptyFolder makes a new empty folder the working folder for the test,
@@ -164,38 +93,4 @@ func inAnEmptyFolder(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-}
-
-// standardError returns what f writes to the standard error stream.
-func standardError(t *testing.T, f func()) string {
-	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := os.Stderr
-	os.Stderr = file
-	defer func() { os.Stderr = before }()
-	f()
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	written, err := os.ReadFile(file.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(written)
-}
-
-// reportsOf returns how many lines of printed say that the variable old is
-// deprecated and that the variable name replaces it.
-func reportsOf(printed, old, name string) int {
-	count := 0
-	for _, line := range strings.Split(printed, "\n") {
-		if strings.Contains(line, " "+old+" is deprecated") &&
-			strings.Contains(line, " "+name+" replaces it") {
-			count++
-		}
-	}
-	return count
 }

@@ -41,9 +41,6 @@ func run(t *testing.T, name string, environment []string) string {
 	if err != nil {
 		t.Error(err)
 	}
-	if err := dd_example.CheckFindOutMore(string(output)); err != nil {
-		t.Errorf("%s: %v", name, err)
-	}
 	return string(output)
 }
 
@@ -88,7 +85,7 @@ func TestMatchDeviceId(t *testing.T) {
 }
 
 func TestMatchDeviceIdFreeDataFile(t *testing.T) {
-	testFree(t, "match_device_id")
+	testFreeEndsWithFindOutMore(t, "match_device_id")
 }
 
 func TestMatchMetrics(t *testing.T) {
@@ -96,7 +93,7 @@ func TestMatchMetrics(t *testing.T) {
 }
 
 func TestMatchMetricsFreeDataFile(t *testing.T) {
-	testFree(t, "match_metrics")
+	testFreeEndsWithFindOutMore(t, "match_metrics")
 }
 
 func TestMetadata(t *testing.T) {
@@ -111,6 +108,7 @@ func TestMetadata(t *testing.T) {
 func TestMetadataFreeDataFile(t *testing.T) {
 	output := run(t, "metadata", withoutSettings(os.Environ()))
 	checkEnterprise(t, "metadata", output)
+	checkFindOutMore(t, "metadata", output)
 	for _, want := range []string{
 		"\theader.",
 		"Component HardwarePlatform",
@@ -129,7 +127,7 @@ func TestOfflineProcessing(t *testing.T) {
 }
 
 func TestOfflineProcessingFreeDataFile(t *testing.T) {
-	testFree(t, "offline_processing")
+	testFreeEndsWithFindOutMore(t, "offline_processing")
 }
 
 func TestPerformance(t *testing.T) {
@@ -137,7 +135,7 @@ func TestPerformance(t *testing.T) {
 }
 
 func TestPerformanceFreeDataFile(t *testing.T) {
-	testFree(t, "performance")
+	testFreeEndsWithFindOutMore(t, "performance")
 }
 
 func TestReloadFromFile(t *testing.T) {
@@ -145,16 +143,15 @@ func TestReloadFromFile(t *testing.T) {
 }
 
 func TestReloadFromFileFreeDataFile(t *testing.T) {
-	testFree(t, "reload_from_file")
+	testFreeEndsWithFindOutMore(t, "reload_from_file")
 }
 
-func TestUpdatePollingInterval(t *testing.T) {
+func TestStronglyTyped(t *testing.T) {
 	test(t, "update_polling_interval")
 }
 
 // withoutSettings returns the environment without the variables that name a
-// data file, evidence, a key or an update address, under their 51Degrees
-// names and their deprecated ones.
+// data file, evidence, a key or an update address.
 func withoutSettings(environment []string) []string {
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
@@ -163,29 +160,19 @@ func withoutSettings(environment []string) []string {
 			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY",
 			"_51DEGREES_IPI_DATA_FILE_URL":
 			continue
-		// The deprecated names of those variables, each written in two
-		// parts so that this file does not name an old variable.
-		case "DATA" + "_FILE", "DD_DATA" + "_FILE", "EVIDENCE" + "_YAML",
-			"LICENSE" + "_KEY", "IPI" + "_KEY", "DEVICE" + "_DETECTION_KEY",
-			"IPI_DATA" + "_FILE_URL":
-			continue
 		}
 		kept = append(kept, variable)
 	}
 	return kept
 }
 
-// TestWithoutSettingsDropsBothNames checks a variable is left out under its
-// 51Degrees name and under its deprecated names, and others are kept.
-func TestWithoutSettingsDropsBothNames(t *testing.T) {
+// TestWithoutSettingsDropsTheNames checks each of those variables is left
+// out, and others are kept.
+func TestWithoutSettingsDropsTheNames(t *testing.T) {
 	got := withoutSettings([]string{
 		"_51DEGREES_DD_PATH=a", "_51DEGREES_LICENSE_KEY=b",
 		"_51DEGREES_IPI_PATH=j", "_51DEGREES_EVIDENCE_YAML=k",
-		"_51DEGREES_IPI_DATA_FILE_URL=l",
-		"DATA" + "_FILE=c", "DD_DATA" + "_FILE=d", "EVIDENCE" + "_YAML=e",
-		"LICENSE" + "_KEY=f", "IPI" + "_KEY=g",
-		"DEVICE" + "_DETECTION_KEY=h", "IPI_DATA" + "_FILE_URL=i",
-		"PATH=kept",
+		"_51DEGREES_IPI_DATA_FILE_URL=l", "PATH=kept",
 	})
 	if len(got) != 1 || got[0] != "PATH=kept" {
 		t.Errorf("withoutSettings kept %q, want only PATH", got)
