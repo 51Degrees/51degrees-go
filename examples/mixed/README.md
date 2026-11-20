@@ -52,7 +52,7 @@ _51DEGREES_IPI_PATH=../../51Degrees-EnterpriseIpiV41.ipi \
 _51DEGREES_DD_PATH=../../TAC-HashV41.hash \
 go run ./getting_started_console
 
-# or the web example, then: curl http://localhost:8080/
+# or the web example, then: curl http://localhost:5151/
 go run ./getting_started_web
 ```
 

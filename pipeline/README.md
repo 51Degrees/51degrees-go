@@ -124,7 +124,7 @@ if err != nil {
 defer pipeline.Close()
 
 mw := web.NewMiddleware(pipeline)
-http.ListenAndServe(":8080", mw.Handler(myAppHandler))
+http.ListenAndServe(":5151", mw.Handler(myAppHandler))
 
 // Inside myAppHandler:
 //   flowData, _ := web.FromContext(r.Context())
