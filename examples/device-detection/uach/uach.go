@@ -24,7 +24,7 @@
 @example uach/uach.go
 This example shows how to ask for User-Agent Client Hints with the
 Accept-CH response header, and use them as evidence for device detection,
-in a web application at localhost:3001.
+in a web application at localhost:5151.
 
 This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/uach).
 
@@ -41,8 +41,8 @@ package main
  ```
  go run uach.go
  ```
- This will start the application at "localhost:3001". From a browser of your choice,
- enter "localhost:3001" in the URL input. Follow the instructions to see how
+ This will start the application at "localhost:5151". From a browser of your choice,
+ enter "localhost:5151" in the URL input. Follow the instructions to see how
  the evidence are used.
 
  Use curl to run a simple request with a User-Agent that support User Agent
@@ -51,7 +51,7 @@ package main
 
  ```
  curl -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
- localhost:3001 -I
+ localhost:5151 -I
  ```
 
  Response header should include `Accept-CH` set to:
@@ -61,7 +61,7 @@ package main
 
  NOTE: To see how User Agent Client Hints, run the following command:
  ```
- curl --header "Sec-CH-UA-Platform: Windows" --header "Sec-CH-UA-Platform-Version: 14.0.0" localhost:3001
+ curl --header "Sec-CH-UA-Platform: Windows" --header "Sec-CH-UA-Platform-Version: 14.0.0" localhost:5151
  ``
  You should see the html text returned with `Platform Name` set to `Windows`, and
  `Platform Version` set to `11.0`.
@@ -378,7 +378,7 @@ func main() {
 	defer manager.Free()
 
 	http.HandleFunc("/", handler)
-	const port = 3001
+	const port = 5151
 	fmt.Printf("Server listening on port: %d\n", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil))
 }

@@ -23,7 +23,7 @@
 /**
 @example web/web_integration.go
 This example shows how to perform device detection on the User-Agent of a
-web request, in a web application at localhost:8000.
+web request, in a web application at localhost:5151.
 
 This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/web).
 
@@ -40,8 +40,8 @@ To run this example, perform the following command:
 ```
 go run web_integration.go
 ```
-This will start the application at "localhost:8000". From a browser of your choice,
-enter "localhost:8000" in the URL input. A similar return as the following is expected:
+This will start the application at "localhost:5151". From a browser of your choice,
+enter "localhost:5151" in the URL input. A similar return as the following is expected:
 ```
 Browser: Chrome
 
@@ -61,7 +61,7 @@ has are shown as needing it, with a link to ask for a copy.
 To be sure that the application works with different User-Agents, `curl` can be
 used:
 ```
-curl -A [User-Agent string] localhost:8000
+curl -A [User-Agent string] localhost:5151
 ```
 */
 
@@ -201,7 +201,7 @@ func main() {
 	defer manager.Free()
 
 	http.HandleFunc("/", handler)
-	const port = 8000
+	const port = 5151
 	fmt.Printf("Server listening on port: %d\n", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil))
 }

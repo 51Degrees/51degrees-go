@@ -23,7 +23,7 @@
 // Package main demonstrates using 51Degrees Device Detection and IP Intelligence
 // engines together inside an HTTP handler.
 //
-// The server listens on port 8080 and responds to every request with a JSON
+// The server listens on port 5151 and responds to every request with a JSON
 // document containing:
 //   - clientIp           — the detected client IP address
 //   - deviceDetection    — device properties detected from the request headers
@@ -47,7 +47,7 @@
 //
 // Then in another terminal:
 //
-//	curl http://localhost:8080/
+//	curl http://localhost:5151/
 package main
 
 import (
@@ -315,7 +315,7 @@ func main() {
 
 	http.Handle("/", newMixedHandler(ddEngine, ipiEngine))
 
-	const addr = ":8080"
+	const addr = ":5151"
 	log.Printf("Mixed Getting Started Web Example — listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
