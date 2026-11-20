@@ -64,12 +64,12 @@ func modified(t *testing.T, path string) time.Time {
 }
 
 // An example is given its own data file, a copy of the one the settings name,
-// under either name, in a new folder beside it, and the folder is removed
+// in a new folder beside it, and the folder is removed
 // afterwards. Other variables are kept. Setting the modification time of the
 // example's own file, as the reload example does, or renaming a file over it,
 // as an update does, leaves the named file as it was.
 func TestAnExampleIsGivenItsOwnDataFile(t *testing.T) {
-	for _, name := range []string{dataFileVariable, deprecatedDataFile} {
+	for _, name := range []string{dataFileVariable} {
 		t.Run(name, func(t *testing.T) {
 			folder := t.TempDir()
 			shared := filepath.Join(folder, "51Degrees-LiteV4.1.hash")
@@ -87,9 +87,6 @@ func TestAnExampleIsGivenItsOwnDataFile(t *testing.T) {
 				filepath.Dir(filepath.Dir(own)) != folder {
 				t.Fatalf("the example is given %q, want its own file in a "+
 					"new folder in %s", own, folder)
-			}
-			if _, ok := valueOf(environment, deprecatedDataFile); ok {
-				t.Errorf("the example is still given %s", deprecatedDataFile)
 			}
 			if path, _ := valueOf(environment, "PATH"); path != "kept" {
 				t.Errorf("PATH is %q, want it kept", path)

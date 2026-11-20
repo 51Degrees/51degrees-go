@@ -36,13 +36,8 @@ import (
 	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-// dataFileVariable names the data file the examples use, and
-// deprecatedDataFile its deprecated name, written in two parts so that this
-// file does not name an old variable.
-const (
-	dataFileVariable   = "_51DEGREES_DD_PATH"
-	deprecatedDataFile = "DATA" + "_FILE"
-)
+// dataFileVariable names the data file the examples use.
+const dataFileVariable = "_51DEGREES_DD_PATH"
 
 // TestMain runs the package's tests on a data file of their own, as
 // onOwnDataFile gives them.
@@ -165,19 +160,15 @@ func TestFreeOnOwnCopyGivesNoSettings(t *testing.T) {
 }
 
 // namedDataFile gives the data file environment names under
-// dataFileVariable, or else under its deprecated name, as the examples read
-// them, or "" when it names none.
+// dataFileVariable, as the examples read it, or "" when it names none.
 func namedDataFile(environment []string) string {
 	named, _ := valueOf(environment, dataFileVariable)
-	if named == "" {
-		named, _ = valueOf(environment, deprecatedDataFile)
-	}
 	return named
 }
 
 // ownDataFile returns environment with dataFileVariable naming a copy of the
 // data file it names, with the same modification time, in a new folder
-// beside that file, and without the deprecated name, with a function that
+// beside that file, with a function that
 // removes the folder. A copy and not a hard link, because a link shares the
 // modification time the reload example sets. Environment is returned as it
 // is when it names no data file.
@@ -209,7 +200,7 @@ func ownDataFile(environment []string) ([]string, func(), error) {
 	for _, variable := range environment {
 		name, _, _ := strings.Cut(variable, "=")
 		switch strings.ToUpper(name) {
-		case dataFileVariable, deprecatedDataFile:
+		case dataFileVariable:
 			continue
 		}
 		kept = append(kept, variable)
@@ -217,11 +208,11 @@ func ownDataFile(environment []string) ([]string, func(), error) {
 	return append(kept, dataFileVariable+"="+own), remove, nil
 }
 
-// useDataFile sets dataFileVariable and its deprecated name in this process
-// as environment has them, unsetting those it lacks, and returns a function
+// useDataFile sets dataFileVariable in this process as environment has it,
+// unsetting it when it lacks it, and returns a function
 // that puts them back as they were.
 func useDataFile(environment []string) func() {
-	names := []string{dataFileVariable, deprecatedDataFile}
+	names := []string{dataFileVariable}
 	previous := make(map[string]string, len(names))
 	for _, name := range names {
 		if value, ok := os.LookupEnv(name); ok {
