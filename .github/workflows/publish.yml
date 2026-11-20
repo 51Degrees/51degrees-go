@@ -25,9 +25,4 @@ jobs:
       allow-early-release: ${{ inputs.allow-early-release || false }}
       common-ci-ref: ${{ inputs.common-ci-ref || '' }}
       cache-assets: true
-    secrets:
-      token: ${{ secrets.ACCESS_TOKEN }}
-      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
-      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
-      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
-      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
+    secrets: inherit
