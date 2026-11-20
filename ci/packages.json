@@ -16,7 +16,7 @@
   {
     "Name": "device-detection",
     "Path": "device-detection",
-    "DependsOn": ["common"],
+    "DependsOn": ["common", "pipeline"],
     "Ignore": ["**/*_test.go", "**/mock_hash.gz"],
     "Publish": true
   },

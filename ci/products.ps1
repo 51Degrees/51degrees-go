@@ -50,6 +50,45 @@ function Resolve-AffectedProducts([string[]]$Changed) {
     return $affected.ToArray()
 }
 
+# Returns the figures in go test -bench output, by benchmark name without
+# the Benchmark prefix or the processor count go adds, each the average time
+# per operation in milliseconds.
+function ConvertFrom-GoBenchmark([string[]]$Lines) {
+    $figures = [ordered]@{}
+    foreach ($line in $Lines) {
+        if ($line -match '^Benchmark(\S+?)(?:-\d+)?\s+\d+\s+([\d.]+) ns/op') {
+            $figures[$Matches[1]] = [double]$Matches[2] / 1e6
+        }
+    }
+    return $figures
+}
+
+# Returns the JavaScript Builder's figures from go test -bench output, under
+# LowerIsBetter as the average milliseconds each takes and under HigherIsBetter
+# as how many a second. common-ci's performance comparison checks only the
+# HigherIsBetter figures. Throws when a benchmark gave no figure.
+function Get-JavaScriptBuilderFigures([string[]]$Lines) {
+    $figures = ConvertFrom-GoBenchmark $Lines
+    $names = [ordered]@{
+        'JavaScriptBuilder/Minified' = @(
+            'AvgMillisecsPerMinifiedScript', 'MinifiedScriptsPerSecond')
+        'JavaScriptBuilder/NotMinified' = @(
+            'AvgMillisecsPerScriptNotMinified', 'ScriptsNotMinifiedPerSecond')
+        'JavaScriptBuilderMinification' = @(
+            'AvgMillisecsPerMinification', 'MinificationsPerSecond')
+    }
+    $lower = [ordered]@{}
+    $higher = [ordered]@{}
+    foreach ($benchmark in $names.Keys) {
+        if (!$figures.Contains($benchmark)) {
+            throw "The JavaScript Builder performance tests gave no figure for $benchmark"
+        }
+        $lower[$names[$benchmark][0]] = $figures[$benchmark]
+        $higher[$names[$benchmark][1]] = 1000 / $figures[$benchmark]
+    }
+    return @{ LowerIsBetter = $lower; HigherIsBetter = $higher }
+}
+
 # Returns the products a pull request changes, or every product when the
 # checkout is not a pull request (a publish, or a build of the branch itself).
 # A pull request is checked out with the branch it merges into merged in, so

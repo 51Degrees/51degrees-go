@@ -1,0 +1,15 @@
+{
+  "PipelineOptions": {
+    "Elements": [
+      {
+        "BuilderName": "CloudRequestEngine",
+        "BuildParameters": {
+          "ResourceKey": "!!YOUR_RESOURCE_KEY!!"
+        }
+      },
+      {
+        "BuilderName": "DeviceDetectionCloudEngine"
+      }
+    ]
+  }
+}

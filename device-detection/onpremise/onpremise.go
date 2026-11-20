@@ -82,6 +82,10 @@ type Engine struct {
 	// file ends at once rather than holding up Stop.
 	stopping atomic.Bool
 
+	// kinds holds, by lower case name, how ProcessData gives each Property
+	// that is not text, once ProcessData has read them.
+	kinds atomic.Pointer[map[string]propertyKind]
+
 	// useMu is held for reading by each call that reads the manager, and for
 	// writing by Stop while it frees the manager, so Stop waits for those
 	// calls and each later call finds freed set.

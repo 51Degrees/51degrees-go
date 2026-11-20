@@ -41,6 +41,12 @@ func (e *Engine) Properties() ([]ipi_interop.PropertyMetadata, error) {
 		return nil, errEngineStopped
 	}
 	defer e.release()
+	return e.properties()
+}
+
+// properties gives what Properties gives, for a caller that already holds
+// the engine. A second hold could wait forever behind Stop.
+func (e *Engine) properties() ([]ipi_interop.PropertyMetadata, error) {
 	if e.manager == nil {
 		return nil, errNoData
 	}
