@@ -42,8 +42,16 @@ func TestMakingADataTakesNoSecondHoldOnTheEngine(t *testing.T) {
 		e.useMu.Unlock()
 		close(stopped)
 	}()
-	// Give the writer time to start waiting, as Stop does.
-	time.Sleep(100 * time.Millisecond)
+	// Wait until the writer is waiting, as Stop does. From then on a new read
+	// lock is refused, which is what a second hold would meet.
+	deadline := time.Now().Add(5 * time.Second)
+	for e.useMu.TryRLock() {
+		e.useMu.RUnlock()
+		if time.Now().After(deadline) {
+			t.Fatal("the writer never started waiting for the engine")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	made := make(chan struct{})
 	go func() {
