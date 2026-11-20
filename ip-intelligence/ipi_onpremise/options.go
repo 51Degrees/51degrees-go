@@ -71,31 +71,16 @@ var errProfileAndConfig = errors.New("WithPerformanceProfile and " +
 	"profile, so which is meant is not clear. Give one of them. " +
 	"WithConcurrency can be used with either")
 
-// performanceProfileNames are the names a Performance Profile is given by
-// in a configuration file, in lower case. MaxPerformance is the
-// specification's name for the profile that holds the whole data file in
-// memory, which this package calls InMemory.
-var performanceProfileNames = map[string]ipi_interop.PerformanceProfile{
-	"default":         ipi_interop.Default,
-	"lowmemory":       ipi_interop.LowMemory,
-	"balancedtemp":    ipi_interop.BalancedTemp,
-	"balanced":        ipi_interop.Balanced,
-	"highperformance": ipi_interop.HighPerformance,
-	"maxperformance":  ipi_interop.InMemory,
-	"inmemory":        ipi_interop.InMemory,
-}
-
-// performanceProfileList names the Performance Profiles in a message.
-const performanceProfileList = "LowMemory, Balanced, BalancedTemp, " +
-	"HighPerformance, MaxPerformance (also called InMemory) or Default"
-
 // ParsePerformanceProfile gives the Performance Profile with the given name,
-// ignoring case, or an error that lists the names when there is none.
+// ignoring case and spaces around it, from the names a configuration file
+// can use. MaxPerformance is the specification's name for InMemory. A name
+// that is not one of them is refused with an error that lists them.
 func ParsePerformanceProfile(name string) (ipi_interop.PerformanceProfile, error) {
-	profile, ok := performanceProfileNames[strings.ToLower(strings.TrimSpace(name))]
+	profile, ok := performanceProfiles[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return ipi_interop.Default, fmt.Errorf("'%s' is not a Performance "+
-			"Profile. Use %s", name, performanceProfileList)
+			"Profile. Use Default, LowMemory, BalancedTemp, Balanced, "+
+			"HighPerformance, InMemory or MaxPerformance", name)
 	}
 	return profile, nil
 }
@@ -108,8 +93,7 @@ func ParsePerformanceProfile(name string) (ipi_interop.PerformanceProfile, error
 func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOptions {
 	return func(cfg *Engine) error {
 		if profile < ipi_interop.Default || profile > ipi_interop.InMemory {
-			return fmt.Errorf("%d is not a Performance Profile. Use %s",
-				int(profile), performanceProfileList)
+			return fmt.Errorf("%d is not a Performance Profile", int(profile))
 		}
 		if cfg.config != nil {
 			return errProfileAndConfig
@@ -118,9 +102,6 @@ func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOption
 		return nil
 	}
 }
-
-// maxConcurrency is the highest Concurrency the native code can be given.
-const maxConcurrency = math.MaxUint16
 
 // WithConcurrency sets the expected number of operations that use the engine
 // at the same time, which the native code uses for every collection it reads
@@ -135,16 +116,16 @@ func WithConcurrency(concurrency uint16) EngineOptions {
 }
 
 // WithReuseOperationalFile says whether a copy of the data file left by an
-// earlier run is used again. When this Engine works from a copy it makes a
+// earlier run is used again. When the engine works from a copy it makes a
 // new one each time it starts and removes it when it stops, so there is never
 // an earlier copy to use again, and turning the option on is refused. Off is
 // the default, and is accepted.
-// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L621
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L621
 func WithReuseOperationalFile(reuse bool) EngineOptions {
 	return func(cfg *Engine) error {
 		if reuse {
 			return errors.New("ReuseOperationalFile cannot be turned on. " +
-				"When this Engine works from a copy of the data file it " +
+				"When the engine works from a copy of the data file it " +
 				"makes a new one each time it starts and removes it when " +
 				"it stops, so there is no earlier copy to use again. Leave " +
 				"ReuseOperationalFile out or set it to false")

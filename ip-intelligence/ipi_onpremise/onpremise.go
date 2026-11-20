@@ -95,9 +95,6 @@ type Engine struct {
 	// defaultConcurrency is the Concurrency used when none is set and no
 	// native configuration was given. 0 leaves the native code's own.
 	defaultConcurrency uint16
-	// afterLoad, when set, is called each time a data file has loaded, the
-	// first included, so that what depends on the data is worked out again.
-	afterLoad func(*Engine)
 
 	// weighted holds, by lower case name, the Properties the data file
 	// weights, once ProcessData has read them.
@@ -601,9 +598,6 @@ func (e *Engine) reloadManager(filePath string) (err error) {
 		}
 		year, month, day := e.getPublishedDate().Date()
 		e.logger.Printf("data file loaded from " + filePath + " published on: " + fmt.Sprintf("%d-%d-%d", year, month, day))
-		if e.afterLoad != nil {
-			e.afterLoad(e)
-		}
 	}()
 
 	if e.manager == nil {
