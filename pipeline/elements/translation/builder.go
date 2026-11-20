@@ -87,21 +87,8 @@ func (b *Builder) Build() (*Engine, error) {
 	if b.sourceKey == "" {
 		return nil, core.NewConfigurationError("a SourceElementDataKey is required for a TranslationEngine", nil)
 	}
-	lookups := map[string]map[string]string{}
 
-	add := func(name, content string) {
-		locale := localeFromName(name)
-		if locale == "" {
-			return
-		}
-		if lookups[locale] == nil {
-			lookups[locale] = map[string]string{}
-		}
-		for k, v := range parseFlatYAML(content) {
-			lookups[locale][k] = v
-		}
-	}
-
+	sources := map[string]string{}
 	for _, pattern := range b.patterns {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
@@ -112,20 +99,26 @@ func (b *Builder) Build() (*Engine, error) {
 			if err != nil {
 				return nil, core.NewConfigurationError("could not read translation source '"+path+"'", err)
 			}
-			add(filepath.Base(path), string(data))
+			sources[filepath.Base(path)] = string(data)
 		}
 	}
 	for name, content := range b.contents {
-		add(name, content)
+		sources[name] = content
 	}
 
 	e := &Engine{
-		BaseElement:     core.NewBaseElement(DataKey, core.NewWhitelistFilter(EvidenceTranslation, EvidenceAcceptLanguage), b.logger),
+		BaseElement: core.NewBaseElement(
+			DataKey,
+			core.NewWhitelistFilter(
+				EvidenceTranslation,
+				EvidenceQueryAcceptLanguage,
+				EvidenceAcceptLanguage),
+			b.logger),
 		sourceKey:       b.sourceKey,
 		translations:    b.translations,
 		fixedLanguage:   b.fixedLanguage,
 		missingBehavior: b.missingBehavior,
-		lookups:         lookups,
+		languages:       buildLookups(sources),
 	}
 	props := make([]core.PropertyMetadata, 0, len(b.translations))
 	for _, m := range b.translations {
@@ -180,6 +173,28 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 		}
 	}
 	return b.Build()
+}
+
+// buildLookups parses translation source contents (each keyed by a filename
+// that encodes the locale, e.g. "countries.fr_FR.yml") into a map of
+// normalized locale -> (source value -> translated value). Sources whose name
+// does not encode a locale are left out, and sources for the same locale are
+// merged.
+func buildLookups(sources map[string]string) languages {
+	lookups := languages{}
+	for name, content := range sources {
+		locale := localeFromName(name)
+		if locale == "" {
+			continue
+		}
+		if lookups[locale] == nil {
+			lookups[locale] = map[string]string{}
+		}
+		for k, v := range parseFlatYAML(content) {
+			lookups[locale][k] = v
+		}
+	}
+	return lookups
 }
 
 // localeFromName extracts the locale from a source file name. It supports the
