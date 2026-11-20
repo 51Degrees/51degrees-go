@@ -68,11 +68,13 @@ if ($Products -contains 'pipeline') {
         Pop-Location
     }
     $builder = Get-JavaScriptBuilderFigures $bench
-    foreach ($name in $builder.LowerIsBetter.Keys) {
-        $lower[$name] = $builder.LowerIsBetter[$name]
+    # Not $name: PowerShell names ignore case, so it would overwrite the $Name
+    # parameter, and the results would be published under the last metric's name.
+    foreach ($metric in $builder.LowerIsBetter.Keys) {
+        $lower[$metric] = $builder.LowerIsBetter[$metric]
     }
-    foreach ($name in $builder.HigherIsBetter.Keys) {
-        $higher[$name] = $builder.HigherIsBetter[$name]
+    foreach ($metric in $builder.HigherIsBetter.Keys) {
+        $higher[$metric] = $builder.HigherIsBetter[$metric]
     }
 }
 
