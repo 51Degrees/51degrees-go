@@ -24,6 +24,7 @@ package common
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 )
 
@@ -70,19 +71,19 @@ func RunExampleWithDataFile(free string, exampleFunc ExampleFunc) {
 // runExample runs the example whose source file is file, then prints where
 // to find out more.
 func runExample(free string, exampleFunc ExampleFunc, file string) {
-	licenseKey := fromEnvironment("_51DEGREES_LICENSE_KEY")
+	licenseKey := os.Getenv("_51DEGREES_LICENSE_KEY")
 
-	dataFile := fromEnvironment("_51DEGREES_IPI_PATH")
+	dataFile := os.Getenv("_51DEGREES_IPI_PATH")
 	if dataFile == "" {
 		dataFile = free
 	}
 
-	evidenceYaml := fromEnvironment("_51DEGREES_EVIDENCE_YAML")
+	evidenceYaml := os.Getenv("_51DEGREES_EVIDENCE_YAML")
 	if evidenceYaml == "" {
 		evidenceYaml = GetDataFolderFile(EvidenceFile)
 	}
 
-	dataFileUrl := fromEnvironment("_51DEGREES_IPI_DATA_FILE_URL")
+	dataFileUrl := os.Getenv("_51DEGREES_IPI_DATA_FILE_URL")
 
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,

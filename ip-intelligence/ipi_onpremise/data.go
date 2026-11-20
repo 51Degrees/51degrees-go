@@ -218,8 +218,13 @@ func (d *Data) Free() {
 // Property is requested. The caller calls Free on the Data when it is done
 // with it. The Data is not safe to use from several goroutines at once, so
 // it belongs to one goroutine at a time. The caller is responsible for
-// thread-safe access to one it shares.
+// thread-safe access to one it shares. It gives an error once the engine has
+// stopped.
 func (e *Engine) ProcessData(ipAddress string) (*Data, error) {
+	if !e.acquire() {
+		return nil, errEngineStopped
+	}
+	defer e.release()
 	return e.processInto(ipi_interop.NewResultsIpi(e.manager), ipAddress)
 }
 

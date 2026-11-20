@@ -169,6 +169,8 @@ func (b *Builder) Build() (*Element, error) {
 			Description: m.output.description,
 		})
 		logScript(logger, m)
+		// The source is for the build log only, so no path is kept.
+		m.source = ""
 	}
 	for _, m := range order {
 		e.run = append(e.run, compiled[m])

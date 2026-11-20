@@ -187,10 +187,14 @@ func TestSizeManagerFromFile(t *testing.T) {
 	performMultiPerfProfiles(testFunc, t)
 }
 
+func TestSizeManagerFromMemory(t *testing.T) {
+	// TODO: Size the manager from memory
+}
+
 // A manager made from a data file in memory is sized from that memory with
 // each performance profile, and data that fails to load gives an error
 // rather than a size.
-func TestSizeManagerFromMemory(t *testing.T) {
+func TestSizeManagerFromMemoryGivesTheSize(t *testing.T) {
 	data := readTestData(t)
 	testFunc := func(perf PerformanceProfile, t *testing.T) {
 		s, err := NewConfigHash(perf).SizeManagerFromMemory("",

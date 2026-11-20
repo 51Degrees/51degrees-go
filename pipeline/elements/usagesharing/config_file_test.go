@@ -31,8 +31,8 @@ import (
 
 // The queue size and the two timeouts can be set from a configuration file,
 // under the names the options table gives them, as numbers decoded from JSON.
-// The minimum entries per message is in the file as well, because a queue
-// smaller than a message is refused.
+// The minimum entries per message is in the file as well, so that the queue
+// is larger than a message and can fill one.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L444-L446
 func TestFactoryReadsQueueSizeAndTimeouts(t *testing.T) {
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))

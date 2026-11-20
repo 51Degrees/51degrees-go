@@ -30,16 +30,15 @@ import (
 	"testing"
 )
 
+// settings holds each environment variable the examples read.
+var settings = []string{"_51DEGREES_DD_PATH", "_51DEGREES_EVIDENCE_YAML"}
+
 // withoutSettings returns the environment without each variable the examples
-// read, under its 51Degrees name and its deprecated names, as in a fresh
-// clone.
+// read, as in a fresh clone.
 func withoutSettings(environment []string) []string {
 	read := map[string]bool{}
-	for name, old := range oldNames {
+	for _, name := range settings {
 		read[name] = true
-		for _, o := range old {
-			read[o] = true
-		}
 	}
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
@@ -52,14 +51,11 @@ func withoutSettings(environment []string) []string {
 }
 
 // TestWithoutSettingsDropsEveryNameTheExamplesRead checks each variable the
-// examples read is left out under every name, and others are kept.
+// examples read is left out, and others are kept.
 func TestWithoutSettingsDropsEveryNameTheExamplesRead(t *testing.T) {
 	environment := []string{"PATH=kept"}
-	for name, old := range oldNames {
+	for _, name := range settings {
 		environment = append(environment, name+"=x")
-		for _, o := range old {
-			environment = append(environment, o+"=x")
-		}
 	}
 	got := withoutSettings(environment)
 	if len(got) != 1 || got[0] != "PATH=kept" {

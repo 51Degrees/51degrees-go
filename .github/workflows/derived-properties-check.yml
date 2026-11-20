@@ -7,6 +7,7 @@ on:
       - 'pipeline/elements/derivedproperty/scripts/**'
       - '.gitmodules'
       - 'ci/check-derived-properties.ps1'
+      - 'ci/derived-properties-reworded.json'
       - '.github/workflows/derived-properties-check.yml'
   push:
     branches:
