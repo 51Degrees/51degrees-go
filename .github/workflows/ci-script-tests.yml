@@ -4,7 +4,9 @@ name: CI script tests
 # mistake there releases a module that did not change, or leaves out one that
 # must move with another, and a published version can never be taken back.
 # ci/products.ps1 and ci/select-options.ps1 decide what a pull request builds,
-# and a mistake there leaves a module or a configuration untested. So their
+# and a mistake there leaves a module or a configuration untested.
+# ci/key-names.Tests.ps1 checks that the CI scripts take their keys only under
+# the _51DEGREES_ names, which common-ci puts into the environment. So their
 # tests run on every pull request that changes ci/, against common-ci's main,
 # which is the common-ci the publish and the builds run. Go and Pester are the
 # ones the runner has.
@@ -47,6 +49,7 @@ jobs:
           $env:COMMON_CI = (Resolve-Path common-ci).Path
           $paths = @(
             '51degrees-go/ci/benchmark.Tests.ps1',
+            '51degrees-go/ci/key-names.Tests.ps1',
             '51degrees-go/ci/packages.Tests.ps1',
             '51degrees-go/ci/select-options.Tests.ps1')
           # Pester passes over a path that does not exist, so a test file that

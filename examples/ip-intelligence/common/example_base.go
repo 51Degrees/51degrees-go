@@ -47,7 +47,6 @@ type ExampleParams struct {
 	LicenseKey     string
 	Product        string
 	DataFile       string
-	DataFileUrl    string
 	IterationCount int
 	EvidenceYaml   string
 }
@@ -83,12 +82,9 @@ func runExample(free string, exampleFunc ExampleFunc, file string) {
 		evidenceYaml = GetDataFolderFile(EvidenceFile)
 	}
 
-	dataFileUrl := os.Getenv("_51DEGREES_IPI_DATA_FILE_URL")
-
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,
 		DataFile:     GetDataFile(dataFile),
-		DataFileUrl:  dataFileUrl,
 		EvidenceYaml: evidenceYaml,
 	}
 

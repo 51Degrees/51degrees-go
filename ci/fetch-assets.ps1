@@ -1,8 +1,4 @@
 param (
-    [string]$DeviceDetection,
-    [string]$DeviceDetectionUrl,
-    [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl,
     # The branch a pull request merges into, which its changes are measured
     # against.
     [string]$Branch = 'main'
@@ -42,10 +38,11 @@ if (!$Assets) {
 }
 
 # The assets are kept in ./assets, which the run caches once, so a test job
-# restores them rather than downloading them.
-./steps/fetch-assets.ps1 -Assets $Assets `
-    -DeviceDetection:$DeviceDetection -DeviceDetectionUrl:$DeviceDetectionUrl `
-    -IpIntelligence:$IpIntelligence -IpIntelligenceUrl:$IpIntelligenceUrl
+# restores them rather than downloading them. The shared step downloads the
+# Enterprise IP Intelligence and TAC data files from the Distributor with
+# _51DEGREES_LICENSE_KEY, which common-ci puts into the environment before
+# this runs, and fails naming that variable when it is not set.
+./steps/fetch-assets.ps1 -Assets $Assets
 
 # The examples default to the free Lite data files in cxx/data, and an example
 # downloads a file when it is missing, so the assets are linked there.
