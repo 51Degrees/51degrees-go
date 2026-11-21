@@ -1,0 +1,22 @@
+name: Temporary build of 1837ec45 with common-ci 19be8a0e on tmp/ben-go-236-sn
+
+on:
+  push:
+    branches:
+      - 'tmp/ben-go-236-sn'
+
+jobs:
+  Build:
+    uses: 51Degrees/common-ci/.github/workflows/nightly-pull-requests.yml@19be8a0e3a6c6c3da2c4bbcde585d2df1df186c7
+    with:
+      repo-name: 51degrees-go
+      org-name: 51Degrees
+      branch: tmp/ben-go-236-sn
+      prs: ''
+      build-without-pull-requests: true
+      dryrun: true
+      cache-assets: true
+      fail-fast: false
+      skip-compare-performance: true
+      common-ci-ref: 19be8a0e3a6c6c3da2c4bbcde585d2df1df186c7
+    secrets: inherit
