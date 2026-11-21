@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
@@ -70,6 +71,20 @@ var errProfileAndConfig = errors.New("WithPerformanceProfile and " +
 	"profile, so which is meant is not clear. Give one of them. " +
 	"WithConcurrency can be used with either")
 
+// ParsePerformanceProfile gives the Performance Profile with the given name,
+// ignoring case and spaces around it, from the names a configuration file
+// can use. MaxPerformance is the specification's name for InMemory. A name
+// that is not one of them is refused with an error that lists them.
+func ParsePerformanceProfile(name string) (ipi_interop.PerformanceProfile, error) {
+	profile, ok := performanceProfiles[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return ipi_interop.Default, fmt.Errorf("'%s' is not a Performance "+
+			"Profile. Use Default, LowMemory, BalancedTemp, Balanced, "+
+			"HighPerformance, InMemory or MaxPerformance", name)
+	}
+	return profile, nil
+}
+
 // WithPerformanceProfile sets the Performance Profile the engine is created
 // with, which decides how much of the data file is held in memory. The
 // default is Balanced. A value that is not a Performance Profile is refused.
@@ -96,6 +111,25 @@ func WithPerformanceProfile(profile ipi_interop.PerformanceProfile) EngineOption
 func WithConcurrency(concurrency uint16) EngineOptions {
 	return func(cfg *Engine) error {
 		cfg.concurrency = &concurrency
+		return nil
+	}
+}
+
+// WithReuseOperationalFile says whether a copy of the data file left by an
+// earlier run is used again. When the engine works from a copy it makes a
+// new one each time it starts and removes it when it stops, so there is never
+// an earlier copy to use again, and turning the option on is refused. Off is
+// the default, and is accepted.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/ip-intelligence-specification/pipeline-elements/ip-intelligence-on-premise.md?plain=1#L621
+func WithReuseOperationalFile(reuse bool) EngineOptions {
+	return func(cfg *Engine) error {
+		if reuse {
+			return errors.New("ReuseOperationalFile cannot be turned on. " +
+				"When the engine works from a copy of the data file it " +
+				"makes a new one each time it starts and removes it when " +
+				"it stops, so there is no earlier copy to use again. Leave " +
+				"ReuseOperationalFile out or set it to false")
+		}
 		return nil
 	}
 }

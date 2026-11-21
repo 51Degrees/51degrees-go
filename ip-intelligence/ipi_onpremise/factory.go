@@ -78,6 +78,7 @@ var buildParameters = []buildParameter{
 	{[]string{"Properties"}, listOption(WithProperties)},
 	{[]string{"PerformanceProfile"}, performanceProfileOption},
 	{[]string{"Concurrency"}, concurrencyOption},
+	{[]string{"ReuseOperationalFile"}, boolOption(WithReuseOperationalFile)},
 }
 
 // Factory builds the engine as a PipelineEngine from the build parameters of a
