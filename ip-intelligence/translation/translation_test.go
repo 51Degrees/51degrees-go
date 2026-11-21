@@ -757,7 +757,7 @@ func TestPopulationTranslatedNames(t *testing.T) {
 
 // The countries engine's Element Data cannot be written once it has
 // processed.
-func TestCountriesDataIsReadOnlyOnceProcessed(t *testing.T) {
+func TestCountriesTranslationEngineDataIsReadOnlyOnceProcessed(t *testing.T) {
 	p := fullPipeline(t, weightify("GB"), weightify("GB"))
 	defer p.Close()
 	fd := processWith(t, p, nil)
