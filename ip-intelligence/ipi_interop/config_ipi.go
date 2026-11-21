@@ -83,7 +83,14 @@ func (config *ConfigIpi) SetConcurrency(concurrency uint16) {
 	config.CPtr.graphs.concurrency = C.ushort(concurrency)
 	config.CPtr.profileGroups.concurrency = C.ushort(concurrency)
 	config.CPtr.profileOffsets.concurrency = C.ushort(concurrency)
+	config.CPtr.propertyTypes.concurrency = C.ushort(concurrency)
 
+}
+
+// Concurrency gives the expected concurrent requests the configuration
+// holds, which SetConcurrency sets on every collection.
+func (config *ConfigIpi) Concurrency() uint16 {
+	return uint16(config.CPtr.strings.concurrency)
 }
 
 // PerformanceProfile get the configured performance profile

@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example dd/getting_started/getting_started.go
+This example shows how to perform simple device detections on User-Agent
+strings with the dd package. It runs with the free Lite data file, and
+shows the properties that only the Enterprise data file has as needing it.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/dd/getting_started).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*
@@ -96,7 +107,7 @@ func runGettingStarted(perf dd.PerformanceProfile) string {
 	// Initialise manager
 	manager := dd.NewResourceManager()
 	config := dd.NewConfigHash(perf)
-	filePath := dd_example.GetFilePathByName([]string{dd_example.LiteDataFile})
+	filePath := dd_example.DataFilePath()
 
 	err := dd.InitManagerFromFile(
 		manager,

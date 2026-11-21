@@ -91,7 +91,7 @@ func TestRequestCarriesEveryEvidenceValueButTheEngineFields(t *testing.T) {
 	} {
 		fd.AddEvidence(key, value)
 	}
-	if err := fd.Process(); err != nil {
+	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 
@@ -157,7 +157,7 @@ func TestRequestLeavesOutEngineFieldsInAnyLetterCase(t *testing.T) {
 	} {
 		fd.AddEvidence(key, value)
 	}
-	if err := fd.Process(); err != nil {
+	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 

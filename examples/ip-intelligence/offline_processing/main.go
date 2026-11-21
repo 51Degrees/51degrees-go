@@ -32,8 +32,6 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 
 @include{doc} example-require-datafile-ipi.txt
 
-@include{doc} example-how-to-run-ipi.txt
-
 ## In detail, the example shows how to
 
 ### 1. Specify config for engine:
@@ -344,7 +342,7 @@ func main() {
 			runOfflineProcessing(engine, params)
 
 			if common.IsFreeDataFile(engine, common.Properties) {
-				common.PrintEnterpriseNote(contactUs)
+				common.PrintNeedsEnterprise(common.Properties, contactUs)
 			}
 
 			return nil

@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example onpremise/update_polling_interval/update_polling_interval.go
+This example shows how to set the interval at which the onpremise Engine
+polls for a new data file.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/onpremise/update_polling_interval).
+
+@include{doc} example-require-licensekey.txt
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 import (

@@ -22,6 +22,12 @@
 
 package common
 
+import (
+	"fmt"
+	"os"
+	"runtime"
+)
+
 // LiteDataFile is the free data file the examples use when
 // _51DEGREES_IPI_PATH names no other. The data repository links it, so an
 // example downloads it the first time it runs.
@@ -41,7 +47,6 @@ type ExampleParams struct {
 	LicenseKey     string
 	Product        string
 	DataFile       string
-	DataFileUrl    string
 	IterationCount int
 	EvidenceYaml   string
 }
@@ -51,30 +56,35 @@ type ExampleFunc func(params *ExampleParams) error
 // RunExample runs the example with the data file _51DEGREES_IPI_PATH names,
 // or the free Lite data file.
 func RunExample(exampleFunc ExampleFunc) {
-	RunExampleWithDataFile(LiteDataFile, exampleFunc)
+	_, file, _, _ := runtime.Caller(1)
+	runExample(LiteDataFile, exampleFunc, file)
 }
 
 // RunExampleWithDataFile runs the example with the data file
 // _51DEGREES_IPI_PATH names, or the free data file given.
 func RunExampleWithDataFile(free string, exampleFunc ExampleFunc) {
-	licenseKey := fromEnvironment("_51DEGREES_LICENSE_KEY")
+	_, file, _, _ := runtime.Caller(1)
+	runExample(free, exampleFunc, file)
+}
 
-	dataFile := fromEnvironment("_51DEGREES_IPI_PATH")
+// runExample runs the example whose source file is file, then prints where
+// to find out more.
+func runExample(free string, exampleFunc ExampleFunc, file string) {
+	licenseKey := os.Getenv("_51DEGREES_LICENSE_KEY")
+
+	dataFile := os.Getenv("_51DEGREES_IPI_PATH")
 	if dataFile == "" {
 		dataFile = free
 	}
 
-	evidenceYaml := fromEnvironment("_51DEGREES_EVIDENCE_YAML")
+	evidenceYaml := os.Getenv("_51DEGREES_EVIDENCE_YAML")
 	if evidenceYaml == "" {
 		evidenceYaml = GetDataFolderFile(EvidenceFile)
 	}
 
-	dataFileUrl := fromEnvironment("_51DEGREES_IPI_DATA_FILE_URL")
-
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,
 		DataFile:     GetDataFile(dataFile),
-		DataFileUrl:  dataFileUrl,
 		EvidenceYaml: evidenceYaml,
 	}
 
@@ -82,4 +92,7 @@ func RunExampleWithDataFile(free string, exampleFunc ExampleFunc) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Every example ends with where to find out more, tagged with its file.
+	fmt.Print(FindOutMore(ExampleContent(file)))
 }

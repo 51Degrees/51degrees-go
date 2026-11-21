@@ -50,6 +50,7 @@ fine against other versions, but additional caution should be applied.
   - *elements/setheaders* - Gathers HTTP response headers to request more Evidence.
   - *elements/usagesharing* - Shares anonymized usage data with 51Degrees.
   - *elements/translation* - Translates values using YAML translation sources.
+  - *elements/derivedproperty* - Derives new properties from other elements' properties, following the rules in YAML or JSON scripts, such as HumanConfidence and IsGdpr.
 - **web** - The `net/http` web integration (middleware and intercepted endpoints).
 
 ## Installation
@@ -85,6 +86,7 @@ device detection, then these are available in this repository's
 | [4. Cloud Engine](../examples/pipeline/4_cloud_engine)                | Shows how to modify the simple element to perform the star sign lookup via a cloud service rather than locally. |
 | [5. Usage Sharing](../examples/pipeline/5_usage_sharing)              | Shows how to share usage with 51Degrees, configured from an options file. This helps us to keep our products up to date and accurate. |
 | [6. Result Caching](../examples/pipeline/6_caching)                   | Shows how the result caching feature works. |
+| [7. Derived Property](../examples/pipeline/7_derived_property)        | Shows how the Derived Property Element computes a property from properties other elements have produced, with a script held in code, a script file beside the example and the same Pipeline built from a configuration file, and what a script gives when a source property is missing. |
 
 Each example is a runnable program in [examples/pipeline](../examples/pipeline), a module of its own that uses
 the published Pipeline module. For example, from that folder:
@@ -122,14 +124,63 @@ if err != nil {
 defer pipeline.Close()
 
 mw := web.NewMiddleware(pipeline)
-http.ListenAndServe(":8080", mw.Handler(myAppHandler))
+http.ListenAndServe(":5151", mw.Handler(myAppHandler))
 
 // Inside myAppHandler:
 //   flowData, _ := web.FromContext(r.Context())
+//   A Flow Data cannot be used by two goroutines at once, so copy the
+//   values that work on another goroutine needs, and pass those:
+//   device, _ := flowData.Get("device")
+//   isMobile, _ := device.Get("ismobile")
+//   go record(isMobile)
 ```
 
 The example at [examples/pipeline/3_clientside_evidence](../examples/pipeline/3_clientside_evidence)
 stands up the middleware and exercises the full client-side round-trip.
+
+## Thread safety
+
+A Flow Data is used by one goroutine at a time, and is not safe to use from
+several at once, apart from the members of a parallel group, which the
+Pipeline runs itself. Once `Process` has returned, a Flow Data may pass to
+another goroutine, which then uses it alone.
+
+Using a Flow Data from another goroutine while `Process` runs is a data race.
+It can end the whole program with a fatal error, such as
+`fatal error: concurrent map read and map write`, which `recover` does not
+catch, rather than return an error.
+
+The Pipeline adds no lock for this, to keep processing fast for the usual case
+of one goroutine per request. A caller that shares a Flow Data across
+goroutines is responsible for any locking.
+
+Element Data is written only by the Flow Element that provides it, or the Flow
+Elements that share it, and only while they process. Once processing has
+finished, a write to the Flow Data
+panics with `core.ErrFlowDataFinished`, and a write to Element Data panics with
+`core.ErrElementDataFinished`. Two Flow Elements that write one Element Data
+instance must not be members of the same parallel group, so two Derived
+Property Elements MUST NOT be members of the same parallel group, nor two
+Translation Engines.
+
+`FlowData.Close` returns its Element Data to a pool, to be used again by a
+later Flow Data. Call it once the Flow Data and its values are no longer
+needed. Keeping a reference to Element Data after its Flow Data is closed is
+not supported, as the instance may by then hold another request's values. The
+web middleware closes the Flow Data when the request ends, that is when the
+handler it wraps returns, so copy
+the values that work outliving the request needs before the handler returns.
+Put a time limit such as `http.TimeoutHandler` around the middleware, not
+inside it, because the handler that a time limit gives up on keeps running
+after the time limit has returned. Code still reading a closed Flow Data reads
+values that are gone or belong to another request, and a read that meets a
+write can end the program with a fatal error that `recover` does not catch. A
+custom Flow Element that gives the same Element Data to more than one Flow
+Data, or keeps it across requests, marks it with `core.MarkShared`, so it never
+goes back to a pool.
+
+This follows the Pipeline specification's
+[thread-safety page](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md).
 
 ## Design notes
 
@@ -143,11 +194,23 @@ while the internals are idiomatic Go. In particular:
   non-generic interface, rather than generic methods.
 - **Composition over inheritance.** The deep `FlowElement` → `AspectEngine` →
   `CloudAspectEngine` hierarchy of the reference implementations is flattened
-  into small interfaces plus embeddable `Base*` structs. Caching and lazy
-  loading are applied by an engine-supplied compute function passed to
-  `BaseAspectEngine.Execute`, following the strategy pattern recommended in the
-  specification's
+  into small interfaces plus embeddable `Base*` structs. Caching is applied
+  around an engine-supplied compute function passed to
+  `BaseAspectEngine.Execute`, which runs it on the calling goroutine, following
+  the strategy pattern recommended in the specification's
   [reference-implementation notes](https://github.com/51Degrees/specifications/blob/main/pipeline-specification/reference-implementation-notes.md).
+  `SetLazyLoading` is deprecated and has no effect, as the specification's
+  [lazy loading](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/lazy-loading.md)
+  page says. Long-running work belongs in a
+  [lazy property](https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#lazy-properties)
+  of a Flow Element's own Element Data. The Cloud Request Engine works this
+  way. It starts its HTTP request while it processes and returns without
+  waiting, and every read of its `json-response` waits for that request.
+  A request that fails is recorded as the Cloud Request Engine's error by the
+  first Flow Element that reads `json-response` while the Flow Data is
+  processed. Once processing has finished, the failure reaches only the
+  reader, as the error of the read. Closing the engine, or the Pipeline that
+  holds it, waits for every request the engine has started.
 
 ## Project documentation
 

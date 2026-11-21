@@ -23,9 +23,12 @@
 // Package missingproperty constructs the errors returned when a Property that is
 // defined for an Engine is not present in the result set.
 //
-// The messages match those defined in the specification exactly so they are
-// consistent across language implementations.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/properties.md#missing-properties
+// The messages are those of the specification's table, so they are consistent
+// across language implementations, apart from the configuration page address
+// in the two Resource Key messages. That address stays
+// https://configure.51degrees.com, as programs may match on the text and the
+// specification asks for the table's text only as a SHOULD.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/properties.md?plain=1#L116-L139
 package missingproperty
 
 import (

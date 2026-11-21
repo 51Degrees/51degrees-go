@@ -25,7 +25,7 @@ package engines
 import (
 	"fmt"
 	"log/slog"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -33,8 +33,8 @@ import (
 )
 
 // AspectEngine is a specialization of Flow Element with the features common to
-// 51Degrees Engines: caching, lazy loading, a data-source tier, and missing
-// Property reporting.
+// 51Degrees Engines: caching, a data-source tier, and missing Property
+// reporting.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#aspect-engine
 type AspectEngine interface {
 	core.FlowElement
@@ -44,15 +44,12 @@ type AspectEngine interface {
 }
 
 // BaseAspectEngine supplies the shared Engine behavior that concrete engines
-// embed: optional result caching and optional lazy loading. Concrete engines
-// implement their processing logic in a compute function passed to Execute.
+// embed: optional result caching. Concrete engines implement their processing
+// logic in a compute function passed to Execute.
 type BaseAspectEngine struct {
 	*core.BaseElement
-	cache       cache.Cache
-	lazyLoading bool
-	lazyTimeout time.Duration
-	tier        string
-	warnOnce    sync.Once
+	cache cache.Cache
+	tier  string
 }
 
 // NewBaseAspectEngine creates a BaseAspectEngine with the given data key and
@@ -61,20 +58,83 @@ func NewBaseAspectEngine(dataKey string, filter core.EvidenceKeyFilter, logger *
 	return &BaseAspectEngine{BaseElement: core.NewBaseElement(dataKey, filter, logger)}
 }
 
-// SetCache attaches a result cache to the Engine. A cache MUST NOT be attached
-// to an Engine whose Aspect Data requires resource cleanup or is not
-// thread-safe; that is the responsibility of the concrete engine.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/caching.md#data-lifetime-and-concurrency-issues
-func (b *BaseAspectEngine) SetCache(c cache.Cache) { b.cache = c }
+// SetCache attaches a result cache to the Engine. The concrete Engine must
+// not attach one where its Aspect Data needs cleanup or is not safe to read
+// from several goroutines at once. A cache is also refused, with an error
+// logged, while the Engine is in a Pipeline where another Flow Element
+// writes its Element Data, because that Flow Element would write into a
+// cached instance that other requests are reading. Building such a Pipeline
+// with the cache already set fails in the same way.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/caching.md?plain=1#L111-L135
+func (b *BaseAspectEngine) SetCache(c cache.Cache) {
+	if c != nil {
+		for _, p := range b.Pipelines() {
+			if err := b.refuseSharedCache(p); err != nil {
+				b.Logger().Error(err.Error())
+				return
+			}
+		}
+	}
+	b.cache = c
+}
 
-// SetLazyLoading enables lazy loading with the given access timeout. When
-// enabled, Execute returns immediately and the compute function runs in the
-// background; accessing a Property value blocks until it completes (or the
-// timeout elapses). A timeout of zero means wait indefinitely.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/advanced-features/lazy-loading.md
+// OnPipelineAdded refuses a Pipeline in which another Flow Element writes
+// the Engine's Element Data while the Engine has a cache.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L234-L237
+func (b *BaseAspectEngine) OnPipelineAdded(p core.Pipeline) error {
+	if b.cache != nil {
+		if err := b.refuseSharedCache(p); err != nil {
+			return err
+		}
+	}
+	return b.BaseElement.OnPipelineAdded(p)
+}
+
+// refuseSharedCache gives an error when another Flow Element of p, a member
+// of a group at any depth included, has the Engine's data key.
+func (b *BaseAspectEngine) refuseSharedCache(p core.Pipeline) error {
+	if !writtenByAnother(p.FlowElements(), b) {
+		return nil
+	}
+	return core.NewConfigurationError(fmt.Sprintf("the Engine '%s' has a "+
+		"cache, so another Flow Element must not write its Element Data, "+
+		"and one in the Pipeline does", b.DataKey()), nil)
+}
+
+// aspectEngine gives the BaseAspectEngine an Engine embeds, so that the
+// Engine can be told apart from another Flow Element with its key.
+func (b *BaseAspectEngine) aspectEngine() *BaseAspectEngine { return b }
+
+// writtenByAnother reports whether any of elements, or a member of a group
+// among them at any depth, has the data key of b and is not b's Engine.
+func writtenByAnother(elements []core.FlowElement, b *BaseAspectEngine) bool {
+	for _, e := range elements {
+		if own, ok := e.(interface{ aspectEngine() *BaseAspectEngine }); ok &&
+			own.aspectEngine() == b {
+			continue
+		}
+		if strings.EqualFold(e.DataKey(), b.DataKey()) {
+			return true
+		}
+		if group, ok := e.(interface{ Children() []core.FlowElement }); ok &&
+			writtenByAnother(group.Children(), b) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetLazyLoading has no effect. The Engine processes on the goroutine that
+// processes the Flow Data and gives the same values whatever is set here,
+// with or without a timeout.
+//
+// Deprecated: lazy loading has no effect and is kept so that existing code
+// still builds. Long-running work in a Flow Element belongs in a lazy
+// property of its own Element Data, as
+// https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#lazy-properties
+// describes.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/lazy-loading.md
 func (b *BaseAspectEngine) SetLazyLoading(enabled bool, timeout time.Duration) {
-	b.lazyLoading = enabled
-	b.lazyTimeout = timeout
 }
 
 // SetDataSourceTier sets the data-source tier name.
@@ -83,25 +143,12 @@ func (b *BaseAspectEngine) SetDataSourceTier(tier string) { b.tier = tier }
 // DataSourceTier returns the data-source tier name.
 func (b *BaseAspectEngine) DataSourceTier() string { return b.tier }
 
-// Execute runs an Engine's processing with caching and lazy loading applied as
-// configured, then stores the resulting Aspect Data in the Flow Data under the
+// Execute runs an Engine's processing on the calling goroutine, with caching
+// applied as configured, then stores the resulting Aspect Data in the Flow Data under the
 // Engine's data key. Concrete engines call this from their Process method,
 // supplying a compute function that performs the actual work.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/caching.md#process-flow
 func (b *BaseAspectEngine) Execute(fd core.FlowData, compute func() (AspectData, error)) error {
-	if b.lazyLoading {
-		if b.cache != nil {
-			// Lazy loading and caching are mutually exclusive here: the lazy
-			// path does not consult the cache. Warn once so the misconfiguration
-			// is visible rather than silent.
-			b.warnOnce.Do(func() {
-				b.Logger().Warn("engine has both lazy loading and a cache configured; "+
-					"the cache is ignored while lazy loading is enabled", "engine", b.DataKey())
-			})
-		}
-		return b.executeLazy(fd, compute)
-	}
-
 	if b.cache != nil {
 		key := cache.GenerateKey(fd, b.EvidenceKeyFilter())
 		if v, ok := b.cache.Get(key); ok {
@@ -121,8 +168,10 @@ func (b *BaseAspectEngine) Execute(fd core.FlowData, compute func() (AspectData,
 			return core.NewDataError("engine compute returned no data and no error")
 		}
 		// The data is told its Engine before the cache can serve it to
-		// another Flow Data.
+		// another Flow Data, and is marked shared so that closing this Flow
+		// Data leaves it in the cache rather than giving it to a pool.
 		attach(fd, b.DataKey(), data)
+		core.MarkShared(data)
 		b.cache.Set(key, data)
 		b.store(fd, data)
 		return nil
@@ -160,91 +209,4 @@ func attach(fd core.FlowData, key string, data core.ElementData) {
 
 func (b *BaseAspectEngine) store(fd core.FlowData, data AspectData) {
 	fd.GetOrAdd(b.DataKey(), func(core.FlowData) core.ElementData { return data })
-}
-
-func (b *BaseAspectEngine) executeLazy(fd core.FlowData, compute func() (AspectData, error)) error {
-	lz := &lazyAspectData{done: make(chan struct{}), timeout: b.lazyTimeout}
-	b.store(fd, lz)
-	go func() {
-		defer close(lz.done)
-		defer func() {
-			if r := recover(); r != nil {
-				lz.err = fmt.Errorf("panic during lazy engine processing: %v", r)
-			}
-		}()
-		lz.data, lz.err = compute()
-		if lz.data != nil {
-			attach(fd, b.DataKey(), lz.data)
-		}
-	}()
-	return nil
-}
-
-// lazyAspectData defers computation of an Engine's Aspect Data. Property access
-// blocks until the background computation completes or the timeout elapses.
-type lazyAspectData struct {
-	done    chan struct{}
-	timeout time.Duration
-	data    AspectData
-	err     error
-}
-
-func (l *lazyAspectData) wait() error {
-	// Fast path: already complete (the common case once computed), avoiding any
-	// timer allocation.
-	select {
-	case <-l.done:
-		return l.err
-	default:
-	}
-	if l.timeout > 0 {
-		timer := time.NewTimer(l.timeout)
-		defer timer.Stop()
-		select {
-		case <-l.done:
-		case <-timer.C:
-			return core.NewDataError("timed out waiting for lazy-loaded engine result")
-		}
-	} else {
-		<-l.done
-	}
-	return l.err
-}
-
-func (l *lazyAspectData) Get(propertyName string) (any, error) {
-	if err := l.wait(); err != nil {
-		return nil, err
-	}
-	return l.data.Get(propertyName)
-}
-
-func (l *lazyAspectData) Set(propertyName string, value any) {
-	// The background compute function builds and populates its own Aspect Data;
-	// external Set calls on the lazy wrapper are not expected and are ignored.
-}
-
-// AsMap returns the computed values, or an empty map if the lazy load timed out
-// or failed. These accessors cannot return an error, so a failed lazy load is
-// indistinguishable here from one that legitimately produced nothing; use Get,
-// which does surface the wait error, to tell them apart.
-func (l *lazyAspectData) AsMap() map[string]any {
-	if err := l.wait(); err != nil {
-		return map[string]any{}
-	}
-	return l.data.AsMap()
-}
-
-// CacheHit reports the cached state, or false if the lazy load timed out or
-// failed. See the note on AsMap about the discarded error.
-func (l *lazyAspectData) CacheHit() bool {
-	if err := l.wait(); err != nil {
-		return false
-	}
-	return l.data.CacheHit()
-}
-
-func (l *lazyAspectData) setCacheHit(v bool) {
-	if err := l.wait(); err == nil {
-		l.data.setCacheHit(v)
-	}
 }

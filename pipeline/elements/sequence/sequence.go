@@ -98,8 +98,9 @@ func (e *Element) Process(fd core.FlowData) error {
 	}
 	data.Set(SessionIDProperty, sessionID)
 
-	// A sequence counts only if it is a whole number, or a string of the
-	// digits 0 to 9, within range. Otherwise it counts as absent and gives 1.
+	// A sequence counts only if it is held in an integer type, or is a string
+	// of the digits 0 to 9, within range. Otherwise it counts as absent and
+	// gives 1.
 	seq := 1
 	if raw, ok := fd.Evidence().Get(EvidenceSequence); ok {
 		if n, ok := toSequence(raw); ok {
@@ -119,9 +120,10 @@ func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 	return New(logger), nil
 }
 
-// toSequence reads a sequence from an Evidence value. It accepts a whole
-// number of any Go integer or float type, or a string of the digits 0 to 9,
-// from 0 up to maxSequence.
+// toSequence reads a sequence from an Evidence value. It accepts any Go
+// integer type, or a string of the digits 0 to 9, from 0 up to maxSequence.
+// A float is not a sequence, even a whole one such as 2.0.
+// See https://github.com/51Degrees/specifications/blob/248b378b9e904a146087e5b5bec0f6c2be4c95e1/pipeline-specification/pipeline-elements/sequence-element.md?plain=1#L40-L46
 func toSequence(v any) (int, bool) {
 	var n int64
 	switch t := v.(type) {
@@ -151,10 +153,6 @@ func toSequence(v any) (int, bool) {
 			return 0, false
 		}
 		n = int64(t)
-	case float32:
-		return wholeSequence(float64(t))
-	case float64:
-		return wholeSequence(t)
 	case string:
 		if !digitsRe.MatchString(t) {
 			return 0, false
@@ -171,15 +169,6 @@ func toSequence(v any) (int, bool) {
 		return 0, false
 	}
 	return int(n), true
-}
-
-// wholeSequence accepts a float that holds a whole number from 0 up to
-// maxSequence.
-func wholeSequence(f float64) (int, bool) {
-	if f != math.Trunc(f) || f < 0 || f > maxSequence {
-		return 0, false
-	}
-	return int(f), true
 }
 
 // newGUID returns a random RFC 4122 version 4 UUID string, matching the

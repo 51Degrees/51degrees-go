@@ -52,7 +52,7 @@ func TestTheWebRequestIsNotSentToTheCloud(t *testing.T) {
 	fd.AddEvidence("header.user-agent", "ua-header")
 	fd.AddEvidence("server.http-request",
 		core.NewWebRequest(httptest.NewRequest("GET", "/", nil)))
-	if err := fd.Process(); err != nil {
+	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
 	if v, sent := cs.lastForm["http-request"]; sent {

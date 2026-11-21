@@ -149,6 +149,22 @@ func WithUpdateOnStart(enabled bool) EngineOptions {
 	}
 }
 
+// WithUpdateCallback registers a callback that each check for an update of
+// the data file reports to once it ends, with the data file's path and how
+// the check ended: the update on start-up, each pull and each change the file
+// watcher sees. A callback that panics is logged, and the checks carry on,
+// apart from the update on start-up, where New returns the panic as an error.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#reporting-each-check
+func WithUpdateCallback(fn func(common_go.UpdateComplete)) EngineOptions {
+	return func(cfg *Engine) error {
+		if fn == nil {
+			return errors.New("the update callback is nil")
+		}
+		cfg.OnUpdateComplete(fn)
+		return nil
+	}
+}
+
 // WithAutoUpdate enables or disables auto update
 // default is true
 // if enabled, engine will automatically pull the data file from the distributor or custom URL
@@ -200,6 +216,17 @@ func WithTempDataDir(dir string) EngineOptions {
 func WithRandomization(seconds int) EngineOptions {
 	return func(cfg *Engine) error {
 		cfg.SetRandomization(seconds * 1000)
+		return nil
+	}
+}
+
+// WithIndexedProperties names the Properties, such as TAC and NativeModel,
+// whose values are indexed to the profiles holding them when the data file
+// loads and on each refresh, so ProfileIdsForPropertyValue finds them without
+// reading every profile. Names are matched exactly.
+func WithIndexedProperties(names ...string) EngineOptions {
+	return func(cfg *Engine) error {
+		cfg.indexedProperties = append([]string(nil), names...)
 		return nil
 	}
 }

@@ -23,6 +23,9 @@
 package common
 
 import (
+	"fmt"
+	"os"
+	"runtime"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
@@ -40,14 +43,14 @@ type ExampleParams struct {
 type ExampleFunc func(params ExampleParams) error
 
 func RunExample(exampleFunc ExampleFunc) {
-	licenseKey := fromEnvironment("_51DEGREES_LICENSE_KEY")
+	licenseKey := os.Getenv("_51DEGREES_LICENSE_KEY")
 
-	dataFile := fromEnvironment("_51DEGREES_DD_PATH")
+	dataFile := os.Getenv("_51DEGREES_DD_PATH")
 	if dataFile == "" {
 		dataFile = "51Degrees-LiteV4.1.hash"
 	}
 
-	evidenceYaml := fromEnvironment("_51DEGREES_EVIDENCE_YAML")
+	evidenceYaml := os.Getenv("_51DEGREES_EVIDENCE_YAML")
 	if evidenceYaml == "" {
 		evidenceYaml = "20000 Evidence Records.yml"
 	}
@@ -62,6 +65,10 @@ func RunExample(exampleFunc ExampleFunc) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Every example ends with where to find out more, tagged with its file.
+	_, file, _, _ := runtime.Caller(1)
+	fmt.Print(dd_example.FindOutMore(dd_example.ExampleContent(file)))
 }
 
 var ExampleEvidenceDesktop = []onpremise.Evidence{

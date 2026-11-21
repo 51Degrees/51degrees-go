@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 4.5.105 (7c4ac436e47cd15beed304cad2b8151d50a1efd1) by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx ad2ccae59e59a647ca8d760ae3dc5fb921f250e9 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -267,6 +267,8 @@
 #define fiftyoneDegreesMemoryTrackingMalloc ipi_fiftyoneDegreesMemoryTrackingMalloc
 #define fiftyoneDegreesMemoryTrackingMallocAligned ipi_fiftyoneDegreesMemoryTrackingMallocAligned
 #define fiftyoneDegreesMemoryTrackingReset ipi_fiftyoneDegreesMemoryTrackingReset
+#define fiftyoneDegreesMemoryTrackingStartMeasuring ipi_fiftyoneDegreesMemoryTrackingStartMeasuring
+#define fiftyoneDegreesMemoryTrackingStopMeasuring ipi_fiftyoneDegreesMemoryTrackingStopMeasuring
 #define fiftyoneDegreesMutexClose ipi_fiftyoneDegreesMutexClose
 #define fiftyoneDegreesMutexCreate ipi_fiftyoneDegreesMutexCreate
 #define fiftyoneDegreesMutexLock ipi_fiftyoneDegreesMutexLock
@@ -346,6 +348,7 @@
 #define fiftyoneDegreesStoredBinaryValueToBoolOrDefault ipi_fiftyoneDegreesStoredBinaryValueToBoolOrDefault
 #define fiftyoneDegreesStoredBinaryValueToDoubleOrDefault ipi_fiftyoneDegreesStoredBinaryValueToDoubleOrDefault
 #define fiftyoneDegreesStoredBinaryValueToIntOrDefault ipi_fiftyoneDegreesStoredBinaryValueToIntOrDefault
+#define fiftyoneDegreesStoredBinaryValueToRoundedDoubleOrDefault ipi_fiftyoneDegreesStoredBinaryValueToRoundedDoubleOrDefault
 #define fiftyoneDegreesStoredBinaryValueToText ipi_fiftyoneDegreesStoredBinaryValueToText
 #define fiftyoneDegreesStringBuilderAddChar ipi_fiftyoneDegreesStringBuilderAddChar
 #define fiftyoneDegreesStringBuilderAddChars ipi_fiftyoneDegreesStringBuilderAddChars
@@ -383,6 +386,7 @@
 #define fiftyoneDegreesValueGetDescription ipi_fiftyoneDegreesValueGetDescription
 #define fiftyoneDegreesValueGetIndexByName ipi_fiftyoneDegreesValueGetIndexByName
 #define fiftyoneDegreesValueGetIndexByNameAndType ipi_fiftyoneDegreesValueGetIndexByNameAndType
+#define fiftyoneDegreesValueGetMetaDataText ipi_fiftyoneDegreesValueGetMetaDataText
 #define fiftyoneDegreesValueGetName ipi_fiftyoneDegreesValueGetName
 #define fiftyoneDegreesValueGetText ipi_fiftyoneDegreesValueGetText
 #define fiftyoneDegreesValueGetUrl ipi_fiftyoneDegreesValueGetUrl
@@ -1176,6 +1180,33 @@ void fiftyoneDegreesSignalWait(fiftyoneDegreesSignal *signal);
 #define FIFTYONE_DEGREES_THREAD HANDLE
 #else
 #define FIFTYONE_DEGREES_THREAD pthread_t
+#endif
+
+/**
+ * The identity of a thread, as #FIFTYONE_DEGREES_THREAD_ID_CURRENT gives it.
+ */
+#ifdef _MSC_VER
+#define FIFTYONE_DEGREES_THREAD_ID DWORD
+#else
+#define FIFTYONE_DEGREES_THREAD_ID pthread_t
+#endif
+
+/**
+ * Gets the identity of the calling thread.
+ */
+#ifdef _MSC_VER
+#define FIFTYONE_DEGREES_THREAD_ID_CURRENT() GetCurrentThreadId()
+#else
+#define FIFTYONE_DEGREES_THREAD_ID_CURRENT() pthread_self()
+#endif
+
+/**
+ * True when two thread identities are the same thread.
+ */
+#ifdef _MSC_VER
+#define FIFTYONE_DEGREES_THREAD_ID_EQUAL(a, b) ((a) == (b))
+#else
+#define FIFTYONE_DEGREES_THREAD_ID_EQUAL(a, b) (pthread_equal((a), (b)) != 0)
 #endif
 
 /**
@@ -2056,6 +2087,22 @@ EXTERNAL void fiftyoneDegreesSetUpMemoryTracking();
  * value is the size of allocated memory left unfreed.
  */
 EXTERNAL size_t fiftyoneDegreesUnsetMemoryTracking();
+
+/**
+ * Starts measuring the memory the calling thread allocates, as the size
+ * functions do. Resets the counts and points the allocation and free functions
+ * at the tracking ones. Until #fiftyoneDegreesMemoryTrackingStopMeasuring is
+ * called, memory that any other thread allocates is neither counted nor
+ * recorded, and memory another thread frees is not taken from the count.
+ */
+EXTERNAL void fiftyoneDegreesMemoryTrackingStartMeasuring();
+
+/**
+ * Stops the measurement #fiftyoneDegreesMemoryTrackingStartMeasuring started.
+ * Points the allocation and free functions at the standard ones and resets
+ * the counts, so read them first.
+ */
+EXTERNAL void fiftyoneDegreesMemoryTrackingStopMeasuring();
 
 /**
  * Pointer to the method used to allocate memory. By default this maps to
@@ -5691,7 +5738,8 @@ EXTERNAL fiftyoneDegreesEvidenceKeyValuePair* fiftyoneDegreesEvidenceAddPair(
 	fiftyoneDegreesKeyValuePair pair);
 
 /**
- * Determines the evidence map prefix from the key.
+ * Determines the evidence map prefix from the key. Evidence keys are
+ * case-insensitive, so the prefix is matched ignoring case.
  * @param key the evidence key including the evidence prefix .i.e. header
  * @return the prefix enumeration, or NULL if one does not exist
  */
@@ -7475,6 +7523,24 @@ EXTERNAL double fiftyoneDegreesStoredBinaryValueToDoubleOrDefault(
  double defaultValue);
 
 /**
+ * Converts the binary value to the double a caller is given. A value stored
+ * as an azimuth or a declination is rounded to the decimal places, so that
+ * the number is the one its text reads as. Any other value is the one
+ * #fiftyoneDegreesStoredBinaryValueToDoubleOrDefault gives.
+ * @param value the current binary value item
+ * @param storedValueType format of byte array representation
+ * @param decimalPlaces to round an azimuth or a declination to
+ * @param defaultValue fallback result.
+ * @return converted value (when possible)
+ * or default one (when type is not convertible).
+ */
+EXTERNAL double fiftyoneDegreesStoredBinaryValueToRoundedDoubleOrDefault(
+ const fiftyoneDegreesStoredBinaryValue *value,
+ fiftyoneDegreesPropertyValueType storedValueType,
+ uint8_t decimalPlaces,
+ double defaultValue);
+
+/**
  * Function to convert the binary value to bool when possible.
  * @param value the current binary value item
  * @param storedValueType format of byte array representation
@@ -8414,6 +8480,62 @@ EXTERNAL uint16_t fiftyoneDegreesValueGetWeight(
 	const fiftyoneDegreesValue *value);
 
 /**
+ * The text of a value that #fiftyoneDegreesValueGetMetaDataText gives.
+ */
+typedef enum e_fiftyone_degrees_value_text {
+	FIFTYONE_DEGREES_VALUE_TEXT_NAME = 0, /**< The value's name, as
+	                                      #fiftyoneDegreesValueGetText
+	                                      writes it */
+	FIFTYONE_DEGREES_VALUE_TEXT_DESCRIPTION = 1, /**< The value's description,
+	                                             empty when it has none */
+	FIFTYONE_DEGREES_VALUE_TEXT_URL = 2 /**< The URL of more about the value,
+	                                    empty when it has none */
+} fiftyoneDegreesValueText;
+
+/**
+ * Method called with a text of a value.
+ * @param state pointer given to the function that calls the method
+ * @param text which text of the value `value` is
+ * @param value the null terminated text, which is only valid until the
+ * method returns
+ */
+typedef void(*fiftyoneDegreesValueTextMethod)(
+	void *state,
+	fiftyoneDegreesValueText text,
+	const char *value);
+
+/**
+ * Gets a text of the value as the metadata gives it. A value with no
+ * description or URL, or whose description or URL the strings collection
+ * gives nothing for, has an empty one, as does a weighted value, whose URL
+ * offset holds its weight. The text is written into `buffer` when it fits,
+ * and otherwise into memory the caller frees, as
+ * #fiftyoneDegreesStoredBinaryValueToText describes.
+ * @param strings collection containing the value's strings
+ * @param propertyTypes collection of the type each property's values are
+ * stored as, or NULL when every value is stored as a string, which only
+ * #FIFTYONE_DEGREES_VALUE_TEXT_NAME reads
+ * @param value the value to get the text of
+ * @param text which text of the value to get
+ * @param decimalPlaces the most places to write a number in the name to
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated text, or NULL when it cannot be read or
+ * written or `text` is none of #fiftyoneDegreesValueText
+ */
+EXTERNAL char* fiftyoneDegreesValueGetMetaDataText(
+	const fiftyoneDegreesCollection *strings,
+	const fiftyoneDegreesCollection *propertyTypes,
+	const fiftyoneDegreesValue *value,
+	fiftyoneDegreesValueText text,
+	uint8_t decimalPlaces,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
  * @}
  */
 
@@ -9129,7 +9251,8 @@ void fiftyoneDegreesDataSetFree(fiftyoneDegreesDataSetBase *dataSet);
  *
  * If the data passed in is successfully initialised, the current data set is
  * replaced The old data will remain in memory until the last reference to it
- * is released.
+ * is released. The new data set keeps the master file name of the one it
+ * replaces, so a later reload from the original file reads that file.
  * @param manager pointer to the resource manager to reload the data set for
  * @param source pointer to the memory location where the new data file is
  * stored
@@ -10595,6 +10718,28 @@ EXTERNAL bool fiftyoneDegreesIpiGetNextUpdate(
 	fiftyoneDegreesDate *date);
 
 /**
+ * Gets the date an IP Intelligence data file was published from its header,
+ * reading the header alone rather than loading the file, so that an update
+ * can tell whether a new file is newer before loading it.
+ * @param fileName path to the data file
+ * @param date pointer to the date to set, to the published date in the
+ * header when the file is an IP Intelligence data file of the version this
+ * library reads and the date is valid (see #fiftyoneDegreesDateIsValid),
+ * otherwise to a year, month and day of zero
+ * @return #FIFTYONE_DEGREES_STATUS_SUCCESS when the date is set from the
+ * header, the status of opening the file when it cannot be opened,
+ * #FIFTYONE_DEGREES_STATUS_CORRUPT_DATA when the file is shorter than the
+ * header or the date is not valid,
+ * #FIFTYONE_DEGREES_STATUS_INCORRECT_VERSION when the file is not of the
+ * version this library reads, and
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_MEMORY when the header cannot be
+ * allocated
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesIpiGetPublishedFromFile(
+	const char *fileName,
+	fiftyoneDegreesDate *date);
+
+/**
  * Gets the total size in bytes which will be allocated when intialising a
  * IP Intelligence resource and associated manager with the same parameters. If any of
  * the configuration options prevent the memory from being constant (i.e. more
@@ -11363,6 +11508,174 @@ EXTERNAL char* fiftyoneDegreesIpiGetPropertyMapText(
 	fiftyoneDegreesException *exception);
 
 /**
+ * Gets the index of the property the value belongs to and each of the
+ * value's texts, from one read of the value. The method is called with the
+ * name, the description and then the URL, each as
+ * #fiftyoneDegreesIpiGetValueText gives it.
+ * @param dataSet the data set to read
+ * @param valueIndex index of the value in the values collection
+ * @param propertyIndex set to the index of the value's property, or NULL
+ * @param state pointer passed to the method
+ * @param method called with each text of the value, or NULL when only the
+ * property index is wanted
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the value was read and each text given, otherwise
+ * false. False with no exception set means the values collection gave
+ * nothing at the index.
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetValue(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t valueIndex,
+	uint32_t *propertyIndex,
+	void *state,
+	fiftyoneDegreesValueTextMethod method,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the index of the property's value with the name provided. Each value
+ * is compared with the name as the type the property is stored as, so a
+ * number is found when the name has fewer decimal places than the value
+ * stored. The search is a binary search, which reads few of the property's
+ * values and relies on the data file holding them in the order of their
+ * names. Where a data file does not keep that order, or a property holds
+ * several values with the same name, as a weighted property can, the search
+ * can miss a value or give another value with the same name.
+ * @param dataSet the data set to read
+ * @param propertyIndex index of the property
+ * @param valueName name of the value to find
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the index of the value in the values collection, or -1 when the
+ * search finds no value of that name or a value cannot be read
+ */
+EXTERNAL long fiftyoneDegreesIpiGetValueIndex(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t propertyIndex,
+	const char *valueName,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets a text of the value as the metadata gives it. The name and URL are as
+ * #fiftyoneDegreesValueGetMetaDataText gives them, the name written as the
+ * type the value's property is stored as with a number written to
+ * #FIFTYONE_DEGREES_WKT_DECIMAL_PLACES places. The description is always
+ * empty.
+ * @param dataSet the data set to read
+ * @param valueIndex index of the value in the values collection
+ * @param text which text of the value to get
+ * @param buffer memory the text is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated text, or NULL when the value or the text
+ * cannot be read or written
+ */
+EXTERNAL char* fiftyoneDegreesIpiGetValueText(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t valueIndex,
+	fiftyoneDegreesValueText text,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the number of components the data file defines.
+ * @param dataSet the data set to read
+ * @return the number of components
+ */
+EXTERNAL uint32_t fiftyoneDegreesIpiGetComponentCount(
+	fiftyoneDegreesDataSetIpi *dataSet);
+
+/**
+ * Gets the id of the component and the offset of its default profile. An IP
+ * Intelligence data file holds no profile ids, so the metadata gives the
+ * offset as the default profile's key, and UINT32_MAX for a component with
+ * no default profile. Either output pointer can be NULL.
+ * @param dataSet the data set to read
+ * @param componentIndex index of the component, less than
+ * #fiftyoneDegreesIpiGetComponentCount
+ * @param componentId set to the id of the component
+ * @param defaultProfileOffset set to the offset of the component's default
+ * profile, which #fiftyoneDegreesIpiGetProfileByOffset takes
+ * @return true when the index is less than the number of components,
+ * otherwise false
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetComponent(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t componentIndex,
+	uint8_t *componentId,
+	uint32_t *defaultProfileOffset);
+
+/**
+ * Gets the name of the component, such as "Location". A name the strings
+ * collection gives nothing for is an empty text.
+ * @param dataSet the data set to read
+ * @param componentIndex index of the component
+ * @param buffer memory the name is written into when it fits
+ * @param bufferLength the bytes `buffer` holds
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return the null terminated name, or NULL when the index is not less than
+ * the number of components or the name cannot be read or written
+ */
+EXTERNAL char* fiftyoneDegreesIpiGetComponentName(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t componentIndex,
+	char *buffer,
+	size_t bufferLength,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the number of profiles the data file holds.
+ * @param dataSet the data set to read
+ * @return the number of profiles
+ */
+EXTERNAL uint32_t fiftyoneDegreesIpiGetProfileCount(
+	fiftyoneDegreesDataSetIpi *dataSet);
+
+/**
+ * Gets the offset of the profile at the index among the data file's
+ * profiles, which the metadata gives as the profile's key, and the id of
+ * the component it belongs to, as #fiftyoneDegreesIpiGetProfileByOffset
+ * gives it. Either output pointer can be NULL.
+ * @param dataSet the data set to read
+ * @param profileIndex index of the profile, less than
+ * #fiftyoneDegreesIpiGetProfileCount
+ * @param profileOffset set to the offset of the profile
+ * @param componentId set to the id of the profile's component
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the profile was read, otherwise false. False with no
+ * exception set means the offset is UINT32_MAX or the profiles collection
+ * gave nothing at it.
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetProfile(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t profileIndex,
+	uint32_t *profileOffset,
+	uint8_t *componentId,
+	fiftyoneDegreesException *exception);
+
+/**
+ * Gets the id of the component the profile at the offset provided belongs
+ * to.
+ * @param dataSet the data set to read
+ * @param profileOffset offset of the profile in the profiles collection
+ * @param componentId set to the id of the profile's component, or NULL
+ * @param exception pointer to an exception data structure to be used if an
+ * exception occurs. See exceptions.h
+ * @return true when the profile was read, otherwise false. False with no
+ * exception set means the offset is UINT32_MAX, which a component with no
+ * default profile gives, or the profiles collection gave nothing at it.
+ */
+EXTERNAL bool fiftyoneDegreesIpiGetProfileByOffset(
+	fiftyoneDegreesDataSetIpi *dataSet,
+	uint32_t profileOffset,
+	uint8_t *componentId,
+	fiftyoneDegreesException *exception);
+
+/**
  * @}
  */
 
@@ -11483,6 +11796,8 @@ typedef struct fiftyone_degrees_weighted_int_t {
  * @brief Structure for weighted double values.
  * 
  * Contains a weighted value header and a double value.
+ * A value stored as an azimuth or a declination is rounded to
+ * #fiftyoneDegreesDefaultWktDecimalPlaces places, as its text is.
  */
 typedef struct fiftyone_degrees_weighted_double_t {
  fiftyoneDegreesWeightedValueHeader header; /**< Common header for all weighted values */
@@ -11692,6 +12007,7 @@ EXTERNAL void fiftyoneDegreesWeightedValuesCollectionRelease(
 #ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
 #endif
 
+#include <stdint.h>
 
 /**
  * Get the ID of the current process
@@ -12179,6 +12495,8 @@ MAP_TYPE(PropertyAvailable)
 MAP_TYPE(PropertyNamed)
 MAP_TYPE(PropertyValueType)
 MAP_TYPE(PropertyText)
+MAP_TYPE(ValueText)
+MAP_TYPE(ValueTextMethod)
 MAP_TYPE(PropertiesAvailable)
 MAP_TYPE(EvidencePropertyIndex)
 MAP_TYPE(EvidenceProperties)
@@ -12266,6 +12584,8 @@ MAP_TYPE(WeightedItemList)
 #define MemoryTrackingGetAllocated fiftyoneDegreesMemoryTrackingGetAllocated /**< Synonym for #fiftyoneDegreesMemoryTrackingGetAllocated function. */
 #define SetUpMemoryTracking fiftyoneDegreesSetUpMemoryTracking /**< Synonym for #fiftyoneDegreesSetUpMemoryTracking function. */
 #define UnsetMemoryTracking fiftyoneDegreesUnsetMemoryTracking /**< Synonym for #fiftyoneDegreesUnsetMemoryTracking function. */
+#define MemoryTrackingStartMeasuring fiftyoneDegreesMemoryTrackingStartMeasuring /**< Synonym for #fiftyoneDegreesMemoryTrackingStartMeasuring function. */
+#define MemoryTrackingStopMeasuring fiftyoneDegreesMemoryTrackingStopMeasuring /**< Synonym for #fiftyoneDegreesMemoryTrackingStopMeasuring function. */
 #define Malloc fiftyoneDegreesMalloc /**< Synonym for #fiftyoneDegreesMalloc function. */
 #define MallocAligned fiftyoneDegreesMallocAligned /**< Synonym for #fiftyoneDegreesMallocAligned function. */
 #define Free fiftyoneDegreesFree /**< Synonym for #fiftyoneDegreesFree function. */
@@ -12321,6 +12641,7 @@ MAP_TYPE(WeightedItemList)
 #define StoredBinaryValueCompareWithString fiftyoneDegreesStoredBinaryValueCompareWithString /**< Synonym for #fiftyoneDegreesStoredBinaryValueCompareWithString function. */
 #define StoredBinaryValueToIntOrDefault fiftyoneDegreesStoredBinaryValueToIntOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToIntOrDefault function. */
 #define StoredBinaryValueToDoubleOrDefault fiftyoneDegreesStoredBinaryValueToDoubleOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToDoubleOrDefault function. */
+#define StoredBinaryValueToRoundedDoubleOrDefault fiftyoneDegreesStoredBinaryValueToRoundedDoubleOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToRoundedDoubleOrDefault function. */
 #define StoredBinaryValueToBoolOrDefault fiftyoneDegreesStoredBinaryValueToBoolOrDefault /**< Synonym for #fiftyoneDegreesStoredBinaryValueToBoolOrDefault function. */
 #define StoredBinaryValueToText fiftyoneDegreesStoredBinaryValueToText /**< Synonym for #fiftyoneDegreesStoredBinaryValueToText function. */
 #define EvidenceFree fiftyoneDegreesEvidenceFree /**< Synonym for #fiftyoneDegreesEvidenceFree function. */
@@ -12397,6 +12718,7 @@ MAP_TYPE(WeightedItemList)
 #define ValueGetText fiftyoneDegreesValueGetText /**< Synonym for #fiftyoneDegreesValueGetText function. */
 #define ValueGetDefaultText fiftyoneDegreesValueGetDefaultText /**< Synonym for #fiftyoneDegreesValueGetDefaultText function. */
 #define ValueGetDefaultIndex fiftyoneDegreesValueGetDefaultIndex /**< Synonym for #fiftyoneDegreesValueGetDefaultIndex function. */
+#define ValueGetMetaDataText fiftyoneDegreesValueGetMetaDataText /**< Synonym for #fiftyoneDegreesValueGetMetaDataText function. */
 #define CollectionBinarySearch fiftyoneDegreesCollectionBinarySearch /**< Synonym for #fiftyoneDegreesCollectionBinarySearch function. */
 #define PropertyGetName fiftyoneDegreesPropertyGetName /**< Synonym for #fiftyoneDegreesPropertyGetName function. */
 #define PropertyGetStoredType fiftyoneDegreesPropertyGetStoredType /**< Synonym for #fiftyoneDegreesPropertyGetStoredType function. */
@@ -12598,6 +12920,7 @@ MAP_TYPE(WeightedValuesCollection)
 #define IpiGetEvidenceKeys fiftyoneDegreesIpiGetEvidenceKeys /**< Synonym for #fiftyoneDegreesIpiGetEvidenceKeys function. */
 #define IpiGetPublished fiftyoneDegreesIpiGetPublished /**< Synonym for #fiftyoneDegreesIpiGetPublished function. */
 #define IpiGetNextUpdate fiftyoneDegreesIpiGetNextUpdate /**< Synonym for #fiftyoneDegreesIpiGetNextUpdate function. */
+#define IpiGetPublishedFromFile fiftyoneDegreesIpiGetPublishedFromFile /**< Synonym for #fiftyoneDegreesIpiGetPublishedFromFile function. */
 #define IpiReloadManagerFromOriginalFile fiftyoneDegreesIpiReloadManagerFromOriginalFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromOriginalFile function. */
 #define IpiReloadManagerFromFile fiftyoneDegreesIpiReloadManagerFromFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromFile function. */
 #define IpiReloadManagerFromMemory fiftyoneDegreesIpiReloadManagerFromMemory /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromMemory function. */
@@ -12612,6 +12935,15 @@ MAP_TYPE(WeightedValuesCollection)
 #define IpiGetPropertyValueIndexes fiftyoneDegreesIpiGetPropertyValueIndexes /**< Synonym for #fiftyoneDegreesIpiGetPropertyValueIndexes function. */
 #define IpiGetPropertyText fiftyoneDegreesIpiGetPropertyText /**< Synonym for #fiftyoneDegreesIpiGetPropertyText function. */
 #define IpiGetPropertyMapText fiftyoneDegreesIpiGetPropertyMapText /**< Synonym for #fiftyoneDegreesIpiGetPropertyMapText function. */
+#define IpiGetValue fiftyoneDegreesIpiGetValue /**< Synonym for #fiftyoneDegreesIpiGetValue function. */
+#define IpiGetValueIndex fiftyoneDegreesIpiGetValueIndex /**< Synonym for #fiftyoneDegreesIpiGetValueIndex function. */
+#define IpiGetValueText fiftyoneDegreesIpiGetValueText /**< Synonym for #fiftyoneDegreesIpiGetValueText function. */
+#define IpiGetComponentCount fiftyoneDegreesIpiGetComponentCount /**< Synonym for #fiftyoneDegreesIpiGetComponentCount function. */
+#define IpiGetComponent fiftyoneDegreesIpiGetComponent /**< Synonym for #fiftyoneDegreesIpiGetComponent function. */
+#define IpiGetComponentName fiftyoneDegreesIpiGetComponentName /**< Synonym for #fiftyoneDegreesIpiGetComponentName function. */
+#define IpiGetProfileCount fiftyoneDegreesIpiGetProfileCount /**< Synonym for #fiftyoneDegreesIpiGetProfileCount function. */
+#define IpiGetProfile fiftyoneDegreesIpiGetProfile /**< Synonym for #fiftyoneDegreesIpiGetProfile function. */
+#define IpiGetProfileByOffset fiftyoneDegreesIpiGetProfileByOffset /**< Synonym for #fiftyoneDegreesIpiGetProfileByOffset function. */
 #define ResultsIpiGetValuesCollection fiftyoneDegreesResultsIpiGetValuesCollection /**< Synonym for #fiftyoneDegreesResultsIpiGetValuesCollection function. */
 #define WeightedValuesCollectionRelease fiftyoneDegreesWeightedValuesCollectionRelease /**< Synonym for #fiftyoneDegreesWeightedValuesCollectionRelease function. */
 
