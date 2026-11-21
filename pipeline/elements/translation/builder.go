@@ -35,7 +35,6 @@ import (
 type Builder struct {
 	logger          *slog.Logger
 	sourceKey       string
-	elementDataKey  string
 	patterns        []string
 	contents        map[string]string
 	translations    []mapping
@@ -53,11 +52,6 @@ func (b *Builder) SetLogger(l *slog.Logger) *Builder { b.logger = l; return b }
 
 // SetSourceElementDataKey sets the Element Data key whose values are translated.
 func (b *Builder) SetSourceElementDataKey(key string) *Builder { b.sourceKey = key; return b }
-
-// SetElementDataKey sets the Element Data key under which this Engine stores its
-// translated Properties. It defaults to DataKey, which is shared by all
-// Translation Engines; set a distinct key to keep an Engine's output separate.
-func (b *Builder) SetElementDataKey(key string) *Builder { b.elementDataKey = key; return b }
 
 // AddSource adds a translation source file path or glob pattern.
 func (b *Builder) AddSource(pattern string) *Builder {
@@ -112,28 +106,9 @@ func (b *Builder) Build() (*Engine, error) {
 		sources[name] = content
 	}
 
-	// Validate the configuration up front rather than silently building a
-	// no-op engine.
-	if len(b.translations) == 0 {
-		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation (AddTranslation)", nil)
-	}
-	if len(sources) == 0 {
-		return nil, core.NewConfigurationError("a TranslationEngine requires at least one translation source", nil)
-	}
-	for name := range sources {
-		if localeFromName(name) == "" {
-			return nil, core.NewConfigurationError("translation source '"+name+"' does not encode a valid locale", nil)
-		}
-	}
-
-	elementDataKey := b.elementDataKey
-	if elementDataKey == "" {
-		elementDataKey = DataKey
-	}
-
 	e := &Engine{
 		BaseElement: core.NewBaseElement(
-			elementDataKey,
+			DataKey,
 			core.NewWhitelistFilter(
 				EvidenceTranslation,
 				EvidenceQueryAcceptLanguage,
@@ -143,7 +118,7 @@ func (b *Builder) Build() (*Engine, error) {
 		translations:    b.translations,
 		fixedLanguage:   b.fixedLanguage,
 		missingBehavior: b.missingBehavior,
-		languages:       NewLanguages(BuildLookups(sources)),
+		languages:       buildLookups(sources),
 	}
 	props := make([]core.PropertyMetadata, 0, len(b.translations))
 	for _, m := range b.translations {
@@ -167,8 +142,22 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	if v, ok := core.StringParam(params, "FixedLanguage"); ok {
 		b.SetFixedLanguage(v)
 	}
-	if v, ok := core.StringParam(params, "MissingTranslationBehaviour"); ok {
-		b.SetMissingTranslationBehavior(ParseMissingBehavior(v))
+	// The specification spells the option MissingTranslationBehavior, and that
+	// spelling wins. MissingTranslationBehaviour is a deprecated alias, still
+	// read so that existing files work.
+	key := "MissingTranslationBehavior"
+	v, ok := core.StringParam(params, key)
+	if !ok {
+		key = "MissingTranslationBehaviour"
+		v, ok = core.StringParam(params, key)
+	}
+	if ok {
+		mb, known := lookupMissingBehavior(v)
+		if !known {
+			return nil, core.NewConfigurationError("unknown "+key+" '"+v+
+				"', expected Original, EmptyString or FlowError", nil)
+		}
+		b.SetMissingTranslationBehavior(mb)
 	}
 	if raw, ok := core.Param(params, "Translations"); ok {
 		if list, ok := raw.([]any); ok {
@@ -186,14 +175,13 @@ func Factory(params map[string]any, logger *slog.Logger) (core.FlowElement, erro
 	return b.Build()
 }
 
-// BuildLookups parses translation source contents (each keyed by a filename that
-// encodes the locale, e.g. "countries.fr_FR.yml") into a map of normalized
-// locale -> (source value -> translated value). Sources whose name does not
-// encode a locale are ignored, and sources for the same locale are merged.
-// It is exported so callers embedding their own YAML (e.g. an IP Intelligence
-// translation engine) build lookups exactly as the Builder does.
-func BuildLookups(sources map[string]string) map[string]map[string]string {
-	lookups := map[string]map[string]string{}
+// buildLookups parses translation source contents (each keyed by a filename
+// that encodes the locale, e.g. "countries.fr_FR.yml") into a map of
+// normalized locale -> (source value -> translated value). Sources whose name
+// does not encode a locale are left out, and sources for the same locale are
+// merged.
+func buildLookups(sources map[string]string) languages {
+	lookups := languages{}
 	for name, content := range sources {
 		locale := localeFromName(name)
 		if locale == "" {

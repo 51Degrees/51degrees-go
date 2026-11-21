@@ -1,13 +1,13 @@
 # 51Degrees Device Detection Engines Examples
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-readme.md&utm_term=51degrees-device-detection-engines-examples "Data rewards the curious") **Examples for Device Detection in Go**
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **Examples for Device Detection in Go**
 
 ## Introduction
 
 This directory contains examples of how to use module [device-detection-go](https://github.com/51Degrees/51degrees-go/tree/main/device-detection)
 
 ## Pre-requisites
-To run these examples you will need a data file and example evidence for some of the tests. The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to both. To download them into `cxx/data/device-detection`, run one of these from the repository root.
+To run the examples under `dd`, `onpremise`, `web` and `uach` you will need a data file and example evidence for some of the tests. The cloud example under `cloud` needs neither, nor a C compiler, but needs a Resource Key, as the table below says. The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to both. To download them into `cxx/data/device-detection`, run one of these from the repository root.
 
 ```
 sh cxx/data/get-data-files.sh 51Degrees-LiteV4.1.hash "20000 Evidence Records.yml"
@@ -38,31 +38,37 @@ go env -w CGO_ENABLED=1
 
 - All examples under `dd` / `onpremise` directories are console program examples and are run using `go run`.
 - Example under the `web` and `uach` directories are Go web applications that can also be run using `go run`.
+- The example under `cloud` is a console program that calls the 51Degrees cloud service. Run it with `go run .` from its own folder, because it reads the options file `getting_started.json` from the folder it runs in.
 
 Below is a table that describes the examples:
 
 | Example                                                      | Description                                                                                                                                                                                                                                                                                                                    |
 |--------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| dd/getting_started/getting_sarted.go                         | A simple example that shows how to initialize a resource manager and perform device detection on User-Agent strings.                                                                                                                                                                                                           |
+| dd/getting_started/getting_started.go                        | A simple example that shows how to initialize a resource manager and perform device detection on User-Agent strings.                                                                                                                                                                                                           |
 | dd/match_device_id/match_device_id.go                        | A simple example that shows how to perform device detection using Device Id.                                                                                                                                                                                                                                                   |
 | dd/match_metrics/match_metrics.go                            | A simple example that shows how to access match metrics.                                                                                                                                                                                                                                                                       |
 | dd/offline_processing/offline_processing.go                  | An example that shows how to process through User-Agents stored in a file, and output detection results and metrics to a local file for further evaluation.
 | dd/performance/performance.go                                | An example perform performance benchmarking of our device detection solution and output the benchmark to a report file. Output file is `performance_report.log` in the working directory.                                                                                                                                      |
 | dd/reload_from_file/reload_from_file.go                      | An example that demonstrates how a data file can be reloaded while serving device detection requests.                                                                                                                                                                                                                          |
-| dd/reload_from_memory/reload_from_memory.go                  | To be implemented                                                                                                                                                                                                                                                                                                              |
-| dd/strongly_typed/strongly_typed.go                          | To be implemented                                                                                                                                                                                                                                                                                                              |
+| dd/reload_from_memory/reload_from_memory.go                  | An example that makes a resource manager from a data file held in memory and reloads it from a newer one held in memory, as an application that downloads data files does without writing them to disk. |
+| dd/strongly_typed/strongly_typed.go                          | An example that reads each property's value as its Go type (bool, int, string or a list), and shows the properties only the Enterprise data file has.                                                                                                                                                                          |
 | web/web_integration.go                                       | An example of how `device-detection-go` can be used in a web application.                                                                                                                                                                                                                                                      |
 | uach/uach.go                                                 | An example of how `User Agent Client Hints (UACH)` can be requested by the `Device Detection` engine and how they can be used as evidence to perform a detection. Please also read the comment at the top of the example file `uach.go` which also provides a greater details on usage of UACH with `Device Detection` engine. |
 | onpremise/update_polling_interval/update_polling_interval.go | A demo of a higher level onpremise Engine API to do device detection and do automatic polling for the data file update                                                                                                                                                                                                         |
 | onpremise/reload_from_file/reload_from_file.go               | A demo the file watcher feature of the onpremise Engine API, while one goroutine performs device detections - the other simulates the data file update in the file system so that engine picks it up and reloads                                                                                                               |
 | onpremise/performance/performance.go                         | Performance tests implemented using onpremise Engine API                                                                                                                                                                                                                                                                       |
+| onpremise/metadata/metadata.go                               | An example listing the Evidence keys the engine reads, each component with its profiles and properties, each property's description and values, and the values of the profiles an iPhone is matched to. |
+| cloud/getting_started/main.go                                | An example that gets Device Detection properties from the 51Degrees cloud service through a Pipeline built from the options file `getting_started.json`. It needs a Resource Key in `_51DEGREES_RESOURCE_KEY`, and no data file or C compiler. Run with no key, it says where to create one and ends without an error. |
 ## Run examples
 
-The examples use the published module, as your own code would. To run them against the code in this repository instead, run `../../ci/create-workspace.ps1` first.
+In a clone of this repository, the `go.work` at its root makes the examples use the code in the repository, so they run with no settings. Copied out of it, they use the published module their `go.mod` names, as your own code would.
 
 ```
 go run ./[dd/onpremise]/example_dir
 go run ./web
 go run ./uach
+cd cloud/getting_started && go run .
 ```
 For further details of how to run each example, please read more in the comment section located at the top of each example file.
+
+The examples under `dd` and `onpremise` use the free Lite data file and the free Evidence file unless the `_51DEGREES_DD_PATH` and `_51DEGREES_EVIDENCE_YAML` environment variables name others, such as an Enterprise data file. A test or your own code can set them to supply a file. The variables are in [common-ci's list of environment variable names](https://github.com/51Degrees/common-ci/blob/18f9a570ed862a0b7e1ecb1c55a8319f35f02491/environment-variables.md).

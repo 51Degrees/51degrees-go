@@ -25,6 +25,7 @@ package requestengine
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -33,7 +34,7 @@ import (
 // can inspect or log it, and, for a response-level failure, the HTTP status
 // code and response headers so a caller can inspect them (for example a 429
 // Retry-After).
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/exception-handling.md#cloud-request-exception
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/exception-handling.md#cloud-request-exception
 type CloudRequestError struct {
 	// Message describes the failure.
 	Message string
@@ -72,7 +73,7 @@ func NewCloudResponseError(message string, status int, headers http.Header) *Clo
 // TemporarilyUnavailableError is returned while the engine is in its recovery
 // period, signalling that the element (and Pipeline) are temporarily
 // unavailable so that requests are bypassed rather than piling up.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
+// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#recovery-mode
 type TemporarilyUnavailableError struct {
 	// RecoveryUntil is the time at which the engine will resume making requests.
 	RecoveryUntil time.Time
@@ -82,4 +83,57 @@ type TemporarilyUnavailableError struct {
 func (e *TemporarilyUnavailableError) Error() string {
 	return fmt.Sprintf("cloud request engine is temporarily unavailable (recovering until %s)",
 		e.RecoveryUntil.Format(time.RFC3339))
+}
+
+// cloudErrorSeparator joins the messages of a cloud answer's errors array in
+// one message.
+const cloudErrorSeparator = "; "
+
+// CloudRequestErrors carries one CloudRequestError for each entry of the
+// errors array in a cloud answer, so a caller can read each entry on its own
+// as well as read them together. Unwrap gives the list, which is Go's
+// structure for several errors at once, so errors.Is and errors.As find any
+// of them.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
+type CloudRequestErrors struct {
+	// Errors holds one error for each entry, in the order the answer gave
+	// them, each carrying the response status code and headers.
+	Errors []*CloudRequestError
+}
+
+// Error joins the message of every entry, in the order the answer gave them.
+func (e *CloudRequestErrors) Error() string {
+	msgs := make([]string, len(e.Errors))
+	for i, entry := range e.Errors {
+		msgs[i] = entry.Message
+	}
+	return "cloud request error: " + strings.Join(msgs, cloudErrorSeparator)
+}
+
+// Unwrap gives each entry as its own error, so errors.Is and errors.As reach
+// every one of them.
+func (e *CloudRequestErrors) Unwrap() []error {
+	out := make([]error, len(e.Errors))
+	for i, entry := range e.Errors {
+		out[i] = entry
+	}
+	return out
+}
+
+// NewCloudResponseErrors builds the error for a cloud answer whose errors
+// array holds the given messages, each with the response status code and
+// headers. One message gives a CloudRequestError on its own, several give a
+// CloudRequestErrors holding one for each, and none gives no error.
+func NewCloudResponseErrors(messages []string, status int, headers http.Header) error {
+	switch len(messages) {
+	case 0:
+		return nil
+	case 1:
+		return NewCloudResponseError(messages[0], status, headers)
+	}
+	entries := make([]*CloudRequestError, len(messages))
+	for i, message := range messages {
+		entries[i] = NewCloudResponseError(message, status, headers)
+	}
+	return &CloudRequestErrors{Errors: entries}
 }

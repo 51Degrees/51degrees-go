@@ -55,8 +55,8 @@ func (k TypedKey[T]) Name() string { return k.name }
 
 // Map is a string-keyed store of arbitrary values. All key comparisons are
 // case-insensitive (keys are normalized to lower case). Implementations are
-// obtained via NewMap (single-threaded) or NewConcurrentMap (safe for
-// concurrent use).
+// obtained via NewMap (not safe for writing from several goroutines at once)
+// or NewConcurrentMap (safe for concurrent use).
 type Map interface {
 	// AddString stores value under name, replacing any existing entry.
 	AddString(name string, value any)
@@ -85,9 +85,12 @@ type simpleMap struct {
 	data map[string]any
 }
 
-// NewMap returns a Map that is NOT safe for concurrent use. This is the
-// appropriate choice for per-request data such as Element Data, where the
-// thread-safety specification states a single thread accesses the data.
+// NewMap returns a Map that is not safe for writing from several goroutines
+// at once, nor for reading while it is written. Several goroutines can read
+// it at once while none writes it. This suits per-request data such as
+// Element Data, which only the Flow Element that creates it writes, and which
+// several goroutines read at once only after that Flow Element has finished.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
 func NewMap() Map {
 	return &simpleMap{data: make(map[string]any)}
 }
@@ -123,14 +126,28 @@ func (m *simpleMap) AsMap() map[string]any {
 	return out
 }
 
+// Clear removes every value from a Map made by NewMap or NewConcurrentMap,
+// keeping its storage so the Map can be used again. Any other Map is left as
+// it is.
+func Clear(m Map) {
+	switch t := m.(type) {
+	case *simpleMap:
+		clear(t.data)
+	case *concurrentMap:
+		t.mu.Lock()
+		clear(t.data)
+		t.mu.Unlock()
+	}
+}
+
 // concurrentMap is a Map safe for concurrent use via an RWMutex.
 type concurrentMap struct {
 	mu   sync.RWMutex
 	data map[string]any
 }
 
-// NewConcurrentMap returns a Map that is safe for concurrent use. This is used
-// where the Pipeline is configured for concurrent or parallel processing.
+// NewConcurrentMap returns a Map that is safe for concurrent use, for state
+// that several goroutines write.
 func NewConcurrentMap() Map {
 	return &concurrentMap{data: make(map[string]any)}
 }

@@ -1,7 +1,7 @@
-github.com/51Degrees/51degrees-go/common/v4 v4.5.171 h1:+Q5CbdcfAu12febaOnoorOae4wSZUo9elFuA21G/4dI=
-github.com/51Degrees/51degrees-go/common/v4 v4.5.171/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
-github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.171 h1:tioJ51xdnDP6EJ8QOUHRFhQB3pyRevu99EjLgwkSCOg=
-github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.171/go.mod h1:jQ3iSnvK0bfTL8Imyuwbsv1+sgRT55fRjbnUAy9wyYw=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.173 h1:E7rKJzVEsdCVXdNyDn4wxBQNop+c653wVNBNUmQY4oc=
+github.com/51Degrees/51degrees-go/common/v4 v4.5.173/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
+github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173 h1:qOwnCggePNj1wzzeC1k6i07jFlu0Zl7a5apaP9EZbgk=
+github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173/go.mod h1:jQ3iSnvK0bfTL8Imyuwbsv1+sgRT55fRjbnUAy9wyYw=
 github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 golang.org/x/sys v0.13.0 h1:Af8nKPmuFypiUBjVoU9V20FiaFXOcuZI21p0ycVYYGE=

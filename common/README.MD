@@ -1,8 +1,8 @@
 # 51Degrees Common Go-Code Library
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-common-go-code-library "Data rewards the curious") **51Degrees Common C Code**
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **51Degrees Common C Code**
 
-[Reference Documentation](https://51degrees.github.io/ip-intelligence-go/4.4/examples.html "Reference documentation")
+[Reference Documentation](https://pkg.go.dev/github.com/51Degrees/51degrees-go/common/v4 "Reference documentation")
 
 ## Introduction
 

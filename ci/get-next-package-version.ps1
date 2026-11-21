@@ -3,33 +3,26 @@ param (
     [Parameter(Mandatory)][string]$VariableName
 )
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'packages.ps1')
 
-# The repository has one version, tagged as a plain version such as 4.5.166.
-# Each module is also tagged with it, under its folder (see publish-package.ps1).
-# Only the patch number moves. The first version is above every version the
-# repositories merged into this one released.
-$FirstVersion = '4.5.166'
-
-$tags = @(git -C $RepoName tag --list |
-    Where-Object { $_ -match '^\d+\.\d+\.\d+$' } |
-    Sort-Object { [version]$_ })
-$headTags = @(git -C $RepoName tag --points-at HEAD |
-    Where-Object { $_ -match '^\d+\.\d+\.\d+$' })
-
-. $PSScriptRoot/products.ps1
-
-if ($headTags) {
-    # Already released, so the publish sees the tag and does nothing.
-    $next = $headTags | Sort-Object { [version]$_ } | Select-Object -Last 1
-} elseif ($tags -and !(Test-UnreleasedLibraryChange $RepoName)) {
-    # Only the examples, the documentation or CI changed, which a release
-    # wouldn't publish. The existing version makes the publish do nothing.
-    $next = $tags[-1]
-} elseif ($tags) {
-    $highest = [version]$tags[-1]
-    $next = "$($highest.Major).$($highest.Minor).$($highest.Build + 1)"
+# common-ci's publish carries one version through its jobs. Each module here
+# has its own version (see packages.ps1), so that one version is only a label
+# for the run, the highest version this publish releases. Whether anything is
+# released is decided by package-update-required.ps1, and each module's tag by
+# publish-package.ps1, both from the same release plan.
+$plan = @(Get-ModuleReleasePlan $RepoName)
+if ($plan.Count -gt 0) {
+    # @() keeps a plan of one module a list, as indexing a lone string would
+    # give its last character.
+    $label = @($plan.Version | Sort-Object { [version]$_ })[-1]
 } else {
-    $next = $FirstVersion
+    # Nothing to release, so the label is the newest version already
+    # released, and package-update-required.ps1 stops the publish.
+    $released = foreach ($package in Get-Packages $RepoName) {
+        @(Get-ReleasedVersions $RepoName $package.Name) | Select-Object -Last 1
+    }
+    $label = "$(@($released | Sort-Object) | Select-Object -Last 1)"
 }
+Write-Output "The label for this publish is $label"
 
-Set-Variable -Scope Global -Name $VariableName -Value $next
+Set-Variable -Scope Global -Name $VariableName -Value $label

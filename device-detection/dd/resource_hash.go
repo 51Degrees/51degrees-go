@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -27,6 +27,7 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 import (
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -38,6 +39,11 @@ import (
 // InitFromFile initializes a resource manager based on a given data file path.
 // The input properties is a comma separated string list. This matches the C API
 // fiftyoneDegreesHashInitManagerFromFile.
+//
+// The manager keeps the required property index of each name, so a read by
+// name costs a map lookup rather than a search of the data set. The index is
+// the name's place among the names given, or with no names, among the names
+// of the first data file loaded, and a reload does not change it.
 func InitManagerFromFile(
 	manager *ResourceManager,
 	config ConfigHash,
@@ -67,6 +73,10 @@ func InitManagerFromFile(
 		return messageError(C.StatusGetMessage(s, cPath))
 	}
 
+	// Keep the index of each name, so a read by name does not search the data
+	// set. The C library keeps the names across a reload, so the table holds.
+	manager.indexes = newPropertyIndexes(manager)
+
 	// Construct the Set Headers list
 	manager.setHeaders = constructResponseHeaders(manager)
 
@@ -76,23 +86,63 @@ func InitManagerFromFile(
 	return nil
 }
 
-// InitFromMemory initializes a resource manager based on a given data file
-// content held in the memory. The input properties is a comma separated string
-// list. This matches the C API fiftyoneDegreesHashInitManagerFromFile.
+// InitManagerFromMemory initializes a resource manager from a data file held
+// in memory, the size bytes at memory. The input properties is a comma
+// separated string list. This matches the C API
+// fiftyoneDegreesHashInitManagerFromMemory.
 //
-// TODO: To be implemeted
+// The data is copied, so the caller's memory can be reused once this returns,
+// and each data set frees its copy when it is no longer in use. Reload the
+// manager from new data in memory with ReloadFromBytes.
 func InitManagerFromMemory(
 	manager *ResourceManager,
 	config ConfigHash,
 	properties string,
 	memory unsafe.Pointer,
 	size uint64) error {
-	// TODO: To be implemented
+	if memory == nil || size == 0 {
+		return errors.New("there is no data in memory to load")
+	}
+	data := C.malloc(C.size_t(size))
+	C.memcpy(data, memory, C.size_t(size))
+
+	// The data set frees the copy, so the configuration says to.
+	cConfig := (*C.ConfigHash)(C.malloc(C.sizeof_ConfigHash))
+	defer C.free(unsafe.Pointer(cConfig))
+	*cConfig = *config.CPtr
+	cConfig.b.b.freeData = C.IntToBool(1)
+
+	e := NewException()
+	propsRequired := NewPropertiesRequired(properties)
+	defer propsRequired.Free()
+	s := C.HashInitManagerFromMemory(
+		manager.CPtr,
+		cConfig,
+		propsRequired.CPtr,
+		data,
+		C.long(size),
+		e.CPtr,
+	)
+	// A data set that was not created leaves the copy with the caller.
+	if !e.IsOkay() {
+		C.free(data)
+		return messageError(C.ExceptionGetMessage(e.CPtr))
+	}
+	if s != C.SUCCESS {
+		C.free(data)
+		return messageError(C.StatusGetMessage(s, nil))
+	}
+
+	manager.fromMemory = true
+	manager.indexes = newPropertyIndexes(manager)
+	manager.setHeaders = constructResponseHeaders(manager)
+	initHttpHeaderKeys(manager)
 	return nil
 }
 
 // ReloadFromFile reloads the data set being used by the resource manager using
-// the specified data file location. This is corresponding to the C API
+// the specified data file location, and works the accepted Evidence keys out
+// again from the new data. This is corresponding to the C API
 // fiftyoneDegreesHashReloadManagerFromFile.
 func (manager *ResourceManager) ReloadFromFile(fileName string) error {
 	exp := NewException()
@@ -103,12 +153,17 @@ func (manager *ResourceManager) ReloadFromFile(fileName string) error {
 		cFilenamePath,
 		exp.CPtr,
 	)
-	return reloadError(s, exp, cFilenamePath)
+	if err := reloadError(s, exp, cFilenamePath); err != nil {
+		return err
+	}
+	initHttpHeaderKeys(manager)
+	return nil
 }
 
 // ReloadFromOriginalFile reloads the data set being used by the resource
 // manager using the data file location which was used when the manager was
-// created. This is corresponding to the C API
+// created, and works the accepted Evidence keys out again from the new data.
+// This is corresponding to the C API
 // fiftyoneDegreesHashReloadManagerFromOriginalFile
 func (manager *ResourceManager) ReloadFromOriginalFile() error {
 	exp := NewException()
@@ -117,6 +172,7 @@ func (manager *ResourceManager) ReloadFromOriginalFile() error {
 		exp.CPtr,
 	)
 	if s == C.SUCCESS && exp.IsOkay() {
+		initHttpHeaderKeys(manager)
 		return nil
 	}
 	cDataSet := C.DataSetGet(manager.CPtr)
@@ -137,11 +193,45 @@ func reloadError(s C.StatusCode, exp *Exception, fileName *C.char) error {
 	return nil
 }
 
-// ReloadFromMemory reloads the data set being used by the resource manager
-// using a data file loaded into continuous memory. This is corresponding to the
-// C API fiftyoneDegreesHashReloadManagerFromMemory.
+// ReloadFromMemory takes no data to reload from, so it reloads nothing and
+// returns an error.
+//
+// Deprecated: Use ReloadFromBytes, which takes the new data.
 func (manager *ResourceManager) ReloadFromMemory() error {
-	// TODO: To be implemented
+	return errors.New("ReloadFromMemory has no data to reload from, so " +
+		"use ReloadFromBytes")
+}
+
+// ReloadFromBytes reloads the data set from a data file held in data, and
+// works the accepted Evidence keys out again from the new data. The data is
+// copied, so it can be reused once this returns. Only a manager made from
+// memory with InitManagerFromMemory reloads from memory, because only its
+// data sets free their copy when they are no longer in use. This matches the
+// C API fiftyoneDegreesHashReloadManagerFromMemory.
+func (manager *ResourceManager) ReloadFromBytes(data []byte) error {
+	if !manager.fromMemory {
+		return errors.New("a manager made from a data file reloads from a " +
+			"data file, with ReloadFromFile")
+	}
+	if len(data) == 0 {
+		return errors.New("there is no data in memory to reload from")
+	}
+	copied := C.CBytes(data)
+	e := NewException()
+	s := C.HashReloadManagerFromMemory(
+		manager.CPtr,
+		copied,
+		C.long(len(data)),
+		e.CPtr,
+	)
+	// The copy now belongs to the data set the C library made for it, which
+	// frees it when it is freed, a reload that fails included. The only
+	// failure before that data set exists is the C library failing to
+	// allocate it, which leaves the copy unfreed rather than freed twice.
+	if err := reloadError(s, e, nil); err != nil {
+		return err
+	}
+	initHttpHeaderKeys(manager)
 	return nil
 }
 
@@ -237,31 +327,42 @@ func getUniqueHeaders(manager *ResourceManager) []string {
 	return a
 }
 
-// initHttpHeaderKeys initialized the http keys required for this engine
+// evidenceKeysSeparator is written between the keys the data set lists.
+const evidenceKeysSeparator = ","
+
+// initHttpHeaderKeys keeps the Evidence keys the data in use accepts, being
+// the list the native getKeys function gives for the data set, in its order.
+// That is a header key and a query key for each header the data set reads,
+// leaving out pseudo headers, which no request carries, then, where the data
+// set processes special Evidence, a cookie key and a query key for each
+// overridable Property and the keys of the special Evidence itself. Each key
+// is listed once.
+// See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/device-detection-specification/pipeline-elements/device-detection-on-premise.md?plain=1#L78-L86
 func initHttpHeaderKeys(manager *ResourceManager) {
-	// Get data set
 	cDataSet := (*C.DataSetHash)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
-	// Release the dataset
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
-	config := (*C.fiftyoneDegreesConfigBase)(unsafe.Pointer(cDataSet.b.b.config))
-	usesUpperPrefixedHeaders := cIntToBool(int(C.BoolToInt(config.usesUpperPrefixedHeaders)))
+	separator := C.CString(evidenceKeysSeparator)
+	defer C.free(unsafe.Pointer(separator))
+	length := C.HashGetEvidenceKeys(cDataSet, nil, 0, separator)
+	buffer := (*C.char)(C.malloc(length + 1))
+	defer C.free(unsafe.Pointer(buffer))
+	C.HashGetEvidenceKeys(cDataSet, buffer, length+1, separator)
 
-	prefixes := []EvidencePrefix{HttpHeaderString, HttpEvidenceQuery}
-	uniqueHeaders := getUniqueHeaders(manager)
-
-	// Create http header keys
-	keys := make([]EvidenceKey, 0, len(prefixes)*len(uniqueHeaders))
-	for _, header := range uniqueHeaders {
-		key := ""
-		if usesUpperPrefixedHeaders {
-			key += "HTTP_"
+	var keys []EvidenceKey
+	for _, key := range strings.Split(C.GoString(buffer),
+		evidenceKeysSeparator) {
+		cKey := C.CString(key)
+		prefix := C.EvidenceMapPrefix(cKey)
+		C.free(unsafe.Pointer(cKey))
+		if prefix == nil {
+			continue
 		}
-		key += header
-		for _, p := range prefixes {
-			keys = append(keys, EvidenceKey{p, key})
-		}
+		name := strings.TrimPrefix(key[int(prefix.prefixLength):], ".")
+		keys = append(keys, EvidenceKey{EvidencePrefix(prefix.prefixEnum), name})
 	}
+	manager.keysMu.Lock()
 	manager.HttpHeaderKeys = keys
+	manager.keysMu.Unlock()
 }
 
 func GetPublishedDate(manager *ResourceManager) time.Time {
@@ -270,4 +371,21 @@ func GetPublishedDate(manager *ResourceManager) time.Time {
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 	published := cDataSet.header.published
 	return time.Date(int(published.year), time.Month(published.month), int(published.day), 0, 0, 0, 0, time.UTC)
+}
+
+// GetNextUpdateDate returns the date after which the loaded data file expects
+// a new data file to be available, or the zero time when the data file gives
+// no date.
+func GetNextUpdateDate(manager *ResourceManager) time.Time {
+	cDataSet := (*C.DataSetHash)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
+	if cDataSet == nil {
+		return time.Time{}
+	}
+	// Release the dataset
+	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
+	next := cDataSet.header.nextUpdate
+	if next.year == 0 {
+		return time.Time{}
+	}
+	return time.Date(int(next.year), time.Month(next.month), int(next.day), 0, 0, 0, 0, time.UTC)
 }

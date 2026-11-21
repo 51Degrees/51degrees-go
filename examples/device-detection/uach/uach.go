@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -20,6 +20,17 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example uach/uach.go
+This example shows how to ask for User-Agent Client Hints with the
+Accept-CH response header, and use them as evidence for device detection,
+in a web application at localhost:5151.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/uach).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*
@@ -30,8 +41,8 @@ package main
  ```
  go run uach.go
  ```
- This will start the application at "localhost:3001". From a browser of your choice,
- enter "localhost:3001" in the URL input. Follow the instructions to see how
+ This will start the application at "localhost:5151". From a browser of your choice,
+ enter "localhost:5151" in the URL input. Follow the instructions to see how
  the evidence are used.
 
  Use curl to run a simple request with a User-Agent that support User Agent
@@ -40,7 +51,7 @@ package main
 
  ```
  curl -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
- localhost:3001 -I
+ localhost:5151 -I
  ```
 
  Response header should include `Accept-CH` set to:
@@ -50,11 +61,14 @@ package main
 
  NOTE: To see how User Agent Client Hints, run the following command:
  ```
- curl --header "Sec-CH-UA-Platform: Windows" --header "Sec-CH-UA-Platform-Version: 14.0.0" localhost:3001
+ curl --header "Sec-CH-UA-Platform: Windows" --header "Sec-CH-UA-Platform-Version: 14.0.0" localhost:5151
  ``
  You should see the html text returned with `Platform Name` set to `Windows`, and
  `Platform Version` set to `11.0`.
 
+ With the free Lite data file, HardwareVendor, HardwareName and DeviceType,
+ which only the Enterprise data file has, are shown as needing it, with a link
+ to ask for a copy.
 */
 
 import (
@@ -87,7 +101,16 @@ type Page struct {
 	BrowserVendor   string
 	BrowserName     string
 	BrowserVersion  string
+	// ContactUs is set when the data file lacks a property only the
+	// Enterprise data file has.
+	ContactUs string
+	// FindOutMore lists the pages to follow up and this repository.
+	FindOutMore []examples.Property
 }
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-uach-uach.go&utm_term=enterprise-data-file"
 
 var manager *dd.ResourceManager
 var config *dd.ConfigHash
@@ -174,15 +197,18 @@ var templ = `<!DOCTYPE HTML>
 	   <div id=description></div>
 	   <div id="content">
 	      <strong>Detection results:</strong></br></br>
-	      <b>Hardware Vendor:</b> {{.HardwareVendor}}<br />
-	      <b>Hardware Name:</b> {{.HardwareName}}<br />
-	      <b>Device Type:</b> {{.DeviceType}}<br />
+	      <b>HardwareVendor:</b> {{.HardwareVendor}}<br />
+	      <b>HardwareName:</b> {{.HardwareName}}<br />
+	      <b>DeviceType:</b> {{.DeviceType}}<br />
 	      <b>Platform Vendor:</b> {{.PlatformVendor}}<br />
 	      <b>Platform Name:</b> {{.PlatformName}}<br />
 	      <b>Platform Version:</b> {{.PlatformVersion}}<br />
 	      <b>Browser Vendor:</b> {{.BrowserVendor}}<br />
 	      <b>Browser Name:</b> {{.BrowserName}}<br />
 	      <b>Browser Version:</b> {{.BrowserVersion}}<br />
+	      {{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>{{end}}
+	      <h3>Find out more</h3>
+	      <ul>{{range .FindOutMore}}<li>{{.Name}}: <a href="{{.Value}}">{{.Value}}</a></li>{{end}}</ul>
 	   </div>
    </body>
 </html>`
@@ -269,7 +295,7 @@ func getValue(
 
 // Handler for web request
 func handler(w http.ResponseWriter, r *http.Request) {
-	filteredEvidence := extractEvidenceStrings(r, manager.HttpHeaderKeys)
+	filteredEvidence := extractEvidenceStrings(r, manager.HeaderKeys())
 	// Extract evidence
 	evidence := extractEvidence(filteredEvidence)
 	// Make sure evidence is freed at the end
@@ -290,9 +316,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// requests.
 	results.SetResponseHeaders(w, manager)
 
-	hardwareVendor := getValue(results, "HardwareVendor")
-	hardwareName := getValue(results, "HardwareName")
-	deviceType := getValue(results, "DeviceType")
+	// The properties only the Enterprise data file has, each with its value
+	// or as needing that file.
+	enterprise, missing := examples.Enterprise(results)
+	shown := make(map[string]string)
+	for _, property := range enterprise {
+		shown[property.Name] = property.Value
+	}
+	hardwareVendor := shown["HardwareVendor"]
+	hardwareName := shown["HardwareName"]
+	deviceType := shown["DeviceType"]
 	platformVendor := getValue(results, "PlatformVendor")
 	platformName := getValue(results, "PlatformName")
 	platformVersion := getValue(results, "PlatformVersion")
@@ -310,6 +343,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		browserVendor,
 		browserName,
 		browserVersion,
+		"",
+		examples.FindOutMoreLinks("examples-device-detection-uach-uach.go"),
+	}
+	if missing {
+		p.ContactUs = contactUs
 	}
 
 	// Construct the template
@@ -340,7 +378,7 @@ func main() {
 	defer manager.Free()
 
 	http.HandleFunc("/", handler)
-	const port = 3001
+	const port = 5151
 	fmt.Printf("Server listening on port: %d\n", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil))
 }

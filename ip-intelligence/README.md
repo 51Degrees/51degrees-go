@@ -1,8 +1,10 @@
 # 51Degrees IP Intelligence API
 
-![51Degrees](https://51degrees.com/img/logo.png?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=51degrees-ip-intelligence-api "Data rewards the curious") **IP Intelligence in GO**
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious") **IP Intelligence in GO**
 
 ## Introduction
+
+IP Intelligence and IP geolocation for Go. It finds an IP address's likely location (country, region, town, and coordinates), connection type, and network, by reading a data file on your server or using the 51Degrees cloud service. An alternative to MaxMind and IPinfo.
 
 This repository contains a Go implementation of the IP Intelligence engine.
 This module allows you to call functions for determining to set up with an IP Intelligence engine and begin using it to process IP addresses.
@@ -16,7 +18,7 @@ This Go version contains the following packages:
 - `ipi_onpremise` - a higher level Engine API providing IP Intelligence library and file update functions
 
 ### Minimum Go Version
-- Go 1.19
+- Go 1.22
 
 ## Setup Instructions
 
@@ -54,9 +56,51 @@ Import the package as usual and it will get build automatically:
 go import "github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 ```
 
+### In a Pipeline
+
+`ipi_onpremise.NewPipelineEngine` takes the same options as `ipi_onpremise.New` and gives the engine as a Pipeline
+element, which adds `ipi_onpremise.Data` to each Flow Data under the Data Key `ip`, in the form the IP Intelligence
+Cloud Engine gives its data in. The Data reads each Property from the data file's results only when it is requested, and
+holds those results in memory the Go garbage collector cannot see until it is released. Closing the Flow Data releases
+them at once, and the web middleware closes each request's Flow Data when the request ends, so call `Close` on the Flow
+Data when you have finished with it:
+
+```go
+flowData := pipeline.CreateFlowData()
+defer flowData.Close()
+```
+
+`Close` on the Data releases them at once as well. If neither is closed, a finalizer releases the results once nothing
+holds the Data, but only when the garbage collector next runs, which can be too late under load. A Data is not safe to use from several goroutines at once, because reading
+a value writes into its results, and it takes no lock, so the caller is responsible for any locking. The engine refuses a results cache, and its `SetCache` returns an error,
+because a cached Data would be read after its results were released. Used on its own, `Engine.ProcessData` gives the
+same Data, and the caller calls `Close` on it when it has finished with it. To build a Pipeline from a configuration
+file, register `ipi_onpremise.Factory` under `ipi_onpremise.BuilderName` with `core.BuilderRegistry`. The build
+parameters are the options' names, such as `DataFile`, `AutoUpdate`, `PerformanceProfile` and `Properties`.
+
+```
+{"PipelineOptions": {"Elements": [{"BuilderName": "IpiOnPremiseEngine",
+  "BuildParameters": {"DataFile": "51Degrees-LiteV41.ipi", "AutoUpdate": false}}]}}
+```
+
 ### Vendored C Library
 
 Implementation wraps an amalgamated C library from [ip-intelligence-cxx](https://github.com/51Degrees/51degrees-cxx) repo
+
+## Thread safety
+
+A results instance, being the `ipi_interop.ResultsIpi` that
+`Engine.NewResultsIpi` and `ipi_interop.NewResultsIpi` return and that
+`Engine.ProcessWithResults` reuses, is not safe to use from several goroutines
+at once, because reading a value writes into the native results, and it takes
+no lock. So a results instance belongs to one goroutine at a time, and the
+caller is responsible for thread-safe access to one it shares, for example
+with a `sync.Mutex` of its own. A web server makes one for each request. The
+`Data` that `Engine.ProcessData` returns reads its values from a results
+instance of its own, so it is not safe to use from several goroutines at once
+either, and the caller is responsible for thread-safe access to one it shares
+in the same way. See the
+[results instances rules](https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L196-L221).
 
 ## Development
 

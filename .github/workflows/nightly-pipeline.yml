@@ -13,43 +13,10 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  # Moves cxx to the latest 51degrees-cxx release, remakes the engines' C
-  # sources from it and updates Go dependencies, in a pull request.
-  PackageUpdate:
-    name: Nightly Package Update
-    uses: 51Degrees/common-ci/.github/workflows/nightly-package-update.yml@main
-    with:
-      repo-name: ${{ github.event.repository.name }}
-      org-name: ${{ github.event.repository.owner.login }}
-      dryrun: ${{ inputs.dryrun || false }}
-      common-ci-ref: ${{ inputs.common-ci-ref || '' }}
-    secrets:
-      token: ${{ secrets.ACCESS_TOKEN }}
-
-  # Builds and tests every non-draft pull request into main, and merges those
-  # that pass.
-  PullRequests:
-    if: ${{ !cancelled() }}
-    needs: PackageUpdate
-    name: Nightly Pull Requests
-    uses: 51Degrees/common-ci/.github/workflows/nightly-pull-requests.yml@main
-    with:
-      repo-name: ${{ github.event.repository.name }}
-      org-name: ${{ github.event.repository.owner.login }}
-      dryrun: ${{ inputs.dryrun || false }}
-      common-ci-ref: ${{ inputs.common-ci-ref || '' }}
-      cache-assets: true
-    secrets:
-      token: ${{ secrets.ACCESS_TOKEN }}
-      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
-      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
-      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
-      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
-
-  # Releases main when it has changed since the last release.
+  # Releases main when it has changed since the last release. The publish
+  # builds main, which the pull requests into rc do not change, so it runs
+  # first and has the runners before the pull request builds do.
   Publish:
-    if: ${{ !cancelled() }}
-    needs: PullRequests
     name: Nightly Publish
     uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@main
     with:
@@ -58,9 +25,34 @@ jobs:
       dryrun: ${{ inputs.dryrun || false }}
       common-ci-ref: ${{ inputs.common-ci-ref || '' }}
       cache-assets: true
-    secrets:
-      token: ${{ secrets.ACCESS_TOKEN }}
-      DeviceDetection: ${{ secrets.DEVICE_DETECTION_KEY }}
-      DeviceDetectionUrl: ${{ secrets.DEVICE_DETECTION_URL }}
-      IpIntelligence: ${{ secrets.IP_INTELLIGENCE_KEY }}
-      IpIntelligenceUrl: ${{ secrets.IPI_DATA_FILE_URL }}
+    secrets: inherit
+
+  # Moves cxx to the latest 51degrees-cxx release and javascript-templates to
+  # the head of its default branch, remakes the files made from them and
+  # updates Go dependencies, in a pull request.
+  PackageUpdate:
+    name: Nightly Package Update
+    uses: 51Degrees/common-ci/.github/workflows/nightly-package-update.yml@main
+    with:
+      repo-name: ${{ github.event.repository.name }}
+      org-name: ${{ github.event.repository.owner.login }}
+      dryrun: ${{ inputs.dryrun || false }}
+      common-ci-ref: ${{ inputs.common-ci-ref || '' }}
+    secrets: inherit
+
+  # Builds and tests every non-draft pull request into main, and merges those
+  # that pass.
+  PullRequests:
+    if: ${{ !cancelled() }}
+    needs: [Publish, PackageUpdate]
+    name: Nightly Pull Requests
+    uses: 51Degrees/common-ci/.github/workflows/nightly-pull-requests.yml@main
+    with:
+      repo-name: ${{ github.event.repository.name }}
+      org-name: ${{ github.event.repository.owner.login }}
+      dryrun: ${{ inputs.dryrun || false }}
+      common-ci-ref: ${{ inputs.common-ci-ref || '' }}
+      cache-assets: true
+      # One configuration that fails does not cancel the others.
+      fail-fast: false
+    secrets: inherit

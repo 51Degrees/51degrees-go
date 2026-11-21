@@ -1,13 +1,37 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
 package common_go
 
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -312,7 +336,7 @@ func TestDoDataFileRequest_Success(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -342,7 +366,7 @@ func TestDoDataFileRequest_GzipContent(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -362,7 +386,7 @@ func TestDoDataFileRequest_NotModified(t *testing.T) {
 	logger := &LogWrapper{}
 	timestamp := time.Now()
 
-	result, err := doDataFileRequest(server.URL, logger, &timestamp, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, &timestamp, filepath.Join(t.TempDir(), "data"))
 
 	if !errors.Is(err, ErrFileNotModified) {
 		t.Errorf("doDataFileRequest() error = %v, want ErrFileNotModified", err)
@@ -381,7 +405,7 @@ func TestDoDataFileRequest_InvalidRetryAfter(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid Retry-After")
@@ -397,7 +421,7 @@ func TestDoDataFileRequest_ServerError(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for server error")
@@ -419,7 +443,7 @@ func TestDoDataFileRequest_InvalidMD5(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid MD5")
@@ -440,7 +464,7 @@ func TestDoDataFileRequest_NoMD5Header(t *testing.T) {
 
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest(server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), server.URL, logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err != nil {
 		t.Errorf("doDataFileRequest() unexpected error: %v", err)
@@ -453,7 +477,7 @@ func TestDoDataFileRequest_NoMD5Header(t *testing.T) {
 func TestDoDataFileRequest_InvalidURL(t *testing.T) {
 	logger := &LogWrapper{}
 
-	result, err := doDataFileRequest("invalid://url", logger, nil, filepath.Join(t.TempDir(), "data"))
+	result, err := doDataFileRequest(context.Background(), "invalid://url", logger, nil, filepath.Join(t.TempDir(), "data"))
 
 	if err == nil {
 		t.Errorf("doDataFileRequest() expected error for invalid URL")
@@ -464,7 +488,7 @@ func TestDoDataFileRequest_InvalidURL(t *testing.T) {
 }
 
 // A failed pull must leave the current data file untouched and no temp file behind.
-func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
+func TestPull_KeepsDataFileOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.hash")
 	if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
@@ -481,9 +505,6 @@ func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
 			updater.SetDataFile(dataFile)
 			updater.SetLoggerEnabled(false)
 
-			if next := updater.doFilePulling(make(chan struct{}, 1)); next != retryMs {
-				t.Errorf("next pull in %d ms, want %d", next, retryMs)
-			}
 			if got := readTempFile(t, dataFile); got != "current" {
 				t.Errorf("data file content = %q, want unchanged", got)
 			}
@@ -495,8 +516,48 @@ func TestDoFilePulling_KeepsDataFileOnFailure(t *testing.T) {
 	}
 }
 
+// failedPullIntervalMs is a polling interval no default uses, so a test can
+// tell it from any other wait.
+const failedPullIntervalMs = 47 * 60 * 1000
+
+// A failed pull is tried again after the polling interval, as a check that
+// finds nothing is, so a failing server is not asked again every second.
+// See https://github.com/51Degrees/specifications/blob/67ead69/pipeline-specification/features/data-updates.md#update-polling
+func TestPull_TriesAgainAfterThePollingInterval(t *testing.T) {
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refused.Close()
+	for name, test := range map[string]struct {
+		server  *httptest.Server
+		missing bool
+	}{
+		"connection refused": {server: refused},
+		"server error":       {server: createMockServer(http.StatusInternalServerError, nil, nil)},
+		"bad md5":            {server: createMockServer(http.StatusOK, map[string]string{"Content-MD5": "wrong"}, []byte("new"))},
+		"no data file":       {server: createMockServer(http.StatusOK, nil, []byte("new")), missing: true},
+		"429 without a time": {server: createMockServer(http.StatusTooManyRequests, nil, nil)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer test.server.Close()
+			dataFile := filepath.Join(t.TempDir(), "data.hash")
+			if !test.missing {
+				if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			updater := NewFileUpdater(test.server.URL)
+			updater.SetDataFile(dataFile)
+			updater.SetLoggerEnabled(false)
+			updater.SetDataFilePullEveryMs(failedPullIntervalMs)
+
+			if next, _, _ := updater.pull(make(chan struct{}, 1)); next != failedPullIntervalMs {
+				t.Errorf("next pull in %d ms, want the polling interval of %d ms", next, failedPullIntervalMs)
+			}
+		})
+	}
+}
+
 // A successful pull replaces the data file with the uncompressed download in one rename.
-func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
+func TestPull_ReplacesDataFile(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.hash")
 	if err := os.WriteFile(dataFile, []byte("current"), 0640); err != nil {
@@ -519,7 +580,7 @@ func TestDoFilePulling_ReplacesDataFile(t *testing.T) {
 	updater.SetIsFileWatcherEnabled(false) // the pull itself must announce the new file
 	reload := make(chan struct{}, 1)
 
-	if next := updater.doFilePulling(reload); next != updater.GetDataFilePullEveryMs() {
+	if next, _, _ := updater.pull(reload); next != updater.GetDataFilePullEveryMs() {
 		t.Errorf("next pull in %d ms, want %d", next, updater.GetDataFilePullEveryMs())
 	}
 	if got := readTempFile(t, dataFile); got != "new content" {
@@ -586,7 +647,13 @@ func TestScheduleFilePulling_CopiesWhilePulling(t *testing.T) {
 		os.Remove(path)
 	}
 
-	// The puller may be announcing another pull when it is asked to stop.
+	stopPuller(stopCh, reload)
+}
+
+// stopPuller stops a puller started with ScheduleFilePulling. The puller may
+// be announcing another pull when it is asked to stop, so reload events are
+// read until it has stopped.
+func stopPuller(stopCh chan *sync.WaitGroup, reload chan struct{}) {
 	stopped := make(chan struct{})
 	go func() {
 		for {
@@ -602,4 +669,112 @@ func TestScheduleFilePulling_CopiesWhilePulling(t *testing.T) {
 	stopCh <- &wg
 	wg.Wait()
 	close(stopped)
+}
+
+// Test that the random time added to a polling interval stays from 0 up to
+// and including the maximum, differs between draws, and is 0 when the
+// maximum is 0 or less.
+func TestRandomizationMs(t *testing.T) {
+	const maxMs = 600000
+	const draws = 1000
+	seen := map[int]bool{}
+	for i := 0; i < draws; i++ {
+		got := randomizationMs(maxMs)
+		if got < 0 || got > maxMs {
+			t.Fatalf("randomizationMs(%d) = %d, want 0 to %d",
+				maxMs, got, maxMs)
+		}
+		seen[got] = true
+	}
+	if len(seen) < draws/2 {
+		t.Fatalf("%d draws gave only %d different times", draws, len(seen))
+	}
+
+	// With a maximum of 1 both 0 and 1 come up, so the maximum is included.
+	ends := map[int]bool{}
+	for i := 0; i < draws; i++ {
+		ends[randomizationMs(1)] = true
+	}
+	if !ends[0] || !ends[1] || len(ends) != 2 {
+		t.Fatalf("randomizationMs(1) gave %v, want 0 and 1", ends)
+	}
+
+	if got := randomizationMs(math.MaxInt); got < 0 {
+		t.Fatalf("randomizationMs(math.MaxInt) = %d, want 0 or more", got)
+	}
+
+	for _, limit := range []int{0, -1} {
+		for i := 0; i < draws; i++ {
+			if got := randomizationMs(limit); got != 0 {
+				t.Fatalf("randomizationMs(%d) = %d, want 0", limit, got)
+			}
+		}
+	}
+}
+
+// Test that two seeds differ, because with a fixed seed every server would
+// draw the same times and poll in step.
+func TestRandomSeed(t *testing.T) {
+	if a, b := randomSeed(), randomSeed(); a == b {
+		t.Fatalf("randomSeed() gave %d twice", a)
+	}
+}
+
+// Test that the scheduler gives the randomization to the draw as the maximum
+// and waits only for the time drawn. The stub draws 0, so with a maximum of an
+// hour the first pull still comes after the few milliseconds of the interval.
+func TestScheduleFilePulling_DrawsRandomization(t *testing.T) {
+	const pullEveryMs = 5
+	const maxRandomizationMs = 3600000
+	const pullTimeoutSeconds = 3
+
+	var mu sync.Mutex
+	var given []int
+	drawRandomizationMs = func(maxMs int) int {
+		mu.Lock()
+		defer mu.Unlock()
+		given = append(given, maxMs)
+		return 0
+	}
+	t.Cleanup(func() { drawRandomizationMs = randomizationMs })
+
+	dataFile := filepath.Join(t.TempDir(), "data.hash")
+	if err := os.WriteFile(dataFile, []byte("current"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := createMockServer(http.StatusOK, nil, []byte("new"))
+	defer server.Close()
+
+	updater := NewFileUpdater(server.URL)
+	updater.SetDataFile(dataFile)
+	updater.SetIsFileWatcherEnabled(false)
+	updater.SetUpdateOnStartEnabled(false)
+	updater.SetDataFilePullEveryMs(pullEveryMs)
+	updater.SetRandomization(maxRandomizationMs)
+	updater.SetLoggerEnabled(false)
+
+	stopCh := make(chan *sync.WaitGroup)
+	reload := make(chan struct{})
+	go updater.ScheduleFilePulling(stopCh, reload)
+	defer stopPuller(stopCh, reload)
+
+	select {
+	case <-reload:
+	case <-time.After(pullTimeoutSeconds * time.Second):
+		t.Fatalf("no pull within %d seconds with a %d ms interval",
+			pullTimeoutSeconds, pullEveryMs)
+	}
+
+	mu.Lock()
+	got := append([]int(nil), given...)
+	mu.Unlock()
+	if len(got) == 0 {
+		t.Fatal("the scheduler did not draw a random time")
+	}
+	for _, maxMs := range got {
+		if maxMs != maxRandomizationMs {
+			t.Fatalf("the draw was given a maximum of %d, want %d",
+				maxMs, maxRandomizationMs)
+		}
+	}
 }

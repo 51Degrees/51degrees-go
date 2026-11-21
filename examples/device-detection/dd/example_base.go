@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -38,6 +38,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
 	"gopkg.in/yaml.v3"
@@ -49,11 +50,121 @@ const EnterpriseDataFile = "Enterprise-HashV41.hash"
 const UaFileCSV = "20000 User Agents.csv"
 const EvidenceFileYaml = "20000 Evidence Records.yml"
 
+// EnterpriseProperties are properties that only the Enterprise data file
+// has, which the examples show beside the free ones.
+var EnterpriseProperties = []string{"HardwareVendor", "HardwareName", "DeviceType"}
+
+// NeedsEnterprise is shown in place of the value of a property that the data
+// file in use does not have, because only the Enterprise data file has it.
+const NeedsEnterprise = "needs the Enterprise data file"
+
+// HasProperty reports whether the data file has the property, which the
+// results must have been asked for, as they are when no property names are
+// given. A name given that the data file does not have keeps its place among
+// the names, and has no type.
+func HasProperty(results *dd.ResultsHash, property string) bool {
+	index := results.RequiredPropertyIndexFromName(property)
+	return index >= 0 && results.PropertyType(index) != nil
+}
+
+// Property is a property and the text an example shows for it.
+type Property struct {
+	Name  string
+	Value string
+}
+
+// Enterprise returns each of EnterpriseProperties with its value in the
+// results, or NeedsEnterprise when the data file does not have it, and
+// whether any needed it.
+func Enterprise(results *dd.ResultsHash) ([]Property, bool) {
+	shown := make([]Property, 0, len(EnterpriseProperties))
+	missing := false
+	for _, property := range EnterpriseProperties {
+		if !HasProperty(results, property) {
+			shown = append(shown, Property{property, NeedsEnterprise})
+			missing = true
+			continue
+		}
+		hasValues, err := results.HasValues(property)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if !hasValues {
+			shown = append(shown, Property{property, "no value for this device"})
+			continue
+		}
+		value, err := results.ValuesString(property, ",")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		shown = append(shown, Property{property, value})
+	}
+	return shown, missing
+}
+
+// EnterpriseValues returns a line for each of EnterpriseProperties, starting
+// with indent, as Enterprise gives it, and whether any needed the Enterprise
+// data file.
+func EnterpriseValues(results *dd.ResultsHash, indent string) (string, bool) {
+	shown, missing := Enterprise(results)
+	output := ""
+	for _, property := range shown {
+		output += fmt.Sprintf("%s%s: %s\n", indent, property.Name, property.Value)
+	}
+	return output, missing
+}
+
+// EnterpriseNote returns where to ask for a copy of the Enterprise data file,
+// for an example to print when the data file lacks a property it shows.
+func EnterpriseNote(contactUs string) string {
+	return fmt.Sprintf("Some of these properties need the Enterprise data "+
+		"file. Contact us for a copy at %s\n", contactUs)
+}
+
+// mobileUserAgent is the User-Agent of an iPhone, which ShowEnterprise
+// detects.
+const mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
+	"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 " +
+	"Safari/9537.53"
+
+// ShowEnterprise loads the data file with IsMobile and the properties only the
+// Enterprise data file has, detects an iPhone's User-Agent, and returns those
+// properties, with where to ask for a copy of that file when the data file
+// lacks any of them. It is for the examples that measure with fewer
+// properties, and show these after the measurement, so the measurement is
+// unchanged. IsMobile is asked for as well, so that the list always names a
+// property every data file has.
+func ShowEnterprise(dataFilePath, contactUs string) string {
+	manager := dd.NewResourceManager()
+	config := dd.NewConfigHash(dd.Default)
+	err := dd.InitManagerFromFile(
+		manager,
+		*config,
+		strings.Join(append([]string{"IsMobile"}, EnterpriseProperties...), ","),
+		dataFilePath)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer manager.Free()
+	results := dd.NewResultsHash(manager, 1, 0)
+	defer results.Free()
+	if err := results.MatchUserAgent(mobileUserAgent); err != nil {
+		log.Fatalln(err)
+	}
+	values, missing := EnterpriseValues(results, "\t")
+	output := fmt.Sprintf("Mobile User-Agent: %s\n%s", mobileUserAgent, values)
+	if missing {
+		output += EnterpriseNote(contactUs)
+	}
+	return output
+}
+
 // The data repository, the data submodule of cxx, has a link file in
 // dataFolder for each file its scripts download.
 var dataFolder = filepath.Join("cxx", "data", "device-detection")
 
 // Sent with each download the examples start, so that they can be counted.
+// In GitHub Actions the scripts send their own source.
 const downloadSource = "examples-51degrees-go"
 
 // Evidence where all fields are in string format
@@ -114,6 +225,47 @@ func GetFilePathByName(names []string) string {
 	return ""
 }
 
+// DataFileLine starts the line every example prints to say which data file
+// its values come from.
+const DataFileLine = "Data file:"
+
+// reportedDataFile keeps the line to one for each run.
+var reportedDataFile sync.Once
+
+// ReportDataFile prints the data file in use, with its size, and gives the
+// path back, so a run says where its values come from, whether the file was
+// named in a setting, found in the tree or fetched.
+func ReportDataFile(path string) string {
+	reportedDataFile.Do(func() {
+		if info, err := os.Stat(path); err == nil {
+			fmt.Printf("%s %s (%d bytes)\n\n", DataFileLine, path, info.Size())
+			return
+		}
+		fmt.Printf("%s %s\n\n", DataFileLine, path)
+	})
+	return path
+}
+
+// DataFilePath returns the data file an example uses, being the file the
+// _51DEGREES_DD_PATH environment variable names, as for the on-premise
+// examples, and otherwise the free Lite file, found or downloaded.
+func DataFilePath() string {
+	if path := os.Getenv("_51DEGREES_DD_PATH"); path != "" {
+		return ReportDataFile(path)
+	}
+	return ReportDataFile(GetFilePathByName([]string{LiteDataFile}))
+}
+
+// EvidenceFilePath returns the Evidence file an example uses, being the file
+// the _51DEGREES_EVIDENCE_YAML environment variable names, and otherwise the
+// free Evidence file, found or downloaded.
+func EvidenceFilePath() string {
+	if path := os.Getenv("_51DEGREES_EVIDENCE_YAML"); path != "" {
+		return path
+	}
+	return GetFilePathByName([]string{EvidenceFileYaml})
+}
+
 // Returns a full path to a file to be used for examples by path to a file. A
 // file that isn't found is downloaded when the data repository links to it.
 func GetFilePathByPath(path string) string {
@@ -163,19 +315,32 @@ func getDataFile(name string) (string, bool) {
 
 	// The data repository is the folder above the data folder.
 	data := filepath.Dir(filepath.Dir(link))
-	var cmd *exec.Cmd
+	var args []string
 	var command string
 	if runtime.GOOS == "windows" {
 		script := filepath.Join(data, "get-data-files.ps1")
-		cmd = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy",
-			"Bypass", "-File", script, name, "-Source", downloadSource)
-		command = fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass "+
-			"-File \"%s\" \"%s\" -Source %s", script, name, downloadSource)
+		args = []string{powerShell(), "-NoProfile", "-ExecutionPolicy",
+			"Bypass", "-File", script, name}
+		command = fmt.Sprintf("%s -NoProfile -ExecutionPolicy Bypass "+
+			"-File \"%s\" \"%s\"", args[0], script, name)
+		if source := exampleSource(); source != "" {
+			args = append(args, "-Source", source)
+			command += " -Source " + source
+		}
 	} else {
 		script := filepath.Join(data, "get-data-files.sh")
-		cmd = exec.Command("sh", script, "-s", downloadSource, name)
-		command = fmt.Sprintf("sh \"%s\" -s %s \"%s\"",
-			script, downloadSource, name)
+		args = []string{"sh", script}
+		command = fmt.Sprintf("sh \"%s\"", script)
+		if source := exampleSource(); source != "" {
+			args = append(args, "-s", source)
+			command += " -s " + source
+		}
+		args = append(args, name)
+		command += fmt.Sprintf(" \"%s\"", name)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	if args[0] == "powershell" {
+		cmd.Env = withoutModulePath(os.Environ())
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -189,6 +354,38 @@ func getDataFile(name string) (string, bool) {
 	log.Fatalf("%s could not be downloaded. Run this command to try again.\n%s\n",
 		name, command)
 	return "", false
+}
+
+// powerShell returns the PowerShell to run the data repository's script with,
+// which is PowerShell 7 when it is installed and Windows PowerShell otherwise.
+func powerShell() string {
+	if _, err := exec.LookPath("pwsh"); err == nil {
+		return "pwsh"
+	}
+	return "powershell"
+}
+
+// withoutModulePath returns the environment without PSModulePath. Windows
+// PowerShell started from PowerShell 7 inherits its module path, which leaves
+// it unable to load its own commands, and without one it uses its own.
+func withoutModulePath(environment []string) []string {
+	kept := make([]string, 0, len(environment))
+	for _, variable := range environment {
+		if !strings.EqualFold(strings.SplitN(variable, "=", 2)[0], "PSModulePath") {
+			kept = append(kept, variable)
+		}
+	}
+	return kept
+}
+
+// exampleSource returns the source to send with a download, or nothing in
+// GitHub Actions, where the data repository's scripts send their own so that
+// test runs are not counted as people running the examples.
+func exampleSource() string {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		return ""
+	}
+	return downloadSource
 }
 
 // findAbove returns the working folder, or the first folder above it, joined
@@ -311,6 +508,7 @@ func PerformExample(perf dd.PerformanceProfile, eFunc ExampleFunc) {
 			fmt.Print(output)
 		}
 	}
+	fmt.Print(FindOutMore(callerContent()))
 }
 
 // Same as PerformExample with additional support for command line options
@@ -344,6 +542,7 @@ func PerformExampleOptions(perf dd.PerformanceProfile, eFunc ExampleOptFunc) {
 			fmt.Print(output)
 		}
 	}
+	fmt.Print(FindOutMore(callerContent()))
 }
 
 type Options struct {
@@ -361,10 +560,18 @@ type Options struct {
 func ParseOptions() Options {
 	options := Options{}
 
-	flag.StringVar(&options.DataFilePath, "data-file", "../"+LiteDataFile, "Path to a 51Degrees Hash data file")
+	dataFile, evidenceFile := "../"+LiteDataFile, "../"+EvidenceFileYaml
+	if path := os.Getenv("_51DEGREES_DD_PATH"); path != "" {
+		dataFile = path
+	}
+	if path := os.Getenv("_51DEGREES_EVIDENCE_YAML"); path != "" {
+		evidenceFile = path
+	}
+
+	flag.StringVar(&options.DataFilePath, "data-file", dataFile, "Path to a 51Degrees Hash data file")
 	flag.StringVar(&options.DataFilePath, "d", options.DataFilePath, "Alias for -data-file")
 
-	flag.StringVar(&options.EvidenceFilePath, "evidence-file", "../"+EvidenceFileYaml, "Path to a Evidence Records YAML file")
+	flag.StringVar(&options.EvidenceFilePath, "evidence-file", evidenceFile, "Path to a Evidence Records YAML file")
 	flag.StringVar(&options.EvidenceFilePath, "e", options.EvidenceFilePath, "Alias for -evidence-file")
 
 	flag.StringVar(&options.LogOutputPath, "log-output", "", "Path to a output log file")

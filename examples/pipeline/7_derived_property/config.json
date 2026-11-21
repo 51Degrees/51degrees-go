@@ -1,0 +1,15 @@
+{
+  "PipelineOptions": {
+    "Elements": [
+      {
+        "BuilderName": "SessionElement"
+      },
+      {
+        "BuilderName": "DerivedPropertyElement",
+        "BuildParameters": {
+          "ScriptFiles": "ReaderEngagement.yaml"
+        }
+      }
+    ]
+  }
+}

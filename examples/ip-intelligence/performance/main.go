@@ -3,8 +3,8 @@
  * Copyright 2025 51 Degrees Mobile Experts Limited, Davidson House,
  * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -39,8 +39,6 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 
 @include{doc} example-require-datafile-ipi.txt
 
-@include{doc} example-how-to-run-ipi.txt
-
 ## Usage
 ```
 # Multi-threaded mode (default)
@@ -71,7 +69,7 @@ engine, err := ipi_onpremise.New(
 	// Enable automatic updates.
 	ipi_onpremise.WithAutoUpdate(false),
 	// Set only 1 parameter for getting data
-	ipi_onpremise.WithProperties([]string{"RegisteredName"}),
+	ipi_onpremise.WithProperties(performanceProperties),
 )
 ```
 <br/>
@@ -96,13 +94,25 @@ ipi_onpremise.WithAutoUpdate(false),
 <b>WithProperties</b> configures an Engine with a comma-separated list of manager properties derived from the provided slice.te
 
 ```
-ipi_onpremise.WithProperties([]string{"RegisteredName"}),
+ipi_onpremise.WithProperties(performanceProperties),
 ```
 <br/>
 ### 3. Run evidence processing with parameters and get the report as returned value
 
 ```
 report, err := runPerformance(engine, params)
+```
+<br/>
+### 4. Show the properties only the Enterprise data file has
+
+The lookups it measures ask for RegisteredName and AsnName alone. Afterwards
+it stops the engine, opens the data file again with the properties only the
+Enterprise data file has, and shows them for one address, as needing that
+file when the data file in use is a free one, so the measurement is unchanged.
+
+```
+engine.Stop()
+common.ShowEnterprise(params.DataFile, contactUs, enterpriseProperties)
 ```
 <br/>
 ### Expected output (performance_report.log):
@@ -147,6 +157,35 @@ import (
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_onpremise"
 	"github.com/goccy/go-yaml"
 )
+
+// performanceProperties are the properties the example processes. The free
+// Asn data file it uses has AsnName, and the Lite and Enterprise data files
+// have RegisteredName, so the example runs with any of them.
+var performanceProperties = []string{"RegisteredName", "AsnName"}
+
+// enterpriseProperties are shown after the measurement. Only the Enterprise
+// data file has values for Latitude, Longitude and Areas.
+var enterpriseProperties = []string{
+	"AsnName",
+	"Latitude",
+	"Longitude",
+	"Areas",
+}
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data files leave out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-performance-main.go&utm_term=enterprise-data-file"
+
+// hasValue reports whether the results have a value for one of the
+// properties the example processes.
+func hasValue(result ipi_interop.Values) bool {
+	for _, property := range performanceProperties {
+		if _, found := result.GetValueByProperty(property); found {
+			return true
+		}
+	}
+	return false
+}
 
 // reportFile defines the default path and filename for storing performance test results.
 const reportFile = "performance_report.log"
@@ -212,11 +251,9 @@ func processEvidenceBatch(engine *ipi_onpremise.Engine, wg *sync.WaitGroup, evid
 				log.Fatalln(err)
 			}
 
-			for _, property := range []string{"RegisteredName"} {
-				// don't use the property in the current step, only processing data
-				if _, found := result.GetValueByProperty(property); !found {
-					log.Printf("Not found values for the next property %s for address %s", property, ipAddress)
-				}
+			// don't use the values in the current step, only processing data
+			if !hasValue(result) {
+				log.Printf("No value found for address %s", ipAddress)
 			}
 		}
 	}
@@ -276,8 +313,8 @@ func runPerformance(engine *ipi_onpremise.Engine, params *common.ExampleParams, 
 			}
 
 			// Access property to ensure full processing
-			if _, found := result.GetValueByProperty("RegisteredName"); !found {
-				log.Printf("RegisteredName not found for IP %s", ip)
+			if !hasValue(result) {
+				log.Printf("No value found for IP %s", ip)
 			}
 		}
 
@@ -315,8 +352,8 @@ func runPerformance(engine *ipi_onpremise.Engine, params *common.ExampleParams, 
 					}
 
 					// Access property to ensure full processing
-					if _, found := result.GetValueByProperty("RegisteredName"); !found {
-						log.Printf("Thread %d: RegisteredName not found for IP %s", threadID, ip)
+					if !hasValue(result) {
+						log.Printf("Thread %d: no value found for IP %s", threadID, ip)
 					}
 				}
 			}(t)
@@ -359,7 +396,7 @@ func main() {
 
 	flag.Parse()
 
-	common.RunExample(
+	common.RunExampleWithDataFile(common.AsnDataFile,
 		func(params *common.ExampleParams) error {
 			// Determine number of threads - default to multi-threaded
 			numThreads := runtime.NumCPU()
@@ -385,14 +422,11 @@ func main() {
 				ipi_onpremise.WithAutoUpdate(false),
 				ipi_onpremise.WithTempDataCopy(false),
 				// Set only 1 parameter for getting data
-				ipi_onpremise.WithProperties([]string{"RegisteredName"}),
+				ipi_onpremise.WithProperties(performanceProperties),
 			)
 			if err != nil {
 				log.Fatalf("Failed to create engine: %v", err)
 			}
-			// Stopping the engine frees its data set. Deferring the call
-			// stops it however this function returns.
-			defer engine.Stop()
 
 			// Run example
 			report, err := runPerformance(engine, params, numThreads)
@@ -422,6 +456,12 @@ func main() {
 					log.Fatalf("Failed to write the performance results: %v", err)
 				}
 			}
+
+			// Stopping the engine frees its data set, so the data file is
+			// never loaded twice at once when the properties only the
+			// Enterprise data file has are shown.
+			engine.Stop()
+			common.ShowEnterprise(params.DataFile, contactUs, enterpriseProperties)
 
 			return nil
 		})

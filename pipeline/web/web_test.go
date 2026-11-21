@@ -165,8 +165,8 @@ func TestJSONEndpointAndETag(t *testing.T) {
 		t.Fatalf("content-type = %q", ct)
 	}
 
-	// Second request with matching If-None-Match and same evidence => 304.
-	req2, _ := http.NewRequest(http.MethodPost, srv.URL+DefaultJSONURL, nil)
+	// A GET with matching If-None-Match and the same evidence gets a 304.
+	req2, _ := http.NewRequest(http.MethodGet, srv.URL+DefaultJSONURL, nil)
 	req2.Header.Set("User-Agent", "agent-1")
 	req2.Header.Set("If-None-Match", etag)
 	resp2, err := srv.Client().Do(req2)

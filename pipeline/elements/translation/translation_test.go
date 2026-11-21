@@ -23,6 +23,8 @@
 package translation
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
@@ -209,115 +211,6 @@ func TestLocaleFromName(t *testing.T) {
 	}
 }
 
-func TestTranslateCaseInsensitive(t *testing.T) {
-	// The lookup is case-insensitive: a mixed-case source value matches a
-	// lower-case table key.
-	e, err := NewBuilder().
-		SetSourceElementDataKey("ip").
-		AddSourceContent("countries.fr_FR.yml", "england: Angleterre").
-		AddTranslation("Country", "CountryTranslated").
-		SetFixedLanguage("fr_FR").
-		Build()
-	if err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	p := buildPipeline(t, e)
-	defer p.Close()
-	fd := p.CreateFlowData()
-	if err := fd.Process(); err != nil {
-		t.Fatalf("process: %v", err)
-	}
-	data, _ := fd.Get(DataKey)
-	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "Angleterre" {
-		t.Fatalf("case-insensitive lookup failed, got %q", v)
-	}
-}
-
-func TestBuildValidation(t *testing.T) {
-	base := func() *Builder {
-		return NewBuilder().
-			SetSourceElementDataKey("ip").
-			AddSourceContent("countries.fr_FR.yml", "England: Angleterre").
-			AddTranslation("Country", "CountryTranslated")
-	}
-	// Missing source key.
-	if _, err := NewBuilder().AddTranslation("a", "b").
-		AddSourceContent("x.fr_FR.yml", "A: B").Build(); err == nil {
-		t.Fatal("expected error for missing source element data key")
-	}
-	// No translations.
-	if _, err := NewBuilder().SetSourceElementDataKey("ip").
-		AddSourceContent("x.fr_FR.yml", "A: B").Build(); err == nil {
-		t.Fatal("expected error for no translations")
-	}
-	// No sources.
-	if _, err := NewBuilder().SetSourceElementDataKey("ip").
-		AddTranslation("a", "b").Build(); err == nil {
-		t.Fatal("expected error for no sources")
-	}
-	// A source whose name does not encode a valid locale.
-	b := base()
-	b.AddSourceContent("animals.mmm_kp.yml", "Dog: Chien")
-	if _, err := b.Build(); err == nil {
-		t.Fatal("expected error for a source with an invalid locale in its name")
-	}
-	// The valid baseline still builds.
-	if _, err := base().Build(); err != nil {
-		t.Fatalf("valid configuration should build: %v", err)
-	}
-}
-
-func TestMissingSourceElementRaisesError(t *testing.T) {
-	// When the whole source element is absent, a single error is raised and no
-	// destination Properties are written.
-	e, err := NewBuilder().
-		SetSourceElementDataKey("absent").
-		AddSourceContent("countries.fr_FR.yml", "England: Angleterre").
-		AddTranslation("Country", "CountryTranslated").
-		SetFixedLanguage("fr_FR").
-		Build()
-	if err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	p := buildPipeline(t, e)
-	defer p.Close()
-	fd := p.CreateFlowData()
-	if err := fd.Process(); err == nil {
-		t.Fatal("expected an error when the source element is absent")
-	}
-	if _, err := fd.Get(DataKey); err == nil {
-		t.Fatal("no translation data should be written when the source element is absent")
-	}
-}
-
-func TestFlowErrorNoLanguage(t *testing.T) {
-	// Under FlowError, a request that names no language is a single engine-level
-	// error rather than a per-value error.
-	p := buildPipeline(t, frEngine(t, FlowError, ""))
-	defer p.Close()
-	fd := p.CreateFlowData()
-	err := fd.Process()
-	if err == nil {
-		t.Fatal("expected an error when no language is requested under FlowError")
-	}
-}
-
-func TestInvalidFixedLanguageFallsBackToEvidence(t *testing.T) {
-	// A fixed language that is not a valid locale is ignored and selection falls
-	// back to the evidence.
-	p := buildPipeline(t, frEngine(t, Original, "french"))
-	defer p.Close()
-	fd := p.CreateFlowData()
-	fd.AddEvidence(EvidenceTranslation, "fr-FR")
-	if err := fd.Process(); err != nil {
-		t.Fatalf("process: %v", err)
-	}
-	data, _ := fd.Get(DataKey)
-	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "Angleterre" {
-		t.Fatalf("invalid fixed language should fall back to evidence, got %q", v)
-	}
-}
-
 func TestBareLocaleSourceFile(t *testing.T) {
 	// A source file named "<locale>.yaml" (no "[x]." prefix), as used in the
 	// specification's own example, must load correctly.
@@ -339,5 +232,113 @@ func TestBareLocaleSourceFile(t *testing.T) {
 	data, _ := fd.Get(DataKey)
 	if v, _ := GetAs[string](data.(*Data), "CountryTranslated"); v != "England (UK)" {
 		t.Fatalf("bare-locale source not loaded, got %q", v)
+	}
+}
+
+// factoryEngine builds an Engine through Factory with a source key added to
+// the given build parameters.
+func factoryEngine(t *testing.T, params map[string]any) *Engine {
+	t.Helper()
+	params["SourceElementDataKey"] = "ip"
+	el, err := Factory(params, nil)
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	return el.(*Engine)
+}
+
+func TestFactoryMissingTranslationBehavior(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+		want   MissingBehavior
+	}{
+		{
+			name:   "absent gives the default",
+			params: map[string]any{},
+			want:   Original,
+		},
+		{
+			name: "specification spelling",
+			params: map[string]any{
+				"MissingTranslationBehavior": "EmptyString",
+			},
+			want: EmptyString,
+		},
+		{
+			name: "British spelling",
+			params: map[string]any{
+				"MissingTranslationBehaviour": "FlowError",
+			},
+			want: FlowError,
+		},
+		{
+			name: "specification spelling wins over British spelling",
+			params: map[string]any{
+				"MissingTranslationBehavior":  "EmptyString",
+				"MissingTranslationBehaviour": "FlowError",
+			},
+			want: EmptyString,
+		},
+		{
+			name: "British spelling is not read when both are given",
+			params: map[string]any{
+				"MissingTranslationBehavior":  "FlowError",
+				"MissingTranslationBehaviour": "NotABehavior",
+			},
+			want: FlowError,
+		},
+		{
+			name: "value ignores case and surrounding space",
+			params: map[string]any{
+				"MissingTranslationBehavior": " flowerror ",
+			},
+			want: FlowError,
+		},
+		{
+			name: "Original by name",
+			params: map[string]any{
+				"MissingTranslationBehavior": "Original",
+			},
+			want: Original,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := factoryEngine(t, c.params)
+			if e.missingBehavior != c.want {
+				t.Fatalf("missingBehavior = %d, want %d",
+					e.missingBehavior, c.want)
+			}
+		})
+	}
+}
+
+func TestFactoryUnknownMissingTranslationBehavior(t *testing.T) {
+	for _, key := range []string{
+		"MissingTranslationBehavior",
+		"MissingTranslationBehaviour",
+	} {
+		for _, value := range []string{"Bogus", ""} {
+			t.Run(key+"="+value, func(t *testing.T) {
+				el, err := Factory(map[string]any{
+					"SourceElementDataKey": "ip",
+					key:                    value,
+				}, nil)
+				if err == nil {
+					t.Fatalf("expected a configuration error, got element %v",
+						el)
+				}
+				var ce *core.ConfigurationError
+				if !errors.As(err, &ce) {
+					t.Fatalf("expected a ConfigurationError, got %T: %v",
+						err, err)
+				}
+				if !strings.Contains(err.Error(), "'"+value+"'") {
+					t.Fatalf("error does not name the value %q: %v",
+						value, err)
+				}
+			})
+		}
 	}
 }

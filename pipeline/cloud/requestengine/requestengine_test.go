@@ -119,10 +119,9 @@ func TestCloudRequestSuccess(t *testing.T) {
 	if cs.lastForm.Get("resource") != "test-key" {
 		t.Fatalf("resource key not sent, got %q", cs.lastForm.Get("resource"))
 	}
-	// All evidence is forwarded (prefix-stripped); the server ignores any it does
-	// not need — even keys not in evidencekeys.
-	if cs.lastForm.Get("extra") != "extra-value" {
-		t.Fatalf("evidence not in evidencekeys should still be sent, got %q", cs.lastForm.Get("extra"))
+	// Evidence the cloud service does not list is sent too.
+	if got := cs.lastForm.Get("extra"); got != "extra-value" {
+		t.Fatalf("evidence not in evidencekeys was sent as %q, want extra-value", got)
 	}
 }
 
@@ -134,7 +133,7 @@ func TestCloudRequestErrorsArray(t *testing.T) {
 	p, _ := core.NewPipelineBuilder().AddFlowElement(e).Build()
 	defer p.Close()
 	fd := p.CreateFlowData()
-	err := fd.Process()
+	err := processAndRead(fd)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -154,7 +153,7 @@ func TestCloudRequestEmptyBody(t *testing.T) {
 	e := buildEngine(t, srv)
 	p, _ := core.NewPipelineBuilder().AddFlowElement(e).Build()
 	defer p.Close()
-	err := p.CreateFlowData().Process()
+	err := processAndRead(p.CreateFlowData())
 	if err == nil || !strings.Contains(err.Error(), "No data in response") {
 		t.Fatalf("expected empty-body error, got %v", err)
 	}
@@ -167,7 +166,7 @@ func TestCloudRequestNon200(t *testing.T) {
 	e := buildEngine(t, srv)
 	p, _ := core.NewPipelineBuilder().AddFlowElement(e).Build()
 	defer p.Close()
-	err := p.CreateFlowData().Process()
+	err := processAndRead(p.CreateFlowData())
 	if err == nil || !strings.Contains(err.Error(), "status code '500'") {
 		t.Fatalf("expected status code error, got %v", err)
 	}
@@ -191,12 +190,12 @@ func TestRecoveryMode(t *testing.T) {
 	defer p.Close()
 
 	// Two failures trip recovery.
-	_ = p.CreateFlowData().Process()
-	_ = p.CreateFlowData().Process()
+	_ = processAndRead(p.CreateFlowData())
+	_ = processAndRead(p.CreateFlowData())
 	jsonReqs := cs.jsonRequests.Load()
 
 	// Third request should be bypassed with a TemporarilyUnavailableError.
-	err = p.CreateFlowData().Process()
+	err = processAndRead(p.CreateFlowData())
 	var tue *TemporarilyUnavailableError
 	if !errors.As(err, &tue) {
 		t.Fatalf("expected TemporarilyUnavailableError, got %v", err)
@@ -228,9 +227,9 @@ func TestRecoveryResetsAfterPeriod(t *testing.T) {
 	defer p.Close()
 
 	// One failure trips recovery (threshold 1).
-	_ = p.CreateFlowData().Process()
+	_ = processAndRead(p.CreateFlowData())
 	// Still within recovery: bypassed.
-	if err := p.CreateFlowData().Process(); err == nil {
+	if err := processAndRead(p.CreateFlowData()); err == nil {
 		t.Fatal("expected error during recovery")
 	} else {
 		var tue *TemporarilyUnavailableError
@@ -242,7 +241,7 @@ func TestRecoveryResetsAfterPeriod(t *testing.T) {
 	now = now.Add(61 * time.Second)
 	cs.jsonStatus = http.StatusOK
 	cs.jsonBody = `{"device":{"ismobile":true}}`
-	if err := p.CreateFlowData().Process(); err != nil {
+	if err := processAndRead(p.CreateFlowData()); err != nil {
 		t.Fatalf("request should be allowed after recovery, got %v", err)
 	}
 }
@@ -261,7 +260,7 @@ func TestRecoveryDisabled(t *testing.T) {
 	defer p.Close()
 	// Many failures, but recovery never engages, so each still attempts a request.
 	for i := 0; i < 5; i++ {
-		_ = p.CreateFlowData().Process()
+		_ = processAndRead(p.CreateFlowData())
 	}
 	if cs.jsonRequests.Load() != 5 {
 		t.Fatalf("expected 5 attempts with recovery disabled, got %d", cs.jsonRequests.Load())
@@ -291,7 +290,7 @@ func TestRecoveryExponentialBackoff(t *testing.T) {
 	defer p.Close()
 
 	// First failure trips a 10s recovery window.
-	_ = p.CreateFlowData().Process()
+	_ = processAndRead(p.CreateFlowData())
 	if _, in := e.inRecovery(); !in {
 		t.Fatal("expected to be recovering after the first failure")
 	}
@@ -301,7 +300,7 @@ func TestRecoveryExponentialBackoff(t *testing.T) {
 	}
 
 	// Second failure should back off to 20s (10s * 2^1), so still recovering at 15s.
-	_ = p.CreateFlowData().Process()
+	_ = processAndRead(p.CreateFlowData())
 	now = now.Add(15 * time.Second)
 	if _, in := e.inRecovery(); !in {
 		t.Fatal("expected the second recovery window to be 20s (still recovering at 15s)")
@@ -311,13 +310,13 @@ func TestRecoveryExponentialBackoff(t *testing.T) {
 	now = now.Add(6 * time.Second) // 21s since the second trip
 	cs.jsonStatus = http.StatusOK
 	cs.jsonBody = `{"device":{"ismobile":true}}`
-	if err := p.CreateFlowData().Process(); err != nil {
+	if err := processAndRead(p.CreateFlowData()); err != nil {
 		t.Fatalf("request should be allowed after recovery, got %v", err)
 	}
 
 	// A fresh failure after a success starts again at the base 10s, not 40s.
 	cs.jsonStatus = http.StatusInternalServerError
-	_ = p.CreateFlowData().Process()
+	_ = processAndRead(p.CreateFlowData())
 	now = now.Add(11 * time.Second)
 	if _, in := e.inRecovery(); in {
 		t.Fatal("backoff should have reset to 10s after the intervening success")

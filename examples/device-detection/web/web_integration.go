@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -20,6 +20,16 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example web/web_integration.go
+This example shows how to perform device detection on the User-Agent of a
+web request, in a web application at localhost:5151.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/web).
+
+@include{doc} example-require-datafile.txt
+*/
+
 package main
 
 /*
@@ -30,18 +40,28 @@ To run this example, perform the following command:
 ```
 go run web_integration.go
 ```
-This will start the application at "localhost:8000". From a browser of your choice,
-enter "localhost:8000" in the URL input. A similar return as the following is expected:
+This will start the application at "localhost:5151". From a browser of your choice,
+enter "localhost:5151" in the URL input. A similar return as the following is expected:
 ```
 Browser: Chrome
 
 Screen Pixels Width: Unknown
+
+HardwareVendor: needs the Enterprise data file
+
+HardwareName: needs the Enterprise data file
+
+DeviceType: needs the Enterprise data file
+
+Some of these properties need the Enterprise data file. Contact us for a copy.
 ```
+With the free Lite data file, the properties that only the Enterprise data file
+has are shown as needing it, with a link to ask for a copy.
 
 To be sure that the application works with different User-Agents, `curl` can be
 used:
 ```
-curl -A [User-Agent string] localhost:8000
+curl -A [User-Agent string] localhost:5151
 ```
 */
 
@@ -55,10 +75,19 @@ import (
 	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-// Properties required for a response page.
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-web-web_integration.go&utm_term=enterprise-data-file"
+
+// Properties required for a response page. Enterprise holds the properties
+// only the Enterprise data file has, and ContactUs is set when the data file
+// lacks any of them.
 type Page struct {
 	BrowserName       string
 	ScreenPixelsWidth string
+	Enterprise        []examples.Property
+	ContactUs         string
+	FindOutMore       []examples.Property
 }
 
 var manager *dd.ResourceManager
@@ -74,6 +103,10 @@ var templ = `<!DOCTYPE HTML>
   <body>
     <p id=browsername>Browser: <b>{{.BrowserName}}</b></p>
     <p id=screenpixelswidth>Screen Pixels Width: <b>{{.ScreenPixelsWidth}}</b></p>
+    {{range .Enterprise}}<p>{{.Name}}: <b>{{.Value}}</b></p>
+    {{end}}{{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>
+    {{end}}<h3>Find out more</h3>
+    <ul>{{range .FindOutMore}}<li>{{.Name}}: <a href="{{.Value}}">{{.Value}}</a></li>{{end}}</ul>
   </body>
 </html>`
 
@@ -118,7 +151,8 @@ func getValue(
 
 // Handler for web request
 func handler(w http.ResponseWriter, r *http.Request) {
-	// Create results
+	// Create results. A results instance is not safe to use from several
+	// goroutines at once, so each request makes its own.
 	results := dd.NewResultsHash(manager, 1, 0)
 
 	// Make sure results object is freed after function execution.
@@ -128,10 +162,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	match(results, r.UserAgent())
 	browserName := getValue(results, "BrowserName")
 	screenPixelWidth := getValue(results, "ScreenPixelsWidth")
+	enterprise, missing := examples.Enterprise(results)
 	p := &Page{
-		browserName,
-		screenPixelWidth,
+		BrowserName:       browserName,
+		ScreenPixelsWidth: screenPixelWidth,
+		Enterprise:        enterprise,
 	}
+	if missing {
+		p.ContactUs = contactUs
+	}
+	p.FindOutMore = examples.FindOutMoreLinks(
+		"examples-device-detection-web-web_integration.go")
 
 	// Construct the template
 	t := template.Must(template.New("dd").Parse(templ))
@@ -160,7 +201,7 @@ func main() {
 	defer manager.Free()
 
 	http.HandleFunc("/", handler)
-	const port = 8000
+	const port = 5151
 	fmt.Printf("Server listening on port: %d\n", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil))
 }

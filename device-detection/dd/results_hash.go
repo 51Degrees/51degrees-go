@@ -1,10 +1,10 @@
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
- * Copyright 2019 51 Degrees Mobile Experts Limited, 5 Charlotte Close,
- * Caversham, Reading, Berkshire, United Kingdom RG4 7BY.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
  *
- * This Original Work is licensed under the European Union Public Licence (EUPL)
- * v.1.2 and is subject to its terms as set out below.
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
  *
  * If a copy of the EUPL was not distributed with this file, You can obtain
  * one at https://opensource.org/licenses/EUPL-1.2.
@@ -28,10 +28,10 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
-	"reflect"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -55,10 +55,18 @@ var cMethodMap = map[C.HashMatchMethod]MatchMethod{
 	C.FIFTYONE_DEGREES_HASH_MATCH_METHOD_PREDICTIVE:  Predictive,
 }
 
-// ResultsHash wraps around a pointer to a value of C ResultsHash structure
+// ResultsHash wraps around a pointer to a value of C ResultsHash structure.
+//
+// A ResultsHash is not safe to use from several goroutines at once, because
+// reading a value writes into the native results, and ResultsHash takes no
+// lock. The caller is responsible for thread-safe access, so a caller that
+// shares one between goroutines coordinates that itself, for example with a
+// sync.Mutex of its own.
 type ResultsHash struct {
 	CPtr     *C.ResultsHash
 	CResults *interface{} // Pointer to a slice holding C results
+	// indexes are those of the manager the results were created from.
+	indexes propertyIndexes
 }
 
 /* Constructor and Destructor */
@@ -79,6 +87,10 @@ func resultsFinalizer(res *ResultsHash) {
 // turned the synonym into a two-argument function-like macro, which cgo cannot
 // expand. Passing 0 mirrors what that macro injects; uaCapacity is ignored but
 // kept to keep the public signature stable for callers.
+//
+// A ResultsHash is not safe to use from several goroutines at once, so one
+// belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func NewResultsHash(
 	manager *ResourceManager,
 	uaCapacity uint32,
@@ -98,7 +110,7 @@ func NewResultsHash(
 	// value.
 	var cResults interface{} = (*[math.MaxInt32 / int(C.sizeof_ResultHash)]C.ResultHash)(
 		unsafe.Pointer(r.items))[:r.capacity:r.capacity]
-	res := &ResultsHash{r, &cResults}
+	res := &ResultsHash{CPtr: r, CResults: &cResults, indexes: manager.indexes}
 	runtime.SetFinalizer(res, resultsFinalizer)
 	return res
 }
@@ -205,8 +217,10 @@ func (results *ResultsHash) IterationsByIndex(index uint32) (int32, error) {
 	return int32(cResults[index].iterations), nil
 }
 
-// Drift returns the maximum drift for a matched substring. A graph that cannot
-// be read counts as one that matched nothing.
+// Drift returns the drift of every result added together, each result's drift
+// being how far, in character positions, the substring's hashes were found
+// from where they were expected. A graph that cannot be read counts as one
+// that matched nothing.
 func (results *ResultsHash) Drift() int32 {
 	_ = results.evaluateAll()
 	drift := int32(0)
@@ -302,21 +316,27 @@ func (results *ResultsHash) MethodByIndex(index uint32) (MatchMethod, error) {
 	return cMethodMap[cResults[index].method], nil
 }
 
-// Trace returns the trace route in a readable format.
+// errTraceNotBuilt is the error TraceByIndex returns. The C library records
+// the route through a graph only in a debug build, which this package does
+// not compile.
+var errTraceNotBuilt = errors.New("the route through the graph is not " +
+	"recorded, as the C library records it only in a debug build, which " +
+	"this package does not compile")
+
+// Trace returns an empty string, as the route through the graph is not
+// recorded. TraceByIndex says why with an error.
 //
-// TODO: To be implemeted
+// Deprecated: The C library records the route only in a debug build, which
+// this package does not compile.
 func (results *ResultsHash) Trace() string {
-	// TODO: To be implemented
 	return ""
 }
 
-// TraceByIndex returns the trace reoute in a readable format of a result
-// pointed by a given index.
-//
-// TODO: To be implemeted
+// TraceByIndex returns an error saying the route through the graph is not
+// recorded, as the C library records it only in a debug build, which this
+// package does not compile.
 func (results *ResultsHash) TraceByIndex(index uint32) (string, error) {
-	// TODO: To be implemented
-	return "", nil
+	return "", errTraceNotBuilt
 }
 
 // UserAgents returns number of User-Agents that were used in the results.
@@ -399,14 +419,42 @@ func (results *ResultsHash) NoValueReasonMessage(
 	return reason, nil
 }
 
-// Values returns a list of values resulted from a detection for a given
-// property index.
-//
-// TODO: To be implemeted
+// Values returns each value the detection gives for the property at the
+// required property index, being its place among the names the manager was
+// created with, in the order ValuesStringByIndex joins them. An index
+// outside those names, or one the data set has no property for, gives no
+// values. This matches the C API fiftyoneDegreesResultsHashGetValues.
 func (results *ResultsHash) Values(
 	requiredPropertyIndex int) (values []string, err error) {
-	// TODO: To be implemented
-	return nil, nil
+	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
+	available := dataSet.b.b.available
+	if requiredPropertyIndex < 0 || requiredPropertyIndex >=
+		int(C.PropertiesGetRequiredPropertyCount(available)) ||
+		C.PropertiesGetAvailableIndex(
+			available, C.int(requiredPropertyIndex)) < 0 {
+		return nil, nil
+	}
+	exp := NewException()
+	C.fiftyoneDegreesResultsHashGetValues(
+		results.CPtr, C.int(requiredPropertyIndex), exp.CPtr)
+	if !exp.IsOkay() {
+		return nil, messageError(C.ExceptionGetMessage(exp.CPtr))
+	}
+	// The C library holds each value as a string in the results' list of
+	// value items, which stays until the results are next used.
+	count := int(results.CPtr.values.count)
+	if count == 0 {
+		return nil, nil
+	}
+	items := unsafe.Slice(results.CPtr.values.items, count)
+	values = make([]string, 0, count)
+	for _, item := range items {
+		value := (*C.fiftyoneDegreesString)(unsafe.Pointer(item.data.ptr))
+		if value != nil {
+			values = append(values, C.GoString(&value.value))
+		}
+	}
+	return values, nil
 }
 
 // valuesStringWithSize returns a string of all values resulted from a detection.
@@ -415,14 +463,12 @@ func (results *ResultsHash) Values(
 // multiple values, they are separated by the specified separator.
 func valuesStringWithSize(
 	results *ResultsHash,
-	propertyName string,
+	requiredPropertyIndex int,
 	defaultSize uint64,
 	separator string) (value string, err error) {
 	// Create slice based on a certain size. This size will be updated
 	// if the actual size is higher.
 	var buffer []C.char
-	cPropertyName := C.CString(propertyName)
-	defer C.free(unsafe.Pointer(cPropertyName))
 	cSeparator := C.CString(separator)
 	defer C.free(unsafe.Pointer(cSeparator))
 	exp := NewException()
@@ -430,9 +476,9 @@ func valuesStringWithSize(
 	actualSize := uint64(0)
 	for ok := true; ok; {
 		buffer = make([]C.char, defaultSize)
-		actualSize = uint64(C.ResultsHashGetValuesString(
+		actualSize = uint64(C.ResultsHashGetValuesStringByRequiredPropertyIndex(
 			results.CPtr,
-			cPropertyName,
+			C.int(requiredPropertyIndex),
 			&buffer[0],
 			C.size_t(defaultSize),
 			cSeparator,
@@ -451,15 +497,45 @@ func valuesStringWithSize(
 	return C.GoString(&buffer[0]), nil
 }
 
+// valuesStringDefaultSize is the buffer a value is first read into. A longer
+// value is read again into a buffer of its own length.
+const valuesStringDefaultSize = 50
+
 // ValuesString returns a string of all values resulted from a detection.
 // If there are multiple values, they are separated by the specified separator.
+// The name is looked up in the table of the names the manager was created
+// with, and the value is read by its index. A name not among them, or one the
+// data set has no property for, gives an empty string.
 func (results *ResultsHash) ValuesString(
 	propertyName string,
 	separator string) (value string, err error) {
-	// Use a reasonable default size here. If it is not big enough,
-	// an actual size will be used.
-	const defaultSize = 50
-	return valuesStringWithSize(results, propertyName, defaultSize, separator)
+	index := results.indexes.index(propertyName)
+	if index < 0 {
+		return "", nil
+	}
+	return results.ValuesStringByIndex(index, separator)
+}
+
+// ValuesStringByIndex returns a string of all values for the property at the
+// required property index, being its place among the names the manager was
+// created with, which a reload does not change. If there are multiple values,
+// they are separated by the specified separator. An index outside those
+// names, or one the data set has no property for, gives an empty string.
+func (results *ResultsHash) ValuesStringByIndex(
+	requiredPropertyIndex int,
+	separator string) (value string, err error) {
+	// The data set may have no property at the index, because a name it does
+	// not have keeps its place among the names given, and a reload can change
+	// which names it has. The C library's read by name checks for that and
+	// gives no value, where its read by index raises an index out of range
+	// error, so the check is made here.
+	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
+	if C.PropertiesGetAvailableIndex(
+		dataSet.b.b.available, C.int(requiredPropertyIndex)) < 0 {
+		return "", nil
+	}
+	return valuesStringWithSize(
+		results, requiredPropertyIndex, valuesStringDefaultSize, separator)
 }
 
 // AvailableProperties returns a list of available properties. The index
@@ -492,26 +568,13 @@ func (results *ResultsHash) PropertyName(
 }
 
 // RequiredPropertyIndexFromName returns the required index of a property
-// using its name
+// using its name, being its place among the names the manager was created
+// with, or with no names, among the names of the first data file loaded, or -1
+// for a name not among them. The names are looked up in a table built when
+// the manager was created, never in the data set.
 func (results *ResultsHash) RequiredPropertyIndexFromName(
 	propertyName string) int {
-	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
-	cAvailable := dataSet.b.b.available
-	cName := C.CString(propertyName)
-	defer C.free(unsafe.Pointer(cName))
-	i := C.PropertiesGetRequiredPropertyIndexFromName(
-		cAvailable, cName)
-	return int(i)
-}
-
-// PropertyType returns the type that a value of a property determined by
-// a given proprety index can have.
-//
-// TODO: To be implemeted
-func (results *ResultsHash) PropertyType(
-	requiredPropertyIndex int) reflect.Type {
-	// TODO: To be implemented
-	return nil
+	return results.indexes.index(propertyName)
 }
 
 /* Detections */

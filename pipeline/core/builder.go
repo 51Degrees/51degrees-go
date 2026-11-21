@@ -22,7 +22,10 @@
 
 package core
 
-import "log/slog"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // PipelineBuilder constructs immutable Pipeline instances. Flow Elements are
 // added in flow order. This is the Go analogue of the fluent Pipeline builder
@@ -52,8 +55,9 @@ func (b *PipelineBuilder) SetLogger(l *slog.Logger) *PipelineBuilder {
 	return b
 }
 
-// SetConcurrent configures whether Flow Data created by the Pipeline uses
-// thread-safe storage. This must be enabled when using parallel processing.
+// SetConcurrent configures whether Flow Data created by the Pipeline adds
+// Element Data with a compare and swap, so that several goroutines can add at
+// once. A Pipeline with a parallel group is concurrent whatever this says.
 func (b *PipelineBuilder) SetConcurrent(v bool) *PipelineBuilder {
 	b.concurrent = v
 	return b
@@ -77,9 +81,25 @@ func (b *PipelineBuilder) SetAutoCloseElements(v bool) *PipelineBuilder {
 	return b
 }
 
-// Build creates the immutable Pipeline. It aggregates Property metadata and the
-// Evidence key filter across all elements, then notifies each element that it
-// has been added to the Pipeline.
+// RunsLast is implemented by a Flow Element that must be the last Flow
+// Element of a Pipeline and outside any parallel group, as the usage sharing
+// element must. RunsLast names the element for the error Build gives when it
+// is anywhere else.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/pipeline-elements/usage-sharing-element.md?plain=1#L106-L112
+type RunsLast interface {
+	RunsLast() string
+}
+
+// misplaced is the error for an element that must run last but is not.
+func misplaced(r RunsLast, e FlowElement) error {
+	return NewConfigurationError(fmt.Sprintf("%s '%s' must be the last Flow "+
+		"Element and outside any parallel group", r.RunsLast(), e.DataKey()), nil)
+}
+
+// Build creates the immutable Pipeline. It aggregates the Evidence key filter
+// across all elements, then notifies each element that it has been added to
+// the Pipeline. The Pipeline gathers the elements' Property metadata when it
+// is first asked for, once every element knows the Pipeline it is in.
 func (b *PipelineBuilder) Build() (Pipeline, error) {
 	logger := b.logger
 	if logger == nil {
@@ -89,15 +109,16 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 	elements := make([]FlowElement, len(b.elements))
 	copy(elements, b.elements)
 
-	var properties []PropertyMetadata
 	filters := make([]EvidenceKeyFilter, 0, len(elements))
-	// Flow Data must use thread-safe storage if it was explicitly requested or if
-	// any element processes concurrently (e.g. ParallelElements). Deriving this
-	// from the elements removes the foot-gun of adding parallel work without
-	// remembering to enable concurrency.
+	// Flow Data adds Element Data with a compare and swap if that was asked
+	// for or if any element processes concurrently (e.g. ParallelElements).
+	// Deriving this from the elements means adding parallel work needs no
+	// other setting.
 	concurrent := b.concurrent
-	for _, e := range elements {
-		properties = append(properties, e.Properties()...)
+	for i, e := range elements {
+		if r, ok := e.(RunsLast); ok && i != len(elements)-1 {
+			return nil, misplaced(r, e)
+		}
 		filters = append(filters, e.EvidenceKeyFilter())
 		if e.IsConcurrent() {
 			concurrent = true
@@ -106,6 +127,9 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		// Data, so duplicate keys within a group would race a non-synchronized
 		// map. Reject that at build time rather than crash at run time.
 		if group, ok := e.(childLister); ok {
+			if r, c := runsLastWithin(group); r != nil {
+				return nil, misplaced(r, c)
+			}
 			seen := make(map[string]struct{})
 			for _, c := range group.Children() {
 				if _, dup := seen[c.DataKey()]; dup {
@@ -118,13 +142,18 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		}
 	}
 
+	writes := make([][]string, len(elements))
+	for i, e := range elements {
+		writes[i] = writtenKeys(e)
+	}
+
 	p := &pipeline{
 		elements:                  elements,
+		writes:                    writes,
 		logger:                    logger,
 		concurrent:                concurrent,
 		suppressProcessExceptions: b.suppressProcessExceptions,
 		closeElements:             !b.keepElementsOpen,
-		properties:                properties,
 		filter:                    NewAggregateFilter(filters...),
 	}
 
@@ -144,4 +173,32 @@ func (b *PipelineBuilder) Build() (Pipeline, error) {
 		}
 	}
 	return p, nil
+}
+
+// runsLastWithin gives the first member of group, at any depth, that must run
+// last, so that a group inside a group cannot hold one.
+func runsLastWithin(group childLister) (RunsLast, FlowElement) {
+	for _, c := range group.Children() {
+		if r, ok := c.(RunsLast); ok {
+			return r, c
+		}
+		if inner, ok := c.(childLister); ok {
+			if r, e := runsLastWithin(inner); r != nil {
+				return r, e
+			}
+		}
+	}
+	return nil, nil
+}
+
+// writtenKeys gives the keys, in lower case, of the Element Data e writes,
+// being its own and those of the members of a group.
+func writtenKeys(e FlowElement) []string {
+	keys := []string{lower(e.DataKey())}
+	if group, ok := e.(childLister); ok {
+		for _, c := range group.Children() {
+			keys = append(keys, writtenKeys(c)...)
+		}
+	}
+	return keys
 }
