@@ -8,4 +8,4 @@ on:
 jobs:
   rc:
     name: Only rc into main
-    uses: 51Degrees/common-ci/.github/workflows/only-rc-into-main.yml@main
+    uses: 51Degrees/common-ci/.github/workflows/only-rc-into-main.yml@19be8a0e3a6c6c3da2c4bbcde585d2df1df186c7

@@ -18,7 +18,7 @@ jobs:
   # first and has the runners before the pull request builds do.
   Publish:
     name: Nightly Publish
-    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@main
+    uses: 51Degrees/common-ci/.github/workflows/nightly-publish.yml@19be8a0e3a6c6c3da2c4bbcde585d2df1df186c7
     with:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}
@@ -32,7 +32,7 @@ jobs:
   # updates Go dependencies, in a pull request.
   PackageUpdate:
     name: Nightly Package Update
-    uses: 51Degrees/common-ci/.github/workflows/nightly-package-update.yml@main
+    uses: 51Degrees/common-ci/.github/workflows/nightly-package-update.yml@19be8a0e3a6c6c3da2c4bbcde585d2df1df186c7
     with:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}
@@ -46,7 +46,7 @@ jobs:
     if: ${{ !cancelled() }}
     needs: [Publish, PackageUpdate]
     name: Nightly Pull Requests
-    uses: 51Degrees/common-ci/.github/workflows/nightly-pull-requests.yml@main
+    uses: 51Degrees/common-ci/.github/workflows/nightly-pull-requests.yml@19be8a0e3a6c6c3da2c4bbcde585d2df1df186c7
     with:
       repo-name: ${{ github.event.repository.name }}
       org-name: ${{ github.event.repository.owner.login }}
