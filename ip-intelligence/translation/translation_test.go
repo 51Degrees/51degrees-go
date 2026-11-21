@@ -23,20 +23,27 @@
 package translation
 
 import (
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 )
 
 // --- test doubles and helpers -------------------------------------------------
 
-// fakeIPElement stands in for the IP Intelligence adapter: it writes the given
-// weighted country-code lists under IPIElementDataKey, mirroring the .NET mock
-// IP element (which exposes CountryCodesGeographical/Population).
+// fakeIPElement stands in for an IP Intelligence engine. It writes the given
+// weighted codes under IPIElementDataKey as Aspect Property Values, as
+// ipi_onpremise and ipi_cloud do, or no value at all when noValue is set.
 type fakeIPElement struct {
 	*core.BaseElement
 	geo, pop []core.WeightedValue[string]
+	noValue  bool
 }
 
 func newFakeIPElement(geo, pop []core.WeightedValue[string]) *fakeIPElement {
@@ -50,13 +57,22 @@ func (e *fakeIPElement) Process(fd core.FlowData) error {
 	d := fd.GetOrAdd(IPIElementDataKey, func(core.FlowData) core.ElementData {
 		return core.NewBaseElementData()
 	})
-	d.Set(PropertyCountryCodesGeographical, e.geo)
-	d.Set(PropertyCountryCodesPopulation, e.pop)
+	for name, codes := range map[string][]core.WeightedValue[string]{
+		PropertyCountryCodesGeographical: e.geo,
+		PropertyCountryCodesPopulation:   e.pop,
+	} {
+		if e.noValue {
+			d.Set(name, engines.NoValue[[]core.WeightedValue[string]](
+				"No IP address was supplied."))
+		} else {
+			d.Set(name, engines.NewAspectPropertyValue(codes))
+		}
+	}
 	return nil
 }
 
-// weightify assigns descending weights by input order (first code highest),
-// mirroring the .NET Weightify helper so the most probable country leads.
+// weightify gives descending weights by input order, so the first code is
+// the most probable.
 func weightify(codes ...string) []core.WeightedValue[string] {
 	n := len(codes)
 	if n == 0 {
@@ -81,7 +97,7 @@ func weightify(codes ...string) []core.WeightedValue[string] {
 	return out
 }
 
-// weighted builds an explicit weighted list from (code, rawWeight) pairs.
+// weighted builds a weighted list from code and raw weighting pairs.
 func weighted(pairs ...any) []core.WeightedValue[string] {
 	out := make([]core.WeightedValue[string], 0, len(pairs)/2)
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -95,7 +111,7 @@ func codeEngine(t *testing.T) *pltranslation.Engine {
 	t.Helper()
 	e, err := NewCountryCodeTranslationEngineBuilder(nil).Build()
 	if err != nil {
-		t.Fatalf("build country-code engine: %v", err)
+		t.Fatalf("build country code engine: %v", err)
 	}
 	return e
 }
@@ -109,31 +125,30 @@ func countriesEngine(t *testing.T) *CountriesTranslationEngine {
 	return e
 }
 
-// codePipeline builds a pipeline with just the IP element and Engine 1.
-func codePipeline(t *testing.T, geo, pop []core.WeightedValue[string]) core.Pipeline {
+func buildPipeline(t *testing.T, elements ...core.FlowElement) core.Pipeline {
 	t.Helper()
-	p, err := core.NewPipelineBuilder().
-		AddFlowElement(newFakeIPElement(geo, pop)).
-		AddFlowElement(codeEngine(t)).
-		Build()
+	b := core.NewPipelineBuilder()
+	for _, e := range elements {
+		b.AddFlowElement(e)
+	}
+	p, err := b.Build()
 	if err != nil {
 		t.Fatalf("build pipeline: %v", err)
 	}
 	return p
 }
 
-// fullPipeline builds the IP element, Engine 1 and Engine 2.
+// codePipeline holds the IP element and the country code engine.
+func codePipeline(t *testing.T, geo, pop []core.WeightedValue[string]) core.Pipeline {
+	t.Helper()
+	return buildPipeline(t, newFakeIPElement(geo, pop), codeEngine(t))
+}
+
+// fullPipeline holds the IP element and both country engines.
 func fullPipeline(t *testing.T, geo, pop []core.WeightedValue[string]) core.Pipeline {
 	t.Helper()
-	p, err := core.NewPipelineBuilder().
-		AddFlowElement(newFakeIPElement(geo, pop)).
-		AddFlowElement(codeEngine(t)).
-		AddFlowElement(countriesEngine(t)).
-		Build()
-	if err != nil {
-		t.Fatalf("build pipeline: %v", err)
-	}
-	return p
+	return buildPipeline(t,
+		newFakeIPElement(geo, pop), codeEngine(t), countriesEngine(t))
 }
 
 func processWith(t *testing.T, p core.Pipeline, evidence map[string]any) core.FlowData {
@@ -148,7 +163,7 @@ func processWith(t *testing.T, p core.Pipeline, evidence map[string]any) core.Fl
 	return fd
 }
 
-// allKnownMap returns the code -> English name map from the embedded data.
+// allKnownMap gives each known code's English name.
 func allKnownMap(t *testing.T) map[string]string {
 	t.Helper()
 	all, err := loadAllCountries()
@@ -162,23 +177,26 @@ func allKnownMap(t *testing.T) map[string]string {
 	return m
 }
 
-// localeTable returns the translation table for a locale from the embedded data.
+// localeTable gives the embedded country name table of a locale.
 func localeTable(t *testing.T, locale string) map[string]string {
 	t.Helper()
 	src, err := countriesSources()
 	if err != nil {
 		t.Fatalf("countries sources: %v", err)
 	}
-	return pltranslation.BuildLookups(src)[locale]
+	return buildLanguages(src)[locale]
 }
 
-// comparerFromCulture rebuilds the sort comparer for an asserted culture.
+// comparerFromCulture gives the order a list sorted in culture has.
 func comparerFromCulture(culture string) func(a, b string) int {
-	_, c := comparerFor(culture, culture != "")
-	return c
+	c := collate.New(language.Und, collate.IgnoreCase)
+	if culture != "" {
+		c = collate.New(language.MustParse(culture))
+	}
+	return c.CompareString
 }
 
-// assertSortedTail checks names[skip:] are non-descending by comparer.
+// assertSortedTail checks names[skip:] are in order.
 func assertSortedTail(t *testing.T, names []string, skip int, comparer func(a, b string) int) {
 	t.Helper()
 	for i := skip + 1; i < len(names); i++ {
@@ -188,8 +206,8 @@ func assertSortedTail(t *testing.T, names []string, skip int, comparer func(a, b
 	}
 }
 
-// assertAligned checks every (code, name) pair is consistent with the data: the
-// name at position i is the (possibly translated) name of the code at i.
+// assertAligned checks the name at each position is the translated name of
+// the code at that position.
 func assertAligned(t *testing.T, codes, names []string, table map[string]string) {
 	t.Helper()
 	if len(codes) != len(names) {
@@ -202,7 +220,7 @@ func assertAligned(t *testing.T, codes, names []string, table map[string]string)
 			t.Fatalf("unknown code %q at %d", codes[i], i)
 		}
 		want := english
-		if tr, ok := table[english]; ok && tr != "" {
+		if tr, ok := table[english]; ok {
 			want = tr
 		}
 		if names[i] != want {
@@ -212,10 +230,18 @@ func assertAligned(t *testing.T, codes, names []string, table map[string]string)
 	}
 }
 
-// --- 10a: ported .NET coverage -----------------------------------------------
+func values(w []core.WeightedValue[string]) []string {
+	out := make([]string, len(w))
+	for i, v := range w {
+		out[i] = v.Value()
+	}
+	return out
+}
 
-// CountryNamesFromCodes: Engine 1 alone turns GB,FR into United Kingdom, France
-// for both dimensions.
+// --- the country code engine --------------------------------------------------
+
+// The country code engine alone turns GB and FR into United Kingdom and France
+// for both weightings, in the Translation Element Data.
 func TestCountryNamesFromCodes(t *testing.T) {
 	p := codePipeline(t, weightify("GB", "FR"), weightify("GB", "FR"))
 	defer p.Close()
@@ -225,21 +251,29 @@ func TestCountryNamesFromCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("country names data: %v", err)
 	}
-	geo := data.CountryNamesGeographical()
-	pop := data.CountryNamesPopulation()
-	if len(geo) != 2 || len(pop) != 2 {
-		t.Fatalf("expected 2 names each, got geo=%d pop=%d", len(geo), len(pop))
+	for _, names := range [][]string{
+		data.CountryNamesGeographical(), data.CountryNamesPopulation()} {
+		if strings.Join(names, ",") != "United Kingdom,France" {
+			t.Fatalf("names = %q, want United Kingdom, France", names)
+		}
 	}
-	if geo[0].Value() != "United Kingdom" || geo[1].Value() != "France" {
-		t.Fatalf("geo names = %q, %q", geo[0].Value(), geo[1].Value())
-	}
-	if pop[0].Value() != "United Kingdom" || pop[1].Value() != "France" {
-		t.Fatalf("pop names = %q, %q", pop[0].Value(), pop[1].Value())
+	if _, err := fd.Get(pltranslation.DataKey); err != nil {
+		t.Fatalf("no Translation Element Data under %q: %v", pltranslation.DataKey, err)
 	}
 }
 
-// TranslatedCountry: Engines 1 and 2 with fr_FR turn GB,FR into Royaume-Uni,
-// France (weighted, translated).
+// The country code engine is the Pipeline's Translation Engine, reading the IP
+// Intelligence Element Data, so it shares its Element Data with any other.
+func TestCountryCodeEngineIsTheTranslationEngine(t *testing.T) {
+	e := codeEngine(t)
+	if e.DataKey() != pltranslation.DataKey {
+		t.Fatalf("ElementDataKey = %q, want %q", e.DataKey(), pltranslation.DataKey)
+	}
+}
+
+// --- the countries engine -----------------------------------------------------
+
+// With fr_FR, GB and FR become Royaume-Uni and France, weighted.
 func TestTranslatedCountry(t *testing.T) {
 	p := fullPipeline(t, weightify("GB", "FR"), weightify("GB", "FR"))
 	defer p.Close()
@@ -248,17 +282,13 @@ func TestTranslatedCountry(t *testing.T) {
 
 	data, _ := Countries(fd)
 	geo := data.CountryNamesGeographicalTranslated()
-	if len(geo) != 2 {
-		t.Fatalf("expected 2 translated names, got %d", len(geo))
-	}
-	if geo[0].Value() != "Royaume-Uni" || geo[1].Value() != "France" {
-		t.Fatalf("translated = %q, %q", geo[0].Value(), geo[1].Value())
+	if strings.Join(values(geo), ",") != "Royaume-Uni,France" {
+		t.Fatalf("translated = %q, want Royaume-Uni, France", values(geo))
 	}
 }
 
-// AllListsProducedCorrectlySorted: explicit weights (FR=30000, GB=35535), fr_FR:
-// GB then FR first (weight descending), >200 countries, GB/FR not repeated, tail
-// sorted by the locale comparer.
+// With explicit weights (FR 30000, GB 35535) and fr_FR, GB then FR lead, every
+// country is listed once, and the rest are sorted in French.
 func TestAllListsProducedCorrectlySorted(t *testing.T) {
 	geo := weighted("FR", 30000, "GB", 35535)
 	p := fullPipeline(t, geo, geo)
@@ -290,7 +320,7 @@ func TestAllListsProducedCorrectlySorted(t *testing.T) {
 	assertSortedTail(t, names, 2, comparerFromCulture(data.SortingCultureUsed()))
 }
 
-// AllListsProducedCorrectly: as above, with weights assigned by input order.
+// As above, with weights given by input order.
 func TestAllListsProducedCorrectly(t *testing.T) {
 	p := fullPipeline(t, weightify("GB", "FR"), weightify("GB", "FR"))
 	defer p.Close()
@@ -313,8 +343,8 @@ func TestAllListsProducedCorrectly(t *testing.T) {
 	assertSortedTail(t, names, 2, comparerFromCulture(data.SortingCultureUsed()))
 }
 
-// AllListsWithoutLanguage: no evidence -> English names, GB first, tail
-// alphabetical.
+// With no language asked for, the names stay in English, GB leads and the rest
+// are sorted.
 func TestAllListsWithoutLanguage(t *testing.T) {
 	p := fullPipeline(t, weightify("GB"), weightify("GB"))
 	defer p.Close()
@@ -336,15 +366,12 @@ func TestAllListsWithoutLanguage(t *testing.T) {
 	assertSortedTail(t, names, 1, comparerFromCulture(""))
 }
 
-// AccentedNamesSortLinguisticallyOnEnglishPath: on the English/fallback path the
-// tail must use culture-invariant linguistic collation (matching .NET's
-// InvariantCultureIgnoreCase), so an accented name like "Åland Islands" sorts
-// next to the other "A" names rather than after "Z" as a byte-ordinal sort would
-// place it.
+// In English an accented name such as "Åland Islands" sorts with the other A
+// names, not after "Zimbabwe" as a byte order would put it.
 func TestAccentedNamesSortLinguisticallyOnEnglishPath(t *testing.T) {
 	p := fullPipeline(t, weightify("GB"), weightify("GB"))
 	defer p.Close()
-	fd := processWith(t, p, nil) // no Accept-Language -> English
+	fd := processWith(t, p, nil)
 
 	data, _ := Countries(fd)
 	names := data.CountryNamesGeographicalAllTranslated()
@@ -357,19 +384,17 @@ func TestAccentedNamesSortLinguisticallyOnEnglishPath(t *testing.T) {
 		}
 		return -1
 	}
-	aland := indexOf("Åland Islands") // "Åland Islands"
+	aland := indexOf("Åland Islands")
 	zimbabwe := indexOf("Zimbabwe")
 	if aland < 0 || zimbabwe < 0 {
 		t.Fatalf("expected both names present (aland=%d zimbabwe=%d)", aland, zimbabwe)
 	}
 	if aland > zimbabwe {
-		t.Fatalf("accented name sorted after Zimbabwe (aland=%d zimbabwe=%d); "+
-			"expected linguistic collation to place it near the A's", aland, zimbabwe)
+		t.Fatalf("accented name sorted after Zimbabwe (aland=%d zimbabwe=%d)", aland, zimbabwe)
 	}
 }
 
-// AllListsWithNoIpData: no weighted codes, de_DE -> every country present, fully
-// alphabetical.
+// With no weighted codes and de_DE, every country is listed, all sorted.
 func TestAllListsWithNoIpData(t *testing.T) {
 	p := fullPipeline(t, weightify(), weightify())
 	defer p.Close()
@@ -387,7 +412,34 @@ func TestAllListsWithNoIpData(t *testing.T) {
 	assertAligned(t, codes, names, localeTable(t, "de_de"))
 }
 
-// PopulationAndGeographicalAreIndependent: geo DE, pop US,CN.
+// When the IP Intelligence Element Data has no value, as when the Evidence
+// holds no IP address, the weighted lists are empty and the complete lists
+// still hold every country.
+func TestAllListsWhenTheIPDataHasNoValue(t *testing.T) {
+	ip := newFakeIPElement(nil, nil)
+	ip.noValue = true
+	p := buildPipeline(t, ip, codeEngine(t), countriesEngine(t))
+	defer p.Close()
+	fd := processWith(t, p, map[string]any{
+		pltranslation.EvidenceAcceptLanguage: "fr_FR"})
+
+	data, _ := Countries(fd)
+	if n := len(data.CountryNamesGeographicalTranslated()); n != 0 {
+		t.Fatalf("%d weighted names, want none", n)
+	}
+	names := data.CountryNamesGeographicalAllTranslated()
+	codes := data.CountryCodesGeographicalAll()
+	if len(names) <= 200 {
+		t.Fatalf("expected all countries, got %d", len(names))
+	}
+	assertSortedTail(t, names, 0, comparerFromCulture(data.SortingCultureUsed()))
+	assertAligned(t, codes, names, localeTable(t, "fr_fr"))
+	if errs := fd.Errors(); len(errs) != 0 {
+		t.Fatalf("errors = %v, want none", errs)
+	}
+}
+
+// Geographical DE and population US, CN are listed apart.
 func TestPopulationAndGeographicalAreIndependent(t *testing.T) {
 	p := fullPipeline(t, weightify("DE"), weightify("US", "CN"))
 	defer p.Close()
@@ -405,7 +457,7 @@ func TestPopulationAndGeographicalAreIndependent(t *testing.T) {
 	}
 }
 
-// GermanTranslation: de_DE -> Deutschland weighted and first in the All list.
+// With de_DE, Deutschland is weighted and leads the complete list.
 func TestGermanTranslation(t *testing.T) {
 	p := fullPipeline(t, weightify("DE"), weightify("DE"))
 	defer p.Close()
@@ -424,7 +476,7 @@ func TestGermanTranslation(t *testing.T) {
 	}
 }
 
-// AcceptLanguageWithDash: fr-FR (dash) resolves the same as fr_FR.
+// fr-FR, with a hyphen, is read as fr_FR.
 func TestAcceptLanguageWithDash(t *testing.T) {
 	p := fullPipeline(t, weightify("GB"), weightify("GB"))
 	defer p.Close()
@@ -437,7 +489,7 @@ func TestAcceptLanguageWithDash(t *testing.T) {
 	}
 }
 
-// EnglishLanguageNoTranslation: en-US,en;q=0.9 -> names stay English.
+// With en-US,en;q=0.9 the names stay in English.
 func TestEnglishLanguageNoTranslation(t *testing.T) {
 	p := fullPipeline(t, weightify("FR", "DE"), weightify("FR", "DE"))
 	defer p.Close()
@@ -455,7 +507,7 @@ func TestEnglishLanguageNoTranslation(t *testing.T) {
 	}
 }
 
-// EnglishPreferredOverOtherLanguages: en-US,en;q=0.9,de-DE;q=0.5 -> English wins.
+// English asked for first wins over the languages after it.
 func TestEnglishPreferredOverOtherLanguages(t *testing.T) {
 	p := fullPipeline(t, weightify("DE"), weightify("DE"))
 	defer p.Close()
@@ -468,8 +520,7 @@ func TestEnglishPreferredOverOtherLanguages(t *testing.T) {
 	}
 }
 
-// PreferredLanguageMatchedBeforeLowerPriority: es,de-DE;q=0.8,fr;q=0.5 -> Spanish
-// Alemania (2-letter es resolves to es_ES).
+// With es,de-DE;q=0.8,fr;q=0.5 the names are in Spanish, as es reaches es_ES.
 func TestPreferredLanguageMatchedBeforeLowerPriority(t *testing.T) {
 	p := fullPipeline(t, weightify("DE"), weightify("DE"))
 	defer p.Close()
@@ -482,10 +533,8 @@ func TestPreferredLanguageMatchedBeforeLowerPriority(t *testing.T) {
 	}
 }
 
-// --- .NET sentinel coverage ---------------------------------------------------
-
-// AllListsExcludeUnknownWhenNoRealCodes: with only the "Unknown" sentinel, the
-// lists are exactly all known countries, alphabetical, no "Unknown".
+// With only the engine's "Unknown" code, the lists hold every known country,
+// sorted, and no "Unknown".
 func TestAllListsExcludeUnknownWhenNoRealCodes(t *testing.T) {
 	p := fullPipeline(t, weightify("Unknown"), weightify("Unknown"))
 	defer p.Close()
@@ -512,8 +561,7 @@ func TestAllListsExcludeUnknownWhenNoRealCodes(t *testing.T) {
 	assertAligned(t, codes, names, localeTable(t, "de_de"))
 }
 
-// AllListsExcludeUnknownWhenMixedWithRealCode: DE then Unknown -> DE leads,
-// Unknown dropped, tail alphabetical.
+// With DE then "Unknown", DE leads and "Unknown" is left out.
 func TestAllListsExcludeUnknownWhenMixedWithRealCode(t *testing.T) {
 	p := fullPipeline(t, weightify("DE", "Unknown"), weightify("DE", "Unknown"))
 	defer p.Close()
@@ -534,10 +582,7 @@ func TestAllListsExcludeUnknownWhenMixedWithRealCode(t *testing.T) {
 	assertSortedTail(t, names, 1, comparerFromCulture(data.SortingCultureUsed()))
 }
 
-// --- 10b: gap coverage --------------------------------------------------------
-
-// Gap 1: bare query.translation translates to French, and query.translation
-// overrides a different header.accept-language.
+// query.translation comes before header.accept-language.
 func TestQueryTranslationEvidenceAndPrecedence(t *testing.T) {
 	p := fullPipeline(t, weightify("GB"), weightify("GB"))
 	defer p.Close()
@@ -554,7 +599,7 @@ func TestQueryTranslationEvidenceAndPrecedence(t *testing.T) {
 	}
 }
 
-// Gap 2: weights are preserved through translation; only the name changes.
+// Each translated name keeps its code's raw weighting.
 func TestWeightsPreservedThroughTranslation(t *testing.T) {
 	geo := weighted("GB", 40000, "FR", 25000)
 	p := fullPipeline(t, geo, geo)
@@ -576,10 +621,9 @@ func TestWeightsPreservedThroughTranslation(t *testing.T) {
 	}
 }
 
-// Gap 3: equal-weight tie-break falls back to translated-name order.
+// Two codes with the same weighting are ordered by translated name. In French
+// Allemagne (DE) sorts before France (FR), so DE leads although FR is first.
 func TestEqualWeightTieBreak(t *testing.T) {
-	// FR and DE with identical weights; in French, Allemagne (DE) sorts before
-	// France (FR), so DE must lead despite FR being listed first.
 	geo := weighted("FR", 30000, "DE", 30000)
 	p := fullPipeline(t, geo, geo)
 	defer p.Close()
@@ -597,7 +641,8 @@ func TestEqualWeightTieBreak(t *testing.T) {
 	}
 }
 
-// Gap 4: an unknown locale falls back to English with every property populated.
+// A language with no source leaves the names in English, with every list
+// filled.
 func TestUnknownLocaleFallsBackToEnglish(t *testing.T) {
 	p := fullPipeline(t, weightify("FR"), weightify("FR"))
 	defer p.Close()
@@ -618,26 +663,20 @@ func TestUnknownLocaleFallsBackToEnglish(t *testing.T) {
 	}
 }
 
-// Gap 5: a known English name absent from a locale map is returned unchanged.
+// A name missing from a locale's source stays in English.
 func TestMissingSingleNameStaysEnglish(t *testing.T) {
-	// Custom fr_FR table that omits "France"; the shipped data is complete, so a
-	// fixture is used. Engine 1 is real (GB/FR -> English names).
-	langs := pltranslation.NewLanguages(pltranslation.BuildLookups(
-		map[string]string{"countries.fr_FR.yml": "United Kingdom: Royaume-Uni"}))
+	// The embedded data is complete, so a source that leaves out France is
+	// given here.
 	allCountries := []countryCodeName{
 		{code: "GB", englishName: "United Kingdom"},
 		{code: "FR", englishName: "France"},
 	}
-	engine2 := newCountriesTranslationEngine(nil, langs, allCountries)
-
-	p, err := core.NewPipelineBuilder().
-		AddFlowElement(newFakeIPElement(weightify("GB", "FR"), weightify("GB", "FR"))).
-		AddFlowElement(codeEngine(t)).
-		AddFlowElement(engine2).
-		Build()
-	if err != nil {
-		t.Fatalf("build: %v", err)
-	}
+	countries := newCountriesTranslationEngine(nil,
+		map[string]string{"countries.fr_FR.yml": "United Kingdom: Royaume-Uni"},
+		allCountries)
+	p := buildPipeline(t,
+		newFakeIPElement(weightify("GB", "FR"), weightify("GB", "FR")),
+		codeEngine(t), countries)
 	defer p.Close()
 	fd := processWith(t, p, map[string]any{
 		pltranslation.EvidenceAcceptLanguage: "fr_FR"})
@@ -652,8 +691,8 @@ func TestMissingSingleNameStaysEnglish(t *testing.T) {
 	}
 }
 
-// Gap 6: every position in the "All" lists is code/name aligned, including the
-// alphabetical tail.
+// Every position of the complete lists pairs a code with its name, the sorted
+// part included.
 func TestFullIndexAlignment(t *testing.T) {
 	p := fullPipeline(t, weightify("GB", "FR", "DE"), weightify("US", "CN"))
 	defer p.Close()
@@ -668,7 +707,7 @@ func TestFullIndexAlignment(t *testing.T) {
 		data.CountryNamesPopulationAllTranslated(), table)
 }
 
-// Gap 7: SortingCultureUsed reflects the resolved culture, empty for English.
+// SortingCultureUsed is the culture chosen, and empty for English.
 func TestSortingCultureUsed(t *testing.T) {
 	cases := []struct {
 		lang, want string
@@ -679,21 +718,20 @@ func TestSortingCultureUsed(t *testing.T) {
 		{"en-US,en;q=0.9", ""},
 		{"zz-ZZ", ""},
 	}
+	p := fullPipeline(t, weightify("GB"), weightify("GB"))
+	defer p.Close()
 	for _, tc := range cases {
-		p := fullPipeline(t, weightify("GB"), weightify("GB"))
 		fd := processWith(t, p, map[string]any{
 			pltranslation.EvidenceAcceptLanguage: tc.lang})
 		data, _ := Countries(fd)
 		if got := data.SortingCultureUsed(); got != tc.want {
-			p.Close()
-			t.Fatalf("lang %q: culture = %q, want %q", tc.lang, got, tc.want)
+			t.Errorf("lang %q: culture = %q, want %q", tc.lang, got, tc.want)
 		}
-		p.Close()
 	}
 }
 
-// Gap 8: the population "All" list carries translated names (not codes) and can
-// differ from the geographical list.
+// The population list holds translated names, which differ from the
+// geographical list's.
 func TestPopulationTranslatedNames(t *testing.T) {
 	p := fullPipeline(t, weightify("DE"), weightify("US", "CN"))
 	defer p.Close()
@@ -714,5 +752,160 @@ func TestPopulationTranslatedNames(t *testing.T) {
 	}
 	if popNames[0] == geoNames[0] {
 		t.Fatalf("population and geographical lists should differ at position 0")
+	}
+}
+
+// The countries engine's Element Data cannot be written once it has
+// processed.
+func TestCountriesDataIsReadOnlyOnceProcessed(t *testing.T) {
+	p := fullPipeline(t, weightify("GB"), weightify("GB"))
+	defer p.Close()
+	fd := processWith(t, p, nil)
+	data, err := fd.Get(CountryNamesTranslatedKey)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer func() {
+		r := recover()
+		err, ok := r.(error)
+		if !ok || !strings.Contains(err.Error(), "finished processing") {
+			t.Errorf("a write after processing panicked with %v, want an "+
+				"error saying processing has finished", r)
+		}
+	}()
+	data.Set("written-after-processing", true)
+}
+
+// Requests in different languages processed at once each get their own
+// language's names and order.
+func TestRequestsInSeveralLanguagesAtOnce(t *testing.T) {
+	p := fullPipeline(t, weightify("GB", "DE"), weightify("US"))
+	defer p.Close()
+	langs := []string{"fr_FR", "de_DE", "ja", "pl", "", "sv", "tr", "cs"}
+	want := map[string][]string{}
+	for _, lang := range langs {
+		fd := processWith(t, p, map[string]any{
+			pltranslation.EvidenceAcceptLanguage: lang})
+		data, _ := Countries(fd)
+		want[lang] = data.CountryNamesGeographicalAllTranslated()
+	}
+	var wg sync.WaitGroup
+	errs := make(chan string, 8*len(langs))
+	for i := 0; i < 8; i++ {
+		for _, lang := range langs {
+			wg.Add(1)
+			go func(lang string) {
+				defer wg.Done()
+				fd := p.CreateFlowData()
+				fd.AddEvidence(pltranslation.EvidenceAcceptLanguage, lang)
+				if err := fd.Process(); err != nil {
+					errs <- err.Error()
+					return
+				}
+				data, _ := Countries(fd)
+				got := data.CountryNamesGeographicalAllTranslated()
+				if strings.Join(got, "|") != strings.Join(want[lang], "|") {
+					errs <- fmt.Sprintf("%q: the list differs from one processed alone", lang)
+				}
+			}(lang)
+		}
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		t.Error(e)
+	}
+}
+
+// englishSource gives a source that maps each English name to itself, as the
+// countries engine's English names do.
+func englishSource(all []countryCodeName) string {
+	var b strings.Builder
+	for _, c := range all {
+		fmt.Fprintf(&b, "%q: %q\n", c.englishName, c.englishName)
+	}
+	return b.String()
+}
+
+// The countries engine chooses the language the Pipeline's Translation Engine
+// chooses from the same sources, for each way the Evidence can ask for one.
+// A Translation Engine given the countries engine's sources, the English
+// names included, translates the country code engine's names, and its names
+// must be the countries engine's.
+func TestLanguageIsTheTranslationEngines(t *testing.T) {
+	sources, err := countriesSources()
+	if err != nil {
+		t.Fatalf("countries sources: %v", err)
+	}
+	all, err := loadAllCountries()
+	if err != nil {
+		t.Fatalf("load all countries: %v", err)
+	}
+	const referenceNames = "ReferenceNames"
+	b := pltranslation.NewBuilder().
+		SetSourceElementDataKey(pltranslation.DataKey).
+		AddTranslation(PropertyCountryNamesGeographical, referenceNames).
+		AddSourceContent("countries.en_GB.yml", englishSource(all))
+	for name, content := range sources {
+		b.AddSourceContent(name, content)
+	}
+	reference, err := b.Build()
+	if err != nil {
+		t.Fatalf("build reference engine: %v", err)
+	}
+	codes := weightify("GB", "DE", "FR", "ES", "JP", "US", "CN", "IT", "PL", "HU")
+	p := buildPipeline(t,
+		newFakeIPElement(codes, codes),
+		codeEngine(t),
+		newCountriesTranslationEngine(nil, sources, all),
+		reference)
+	defer p.Close()
+
+	accept := pltranslation.EvidenceAcceptLanguage
+	query := pltranslation.EvidenceQueryAcceptLanguage
+	fixed := pltranslation.EvidenceTranslation
+	cases := []map[string]any{
+		nil,
+		{accept: "fr_FR"},
+		{accept: "fr-FR"},
+		{accept: "fr"},
+		{accept: "FR-fr"},
+		{accept: "es"},
+		{accept: "de-AT"},
+		{accept: "pt-BR"},
+		{accept: "ja"},
+		{accept: "en"},
+		{accept: "EN-gb"},
+		{accept: "en-US,en;q=0.9,de-DE;q=0.5"},
+		{accept: "zz-ZZ"},
+		{accept: "zz, de;q=0.5"},
+		{accept: "fr;q=0.1, de;q=0.9"},
+		{accept: "nl-BE;q=0.8, sv"},
+		{accept: "uk, ro;q=0.9"},
+		{accept: "*"},
+		{accept: ""},
+		{accept: "f"},
+		{fixed: "de_DE", accept: "fr"},
+		{fixed: "zz", accept: "fr"},
+		{query: "it", accept: "fr"},
+		{query: "en", accept: "hu"},
+	}
+	for _, evidence := range cases {
+		fd := processWith(t, p, evidence)
+		names, err := fd.Get(pltranslation.DataKey)
+		if err != nil {
+			t.Fatalf("%v: no Translation Element Data: %v", evidence, err)
+		}
+		raw, err := names.Get(referenceNames)
+		if err != nil {
+			t.Fatalf("%v: no reference names: %v", evidence, err)
+		}
+		want, _ := raw.([]string)
+		data, _ := Countries(fd)
+		got := values(data.CountryNamesGeographicalTranslated())
+		if strings.Join(got, "|") != strings.Join(want, "|") || len(got) != len(codes) {
+			t.Errorf("%v: names = %q, the Translation Engine gives %q",
+				evidence, got, want)
+		}
 	}
 }

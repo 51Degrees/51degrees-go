@@ -24,42 +24,75 @@ package translation
 
 import (
 	"log/slog"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
 
-// CountriesTranslationEngine (Engine 2) translates the weighted English country
-// names from Engine 1 into the browser language and builds complete ordered
-// "All" lists: the weighted countries first (most probable first), then every
-// remaining known country alphabetically by translated name. It reads the
-// weighted codes directly from the IP Intelligence element data to pair codes
-// with names.
+// englishLocale is the locale of the English names, which stay as they are.
+const englishLocale = "en_gb"
+
+// dimension names the Properties of one of the two weightings,
+// geographical or population.
+type dimension struct {
+	codes, names, translated, allNames, allCodes string
+}
+
+var dimensions = []dimension{
+	{
+		codes:      PropertyCountryCodesGeographical,
+		names:      PropertyCountryNamesGeographical,
+		translated: PropertyCountryNamesGeographicalTranslated,
+		allNames:   PropertyCountryNamesGeographicalAllTranslated,
+		allCodes:   PropertyCountryCodesGeographicalAll,
+	},
+	{
+		codes:      PropertyCountryCodesPopulation,
+		names:      PropertyCountryNamesPopulation,
+		translated: PropertyCountryNamesPopulationTranslated,
+		allNames:   PropertyCountryNamesPopulationAllTranslated,
+		allCodes:   PropertyCountryCodesPopulationAll,
+	},
+}
+
+// CountriesTranslationEngine translates the English country names that
+// CountryCodeTranslationEngine writes into the request's language, keeping
+// the weighting of each code, and builds the complete lists. Each complete
+// list holds the weighted countries first, most probable first, then every
+// other known country in the order of its translated name. It reads the
+// weighted codes from the IP Intelligence Element Data to pair each name
+// with its code.
 type CountriesTranslationEngine struct {
 	*core.BaseElement
-	languages    *pltranslation.Languages
+	languages    languages
+	cultures     map[string]string
+	collators    map[string]*sync.Pool
 	allCountries []countryCodeName
 	validCodes   map[string]struct{}
 }
 
-// CountriesTranslationEngineBuilder builds Engine 2. It loads the localized
-// country-name resources (countries.<locale>.yml) and the full list of known
-// countries (countrycodes.en_GB.yml), both embedded.
+// CountriesTranslationEngineBuilder builds a CountriesTranslationEngine
+// with the embedded country name sources and list of known countries.
 type CountriesTranslationEngineBuilder struct {
 	logger *slog.Logger
 }
 
-// NewCountriesTranslationEngineBuilder creates the Engine 2 builder.
+// NewCountriesTranslationEngineBuilder creates the builder.
 func NewCountriesTranslationEngineBuilder(
 	logger *slog.Logger) *CountriesTranslationEngineBuilder {
 	return &CountriesTranslationEngineBuilder{logger: logger}
 }
 
-// Build constructs the countries translation engine.
+// Build gives the engine. Add it to a Pipeline after the IP Intelligence
+// engine and CountryCodeTranslationEngine, and never in a parallel group
+// with either, because it reads what they write.
 func (b *CountriesTranslationEngineBuilder) Build() (*CountriesTranslationEngine, error) {
 	sources, err := countriesSources()
 	if err != nil {
@@ -69,26 +102,49 @@ func (b *CountriesTranslationEngineBuilder) Build() (*CountriesTranslationEngine
 	if err != nil {
 		return nil, err
 	}
-	languages := pltranslation.NewLanguages(pltranslation.BuildLookups(sources))
-	return newCountriesTranslationEngine(b.logger, languages, allCountries), nil
+	return newCountriesTranslationEngine(b.logger, sources, allCountries), nil
 }
 
-// newCountriesTranslationEngine constructs the engine from a localized-name
-// resolver and the full list of known countries. It is the single construction
-// path used by the builder and by tests that inject custom lookups.
+// newCountriesTranslationEngine builds the engine from country name sources,
+// each keyed by a file name that names its locale, and the known countries.
+// The English names are added as a source of their own, so that a request
+// for English chooses it as the Translation Engine would choose any other
+// language.
 func newCountriesTranslationEngine(
 	logger *slog.Logger,
-	languages *pltranslation.Languages,
+	sources map[string]string,
 	allCountries []countryCodeName,
 ) *CountriesTranslationEngine {
 	e := &CountriesTranslationEngine{
-		languages:    languages,
+		languages:    buildLanguages(sources),
+		cultures:     map[string]string{},
+		collators:    map[string]*sync.Pool{"": collatorPool(language.Und)},
 		allCountries: allCountries,
 		validCodes:   make(map[string]struct{}, len(allCountries)),
 	}
+	if _, ok := e.languages[englishLocale]; !ok {
+		english := make(map[string]string, len(allCountries))
+		for _, c := range allCountries {
+			english[c.englishName] = c.englishName
+		}
+		e.languages[englishLocale] = english
+	}
+	for locale := range e.languages {
+		if locale == englishLocale {
+			continue
+		}
+		tag, err := language.Parse(strings.ReplaceAll(locale, "_", "-"))
+		if err != nil {
+			continue
+		}
+		culture := tag.String()
+		e.cultures[locale] = culture
+		if e.collators[culture] == nil {
+			e.collators[culture] = collatorPool(tag)
+		}
+	}
 	for _, c := range allCountries {
-		// Key on the upper-case code so membership is case-insensitive, matching
-		// the .NET reference (OrdinalIgnoreCase).
+		// The codes are matched ignoring case.
 		e.validCodes[strings.ToUpper(c.code)] = struct{}{}
 	}
 	e.BaseElement = core.NewBaseElement(
@@ -100,97 +156,98 @@ func newCountriesTranslationEngine(
 		),
 		logger,
 	)
-	e.SetProperties([]core.PropertyMetadata{
-		translatedProp(e, PropertyCountryNamesGeographicalTranslated),
-		translatedProp(e, PropertyCountryNamesPopulationTranslated),
-		translatedProp(e, PropertyCountryNamesGeographicalAllTranslated),
-		translatedProp(e, PropertyCountryNamesPopulationAllTranslated),
-		translatedProp(e, PropertyCountryCodesGeographicalAll),
-		translatedProp(e, PropertyCountryCodesPopulationAll),
-		// SortingCultureUsed is deliberately NOT advertised as a Property, matching
-		// the .NET reference, which excludes it from the engine's Properties (it is
-		// diagnostic and not intended for customer use). The value is still written
-		// to the Element Data and readable via the accessor.
-	})
+	weighted := reflect.TypeOf([]core.WeightedValue[string](nil))
+	list := reflect.TypeOf([]string(nil))
+	props := make([]core.PropertyMetadata, 0, 3*len(dimensions))
+	for _, d := range dimensions {
+		props = append(props,
+			property(e, d.translated, weighted),
+			property(e, d.allNames, list),
+			property(e, d.allCodes, list))
+	}
+	// SortingCultureUsed is written to the Element Data but is not offered as
+	// a Property, because it exists to show how a list was sorted.
+	e.SetProperties(props)
 	return e
 }
 
-func translatedProp(e core.FlowElement, name string) core.PropertyMetadata {
+func property(e core.FlowElement, name string, t reflect.Type) core.PropertyMetadata {
 	return core.PropertyMetadata{
-		Name: name, Element: e, Category: "Translation", Available: true,
+		Name: name, Element: e, Category: "Translation", Type: t, Available: true,
 	}
 }
 
-// Process performs the weighted translation and builds the "All" lists.
+// collatorPool gives a pool of collators for tag, because a collator cannot
+// be used by two goroutines at once. language.Und gives collators that ignore
+// case, for the English names.
+func collatorPool(tag language.Tag) *sync.Pool {
+	if tag == language.Und {
+		return &sync.Pool{New: func() any {
+			return collate.New(language.Und, collate.IgnoreCase)
+		}}
+	}
+	return &sync.Pool{New: func() any { return collate.New(tag) }}
+}
+
+// Process translates the weighted names and builds the complete lists in
+// the request's language. When no language is asked for, or none that has a
+// source, the names stay in English.
 func (e *CountriesTranslationEngine) Process(fd core.FlowData) error {
 	out := fd.GetOrAdd(CountryNamesTranslatedKey,
 		func(core.FlowData) core.ElementData { return core.NewBaseElementData() })
 
-	// Resolve the locale, translator and comparer. Resolve applies the English
-	// short-circuit: for English or an unknown language it returns ok=false, so
-	// names stay English (identity translation) and an invariant comparer is
-	// used with an empty SortingCultureUsed.
-	locale, table, ok := e.languages.Resolve(
-		pltranslation.CandidatesFromEvidence(fd, ""))
-	translator := pltranslation.NewTranslator(table, pltranslation.Original)
-	culture, comparer := comparerFor(locale, ok)
+	locale, table := e.languages.resolve(candidatesFromEvidence(fd))
+	if locale == englishLocale {
+		table = nil
+	}
+	culture := e.cultures[locale]
+	pool := e.collators[culture]
+	collator := pool.Get().(*collate.Collator)
+	defer pool.Put(collator)
 	out.Set(PropertySortingCultureUsed, culture)
 
-	// Translate the weighted English names from Engine 1 (weights preserved).
-	geoTranslated := translator.TranslateWeighted(
-		readWeighted(fd, CountryNamesKey, PropertyCountryNamesGeographical))
-	popTranslated := translator.TranslateWeighted(
-		readWeighted(fd, CountryNamesKey, PropertyCountryNamesPopulation))
-	out.Set(PropertyCountryNamesGeographicalTranslated, geoTranslated)
-	out.Set(PropertyCountryNamesPopulationTranslated, popTranslated)
-
-	// Read the weighted codes directly from the IP Intelligence element data.
-	geoCodes := readWeighted(fd, IPIElementDataKey, PropertyCountryCodesGeographical)
-	popCodes := readWeighted(fd, IPIElementDataKey, PropertyCountryCodesPopulation)
-
-	geoAllCodes, geoAllNames := e.buildAllLists(geoTranslated, geoCodes, translator, comparer)
-	popAllCodes, popAllNames := e.buildAllLists(popTranslated, popCodes, translator, comparer)
-	out.Set(PropertyCountryCodesGeographicalAll, geoAllCodes)
-	out.Set(PropertyCountryNamesGeographicalAllTranslated, geoAllNames)
-	out.Set(PropertyCountryCodesPopulationAll, popAllCodes)
-	out.Set(PropertyCountryNamesPopulationAllTranslated, popAllNames)
+	for _, d := range dimensions {
+		codes := weightedCodes(fd, d.codes)
+		translated := translateWeighted(englishNames(fd, d.names), codes, table)
+		allCodes, allNames := e.buildAllLists(translated, codes, table, collator)
+		out.Set(d.translated, translated)
+		out.Set(d.allCodes, allCodes)
+		out.Set(d.allNames, allNames)
+	}
 	return nil
 }
 
-// allListEntry is a code paired with its (translated) name and, for the weighted
-// set, its raw weighting.
+// allListEntry is a code with its translated name and, for a weighted
+// country, its raw weighting.
 type allListEntry struct {
 	code   string
 	name   string
 	weight uint16
 }
 
-// buildAllLists produces the ordered, index-aligned code and name lists for one
-// dimension (geographical or population).
+// buildAllLists gives the complete list of codes and the names in the same
+// order for one weighting.
 func (e *CountriesTranslationEngine) buildAllLists(
-	translatedNames []core.WeightedValue[string],
-	weightedCodes []core.WeightedValue[string],
-	translator *pltranslation.Translator,
-	comparer func(a, b string) int,
-) (codes []string, names []string) {
-	// 1. The weighted countries, most probable first. Drop any code that is not
-	// a real country (e.g. the "Unknown" sentinel) so it never leads the list
-	// or is re-added by the remaining step below.
-	count := len(translatedNames)
-	if len(weightedCodes) < count {
-		count = len(weightedCodes)
-	}
+	translated []core.WeightedValue[string],
+	codes []core.WeightedValue[string],
+	table map[string]string,
+	collator *collate.Collator,
+) ([]string, []string) {
+	// The weighted countries, most probable first. A code that is no known
+	// country, such as the engine's "Unknown", is left out, so that it never
+	// leads the list.
+	count := min(len(translated), len(codes))
 	weighted := make([]allListEntry, 0, count)
 	seen := make(map[string]struct{}, count)
 	for i := 0; i < count; i++ {
-		code := weightedCodes[i].Value()
-		if _, real := e.validCodes[strings.ToUpper(code)]; !real {
+		code := codes[i].Value()
+		if _, known := e.validCodes[strings.ToUpper(code)]; !known {
 			continue
 		}
 		weighted = append(weighted, allListEntry{
 			code:   code,
-			name:   translatedNames[i].Value(),
-			weight: translatedNames[i].RawWeighting(),
+			name:   translated[i].Value(),
+			weight: translated[i].RawWeighting(),
 		})
 		seen[code] = struct{}{}
 	}
@@ -198,49 +255,85 @@ func (e *CountriesTranslationEngine) buildAllLists(
 		if weighted[i].weight != weighted[j].weight {
 			return weighted[i].weight > weighted[j].weight
 		}
-		if c := comparer(weighted[i].name, weighted[j].name); c != 0 {
+		if c := collator.CompareString(weighted[i].name, weighted[j].name); c != 0 {
 			return c < 0
 		}
 		return weighted[i].code < weighted[j].code
 	})
 
-	// 2. Every remaining known country, alphabetical by translated name.
+	// Every other known country, in the order of its translated name.
 	remaining := make([]allListEntry, 0, len(e.allCountries))
-	for _, cc := range e.allCountries {
-		if _, dup := seen[cc.code]; dup {
+	for _, c := range e.allCountries {
+		if _, dup := seen[c.code]; dup {
 			continue
 		}
 		remaining = append(remaining, allListEntry{
-			code: cc.code,
-			name: translator.TranslateString(cc.englishName),
+			code: c.code,
+			name: translate(c.englishName, table),
 		})
 	}
 	sort.SliceStable(remaining, func(i, j int) bool {
-		if c := comparer(remaining[i].name, remaining[j].name); c != 0 {
+		if c := collator.CompareString(remaining[i].name, remaining[j].name); c != 0 {
 			return c < 0
 		}
 		return remaining[i].code < remaining[j].code
 	})
 
-	// 3. Concatenate and split into the two index-aligned lists.
 	total := len(weighted) + len(remaining)
-	codes = make([]string, 0, total)
-	names = make([]string, 0, total)
-	for _, entry := range weighted {
-		codes = append(codes, entry.code)
-		names = append(names, entry.name)
+	allCodes := make([]string, 0, total)
+	allNames := make([]string, 0, total)
+	for _, entry := range append(weighted, remaining...) {
+		allCodes = append(allCodes, entry.code)
+		allNames = append(allNames, entry.name)
 	}
-	for _, entry := range remaining {
-		codes = append(codes, entry.code)
-		names = append(names, entry.name)
-	}
-	return codes, names
+	return allCodes, allNames
 }
 
-// readWeighted reads a weighted string list Property from an element's data,
-// returning nil when it is absent or of an unexpected type.
-func readWeighted(fd core.FlowData, dataKey, property string) []core.WeightedValue[string] {
-	d, err := fd.Get(dataKey)
+// translate gives the table's name for an English name, or the English name
+// when the table has none.
+func translate(name string, table map[string]string) string {
+	if t, ok := table[name]; ok {
+		return t
+	}
+	return name
+}
+
+// translateWeighted gives each English name in the table's language with the
+// raw weighting of the code at the same position.
+func translateWeighted(
+	names []string,
+	codes []core.WeightedValue[string],
+	table map[string]string,
+) []core.WeightedValue[string] {
+	count := min(len(names), len(codes))
+	out := make([]core.WeightedValue[string], count)
+	for i := 0; i < count; i++ {
+		out[i] = core.NewWeightedValue(
+			translate(names[i], table), codes[i].RawWeighting())
+	}
+	return out
+}
+
+// englishNames gives a list of names CountryCodeTranslationEngine wrote into
+// the Translation Element Data, or nil when there is none.
+func englishNames(fd core.FlowData, property string) []string {
+	v := value(fd, pltranslation.DataKey, property)
+	names, _ := v.([]string)
+	return names
+}
+
+// weightedCodes gives a weighted list of codes from the IP Intelligence
+// Element Data, or nil when there is none.
+func weightedCodes(fd core.FlowData, property string) []core.WeightedValue[string] {
+	v := value(fd, IPIElementDataKey, property)
+	codes, _ := v.([]core.WeightedValue[string])
+	return codes
+}
+
+// value gives a Property of the Element Data under key, taken out of an
+// Aspect Property Value, or nil when there is no value.
+func value(fd core.FlowData, key, property string) any {
+	d, err := fd.Get(key)
 	if err != nil {
 		return nil
 	}
@@ -248,28 +341,11 @@ func readWeighted(fd core.FlowData, dataKey, property string) []core.WeightedVal
 	if err != nil {
 		return nil
 	}
-	w, _ := v.([]core.WeightedValue[string])
-	return w
-}
-
-// comparerFor returns the culture tag and comparer used to sort translated
-// names. When a locale resolved it uses a locale-aware collator and reports the
-// canonical culture (e.g. "fr-FR"); otherwise it uses a culture-invariant,
-// case-insensitive linguistic collation and reports an empty culture. The
-// invariant path uses a Unicode root collator (matching .NET's
-// InvariantCultureIgnoreCase) so accented names such as "Åland Islands" sort
-// next to "A" rather than after "Z".
-func comparerFor(locale string, ok bool) (string, func(a, b string) int) {
-	if ok {
-		if tag, err := language.Parse(strings.ReplaceAll(locale, "_", "-")); err == nil {
-			collator := collate.New(tag)
-			return tag.String(), func(a, b string) int {
-				return collator.CompareString(a, b)
-			}
+	if a, ok := v.(engines.PropertyValueAccessor); ok {
+		if !a.HasValue() {
+			return nil
 		}
+		return a.AsInterface()
 	}
-	collator := collate.New(language.Und, collate.IgnoreCase)
-	return "", func(a, b string) int {
-		return collator.CompareString(a, b)
-	}
+	return v
 }

@@ -24,35 +24,36 @@ package translation
 
 import (
 	"embed"
-
-	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
 )
 
-// translationFS embeds the translation YAML, a copy of the Translations folder
-// of ip-intelligence-data that ci/update-translations.ps1 makes from the cxx
-// submodule. A Go module holds only its own files, so the data is part of the
-// package rather than read from a submodule.
-// countrycodes.en_GB.yml maps ISO code -> English name; the OSM/
-// countries.<locale>.yml files map English name -> localized name.
+// translationFS embeds the translation data, a copy of
+// cxx/data/ip-intelligence/Translations that ci/update-translations.ps1
+// makes. A Go module holds only its own files, so the data is part of the
+// package. countrycodes.en_GB.yml maps an ISO code to an English name, and
+// each OSM/countries.<locale>.yml maps an English name to the name in that
+// locale.
 //
 //go:embed Translations
 var translationFS embed.FS
 
-// translationRoot is the embed path prefix for the Translations folder.
+// translationRoot is the embedded path of the Translations folder.
 const translationRoot = "Translations"
 
-// countryCodeSources returns the country-code translation source, keyed by file
-// name so the locale can be derived from it.
+// countryCodesFile is the name of the country code source.
+const countryCodesFile = "countrycodes.en_GB.yml"
+
+// countryCodeSources gives the country code source, keyed by its file name,
+// which names its locale.
 func countryCodeSources() (map[string]string, error) {
-	b, err := translationFS.ReadFile(translationRoot + "/countrycodes.en_GB.yml")
+	b, err := translationFS.ReadFile(translationRoot + "/" + countryCodesFile)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"countrycodes.en_GB.yml": string(b)}, nil
+	return map[string]string{countryCodesFile: string(b)}, nil
 }
 
-// countriesSources returns the localized country-name translation sources, keyed
-// by file name so the locale can be derived from each.
+// countriesSources gives the country name sources, keyed by file name, each
+// of which names its locale.
 func countriesSources() (map[string]string, error) {
 	entries, err := translationFS.ReadDir(translationRoot + "/OSM")
 	if err != nil {
@@ -78,15 +79,15 @@ type countryCodeName struct {
 	englishName string
 }
 
-// loadAllCountries returns every known (code, English name) pair from
-// countrycodes.en_GB.yml. The order is unspecified because the "All" list
-// ordering re-sorts the tail, so it does not affect output.
+// loadAllCountries gives every code and English name in the country code
+// source. The order does not matter, because the complete lists sort the
+// countries they add.
 func loadAllCountries() ([]countryCodeName, error) {
 	sources, err := countryCodeSources()
 	if err != nil {
 		return nil, err
 	}
-	table := pltranslation.BuildLookups(sources)["en_gb"]
+	table := parseFlatYAML(sources[countryCodesFile])
 	out := make([]countryCodeName, 0, len(table))
 	for code, name := range table {
 		out = append(out, countryCodeName{code: code, englishName: name})

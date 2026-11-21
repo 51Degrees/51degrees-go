@@ -22,39 +22,42 @@
 
 package translation
 
-import "github.com/51Degrees/51degrees-go/pipeline/v4/core"
+import (
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
+)
 
-// CountryNamesData provides typed access to the CountryCodeTranslationEngine
-// (Engine 1) output: weighted English country names. It mirrors the .NET
-// ICountryCodeTranslationData interface.
+// CountryNamesData gives typed access to the English country names
+// CountryCodeTranslationEngine writes into the Translation Element Data.
 type CountryNamesData struct{ core.ElementData }
 
-// CountryNames returns the Engine 1 output from the Flow Data.
+// CountryNames gives the Translation Element Data from the Flow Data.
 func CountryNames(fd core.FlowData) (CountryNamesData, error) {
-	d, err := fd.Get(CountryNamesKey)
+	d, err := fd.Get(pltranslation.DataKey)
 	if err != nil {
 		return CountryNamesData{}, err
 	}
 	return CountryNamesData{ElementData: d}, nil
 }
 
-// CountryNamesGeographical returns the weighted English names for the
-// geographical dimension.
-func (d CountryNamesData) CountryNamesGeographical() []core.WeightedValue[string] {
-	return weightedValue(d, PropertyCountryNamesGeographical)
+// CountryNamesGeographical gives the English names of the geographical
+// weighting, in the order of the codes.
+func (d CountryNamesData) CountryNamesGeographical() []string {
+	return stringList(d, PropertyCountryNamesGeographical)
 }
 
-// CountryNamesPopulation returns the weighted English names for the population
-// dimension.
-func (d CountryNamesData) CountryNamesPopulation() []core.WeightedValue[string] {
-	return weightedValue(d, PropertyCountryNamesPopulation)
+// CountryNamesPopulation gives the English names of the population
+// weighting, in the order of the codes.
+func (d CountryNamesData) CountryNamesPopulation() []string {
+	return stringList(d, PropertyCountryNamesPopulation)
 }
 
-// CountriesData provides typed access to the CountriesTranslationEngine
-// (Engine 2) output. It mirrors the .NET ICountriesTranslationData interface.
+// CountriesData gives typed access to CountriesTranslationEngine's Element
+// Data.
 type CountriesData struct{ core.ElementData }
 
-// Countries returns the Engine 2 output from the Flow Data.
+// Countries gives CountriesTranslationEngine's Element Data from the Flow
+// Data.
 func Countries(fd core.FlowData) (CountriesData, error) {
 	d, err := fd.Get(CountryNamesTranslatedKey)
 	if err != nil {

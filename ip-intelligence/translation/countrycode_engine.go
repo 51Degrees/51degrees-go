@@ -28,24 +28,25 @@ import (
 	pltranslation "github.com/51Degrees/51degrees-go/pipeline/v4/elements/translation"
 )
 
-// CountryCodeTranslationEngineBuilder builds Engine 1, which translates the
-// weighted ISO country-code lists from IP Intelligence into weighted English
-// country names. It needs no configuration: the country-code resource
-// (countrycodes.en_GB.yml) is embedded and the fixed language is English.
+// CountryCodeTranslationEngineBuilder builds the Translation Engine that
+// turns the weighted country codes of the IP Intelligence Element Data into
+// English country names. It needs no configuration, because the country code
+// source is embedded and the language is fixed as English.
 type CountryCodeTranslationEngineBuilder struct {
 	logger *slog.Logger
 }
 
-// NewCountryCodeTranslationEngineBuilder creates the Engine 1 builder.
+// NewCountryCodeTranslationEngineBuilder creates the builder.
 func NewCountryCodeTranslationEngineBuilder(
 	logger *slog.Logger) *CountryCodeTranslationEngineBuilder {
 	return &CountryCodeTranslationEngineBuilder{logger: logger}
 }
 
-// Build constructs the country-code translation engine. It is a standard
-// pipeline translation engine that reads the weighted codes from the IP
-// Intelligence element data and writes weighted English names under
-// CountryNamesKey.
+// Build gives the Pipeline's Translation Engine reading the codes under
+// IPIElementDataKey. It writes PropertyCountryNamesGeographical and
+// PropertyCountryNamesPopulation into the Translation Element Data, under
+// pltranslation.DataKey, each a list of names in the order of the codes. A
+// code with no name, such as the engine's "Unknown", stays as it is.
 func (b *CountryCodeTranslationEngineBuilder) Build() (*pltranslation.Engine, error) {
 	sources, err := countryCodeSources()
 	if err != nil {
@@ -54,7 +55,6 @@ func (b *CountryCodeTranslationEngineBuilder) Build() (*pltranslation.Engine, er
 	builder := pltranslation.NewBuilder().
 		SetLogger(b.logger).
 		SetSourceElementDataKey(IPIElementDataKey).
-		SetElementDataKey(CountryNamesKey).
 		AddTranslation(PropertyCountryCodesGeographical, PropertyCountryNamesGeographical).
 		AddTranslation(PropertyCountryCodesPopulation, PropertyCountryNamesPopulation).
 		SetFixedLanguage("en_GB").

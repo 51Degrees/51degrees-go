@@ -20,75 +20,70 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
-// Package translation adds the on-premise country translation flow elements to
-// the IP Intelligence pipeline. The IP Intelligence engine emits weighted lists
-// of ISO country codes; these elements turn those codes into localized country
-// names and produce complete ordered lists so a demo can render a dropdown with
-// the most probable country first.
+// Package translation adds the country translation Flow Elements to an IP
+// Intelligence Pipeline. The IP Intelligence engines give weighted lists of
+// ISO country codes, and these elements turn the codes into country names in
+// the request's language, with complete ordered lists so that a page can show
+// every country with the most probable first.
 //
-// The pipeline is built in three stages:
+// A Pipeline holds three elements, in this order:
 //
-//	IP Intelligence on-premise engine (via IpiEngineElement)
-//	  -> CountryCodeTranslationEngine  (code -> English name)
-//	  -> CountriesTranslationEngine    (English name -> browser language + All lists)
+//	IP Intelligence engine           (ipi_onpremise or ipi_cloud, key "ip")
+//	  -> CountryCodeTranslationEngine (code -> English name)
+//	  -> CountriesTranslationEngine   (English name -> request language, and
+//	                                   the complete lists)
 //
-// This mirrors the .NET FiftyOne.IpIntelligence.Translation package and reuses
-// the generic translation behaviour in the Pipeline module's elements/translation.
+// CountryCodeTranslationEngine is the Pipeline's Translation Engine with the
+// country code data, so it writes its names into the shared Translation
+// Element Data. CountriesTranslationEngine has Element Data of its own.
+//
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/pipeline-elements/translation-engine.md
 package translation
 
-// Element-data keys used by the country translation flow elements.
+// Element Data keys the country translation elements read and write.
 const (
-	// IPIElementDataKey is the key under which IpiEngineElement stores the
-	// weighted country-code lists read from the IP Intelligence engine. It is
-	// also the source key for the country-code translation engine.
-	IPIElementDataKey = "ip-intelligence"
+	// IPIElementDataKey is the Element Data key of the IP Intelligence
+	// engines, ipi_onpremise.DataKey and ipi_cloud.DataKey. The country
+	// translation elements read the weighted country codes from it.
+	IPIElementDataKey = "ip"
 
-	// CountryNamesKey is the key used by CountryCodeTranslationEngine
-	// (Engine 1); it holds the weighted English country names.
-	CountryNamesKey = "countrynames"
-
-	// CountryNamesTranslatedKey is the key used by CountriesTranslationEngine
-	// (Engine 2); it holds the translated weighted names and the ordered "All"
-	// lists that the dropdown binds to.
+	// CountryNamesTranslatedKey is the key of CountriesTranslationEngine's
+	// Element Data, which holds the translated weighted names and the
+	// complete lists.
 	CountryNamesTranslatedKey = "countrynamestranslated"
 )
 
-// Evidence keys carrying the client IP address for the IP Intelligence engine,
-// in order of precedence.
-const (
-	EvidenceQueryClientIP  = "query.client-ip"
-	EvidenceServerClientIP = "server.client-ip"
-)
-
-// Source Property names read from the IP Intelligence element data.
+// Properties read from the IP Intelligence Element Data.
 const (
 	PropertyCountryCodesGeographical = "CountryCodesGeographical"
 	PropertyCountryCodesPopulation   = "CountryCodesPopulation"
 )
 
-// Property names produced by CountryCodeTranslationEngine (Engine 1): weighted
-// English country names.
+// Properties CountryCodeTranslationEngine writes into the Translation Element
+// Data, each a list of English country names in the order of the codes.
 const (
 	PropertyCountryNamesGeographical = "CountryNamesGeographical"
 	PropertyCountryNamesPopulation   = "CountryNamesPopulation"
 )
 
-// Property names produced by CountriesTranslationEngine (Engine 2).
+// Properties CountriesTranslationEngine writes into its own Element Data.
 const (
-	// Weighted, localized country names.
+	// Weighted country names in the request's language, each with the
+	// weighting of its code.
 	PropertyCountryNamesGeographicalTranslated = "CountryNamesGeographicalTranslated"
 	PropertyCountryNamesPopulationTranslated   = "CountryNamesPopulationTranslated"
 
-	// Complete ordered lists of localized names (the dropdown labels).
+	// Every known country's name in the request's language, the weighted
+	// countries first.
 	PropertyCountryNamesGeographicalAllTranslated = "CountryNamesGeographicalAllTranslated"
 	PropertyCountryNamesPopulationAllTranslated   = "CountryNamesPopulationAllTranslated"
 
-	// Complete ordered lists of codes, index-aligned with the names above (the
-	// dropdown values).
+	// The codes of the lists above, in the same order.
 	PropertyCountryCodesGeographicalAll = "CountryCodesGeographicalAll"
 	PropertyCountryCodesPopulationAll   = "CountryCodesPopulationAll"
 
-	// SortingCultureUsed reports the culture used to sort the "All" lists (for
-	// tests); empty when names stay English or an invariant sort is used.
+	// SortingCultureUsed is the culture the complete lists are sorted in,
+	// such as "fr-FR". It is empty when the names stay in English, which
+	// are sorted ignoring case in no particular culture.
 	PropertySortingCultureUsed = "SortingCultureUsed"
 )
