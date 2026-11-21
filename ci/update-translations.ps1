@@ -4,13 +4,13 @@ Copies the translation data the IP Intelligence translation package embeds from
 the cxx submodule.
 
 .DESCRIPTION
-ip-intelligence/translation embeds the Translations folder of
-ip-intelligence-data. A Go module holds only its own files, so the package
-carries a copy of it, made from cxx/ip-intelligence-data, the data the C
-sources are tested with.
+ip-intelligence/translation embeds the ip-intelligence/Translations folder of
+the data repository, which cxx holds as its data submodule. A Go module holds
+only its own files, so the package carries a copy of it, made from
+cxx/data/ip-intelligence/Translations.
 
 With -Check, nothing is written, and the script fails if the copy differs from
-cxx: a file changed, missing or extra. Line endings are not compared.
+cxx, meaning a file changed, missing or extra. Line endings are not compared.
 
 .EXAMPLE
 ./ci/update-translations.ps1
@@ -21,9 +21,11 @@ param (
 $ErrorActionPreference = "Stop"
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$source = Join-Path $root "cxx/ip-intelligence-data/Translations"
+$source = Join-Path $root "cxx/data/ip-intelligence/Translations"
 $target = Join-Path $root "ip-intelligence/translation/Translations"
-if (!(Test-Path $source)) { throw "'$source' was not found; check out the cxx submodule with its submodules" }
+if (!(Test-Path $source)) {
+    throw "'$source' was not found. Check out the cxx submodule with its submodules."
+}
 
 function Get-Files([string]$Folder) {
     if (!(Test-Path $Folder)) { return @() }
@@ -33,7 +35,7 @@ function Get-Files([string]$Folder) {
     return $files
 }
 
-$version = git -C (Join-Path $root cxx) describe --tags --always
+$version = git -C (Join-Path $root cxx) describe --tags --always 2>$null
 
 if ($Check) {
     $wanted = @(Get-Files $source)
