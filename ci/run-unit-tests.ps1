@@ -13,7 +13,7 @@ $Results = Join-Path $RepoName "test-results/unit"
 $Packages = @{
     'common' = @('./...')
     'device-detection' = @('./dd', './onpremise')
-    'ip-intelligence' = @('./ipi_interop', './ipi_onpremise', './ipi_cloud')
+    'ip-intelligence' = @('./ipi_interop', './ipi_onpremise', './ipi_cloud', './translation')
     'pipeline' = @('./...')
 }
 $failed = 0

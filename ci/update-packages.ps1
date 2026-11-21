@@ -34,6 +34,7 @@ if ($release -and $release -ne $current) {
     }
 }
 & (Join-Path $RepoName ci/update-amalgamation.ps1)
+& (Join-Path $RepoName ci/update-translations.ps1)
 
 # The JavaScript Builder Element keeps a committed copy of the templates,
 # because a Go module is built from git's archive of a tag, which leaves a
