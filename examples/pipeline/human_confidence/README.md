@@ -64,11 +64,20 @@ go run ./human_confidence
 
 Then open `http://localhost:5151/` in a browser.
 
-The tests use a fake cloud and need no keys.
+Apart from the live tests below, the tests use a fake cloud and need no keys.
 
 ```
 go test ./human_confidence
 ```
+
+The tests whose names start `TestLive` make the passive call against the
+cloud service that `_51DEGREES_CLOUD_ENDPOINT` names. With the key in
+`_51DEGREES_RESOURCE_KEY_BESPOKE` the answer has `HumanConfidenceSource` set
+to `Passive` and a plain level. With the key in
+`_51DEGREES_RESOURCE_KEY_BASIC`, which is outside the Bespoke product, the
+answer has no source. Each skips when its key isn't set. The active source
+comes back only to a browser that has run the tests, so these tests don't
+check it.
 
 ## What you should see
 
