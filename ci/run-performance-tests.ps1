@@ -68,11 +68,11 @@ if ($Products -contains 'pipeline') {
         Pop-Location
     }
     $builder = Get-JavaScriptBuilderFigures $bench
-    foreach ($name in $builder.LowerIsBetter.Keys) {
-        $lower[$name] = $builder.LowerIsBetter[$name]
+    foreach ($figure in $builder.LowerIsBetter.Keys) {
+        $lower[$figure] = $builder.LowerIsBetter[$figure]
     }
-    foreach ($name in $builder.HigherIsBetter.Keys) {
-        $higher[$name] = $builder.HigherIsBetter[$name]
+    foreach ($figure in $builder.HigherIsBetter.Keys) {
+        $higher[$figure] = $builder.HigherIsBetter[$figure]
     }
 }
 
