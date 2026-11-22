@@ -3,14 +3,13 @@
 # performance comparison reads results_<Name>.json for each entry, so figures
 # under any other name are not compared and the entry's graph stops. The first
 # tests run common-ci's steps/publish-performance-results.ps1, so they need a
-# checkout of common-ci, named by COMMON_CI or beside this repository.
+# checkout of common-ci beside this repository.
 #
-#   $env:COMMON_CI = '../common-ci'; Invoke-Pester ci/performance-results.Tests.ps1
+#   Invoke-Pester ci/performance-results.Tests.ps1
 
 BeforeAll {
     $script:Run = Join-Path $PSScriptRoot 'run-performance-tests.ps1'
     $script:CommonCi = @(
-        $env:COMMON_CI,
         (Join-Path $PSScriptRoot '..' '..' 'common-ci')) |
         Where-Object { $_ -and (Test-Path (Join-Path $_ 'steps' 'publish-performance-results.ps1')) } |
         Select-Object -First 1
@@ -72,7 +71,7 @@ BeforeAll {
 Describe 'run-performance-tests.ps1' {
     BeforeAll {
         if (!$script:CommonCi) {
-            throw 'Name a checkout of common-ci with COMMON_CI'
+            throw 'Check common-ci out beside this repository'
         }
     }
     AfterEach { if ($job) { Remove-Item -Recurse -Force $job } }

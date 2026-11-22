@@ -7,20 +7,17 @@
 # packages.json and the release plan's defaults).
 #
 # common-ci runs these scripts from its own root, with this repository checked
-# out inside it, which is where the release plan is looked for first. A
-# checkout of common-ci beside this repository is found too, or one elsewhere
-# can be named with COMMON_CI.
+# out inside it, which is where the release plan is looked for first, and
+# then in a checkout of common-ci beside this repository.
 $releasePlan = @(
-    $env:COMMON_CI,
     (Join-Path $PSScriptRoot '..' '..'),
     (Join-Path $PSScriptRoot '..' '..' 'common-ci')) |
-    Where-Object { $_ } |
     ForEach-Object { Join-Path $_ 'steps' 'release-plan.ps1' } |
     Where-Object { Test-Path $_ } |
     Select-Object -First 1
 if ($null -eq $releasePlan) {
-    throw "common-ci's steps/release-plan.ps1 was not found. Set COMMON_CI " +
-        "to a checkout of common-ci."
+    throw "common-ci's steps/release-plan.ps1 was not found. Check common-ci " +
+        "out beside this repository."
 }
 . $releasePlan
 Remove-Variable releasePlan

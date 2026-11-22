@@ -22,7 +22,7 @@ $Data = Join-Path $RepoPath "cxx/data"
 # Intelligence also needs the small Asn data file for its reload tests.
 $Assets = @()
 if ($Products -contains 'device-detection') {
-    $Assets += "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml"
+    $Assets += "51Degrees-LiteV4.1.hash", "20000 Evidence Records.yml"
 }
 if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
     $Assets += "51Degrees-EnterpriseIpiV41.ipi", "ip-intelligence-evidence.yml", "TAC-HashV41.hash"
@@ -79,7 +79,7 @@ if ($Products -contains 'ip-intelligence') {
 # module folder.
 if ($Products -contains 'device-detection') {
     foreach ($folder in (Get-ProductPath $RepoPath 'device-detection'), (Join-Path $RepoPath 'examples/device-detection')) {
-        foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml") {
+        foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 Evidence Records.yml") {
             New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$asset" `
                 -Path (Join-Path $folder $asset) | Out-Null
         }

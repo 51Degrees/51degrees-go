@@ -239,16 +239,15 @@ placeholder key `example-resource-key`.
 
 ## Environment variable names
 
-[common-ci's list of environment variable names](https://github.com/51Degrees/common-ci/blob/18f9a570ed862a0b7e1ecb1c55a8319f35f02491/environment-variables.md)
-holds every environment variable name that the packages, tests, examples and
-CI scripts of every language read, with what each name holds and the
-deprecated names each replaced. The list decides. Use the names it gives, and
-when a change needs a new name, or reads an old name again, change
-[`environment-variables.json`](https://github.com/51Degrees/common-ci/blob/18f9a570ed862a0b7e1ecb1c55a8319f35f02491/environment-variables.json)
-in common-ci in the same piece of work. This repository's own name
-check, [`common/variable_names_test.go`](common/variable_names_test.go), still keeps a
-list of its own. Where the two differ, common-ci's list is the one to
-follow.
+[`environment-variables.md`](environment-variables.md) lists every environment
+variable that the modules, tests, examples and CI scripts of this repository
+read and set, with what each name holds. Every name 51Degrees defines starts
+`_51DEGREES_`, holds one thing and is never filled from another. When a
+change needs a new name, add it to the list in the same piece of work. The
+name check, [`common/variable_names_test.go`](common/variable_names_test.go),
+fails when a tracked file reads or sets a variable that the list does not
+hold, other than one that Go, Git, GitHub, PowerShell or the operating
+system defines.
 
 ## Module paths and tags
 
@@ -270,8 +269,8 @@ from it (`ci/packages.ps1`). A change to the examples, to CI or to the
 documentation outside the module folders releases nothing, and neither does a
 change inside them only to tests (`*_test.go`), their data (`mock_hash.gz`),
 Markdown files, `docs` folders or licences. Run the tests of the plan with
-`Invoke-Pester ci/packages.Tests.ps1`, with `COMMON_CI` naming a checkout of
-common-ci. The CI script tests workflow runs these and the build selection
+`Invoke-Pester ci/packages.Tests.ps1`, with common-ci checked out beside this
+repository. The CI script tests workflow runs these and the build selection
 tests on every pull request that changes `ci/`.
 
 A module that requires one released in the same publish is tagged on a commit
@@ -416,7 +415,7 @@ builds a module against the folders of the modules it requires.
 itself and of the release pull request, which
 `.github/workflows/release-pull-request.yml` builds on every entry. Run the
 tests of both with `Invoke-Pester ci/select-options.Tests.ps1`, with
-`COMMON_CI` naming a checkout of common-ci.
+common-ci checked out beside this repository.
 
 The Pull Requests workflow is started by hand. A run that passes squash-merges
 the pull request unless `dryrun` is ticked, which loses the pull request's own

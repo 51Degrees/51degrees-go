@@ -86,6 +86,8 @@ The engines compile C sources made from the `cxx` submodule. After moving the su
 
 The JavaScript Builder Element embeds a copy of the `javascript-templates` submodule's `.mustache` files from `pipeline/elements/javascriptbuilder/javascript-templates`. After moving the submodule, copy its `.mustache` files there and commit them. The JavaScript templates check (`pwsh ci/check-javascript-templates.ps1`) fails when the copy doesn't match.
 
+The examples, tests, and CI scripts read their settings from environment variables whose names start `_51DEGREES_`. The [list of environment variable names](environment-variables.md) gives each one and what it holds.
+
 ## Find out more
 
 - [Device Detection](https://51degrees.com/device-detection?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=readme.md&utm_term=find-out-more)

@@ -50,7 +50,6 @@ jobs:
       - name: Run the tests
         shell: pwsh
         run: |
-          $env:COMMON_CI = (Resolve-Path common-ci).Path
           $paths = @(
             '51degrees-go/ci/benchmark.Tests.ps1',
             '51degrees-go/ci/key-names.Tests.ps1',

@@ -66,13 +66,6 @@ type Builder struct {
 // cloud base endpoint when SetEndpoint is not used.
 const EnvCloudEndpoint = "_51DEGREES_CLOUD_ENDPOINT"
 
-// EnvCloudAPIURL is the old name of the environment variable EnvCloudEndpoint
-// names. It is no longer read.
-//
-// Deprecated: Use EnvCloudEndpoint, which names the variable that replaces
-// this one.
-const EnvCloudAPIURL = "FOD_CLOUD_API_URL"
-
 // NewBuilder creates a CloudRequestEngine builder with default endpoints and
 // recovery settings. The base endpoint is the _51DEGREES_CLOUD_ENDPOINT
 // environment variable when set, otherwise DefaultEndpoint, and SetEndpoint

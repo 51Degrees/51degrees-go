@@ -26,12 +26,8 @@ import (
 	"testing"
 )
 
-// The variable the cloud endpoint is read from, and the deprecated name it
-// had before, which is written in two parts so this file does not name it.
-const (
-	endpointVariable    = "_51DEGREES_CLOUD_ENDPOINT"
-	oldEndpointVariable = "FOD" + "_CLOUD_API_URL"
-)
+// The variable the cloud endpoint is read from.
+const endpointVariable = "_51DEGREES_CLOUD_ENDPOINT"
 
 // The endpoint the tests give the variable.
 const newNameEndpoint = "https://new.example/api/v4/"
@@ -57,14 +53,9 @@ func TestNewBuilderReadsTheEndpointFromTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestEnvCloudAPIURLNamesTheOldVariable checks the deprecated constant holds
-// the value it was published with, and the constant that replaces it names
-// the 51Degrees variable.
-func TestEnvCloudAPIURLNamesTheOldVariable(t *testing.T) {
-	if EnvCloudAPIURL != oldEndpointVariable {
-		t.Errorf("EnvCloudAPIURL is %q, want %q",
-			EnvCloudAPIURL, oldEndpointVariable)
-	}
+// TestEnvCloudEndpointNamesTheVariable checks the exported constant names the
+// 51Degrees variable.
+func TestEnvCloudEndpointNamesTheVariable(t *testing.T) {
 	if EnvCloudEndpoint != endpointVariable {
 		t.Errorf("EnvCloudEndpoint is %q, want %q",
 			EnvCloudEndpoint, endpointVariable)
