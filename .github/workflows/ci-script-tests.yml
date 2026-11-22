@@ -8,10 +8,12 @@ name: CI script tests
 # ci/key-names.Tests.ps1 checks that the CI scripts take their keys only under
 # the _51DEGREES_ names, which common-ci puts into the environment, and
 # ci/translations.Tests.ps1 checks ci/update-translations.ps1, which keeps the
-# IP Intelligence translation data in step with the C library. So their
-# tests run on every pull request that changes ci/, against common-ci's main,
-# which is the common-ci the publish and the builds run. Go and Pester are the
-# ones the runner has.
+# IP Intelligence translation data in step with the C library.
+# ci/performance-results.Tests.ps1 checks that ci/run-performance-tests.ps1
+# publishes its figures under the name of the options entry, which is where
+# the performance comparison looks for them. So their tests run on every pull
+# request that changes ci/, against common-ci's main, which is the common-ci
+# the publish and the builds run. Go and Pester are the ones the runner has.
 
 on:
   pull_request:
@@ -53,6 +55,7 @@ jobs:
             '51degrees-go/ci/benchmark.Tests.ps1',
             '51degrees-go/ci/key-names.Tests.ps1',
             '51degrees-go/ci/packages.Tests.ps1',
+            '51degrees-go/ci/performance-results.Tests.ps1',
             '51degrees-go/ci/select-options.Tests.ps1',
             '51degrees-go/ci/translations.Tests.ps1')
           # Pester passes over a path that does not exist, so a test file that
