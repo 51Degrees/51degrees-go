@@ -45,6 +45,7 @@ const (
 type fakeCloud struct {
 	server       *httptest.Server
 	properties   []string
+	passiveBody  string
 	redeemStatus int
 	redeemBody   string
 
@@ -58,6 +59,7 @@ type fakeCloud struct {
 func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 	cloud := &fakeCloud{
 		properties:   properties,
+		passiveBody:  `{"derived":{"humanconfidencesource":"Passive","humanconfidence":"Medium"}}`,
 		redeemStatus: http.StatusOK,
 		redeemBody:   `{"humanConfidence":"High","secondsSinceVerified":2}`,
 	}
@@ -95,7 +97,7 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 		cloud.mu.Lock()
 		cloud.evidence = r.PostForm
 		cloud.mu.Unlock()
-		io.WriteString(w, `{"derived":{"humanconfidencesource":"Passive","humanconfidence":"Medium"}}`)
+		io.WriteString(w, cloud.passiveBody)
 	})
 	mux.HandleFunc("/api/v4/hc/redeem", func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
@@ -211,6 +213,24 @@ func passiveAnswer(t *testing.T, example *httptest.Server) map[string]any {
 		t.Fatal(err)
 	}
 	return answer
+}
+
+// The answer for a key without the properties has a null source and a null
+// level, and the example reports neither rather than making one up.
+func TestPassiveWithoutTheSourceReportsNone(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	cloud.passiveBody = `{"derived":{` +
+		`"humanconfidence":null,"humanconfidencenullreason":"Not in this key.",` +
+		`"humanconfidencesource":null,` +
+		`"humanconfidencesourcenullreason":"Not in this key."}}`
+	example := startExample(t, cloud)
+	answer := passiveAnswer(t, example)
+	if _, failed := answer["error"]; failed {
+		t.Fatalf("the passive answer is an error, %v", answer)
+	}
+	if answer["source"] != nil || answer["humanConfidence"] != nil {
+		t.Errorf("the passive answer is %v, want no source and no level", answer)
+	}
 }
 
 func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
