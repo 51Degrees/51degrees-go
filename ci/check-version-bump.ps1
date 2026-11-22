@@ -8,8 +8,8 @@ $ErrorActionPreference = "Stop"
 # The shared publish runs this in place of its own check, because each module
 # has its own version (see packages.ps1). Every module about to be published
 # goes through common-ci's steps/check-version-bump.ps1, run from the common-ci
-# root, against its own tags, which refuses a major or minor move unless
-# ALLOW_VERSION_BUMP is 'true'. $Version is the run's label, the highest of
+# root, against its own tags, which refuses a major or minor move unless the
+# publish allows it. $Version is the run's label, the highest of
 # the modules' versions.
 $plan = @(Get-ModuleReleasePlan $RepoName)
 if ($plan.Count -eq 0) {

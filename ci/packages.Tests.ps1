@@ -1,7 +1,7 @@
 # Tests for the release plan of ci/packages.ps1, with Pester 5. They need a
-# checkout of common-ci, named by COMMON_CI or beside this repository.
+# checkout of common-ci beside this repository.
 #
-#   $env:COMMON_CI = '../common-ci'; Invoke-Pester ci/packages.Tests.ps1
+#   Invoke-Pester ci/packages.Tests.ps1
 #
 # Each test builds a throwaway repository holding the four modules, this
 # repository's ci/packages.json and Go tags at v4.5.180, commits a change and

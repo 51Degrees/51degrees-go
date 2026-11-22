@@ -1,6 +1,12 @@
 $ErrorActionPreference = "Stop"
 
-./go/setup-environment.ps1
+# The unit and integration tests write their results as JUnit XML with
+# go-junit-report.
+Write-Output "Installing go-junit-report..."
+go install github.com/jstemmer/go-junit-report/v2@latest
+if ($LASTEXITCODE -ne 0) { throw "go-junit-report installation failed" }
+go-junit-report -version
+if ($LASTEXITCODE -ne 0) { throw "go-junit-report not available" }
 
 . $PSScriptRoot/products.ps1
 . $PSScriptRoot/packages.ps1

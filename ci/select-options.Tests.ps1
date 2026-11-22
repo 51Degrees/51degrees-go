@@ -1,9 +1,9 @@
 # Tests for the build selection of a pull request, with Pester 5: the modules
 # ci/products.ps1 builds and the ci/options.json entries ci/select-options.ps1
 # chooses. The last tests run common-ci's steps/select-options.ps1, so they need
-# a checkout of common-ci, named by COMMON_CI or beside this repository.
+# a checkout of common-ci beside this repository.
 #
-#   $env:COMMON_CI = '../common-ci'; Invoke-Pester ci/select-options.Tests.ps1
+#   Invoke-Pester ci/select-options.Tests.ps1
 
 BeforeAll {
     . (Join-Path $PSScriptRoot 'products.ps1')
@@ -13,7 +13,6 @@ BeforeAll {
     $script:NotMacOS = @((ConvertFrom-Json $script:OptionsJson) |
         Where-Object { $_.Image -notlike 'macos*' } | ForEach-Object Name)
     $script:CommonCi = @(
-        $env:COMMON_CI,
         (Join-Path $PSScriptRoot '..' '..' 'common-ci')) |
         Where-Object { $_ -and (Test-Path (Join-Path $_ 'steps' 'select-options.ps1')) } |
         Select-Object -First 1
@@ -115,7 +114,7 @@ Describe 'select-options.ps1' {
 Describe "common-ci's selection step" {
     BeforeAll {
         if (!$script:CommonCi) {
-            throw 'Name a checkout of common-ci with COMMON_CI'
+            throw 'Check common-ci out beside this repository'
         }
         $script:Step = Join-Path $script:CommonCi 'steps' 'select-options.ps1'
     }

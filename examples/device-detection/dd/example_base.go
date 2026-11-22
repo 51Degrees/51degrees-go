@@ -47,7 +47,6 @@ import (
 // Constants
 const LiteDataFile = "51Degrees-LiteV4.1.hash"
 const EnterpriseDataFile = "Enterprise-HashV41.hash"
-const UaFileCSV = "20000 User Agents.csv"
 const EvidenceFileYaml = "20000 Evidence Records.yml"
 
 // EnterpriseProperties are properties that only the Enterprise data file

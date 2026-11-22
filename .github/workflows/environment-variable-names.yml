@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   environment-variable-names:
-    name: No tracked file names an old variable
+    name: Every variable has a 51Degrees name
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -38,8 +38,11 @@ jobs:
         working-directory: common
         shell: bash
         run: |
-          names='TestNoFileNamesAnOldVariable TestOldVariablesAreOnlyVariables'
-          names="$names TestADeprecatedVariableIsNamedOnlyWhereItIsKept"
+          names='TestEveryVariableHasA51DegreesName'
+          names="$names TestVariablesAreFoundWhereTheyAreNamed"
+          names="$names TestAWorkflowEnvBlockSetsItsKeys"
+          names="$names TestOnlyListedAndPlatformNamesAreAllowed"
+          names="$names TestEvidenceIsYAML"
           pattern=$(echo $names | tr ' ' '|')
           set +e
           output=$(go test -v -run "^(${pattern})\$" ./... 2>&1)
