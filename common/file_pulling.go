@@ -796,21 +796,29 @@ func chooseProduct(product string, offered []string, keys []string) (string, err
 	}
 }
 
-// urlWithProduct returns rawURL with product as the Product parameter of its query, in place of any
-// Product parameter it has.
+// urlWithProduct returns rawURL with product added to the end of its query as its one Product
+// parameter. Any Product parameter it has, whatever the case or escaping of its name, is removed,
+// and the other parameters are kept as they are written, in their order.
 func urlWithProduct(rawURL string, product string) (string, error) {
 	parsed, err := neturl.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	query := parsed.Query()
-	for name := range query {
-		if strings.EqualFold(name, productParameter) {
-			query.Del(name)
+	var kept []string
+	for _, pair := range strings.Split(parsed.RawQuery, "&") {
+		if pair == "" {
+			continue
+		}
+		name, _, _ := strings.Cut(pair, "=")
+		if unescaped, err := neturl.QueryUnescape(name); err == nil {
+			name = unescaped
+		}
+		if !strings.EqualFold(name, productParameter) {
+			kept = append(kept, pair)
 		}
 	}
-	query.Set(productParameter, product)
-	parsed.RawQuery = query.Encode()
+	parsed.RawQuery = strings.Join(
+		append(kept, productParameter+"="+neturl.QueryEscape(product)), "&")
 	return parsed.String(), nil
 }
 

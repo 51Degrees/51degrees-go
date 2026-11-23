@@ -84,3 +84,24 @@ func namesProduct(query url.Values) bool {
 	}
 	return false
 }
+
+// queryWithProduct returns rawQuery with product as its one Product
+// parameter, added at its end. Any Product parameter it has, whatever the case
+// or escaping of its name, is removed, and the other parameters are kept as
+// they are written, in their order.
+func queryWithProduct(rawQuery string, product string) string {
+	var kept []string
+	for _, pair := range strings.Split(rawQuery, "&") {
+		if pair == "" {
+			continue
+		}
+		name, _, _ := strings.Cut(pair, "=")
+		if unescaped, err := url.QueryUnescape(name); err == nil {
+			name = unescaped
+		}
+		if !strings.EqualFold(name, productParameter) {
+			kept = append(kept, pair)
+		}
+	}
+	return strings.Join(append(kept, productParameter+"="+url.QueryEscape(product)), "&")
+}

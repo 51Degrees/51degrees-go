@@ -270,8 +270,9 @@ func TestProductSetAnd403IsAccessDenied(t *testing.T) {
 }
 
 // The product option is sent with a caller's own data update URL too, given
-// before or after the URL. An empty Product in the URL is replaced, and a URL
-// that already names a product, whatever the case of the parameter's name, is
+// before or after the URL, added to the end of the URL's query, which is kept
+// as it is written. An empty Product in the URL is replaced, and a URL that
+// already names a product, whatever the case of the parameter's name, is
 // requested as it is.
 func TestProductSetWithACallersURLIsSent(t *testing.T) {
 	requests := &requestLog{}
@@ -285,20 +286,25 @@ func TestProductSetWithACallersURLIsSent(t *testing.T) {
 	query := "LicenseKeys=" + productTestKey + "&Type=IPIV41"
 	for name, c := range map[string]struct {
 		options []EngineOptions
-		// product is the Product the request asks for once, or empty when
-		// the request is the caller's URL as it is.
-		product string
+		// want is the query of the one request, as it is sent.
+		want string
 	}{
 		"the URL first": {[]EngineOptions{
-			WithDataUpdateUrl(address + query), WithProduct("IPIV4Enterprise")}, "IPIV4Enterprise"},
+			WithDataUpdateUrl(address + query), WithProduct("IPIV4Enterprise")},
+			query + "&Product=IPIV4Enterprise"},
 		"the product first": {[]EngineOptions{
-			WithProduct("IPIV4Enterprise"), WithDataUpdateUrl(address + query)}, "IPIV4Enterprise"},
+			WithProduct("IPIV4Enterprise"), WithDataUpdateUrl(address + query)},
+			query + "&Product=IPIV4Enterprise"},
 		"an empty product in the URL": {[]EngineOptions{
-			WithDataUpdateUrl(address + query + "&Product="),
-			WithProduct("IPIV4Enterprise")}, "IPIV4Enterprise"},
+			WithDataUpdateUrl(address + "Product=&" + query),
+			WithProduct("IPIV4Enterprise")}, query + "&Product=IPIV4Enterprise"},
+		"two keys not escaped": {[]EngineOptions{
+			WithDataUpdateUrl(address + "LicenseKeys=" + productTestKey +
+				"|OTHERKEY&Type=IPIV41"), WithProduct("IPIV4Enterprise")},
+			"LicenseKeys=" + productTestKey + "|OTHERKEY&Type=IPIV41&Product=IPIV4Enterprise"},
 		"a product in the URL": {[]EngineOptions{
 			WithDataUpdateUrl(address + query + "&product=IPIV4Basic"),
-			WithProduct("IPIV4Enterprise")}, ""},
+			WithProduct("IPIV4Enterprise")}, query + "&product=IPIV4Basic"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			*requests = requestLog{}
@@ -319,17 +325,9 @@ func TestProductSetWithACallersURLIsSent(t *testing.T) {
 				t.Fatalf("the update on start-up failed: %v", err)
 			}
 
-			if c.product != "" {
-				if got := requests.products(); !onlyProduct(got, c.product) {
-					t.Errorf("the requests asked for the products %q, want %s "+
-						"once (%s)", got, c.product, configuredProductRules)
-				}
-			} else {
-				want := query + "&product=IPIV4Basic"
-				if got := requests.raw(); len(got) != 1 || got[0] != want {
-					t.Errorf("the requests had the queries %q, want %q once (%s)",
-						got, want, configuredProductRules)
-				}
+			if got := requests.raw(); len(got) != 1 || got[0] != c.want {
+				t.Errorf("the requests had the queries %q, want %q once (%s)",
+					got, c.want, configuredProductRules)
 			}
 			if n := lookups.Load(); n != 0 {
 				t.Errorf("the product of the data file was looked up %d times, "+

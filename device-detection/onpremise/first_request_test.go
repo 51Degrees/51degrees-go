@@ -270,8 +270,9 @@ func TestProductSetAnd403IsAccessDenied(t *testing.T) {
 }
 
 // The product option is sent with a caller's own data update URL too, given
-// before or after the URL. An empty Product in the URL is replaced, and a URL
-// that already names a product, whatever the case of the parameter's name, is
+// before or after the URL, added to the end of the URL's query, which is kept
+// as it is written. An empty Product in the URL is replaced, and a URL that
+// already names a product, whatever the case of the parameter's name, is
 // requested as it is.
 func TestProductSetWithACallersURLIsSent(t *testing.T) {
 	requests := &requestLog{}
@@ -285,20 +286,25 @@ func TestProductSetWithACallersURLIsSent(t *testing.T) {
 	query := "LicenseKeys=" + productTestKey + "&Type=HashV41"
 	for name, c := range map[string]struct {
 		options []EngineOptions
-		// product is the Product the request asks for once, or empty when
-		// the request is the caller's URL as it is.
-		product string
+		// want is the query of the one request, as it is sent.
+		want string
 	}{
 		"the URL first": {[]EngineOptions{
-			WithDataUpdateUrl(address + query), WithProduct("V4TAC")}, "V4TAC"},
+			WithDataUpdateUrl(address + query), WithProduct("V4TAC")},
+			query + "&Product=V4TAC"},
 		"the product first": {[]EngineOptions{
-			WithProduct("V4TAC"), WithDataUpdateUrl(address + query)}, "V4TAC"},
+			WithProduct("V4TAC"), WithDataUpdateUrl(address + query)},
+			query + "&Product=V4TAC"},
 		"an empty product in the URL": {[]EngineOptions{
-			WithDataUpdateUrl(address + query + "&Product="),
-			WithProduct("V4TAC")}, "V4TAC"},
+			WithDataUpdateUrl(address + "Product=&" + query),
+			WithProduct("V4TAC")}, query + "&Product=V4TAC"},
+		"two keys not escaped": {[]EngineOptions{
+			WithDataUpdateUrl(address + "LicenseKeys=" + productTestKey +
+				"|OTHERKEY&Type=HashV41"), WithProduct("V4TAC")},
+			"LicenseKeys=" + productTestKey + "|OTHERKEY&Type=HashV41&Product=V4TAC"},
 		"a product in the URL": {[]EngineOptions{
 			WithDataUpdateUrl(address + query + "&product=V4Enterprise"),
-			WithProduct("V4TAC")}, ""},
+			WithProduct("V4TAC")}, query + "&product=V4Enterprise"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			*requests = requestLog{}
@@ -319,17 +325,9 @@ func TestProductSetWithACallersURLIsSent(t *testing.T) {
 				t.Fatalf("the update on start-up failed: %v", err)
 			}
 
-			if c.product != "" {
-				if got := requests.products(); !onlyProduct(got, c.product) {
-					t.Errorf("the requests asked for the products %q, want %s "+
-						"once (%s)", got, c.product, configuredProductRules)
-				}
-			} else {
-				want := query + "&product=V4Enterprise"
-				if got := requests.raw(); len(got) != 1 || got[0] != want {
-					t.Errorf("the requests had the queries %q, want %q once (%s)",
-						got, want, configuredProductRules)
-				}
+			if got := requests.raw(); len(got) != 1 || got[0] != c.want {
+				t.Errorf("the requests had the queries %q, want %q once (%s)",
+					got, c.want, configuredProductRules)
 			}
 			if n := lookups.Load(); n != 0 {
 				t.Errorf("the product of the data file was looked up %d times, "+
