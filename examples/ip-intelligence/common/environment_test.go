@@ -30,6 +30,7 @@ import (
 // The variables the examples read.
 const (
 	licenceVariable  = "_51DEGREES_LICENSE_KEY"
+	productVariable  = "_51DEGREES_IPI_PRODUCT"
 	dataVariable     = "_51DEGREES_IPI_PATH"
 	evidenceVariable = "_51DEGREES_EVIDENCE_YAML"
 )
@@ -38,8 +39,8 @@ const (
 // and makes it empty when none is given, in an empty working folder.
 func setVariables(t *testing.T, values map[string]string) {
 	t.Helper()
-	for _, name := range []string{licenceVariable, dataVariable,
-		evidenceVariable} {
+	for _, name := range []string{licenceVariable, productVariable,
+		dataVariable, evidenceVariable} {
 		t.Setenv(name, values[name])
 	}
 	inAnEmptyFolder(t)
@@ -64,10 +65,10 @@ func TestRunExampleReadsTheEnvironment(t *testing.T) {
 		want   ExampleParams
 	}{
 		{"only the new names", map[string]string{
-			licenceVariable: "new-key", dataVariable: "new.ipi",
-			evidenceVariable: "new.yml",
-		}, ExampleParams{LicenseKey: "new-key", DataFile: "new.ipi",
-			EvidenceYaml: "new.yml"}},
+			licenceVariable: "new-key", productVariable: "IPIV4Enterprise",
+			dataVariable: "new.ipi", evidenceVariable: "new.yml",
+		}, ExampleParams{LicenseKey: "new-key", Product: "IPIV4Enterprise",
+			DataFile: "new.ipi", EvidenceYaml: "new.yml"}},
 		{"no names", nil, ExampleParams{DataFile: LiteDataFile,
 			EvidenceYaml: EvidenceFile}},
 	} {

@@ -59,6 +59,13 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=top
 		ipi_onpremise.WithLicenseKey(params.LicenseKey),
 
+		// Ask for the product _51DEGREES_IPI_PRODUCT names, as the
+		// Distributor spells it, such as IPIV4Enterprise. When the variable
+		// is not set, no product is named, and when the license key holds
+		// several products the engine asks for the product of the data file
+		// it has loaded.
+		ipi_onpremise.WithProduct(params.Product),
+
 		// WithAutoUpdate enables or disables auto update
 		ipi_onpremise.WithAutoUpdate(true),
 
@@ -200,6 +207,13 @@ func main() {
 				// _51DEGREES_LICENSE_KEY gives.
 				// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=main
 				ipi_onpremise.WithLicenseKey(params.LicenseKey),
+
+				// Ask for the product _51DEGREES_IPI_PRODUCT names, as
+				// the Distributor spells it, such as IPIV4Enterprise.
+				// When the variable is not set, no product is named, and
+				// when the license key holds several products the engine
+				// asks for the product of the data file it has loaded.
+				ipi_onpremise.WithProduct(params.Product),
 
 				// Enable automatic updates.
 				ipi_onpremise.WithAutoUpdate(true),
