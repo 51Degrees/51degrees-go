@@ -24,6 +24,7 @@ package ipi_onpremise
 
 import (
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -109,20 +110,50 @@ func TestPipelineEngineWithNoAddressSaysSo(t *testing.T) {
 	}
 }
 
-// A Flow Data has no Close, so the native results of the Data the engine adds
-// to one are freed once nothing holds the Data. A ResultsIpi that is
-// collected before it is freed panics, which ends the test binary, so this
-// test fails that way when the results are not freed.
+// freeCounter counts the native results freed through it.
+type freeCounter struct {
+	nativeResults
+	freed *atomic.Int64
+}
+
+func (r freeCounter) Free() {
+	r.nativeResults.Free()
+	r.freed.Add(1)
+}
+
+// processAndDrop processes Flow Data holding the address, counting the
+// freeing of the native results of each Data, and keeps none of them.
+//
+//go:noinline
+func processAndDrop(t *testing.T, pipeline core.Pipeline, flows int,
+	freed *atomic.Int64) {
+	t.Helper()
+	for i := 0; i < flows; i++ {
+		data := processAddress(t, pipeline, compatibleAddress)
+		data.results = freeCounter{data.results, freed}
+	}
+}
+
+// A caller that closes neither the Flow Data nor the Data leaves the native
+// results to the finalizer the engine sets, which frees them once nothing
+// holds the Data.
 // See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/features/resource-cleanup.md?plain=1#L54-L61
 func TestPipelineEngineFreesTheResultsOfDataNoLongerHeld(t *testing.T) {
+	const (
+		flows          = 100
+		timeoutSeconds = 10
+		pollMs         = 10
+	)
 	pipeline := enginePipeline(t)
-	for i := 0; i < 100; i++ {
-		processAddress(t, pipeline, compatibleAddress)
-	}
-	// Each collection lets the finalizers queued by the one before run, so
-	// three are enough for the Data, then its results, to be collected.
-	for i := 0; i < 3; i++ {
+	var freed atomic.Int64
+	processAndDrop(t, pipeline, flows, &freed)
+	deadline := time.Now().Add(timeoutSeconds * time.Second)
+	for freed.Load() < flows && time.Now().Before(deadline) {
 		runtime.GC()
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(pollMs * time.Millisecond)
+	}
+	if n := freed.Load(); n != flows {
+		t.Errorf("the native results of %d of %d Data no longer held were "+
+			"freed within %d seconds", n, flows, timeoutSeconds)
 	}
 }
