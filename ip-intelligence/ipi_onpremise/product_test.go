@@ -45,6 +45,8 @@ func TestDistributorProduct(t *testing.T) {
 		"IPIV4Enterprise": "IPIV4Enterprise",
 		"ipiv4asn":        "ipiv4asn",
 		"":                "",
+		"IPIV4":           "",
+		"ipiv4":           "",
 	} {
 		if got := distributorProduct(tier); got != want {
 			t.Errorf("distributorProduct(%q) = %q, want %q", tier, got, want)
