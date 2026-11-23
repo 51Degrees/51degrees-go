@@ -112,7 +112,7 @@ func (e *Engine) acquire() bool {
 func (e *Engine) release() { e.useMu.RUnlock() }
 
 const (
-	defaultDataFileUrl = "https://distributor.51degrees.com/api/v2/download?Type=HashV41&Download=True&Product=V4TAC"
+	defaultDataFileUrl = "https://distributor.51degrees.com/api/v2/download?Type=HashV41&Download=True"
 
 	// engineTypeName names the engine in the data update log messages.
 	engineTypeName = "DeviceDetectionHashEngine"
@@ -137,6 +137,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	fileUpdater.SetEngineName(engineTypeName)
 	fileUpdater.SetPublishedDateFunc(engine.publishedDate)
 	fileUpdater.SetNextUpdateFunc(engine.nextUpdateDate)
+	fileUpdater.SetProductFunc(engine.dataFileProduct)
 
 	for _, opt := range opts {
 		err := opt(engine)
@@ -521,14 +522,19 @@ func (e *Engine) validateAndAppendUrlParams() error {
 	return nil
 }
 
-// appendProduct appends a "Product" query parameter to the Engine's data file URL using the provided product value.
+// appendProduct sets the Product parameter of the data file URL to the product
+// option. When the option is not set the URL has no Product parameter, so the
+// first request of an update names no product.
 func (e *Engine) appendProduct() error {
 	urlParsed, err := url.Parse(e.GetDataFileUrl())
 	if err != nil {
 		return fmt.Errorf("failed to parse data file url: %w", err)
 	}
 	query := urlParsed.Query()
-	query.Set("Product", e.product)
+	query.Del("Product")
+	if e.product != "" {
+		query.Set("Product", e.product)
+	}
 	urlParsed.RawQuery = query.Encode()
 
 	e.SetDataFileUrl(urlParsed.String())

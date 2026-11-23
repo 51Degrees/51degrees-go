@@ -66,6 +66,9 @@ type fileUpdater struct {
 	// engine has loaded. They are nil when the engine offers neither.
 	publishedDate func() time.Time
 	nextUpdate    func() time.Time
+	// product names the product of the data file the engine has loaded. It
+	// is nil when the engine names none.
+	product func() string
 	// startUpPullDone is set once PullOnStart has run, so that the polling
 	// does not repeat the start-up pull.
 	startUpPullDone bool
@@ -177,6 +180,14 @@ func (e *FileUpdater) SetPublishedDateFunc(publishedDate func() time.Time) {
 // start before that date.
 func (e *FileUpdater) SetNextUpdateFunc(nextUpdate func() time.Time) {
 	e.nextUpdate = nextUpdate
+}
+
+// SetProductFunc sets the function that returns the name the Distributor
+// gives the product of the data file the engine has loaded, such as V4TAC,
+// or an empty string when the engine cannot name it. When a license key
+// holds several products, the update asks for this one.
+func (e *FileUpdater) SetProductFunc(product func() string) {
+	e.product = product
 }
 
 // SetLoggerEnabled enables or disables the logger for the FileUpdater instance and returns the updated LogWrapper.

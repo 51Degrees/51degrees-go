@@ -113,8 +113,16 @@ func main() {
 				onpremise.WithDataFile(params.DataFile),
 
 				// For automatic updates to work you will need to provide a license key.
-				// A licence key comes with the Enterprise data file, from https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
+				// A license key comes with a paid data file, from https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
 				onpremise.WithLicenseKey(params.LicenseKey),
+
+				// Ask for the TAC data file, which the Distributor names
+				// V4TAC, so this example downloads that file whichever data
+				// file it starts with. The option is optional. Without it
+				// the first request names no product, and when the license
+				// key holds several products the engine asks for the product
+				// of the data file it has loaded.
+				onpremise.WithProduct("V4TAC"),
 
 				// Enable automatic updates.
 				onpremise.WithAutoUpdate(true),

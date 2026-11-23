@@ -151,6 +151,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 	fileUpdater.SetEngineName(engineTypeName)
 	fileUpdater.SetPublishedDateFunc(engine.publishedDate)
 	fileUpdater.SetNextUpdateFunc(engine.nextUpdateDate)
+	fileUpdater.SetProductFunc(engine.dataFileProduct)
 
 	for _, opt := range opts {
 		err := opt(engine)
@@ -536,14 +537,19 @@ func (e *Engine) validateAndAppendUrlParams() error {
 	return nil
 }
 
-// appendProduct appends the product parameter to the data file URL and updates the URL in the Engine. Returns an error if parsing fails.
+// appendProduct sets the Product parameter of the data file URL to the product
+// option. When the option is not set the URL has no Product parameter, so the
+// first request of an update names no product.
 func (e *Engine) appendProduct() error {
 	urlParsed, err := url.Parse(e.GetDataFileUrl())
 	if err != nil {
 		return fmt.Errorf("failed to parse data file url: %w", err)
 	}
 	query := urlParsed.Query()
-	query.Set("Product", e.product)
+	query.Del("Product")
+	if e.product != "" {
+		query.Set("Product", e.product)
+	}
 	urlParsed.RawQuery = query.Encode()
 
 	e.SetDataFileUrl(urlParsed.String())
