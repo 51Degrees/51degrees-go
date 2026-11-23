@@ -70,10 +70,10 @@ func (d *scriptedDistributor) products() [][]string {
 }
 
 // maskedSecondURL is the second request, asking for the product given, as a
-// message shows it.
+// message shows it. It is the first with the product added to the end of its
+// query.
 func (d *scriptedDistributor) maskedSecondURL(product string) string {
-	return d.server.URL + "/api/v2/download?Download=True&LicenseKeys=" +
-		MaskLicenseKey(productTestKey) + "&Product=" + product + "&Type=HashV41"
+	return d.maskedURL() + "&Product=" + product
 }
 
 // productLines are the messages, for a test failure.

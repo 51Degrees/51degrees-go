@@ -33,7 +33,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -521,9 +520,10 @@ func (e *Engine) validateAndAppendUrlParams() error {
 	return e.appendProduct()
 }
 
-// appendProduct gives the data file URL the product option as its Product
-// parameter, in place of an empty one, so every request asks for that
-// product and a 300 (Multiple Choices) response is not followed. A URL that
+// appendProduct adds the product option to the end of the data file URL's
+// query as its Product parameter, in place of an empty one, so every request
+// asks for that product and a 300 (Multiple Choices) response is not
+// followed. The other parameters are kept as they are written. A URL that
 // names a product already, which only a caller's own URL can, is left as it
 // is, and so is any URL when the option is not set, so the first request of
 // an update then names no product.
@@ -536,17 +536,10 @@ func (e *Engine) appendProduct() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse data file url: %w", err)
 	}
-	query := urlParsed.Query()
-	if namesProduct(query) {
+	if namesProduct(urlParsed.Query()) {
 		return nil
 	}
-	for name := range query {
-		if strings.EqualFold(name, productParameter) {
-			query.Del(name)
-		}
-	}
-	query.Set(productParameter, e.product)
-	urlParsed.RawQuery = query.Encode()
+	urlParsed.RawQuery = queryWithProduct(urlParsed.RawQuery, e.product)
 
 	e.SetDataFileUrl(urlParsed.String())
 
