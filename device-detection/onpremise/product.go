@@ -36,11 +36,11 @@ const productPrefix = "V4"
 // distributorProduct returns the name the Distributor gives the product of a
 // data file of the data tier, which is the prefix followed by the tier. A
 // tier that already starts with the prefix, whatever its case, is the name as
-// it is, and no tier gives no name.
+// it is. No tier, or a tier that is the prefix alone, gives no name.
 // See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#product-names
 func distributorProduct(tier string) string {
 	tier = strings.TrimSpace(tier)
-	if tier == "" {
+	if tier == "" || strings.EqualFold(tier, productPrefix) {
 		return ""
 	}
 	if len(tier) >= len(productPrefix) &&

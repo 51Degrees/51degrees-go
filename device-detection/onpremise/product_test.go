@@ -45,6 +45,8 @@ func TestDistributorProduct(t *testing.T) {
 		"V4TAC": "V4TAC",
 		"v4tac": "v4tac",
 		"":      "",
+		"V4":    "",
+		"v4":    "",
 	} {
 		if got := distributorProduct(tier); got != want {
 			t.Errorf("distributorProduct(%q) = %q, want %q", tier, got, want)
