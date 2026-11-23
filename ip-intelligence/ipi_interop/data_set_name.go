@@ -66,6 +66,7 @@ func GetDataSetName(manager *ResourceManager) string {
 	defer C.DataSetRelease((*C.DataSetBase)(unsafe.Pointer(cDataSet)))
 	var buffer [dataSetNameBytes]C.char
 	e := NewException()
+	defer e.Free()
 	read := C.dataSetName(cDataSet, &buffer[0], C.size_t(len(buffer)), e.CPtr)
 	if !bool(read) || !e.IsOkay() {
 		return ""
