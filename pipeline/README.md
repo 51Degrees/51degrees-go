@@ -174,8 +174,9 @@ protects it only when every reader takes it, and the Flow Elements in this
 module, such as the JSON Builder, the JavaScript Builder, the Set Headers
 Element, the Derived Property Element and the Translation Engine, take no
 lock when they read other Element Data. So a member that reads that
-Engine's Element Data must not share a parallel group with any other member
-that reads it.
+Engine's Element Data must not share a parallel group with any of these
+Flow Elements that also reads it, and the other members of the group that
+read it must all take the same lock.
 
 `FlowData.Close` returns its Element Data to a pool, to be used again by a
 later Flow Data. Call it once the Flow Data and its values are no longer
