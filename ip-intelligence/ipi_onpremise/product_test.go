@@ -115,3 +115,25 @@ func TestEnterpriseDataFileNamesItsProduct(t *testing.T) {
 			"IPIV4Enterprise", product)
 	}
 }
+
+// No product name is known before a data file is loaded or once the engine
+// has stopped. While the free data file is loaded, its name is IPIV4Asn.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#product-names
+func TestNoProductWithoutALoadedDataFile(t *testing.T) {
+	if product := (&Engine{}).dataFileProduct(); product != "" {
+		t.Errorf("an engine with no data file is of the product %q, want none", product)
+	}
+	e := newReloadTestEngine(t,
+		WithDataFile(writeDataFile(t, readGoodFile(t))),
+		WithAutoUpdate(false),
+		WithFileWatch(false))
+	if product := e.dataFileProduct(); product != "IPIV4Asn" {
+		t.Errorf("the loaded data file is of the product %q, want IPIV4Asn", product)
+	}
+
+	e.stop(t)
+
+	if product := e.dataFileProduct(); product != "" {
+		t.Errorf("a stopped engine is of the product %q, want none", product)
+	}
+}

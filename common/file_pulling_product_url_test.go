@@ -23,10 +23,12 @@
 package common_go
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -317,6 +319,49 @@ func TestPull_MessagesAfterTheSecondRequestNameIt(t *testing.T) {
 				}
 			}
 			noFullKey(t, log, err)
+		})
+	}
+}
+
+// The two requests of a followed 300 are one check, which update polling
+// reports once, with the status the second response gives.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func TestPull_TwoRequestsAreReportedOnce(t *testing.T) {
+	notModified := func(w http.ResponseWriter) { w.WriteHeader(http.StatusNotModified) }
+	for name, c := range map[string]struct {
+		second func(w http.ResponseWriter)
+		want   UpdateStatus
+	}{
+		"304": {notModified, UpdateNotNeeded},
+		"a second 300": {severalProducts(availableUris(
+			"LicenseKeys=" + productTestKey + "&Product=V4TAC")), UpdateHTTPSError},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := newScriptedDistributor(
+				severalProducts(availableUris(
+					"LicenseKeys="+productTestKey+"&Product=IPIV4Enterprise",
+					"LicenseKeys="+productTestKey+"&Product=V4TAC")),
+				c.second)
+			defer d.server.Close()
+			updater, log := d.updater(t, "V4TAC")
+			var mu sync.Mutex
+			var reports []UpdateStatus
+			updater.OnUpdateComplete(func(u UpdateComplete) {
+				mu.Lock()
+				defer mu.Unlock()
+				reports = append(reports, u.Status)
+			})
+
+			updater.pullRecovering(context.Background(), make(chan struct{}, 1))
+
+			if d.count() != 2 {
+				t.Errorf("%d requests were made, want 2\n%s", d.count(), productLines(log))
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if len(reports) != 1 || reports[0] != c.want {
+				t.Errorf("the check was reported as %v, want %v once", reports, c.want)
+			}
 		})
 	}
 }
