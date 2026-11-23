@@ -30,15 +30,18 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -226,6 +229,15 @@ func (e *FileUpdater) maskedDataFileUrl() string {
 	return MaskLicenseKeysIn(e.GetDataFileUrl(), LicenseKeysInURL(e.GetDataFileUrl()))
 }
 
+// productName is the name the Distributor gives the product of the data file the engine has loaded,
+// or an empty string when the engine names none.
+func (e *FileUpdater) productName() string {
+	if e.product == nil {
+		return ""
+	}
+	return e.product()
+}
+
 // engineLabel names the engine in log messages.
 func (e *FileUpdater) engineLabel() string {
 	if e.engineName == "" {
@@ -318,18 +330,20 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 	e.logger.Infof("Checking for update from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
 
 	// The download goes to a temp file next to the data file and is renamed over it, so the
-	// engine only ever sees the complete old file or the complete new one.
-	fileResponse, err := doDataFileRequest(ctx, e.dataFileUrl, e.logger, lastModificationTimestamp, e.GetDataFile())
+	// engine only ever sees the complete old file or the complete new one. The messages that
+	// follow name the URL whose response they report.
+	fileResponse, shown, err := doProductDataFileRequest(ctx, e.dataFileUrl, e.logger,
+		lastModificationTimestamp, e.GetDataFile(), e.productName, e.engineLabel())
 	if err != nil {
 		if ctx.Err() != nil {
 			return e.GetDataFilePullEveryMs(), false, err
 		}
 		if errors.Is(err, ErrFileNotModified) {
 			e.logger.Infof("No data newer than %s found at '%s' for Engine '%s'",
-				formatSince(lastModificationTimestamp), e.maskedDataFileUrl(), e.engineLabel())
+				formatSince(lastModificationTimestamp), shown, e.engineLabel())
 			return e.GetDataFilePullEveryMs(), false, err
 		}
-		e.logPullError(err)
+		e.logPullError(err, shown)
 		if fileResponse != nil && fileResponse.retryAfter > 0 {
 			e.logger.Printf("received retry-after, retrying after %d seconds", fileResponse.retryAfter)
 			// retry after the specified time
@@ -339,7 +353,7 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 		return e.GetDataFilePullEveryMs(), false, err
 	}
 
-	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
+	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", shown, e.engineLabel())
 
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
@@ -377,10 +391,10 @@ func formatSince(since *time.Time) string {
 
 // logPullError logs a failed pull as the specification's error table gives it,
 // which follows .NET. A failure the table has a row for is logged at Error as
-// "Error during check for data update", followed by the row's message, and any
-// other failure at Error with the table's last row.
-func (e *FileUpdater) logPullError(err error) {
-	if message, ok := e.pullErrorMessage(err); ok {
+// "Error during check for data update", followed by the row's message, which
+// names url, and any other failure at Error with the table's last row.
+func (e *FileUpdater) logPullError(err error, url string) {
+	if message, ok := e.pullErrorMessage(err, url); ok {
 		e.logCheckError(message)
 		return
 	}
@@ -398,14 +412,15 @@ func (e *FileUpdater) logUnhandledError(err error) {
 		"Error detail: %v", e.engineLabel(), err)
 }
 
-// pullErrorMessage gives the error table's message for a failed pull, and
-// false for a failure the table has no row for.
-func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
+// pullErrorMessage gives the error table's message for a failed pull, naming
+// url, the masked URL of the request that failed, and false for a failure the
+// table has no row for.
+func (e *FileUpdater) pullErrorMessage(err error, url string) (string, bool) {
 	var pe *pullError
 	if !errors.As(err, &pe) {
 		return "", false
 	}
-	url, engine := e.maskedDataFileUrl(), e.engineLabel()
+	engine := e.engineLabel()
 	switch pe.kind {
 	case pullConnect, pullRead:
 		return fmt.Sprintf("Error accessing data update service at '%s' for engine '%s'. Error detail: %v",
@@ -417,6 +432,9 @@ func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
 	case pullStatus:
 		return fmt.Sprintf("HTTP status code '%d' from data update service at '%s' for engine '%s'",
 			pe.status, url, engine), true
+	case pullProductChoice:
+		return fmt.Sprintf("Product '%s' is not offered by data update service at '%s' for engine '%s'. "+
+			"Products offered: '%s'", pe.product, url, engine, strings.Join(pe.products, productSeparator)), true
 	case pullIntegrity:
 		// The table, as .NET, has no space after the engine's name.
 		return fmt.Sprintf("Integrity check failed. MD5 hash in HTTP response '%s' for '%s'data update does "+
@@ -443,7 +461,7 @@ func pullUpdateStatus(err error) UpdateStatus {
 	var pe *pullError
 	if errors.As(err, &pe) {
 		switch pe.kind {
-		case pullConnect, pullRead, pullStatus:
+		case pullConnect, pullRead, pullStatus, pullProductChoice:
 			return UpdateHTTPSError
 		case pullTooManyRequests:
 			return UpdateTooManyRequests
@@ -476,6 +494,9 @@ const (
 	pullStatus
 	pullIntegrity
 	pullWrite
+	// pullProductChoice is a 300 (Multiple Choices) response that does not
+	// offer the product of the data file.
+	pullProductChoice
 )
 
 // pullError is an error from a pull tagged with the step that failed. Its text is the text of the error it wraps.
@@ -488,6 +509,10 @@ type pullError struct {
 	// the first as the response gave it and the second as read from the file.
 	expectedMD5 string
 	actualMD5   string
+	// product is the product of the data file and products are those the
+	// response offered, of a pullProductChoice failure.
+	product  string
+	products []string
 }
 
 func (p *pullError) Error() string { return p.err.Error() }
@@ -519,27 +544,69 @@ func tempFilePattern(dataFile string) string {
 // Returns a FileResponse with the temp file path or an error if the request fails or conditions are not met.
 func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
 	dataFile string) (*FileResponse, error) {
+	response, _, err := doProductDataFileRequest(ctx, url, logger, timestamp, dataFile, noProduct, "Engine")
+	return response, err
+}
+
+// noProduct names no product of the loaded data file.
+func noProduct() string { return "" }
+
+// doProductDataFileRequest fetches a data file as doDataFileRequest does, and also returns the URL of
+// the request whose response it reports, with its license keys masked, for the messages that follow.
+//
+// When the server answers 300 (Multiple Choices), which the Distributor does for license keys that
+// hold several products, and neither url nor the address that answered names a product, the request
+// is made again to the address that answered, with the product of the loaded data file added to its
+// query. product gives that product, and is called only then. Only the product is taken from the
+// response, and the Location header is never followed. A request that names a product, which is a
+// configured product, is not repeated, so its 300 is the error of any other response. engine names
+// the engine in the messages logged.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
+	dataFile string, product func() string, engine string) (*FileResponse, string, error) {
 	removeStaleTempFiles(dataFile, logger)
 
 	// An error net/http raises names the URL, so its license keys are masked.
 	keys := LicenseKeysInURL(url)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	shown := MaskLicenseKeysIn(url, keys)
+	resp, err := getDataFile(ctx, url, timestamp, keys)
 	if err != nil {
-		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
+		return nil, shown, err
 	}
-
-	if timestamp != nil {
-		req.Header.Set("If-Modified-Since", timestamp.UTC().Format(http.TimeFormat))
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
+	if resp.StatusCode == http.StatusMultipleChoices {
+		// After a redirect, the address that answered 300 is the URL of the first request.
+		first := answeredBy(resp, url)
+		keys = append(keys, LicenseKeysInURL(first)...)
+		shown = MaskLicenseKeysIn(first, keys)
+		var products []string
+		listed := false
+		if !namesProduct(url) && !namesProduct(first) {
+			products, listed = productsOffered(resp)
+		}
+		if listed {
+			resp.Body.Close()
+			chosen, err := chooseProduct(product(), products, keys)
+			if err != nil {
+				return nil, shown, err
+			}
+			withProduct, err := urlWithProduct(first, chosen)
+			if err != nil {
+				return nil, shown, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
+			}
+			logger.Infof("Requesting product '%s' from '%s' for Engine '%s'", chosen, shown, engine)
+			// The second request is logged as the first is, and the messages after it name it.
+			shown = MaskLicenseKeysIn(withProduct, keys)
+			logger.Infof("Checking for update from '%s' for Engine '%s'", shown, engine)
+			resp, err = getDataFile(ctx, withProduct, timestamp, keys)
+			if err != nil {
+				return nil, shown, err
+			}
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return nil, ErrFileNotModified
+		return nil, shown, ErrFileNotModified
 	}
 
 	//handle retry after
@@ -547,21 +614,21 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 		retryAfter := resp.Header.Get("Retry-After")
 		retryAfterSeconds, err := strconv.Atoi(retryAfter)
 		if err != nil || len(retryAfter) == 0 {
-			return nil, newPullError(pullTooManyRequests,
+			return nil, shown, newPullError(pullTooManyRequests,
 				fmt.Errorf("failed to parse Retry-After header: %v", err))
 		}
 
 		return &FileResponse{
 			retryAfter: retryAfterSeconds,
-		}, newPullError(pullTooManyRequests, fmt.Errorf("retrying after %d seconds", retryAfterSeconds))
+		}, shown, newPullError(pullTooManyRequests, fmt.Errorf("retrying after %d seconds", retryAfterSeconds))
 	}
 
 	if resp.StatusCode == http.StatusForbidden {
-		return nil, newPullError(pullForbidden, errors.New(resp.Status))
+		return nil, shown, newPullError(pullForbidden, errors.New(resp.Status))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, &pullError{
+		return nil, shown, &pullError{
 			kind:   pullStatus,
 			err:    errors.New(resp.Status),
 			status: resp.StatusCode,
@@ -580,16 +647,16 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 	if isGzip(http.DetectContentType(head)) {
 		fileBytes, err = gzip.NewReader(body)
 		if received.err != nil {
-			return nil, newPullError(pullRead, received.err)
+			return nil, shown, newPullError(pullRead, received.err)
 		}
 		if err != nil {
-			return nil, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
+			return nil, shown, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
 		}
 	}
 
 	tempFile, err := os.CreateTemp(filepath.Dir(dataFile), tempFilePattern(dataFile))
 	if err != nil {
-		return nil, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
+		return nil, shown, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
 	}
 	size, err := writeDataFile(tempFile, fileBytes, received, dataFile)
 	if err == nil {
@@ -605,19 +672,184 @@ func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, time
 			}
 		} else {
 			logger.Warnf("No MD5 hash included in data update response for '%s'. "+
-				"Unable to verify data integrity", MaskLicenseKeysIn(url, keys))
+				"Unable to verify data integrity", shown)
 		}
 	}
 	if err != nil {
 		os.Remove(tempFile.Name())
-		return nil, err
+		return nil, shown, err
 	}
 
 	return &FileResponse{
 		path:       tempFile.Name(),
 		size:       size,
 		retryAfter: 0,
-	}, nil
+	}, shown, nil
+}
+
+// getDataFile makes the GET request for a data file, with If-Modified-Since when timestamp is given.
+// The caller closes the body of the response.
+func getDataFile(ctx context.Context, url string, timestamp *time.Time, keys []string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
+	}
+
+	if timestamp != nil {
+		req.Header.Set("If-Modified-Since", timestamp.UTC().Format(http.TimeFormat))
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
+	}
+	return resp, nil
+}
+
+// productParameter is the query parameter of a Distributor URL that names the product.
+const productParameter = "Product"
+
+// productSeparator is written between the products offered in a message.
+const productSeparator = ","
+
+// productNameCharacters is the longest product name taken from a response.
+const productNameCharacters = 64
+
+// productsOfferedCount is the most products taken from a response.
+const productsOfferedCount = 32
+
+// productChoiceBytes is the most that is read of a 300 (Multiple Choices) response.
+const productChoiceBytes = 1 << 20
+
+// productChoice is the body of the 300 (Multiple Choices) response the Distributor gives for a license
+// key that holds several products.
+type productChoice struct {
+	// AvailableUris holds one URI for each product, with the product as its Product parameter.
+	AvailableUris []string
+}
+
+// productsOffered reads the products a 300 (Multiple Choices) response offers, being the Product
+// parameter of each of its AvailableUris, in the order of the response. A URI with no Product, or with
+// one that is not a product name, is left out, and the first productsOfferedCount products are kept.
+// It reports false when the body is not JSON with a list of AvailableUris, or when the list gives no
+// product.
+func productsOffered(resp *http.Response) ([]string, bool) {
+	var choice productChoice
+	body, err := io.ReadAll(io.LimitReader(resp.Body, productChoiceBytes))
+	if err != nil || json.Unmarshal(body, &choice) != nil || len(choice.AvailableUris) == 0 {
+		return nil, false
+	}
+	var offered []string
+	for _, uri := range choice.AvailableUris {
+		parsed, err := neturl.Parse(uri)
+		if err != nil {
+			continue
+		}
+		if name := queryValue(parsed, productParameter); isProductName(name) {
+			offered = append(offered, name)
+			if len(offered) == productsOfferedCount {
+				break
+			}
+		}
+	}
+	return offered, len(offered) > 0
+}
+
+// isProductName reports whether name is one to productNameCharacters letters, digits, '_', '-' and
+// '.', which is all a product name holds.
+func isProductName(name string) bool {
+	if name == "" || len(name) > productNameCharacters {
+		return false
+	}
+	for _, c := range name {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '_', c == '-', c == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// chooseProduct returns the product offered that is product, whatever its case, as the response wrote
+// it. When product is empty or is not offered, it returns an error that holds the products offered.
+func chooseProduct(product string, offered []string, keys []string) (string, error) {
+	if product != "" {
+		for _, name := range offered {
+			if strings.EqualFold(name, product) {
+				return name, nil
+			}
+		}
+	}
+	masked := make([]string, 0, len(offered))
+	for _, name := range offered {
+		masked = append(masked, MaskLicenseKeysIn(name, keys))
+	}
+	return "", &pullError{
+		kind: pullProductChoice,
+		err: fmt.Errorf("product '%s' is not offered, the products offered being '%s'",
+			product, strings.Join(masked, productSeparator)),
+		status:   http.StatusMultipleChoices,
+		product:  product,
+		products: masked,
+	}
+}
+
+// urlWithProduct returns rawURL with product as the Product parameter of its query, in place of any
+// Product parameter it has.
+func urlWithProduct(rawURL string, product string) (string, error) {
+	parsed, err := neturl.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	for name := range query {
+		if strings.EqualFold(name, productParameter) {
+			query.Del(name)
+		}
+	}
+	query.Set(productParameter, product)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+// queryValue returns the first value of the query parameter of u called name, whatever its case.
+func queryValue(u *neturl.URL, name string) string {
+	for key, values := range u.Query() {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
+}
+
+// namesProduct reports whether rawURL has a Product parameter with a value, whatever the case of
+// its name. A request to such a URL asks for a configured product.
+func namesProduct(rawURL string) bool {
+	parsed, err := neturl.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	for name, values := range parsed.Query() {
+		if !strings.EqualFold(name, productParameter) {
+			continue
+		}
+		for _, value := range values {
+			if value != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// answeredBy returns the address that gave resp, which is url unless the client followed a redirect.
+func answeredBy(resp *http.Response, url string) string {
+	if resp.Request == nil || resp.Request.Response == nil || resp.Request.URL == nil {
+		return url
+	}
+	return resp.Request.URL.String()
 }
 
 // writeDataFile copies the uncompressed data into the temp file, flushes the file to disk and gives it the

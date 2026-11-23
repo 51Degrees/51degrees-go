@@ -84,6 +84,7 @@ func runExample(free string, exampleFunc ExampleFunc, file string) {
 
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,
+		Product:      os.Getenv("_51DEGREES_IPI_PRODUCT"),
 		DataFile:     GetDataFile(dataFile),
 		EvidenceYaml: evidenceYaml,
 	}
