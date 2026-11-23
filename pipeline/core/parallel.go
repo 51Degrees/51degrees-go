@@ -37,8 +37,11 @@ import (
 // adds Element Data with a compare and swap. Each child element MUST write to
 // a distinct Element Data key, and MUST NOT add Evidence. Each child processes
 // its own view of the Flow Data, so Evidence a child adds stays in that view,
-// and the group drops it when it finishes, with no log and no error.
+// and the group drops it when it finishes, with no log and no error. A child
+// that reads Element Data that reads its values from native results is
+// responsible for thread-safe access to it, as ElementData describes.
 // See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L14-L59
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L44-L47
 type ParallelElements struct {
 	*BaseElement
 	children []FlowElement

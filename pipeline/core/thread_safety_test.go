@@ -39,8 +39,10 @@ func (e *manyValuesElement) Process(fd FlowData) error {
 }
 
 // Once the Flow Element that writes an Element Data has finished, the members
-// of a parallel group may read that instance at the same time, so reading the
-// Element Data from several goroutines at once is safe. The Flow Data itself
+// of a parallel group may read that instance at the same time, so reading a
+// BaseElementData from several goroutines at once is safe. Element Data that
+// reads its values from native results is the exception, as ElementData
+// describes. The Flow Data itself
 // is used by one goroutine at a time, so only the test's goroutine reads it.
 // See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L12-L16
 // and https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/advanced-features/parallel-processing.md?plain=1#L41-L43
