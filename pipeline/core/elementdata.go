@@ -40,11 +40,13 @@ import (
 // not safe for writing from several goroutines at once, nor for reading
 // while it is being written. Once its Flow Element has finished, the
 // instance may be read from several goroutines at once, as the members of a
-// parallel group read it, so an implementation must allow that, unless it
-// reads its values from native results, as the Aspect Data of an on-premise
-// Engine does. Such an instance takes no lock and is not safe to use from
-// several goroutines at once, so a caller that reads it from several, as
-// members of a parallel group after the Engine do, is responsible for
+// parallel group read it, so an implementation must allow that.
+//
+// The exception is Element Data that reads its values from native results,
+// such as the Device Detection DeviceData and the IP Intelligence Data. Such
+// Element Data takes no lock and is not safe to use from several goroutines
+// at once. Code that reads one instance from several goroutines, as the
+// members of a parallel group after the engine may, is responsible for
 // thread-safe access, for example with a sync.Mutex the readers share.
 //
 // Keeping a reference to Element Data after the Flow Data that holds it is
@@ -141,7 +143,7 @@ var baseElementDataPool = sync.Pool{New: func() any {
 // writing from several goroutines at once, because only the Flow Element that
 // creates the instance writes it. Once that Flow Element has finished,
 // several goroutines can read the instance at once.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L143-L164
 func NewBaseElementData() *BaseElementData {
 	return baseElementDataPool.Get().(*BaseElementData)
 }

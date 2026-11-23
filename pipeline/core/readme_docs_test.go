@@ -31,7 +31,8 @@ import (
 // The README says what the code comments say about sharing a Flow Data and
 // its Element Data: who writes Element Data, that Close returns it to a pool,
 // that a reference kept after Close is not supported, that the web middleware
-// closes the Flow Data when the request ends, and that a late write panics.
+// closes the Flow Data when the request ends, that a late write panics, and
+// that Element Data reading native results takes no lock.
 // See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md#element-data
 // and https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/resource-cleanup.md#reusing-element-data
 func TestTheReadmeSaysHowElementDataIsWrittenAndReused(t *testing.T) {
@@ -49,6 +50,8 @@ func TestTheReadmeSaysHowElementDataIsWrittenAndReused(t *testing.T) {
 		"panics with `core.ErrFlowDataFinished`",
 		"panics with `core.ErrElementDataFinished`",
 		"two Derived Property Elements MUST NOT be members of the same parallel group",
+		"Element Data that reads its values from native results",
+		"takes no lock and is not safe to use from several goroutines at once",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the README does not say %q", want)
