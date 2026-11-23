@@ -22,13 +22,14 @@
 
 package main
 
-// The passive call the example makes, against the staging cloud named by
-// CLOUD_STAGING_ENDPOINT, because the production cloud does not serve
-// HumanConfidenceSource or a passive level other than Unknown yet. The
-// request names HumanConfidence and HumanConfidenceSource, so the answer
-// carries both whatever the key's own property list holds. A test without
-// its endpoint or key skips and names the variable it needs. Keys and the
-// staging address are never printed.
+// Live tests of a passive call like the example's, against the staging cloud
+// named by CLOUD_STAGING_ENDPOINT, because the production cloud does not
+// serve HumanConfidenceSource or a passive level other than Unknown yet. The
+// request sends a browser's User-Agent and names HumanConfidence and
+// HumanConfidenceSource, so the answer carries both whatever the key's own
+// property list holds. A test without its endpoint or key skips and names
+// the variable it needs. Failure messages hide the key, the staging API base
+// and its host.
 
 import (
 	"encoding/json"
@@ -49,7 +50,7 @@ const (
 	// product that the staging cloud knows, which gets the source.
 	stagingBespokeKeyVariable = "RESOURCE_KEY_BESPOKE_STAGING"
 	// basicKeyVariable holds a Resource Key outside the Bespoke product,
-	// which gets no source.
+	// which gets the source as null.
 	basicKeyVariable = "_51DEGREES_RESOURCE_KEY_BASIC"
 	liveValues       = "derived.humanconfidence,derived.humanconfidencesource"
 	liveUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -69,6 +70,18 @@ func liveSetting(t *testing.T, name string) string {
 	return value
 }
 
+// redactor hides the API base, its host and the key, because a failed call's
+// error names the URL, and a failed lookup or connection names the host
+// alone.
+func redactor(api, key string) *strings.Replacer {
+	pairs := []string{api, "<" + stagingEndpointVariable + ">"}
+	if base, err := url.Parse(api); err == nil && base.Hostname() != "" {
+		pairs = append(pairs,
+			base.Hostname(), "<"+stagingEndpointVariable+" host>")
+	}
+	return strings.NewReplacer(append(pairs, key, "<key>")...)
+}
+
 // livePassive posts a browser's User-Agent to the JSON path of the key in
 // keyName, on the staging cloud, naming the two properties. It returns the
 // answer's derived object, empty when the answer has none.
@@ -76,8 +89,7 @@ func livePassive(t *testing.T, keyName string) map[string]any {
 	t.Helper()
 	api := strings.TrimRight(liveSetting(t, stagingEndpointVariable), "/") + "/"
 	key := liveSetting(t, keyName)
-	redact := strings.NewReplacer(
-		api, "<"+stagingEndpointVariable+">", key, "<key>")
+	redact := redactor(api, key)
 	client := &http.Client{Timeout: liveTimeoutSeconds * time.Second}
 	response, err := client.PostForm(api+key+".json",
 		url.Values{"user-agent": {liveUserAgent}, "values": {liveValues}})
@@ -114,11 +126,29 @@ func TestLiveBespokeKeyGetsSourcePassive(t *testing.T) {
 	}
 }
 
-// The production cloud serves the source to no key, so only the staging
-// cloud makes this a check.
+// A key outside Bespoke gets the source named, as null with a reason. The
+// production cloud leaves the source out of every answer, so this fails
+// against any cloud that does not serve the source.
 func TestLiveKeyOutsideBespokeGetsNoSource(t *testing.T) {
 	derived := livePassive(t, basicKeyVariable)
-	if source := derived["humanconfidencesource"]; source != nil {
-		t.Errorf("a key outside Bespoke gets no source, got %v", derived)
+	if source, named := derived["humanconfidencesource"]; !named ||
+		source != nil {
+		t.Errorf("a key outside Bespoke gets the source as null, got %v",
+			derived)
+	}
+	if _, ok := derived["humanconfidencesourcenullreason"].(string); !ok {
+		t.Errorf("a null source comes with a reason, got %v", derived)
+	}
+}
+
+// The redactor hides the API base, a host named on its own and the key.
+func TestRedactorHidesTheAddressAndTheKey(t *testing.T) {
+	api, key := "https://staging.example.com/api/v4/", "test-key"
+	got := redactor(api, key).Replace(`Post "` + api + key +
+		`.json": dial tcp: lookup staging.example.com: no such host`)
+	want := `Post "<` + stagingEndpointVariable + `><key>.json": ` +
+		`dial tcp: lookup <` + stagingEndpointVariable + ` host>: no such host`
+	if got != want {
+		t.Errorf("the redacted error is %q, want %q", got, want)
 	}
 }

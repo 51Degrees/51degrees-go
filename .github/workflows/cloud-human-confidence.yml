@@ -4,7 +4,8 @@ name: Cloud Human Confidence Tests
 # (examples/pipeline/human_confidence/live_test.go) against the staging
 # cloud, because the production cloud does not serve HumanConfidenceSource
 # or a passive level other than Unknown yet. The Bespoke key's answer carries
-# Passive and a plain level. The Basic key's answer carries no source.
+# Passive and a plain level. The Basic key's answer carries the source as
+# null, with a reason.
 #
 # CLOUD_STAGING_ENDPOINT, the staging cloud's API base, is an organization
 # variable, and RESOURCE_KEY_BESPOKE_STAGING is an organization secret. Only
@@ -23,8 +24,12 @@ on:
     - cron: '20 6 * * *'
   pull_request:
     branches: [main, rc]
+    # The example, and the files that set the job's Go version and build.
     paths:
       - 'examples/pipeline/human_confidence/**'
+      - 'examples/pipeline/go.mod'
+      - 'examples/pipeline/go.sum'
+      - 'go.work'
       - '.github/workflows/cloud-human-confidence.yml'
 
 permissions:
