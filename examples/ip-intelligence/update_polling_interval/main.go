@@ -61,9 +61,7 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 
 		// Ask for the product _51DEGREES_IPI_PRODUCT names, as the
 		// Distributor spells it, such as IPIV4Enterprise. When the variable
-		// is not set, no product is named, and when the license key holds
-		// several products the engine asks for the product of the data file
-		// it has loaded.
+		// is not set, no product is named.
 		ipi_onpremise.WithProduct(params.Product),
 
 		// WithAutoUpdate enables or disables auto update
@@ -210,9 +208,7 @@ func main() {
 
 				// Ask for the product _51DEGREES_IPI_PRODUCT names, as
 				// the Distributor spells it, such as IPIV4Enterprise.
-				// When the variable is not set, no product is named, and
-				// when the license key holds several products the engine
-				// asks for the product of the data file it has loaded.
+				// When the variable is not set, no product is named.
 				ipi_onpremise.WithProduct(params.Product),
 
 				// Enable automatic updates.
