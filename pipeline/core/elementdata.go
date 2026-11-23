@@ -46,8 +46,12 @@ import (
 // such as the Device Detection DeviceData and the IP Intelligence Data. Such
 // Element Data takes no lock and is not safe to use from several goroutines
 // at once. Code that reads one instance from several goroutines, as the
-// members of a parallel group after the Engine may, is responsible for
-// thread-safe access, for example with a sync.Mutex the readers share.
+// members of a parallel group after the Engine that adds it may, is
+// responsible for thread-safe access, for example with a sync.Mutex the
+// readers share. The Flow Elements in this repository take no such lock
+// when they read other Element Data, so a lock the other readers share makes
+// their reads safe only in a parallel group where none of these Flow
+// Elements reads that instance.
 //
 // Keeping a reference to Element Data after the Flow Data that holds it is
 // closed is not supported, because a pool may give the instance to another

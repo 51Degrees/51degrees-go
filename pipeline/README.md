@@ -171,11 +171,13 @@ goroutines at once. Members of a parallel group after the Device Detection
 or IP Intelligence on-premise Engine that read its Element Data are
 responsible for thread-safe access to it. A `sync.Mutex` the readers share
 protects it only when every reader takes it, and the Flow Elements in this
-module, such as the JSON Builder, the JavaScript Builder, the Set Headers
-Element, the Derived Property Element and the Translation Engine, take no
-lock when they read other Element Data. So a member that reads that
-Engine's Element Data must not share a parallel group with any other member
-that reads it.
+repository, such as the JSON Builder, the JavaScript Builder, the Set
+Headers Element, the Derived Property Element, the Translation Engine and
+the IP Intelligence Countries Translation Engine, take no lock when they
+read other Element Data. So a member that reads that
+Engine's Element Data must not share a parallel group with any of these
+Flow Elements that also reads it, and the other members of the group that
+read it must all take the same lock.
 
 `FlowData.Close` returns its Element Data to a pool, to be used again by a
 later Flow Data. Call it once the Flow Data and its values are no longer
