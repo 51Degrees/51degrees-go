@@ -516,42 +516,49 @@ func (e *Engine) reloadFileEvent() {
 	}
 }
 
-// validateAndAppendUrlParams validates URL parameters and appends necessary values for default data file URLs.
-// Returns an error if required parameters are missing or appending fails.
+// validateAndAppendUrlParams completes the data file URL when the engine
+// downloads data files. The default URL is given the license key, which it
+// needs, and any URL is given the product option, as appendProduct says.
 func (e *Engine) validateAndAppendUrlParams() error {
-	downloads := e.IsAutoUpdateEnabled() || e.IsUpdateOnStartEnabled()
-	if e.isDefaultDataFileUrl() && !e.hasDefaultDistributorParams() && downloads {
-		return common_go.ErrLicenseKeyRequired
+	if !e.IsAutoUpdateEnabled() && !e.IsUpdateOnStartEnabled() {
+		return nil
 	}
-
-	if e.isDefaultDataFileUrl() && downloads {
+	if e.isDefaultDataFileUrl() {
+		if !e.hasDefaultDistributorParams() {
+			return common_go.ErrLicenseKeyRequired
+		}
 		if err := e.appendLicenceKey(); err != nil {
 			return err
 		}
-
-		if err := e.appendProduct(); err != nil {
-			return err
-		}
 	}
-
-	return nil
+	return e.appendProduct()
 }
 
-// appendProduct sets the Product parameter of the data file URL to the product
-// option. When the option is not set the URL has no Product parameter, so the
-// first request of an update names no product. When it is set, every request
-// asks for that product, and a 300 (Multiple Choices) response is not
-// followed.
+// appendProduct gives the data file URL the product option as its Product
+// parameter, in place of an empty one, so every request asks for that
+// product and a 300 (Multiple Choices) response is not followed. A URL that
+// names a product already, which only a caller's own URL can, is left as it
+// is, and so is any URL when the option is not set, so the first request of
+// an update then names no product.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#configured-product
 func (e *Engine) appendProduct() error {
+	if e.product == "" {
+		return nil
+	}
 	urlParsed, err := url.Parse(e.GetDataFileUrl())
 	if err != nil {
 		return fmt.Errorf("failed to parse data file url: %w", err)
 	}
 	query := urlParsed.Query()
-	query.Del("Product")
-	if e.product != "" {
-		query.Set("Product", e.product)
+	if namesProduct(query) {
+		return nil
 	}
+	for name := range query {
+		if strings.EqualFold(name, productParameter) {
+			query.Del(name)
+		}
+	}
+	query.Set(productParameter, e.product)
 	urlParsed.RawQuery = query.Encode()
 
 	e.SetDataFileUrl(urlParsed.String())

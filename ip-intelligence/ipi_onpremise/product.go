@@ -23,6 +23,7 @@
 package ipi_onpremise
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/51Degrees/51degrees-go/ip-intelligence/v4/ipi_interop"
@@ -36,7 +37,7 @@ const productPrefix = "IPIV4"
 // data file of the data tier, which is the prefix followed by the tier. A
 // tier that already starts with the prefix, whatever its case, is the name as
 // it is, and no tier gives no name.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#product-names
 func distributorProduct(tier string) string {
 	tier = strings.TrimSpace(tier)
 	if tier == "" {
@@ -62,4 +63,24 @@ func (e *Engine) dataFileProduct() string {
 		return ""
 	}
 	return distributorProduct(ipi_interop.GetDataSetName(e.manager))
+}
+
+// productParameter is the query parameter of a data file URL that names the
+// product.
+const productParameter = "Product"
+
+// namesProduct reports whether query has a Product parameter with a value,
+// whatever the case of its name.
+func namesProduct(query url.Values) bool {
+	for name, values := range query {
+		if !strings.EqualFold(name, productParameter) {
+			continue
+		}
+		for _, value := range values {
+			if value != "" {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -113,7 +113,7 @@ default is Balanced profile
 ```
 
 #### WithProduct sets the product to use when pulling the data file
-this option can only be used when using the default data file url from 51Degrees, it will be appended as a query parameter
+The product is named as the Distributor spells it, such as `V4TAC`, and every request asks for it. It is added as the `Product` query parameter to the default data file url, and to a url that `WithDataUpdateUrl` gives unless that url names a product already. When no product is set, the first request names none, and when the license key holds several products the engine asks for the product of the data file it has loaded. A 300 (Multiple Choices) answer to a request that names a product is an error.
 ```go
     WithProduct(product string) EngineOptions
 ```

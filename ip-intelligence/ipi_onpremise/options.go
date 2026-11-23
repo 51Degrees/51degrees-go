@@ -185,14 +185,15 @@ func WithLicenseKey(key string) EngineOptions {
 	}
 }
 
-// WithProduct sets the product to use when pulling the data file when distributor service is used
-// licenseKey has to be provided using WithLicenseKey
+// WithProduct sets the product that every request for a data file asks
+// for, as the Distributor spells it, such as IPIV4Enterprise. An empty product,
+// which is the default, is no product. It is added to the default data file
+// URL with the license key, and to a URL WithDataUpdateUrl gives unless that
+// URL names a product already, in either order. A 300 (Multiple Choices)
+// response to a request that names a product is an error, so the product of
+// the loaded data file is not asked for in its place.
 func WithProduct(product string) EngineOptions {
 	return func(cfg *Engine) error {
-		if !cfg.isDefaultDataFileUrl() {
-			return errors.New("product can only be set when using default data file url")
-		}
-
 		cfg.product = product
 		return nil
 	}

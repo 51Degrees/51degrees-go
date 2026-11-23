@@ -29,10 +29,16 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	common_go "github.com/51Degrees/51degrees-go/common/v4"
 )
+
+// configuredProductRules is the specification text these tests follow.
+const configuredProductRules = "https://github.com/51Degrees/specifications/" +
+	"blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/" +
+	"features/data-updates.md#configured-product"
 
 // firstRequestQuery is the query of the first request of an update that an
 // engine with the default data update URL, the made-up license key and the
@@ -80,33 +86,66 @@ func TestFirstRequestNamesTheProductSet(t *testing.T) {
 	}
 }
 
-// A product the product option sets wins. The first request asks for it, and
-// a 300 (Multiple Choices) response to that request is not followed, so the
-// product of the loaded data file is never asked for in its place. The update
-// ends with the error of any other response.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#configured-product
-func TestProductSetIsNotReplacedOnA300(t *testing.T) {
-	var mu sync.Mutex
-	var asked []string
+// requestLog keeps the query of each request a test server is sent.
+type requestLog struct {
+	mu      sync.Mutex
+	queries []string
+}
+
+func (l *requestLog) add(r *http.Request) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.queries = append(l.queries, r.URL.RawQuery)
+}
+
+// raw is the query of each request as it was sent.
+func (l *requestLog) raw() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.queries...)
+}
+
+// products are the Product values of each request, in order.
+func (l *requestLog) products() [][]string {
+	var products [][]string
+	for _, query := range l.raw() {
+		values, _ := url.ParseQuery(query)
+		products = append(products, values["Product"])
+	}
+	return products
+}
+
+// onlyProduct reports whether products is one request that asked for product
+// once.
+func onlyProduct(products [][]string, product string) bool {
+	return len(products) == 1 && len(products[0]) == 1 && products[0][0] == product
+}
+
+// locationServer answers every request with 404 and counts them. It stands
+// for the address a 300 response names in its Location header.
+func locationServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var count atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			asked = append(asked, r.URL.Query().Get("Product"))
-			mu.Unlock()
-			w.WriteHeader(http.StatusMultipleChoices)
-			w.Write([]byte(`{"AvailableUris":[` +
-				`"https://distributor.example/api/v2/download?Product=IPIV4Basic",` +
-				`"https://distributor.example/api/v2/download?Product=IPIV4Enterprise"]}`))
+			count.Add(1)
+			http.NotFound(w, r)
 		}))
-	defer server.Close()
-	path := filepath.Join(t.TempDir(), "data.file")
-	if err := os.WriteFile(path, []byte("current"), 0644); err != nil {
-		t.Fatalf("write the data file: %v", err)
-	}
+	t.Cleanup(server.Close)
+	return server, &count
+}
+
+// productSetEngine is an engine with the default data update URL, completed
+// for the made-up license key and the product given, that sends the query it
+// made to server, which stands in for the Distributor. engineWithDataFile
+// gives it the rest.
+func productSetEngine(t *testing.T, server *httptest.Server, product string,
+	loaded string) (*Engine, *reloadTestLog, *atomic.Int32) {
+	t.Helper()
 	engine := &Engine{
 		FileUpdater: common_go.NewFileUpdater(defaultDataFileUrl),
 		licenseKey:  productTestKey,
-		product:     "IPIV4Enterprise",
+		product:     product,
 	}
 	if err := engine.validateAndAppendUrlParams(); err != nil {
 		t.Fatalf("the data update URL could not be completed: %v", err)
@@ -115,22 +154,65 @@ func TestProductSetIsNotReplacedOnA300(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the data update URL could not be parsed: %v", err)
 	}
-	// The test server stands in for the Distributor. It gets the query the
-	// engine made, and the loaded data file is of a product it offers.
 	engine.SetDataFileUrl(server.URL + "/api/v2/download?" + parsed.RawQuery)
+	return engineWithDataFile(t, engine, loaded)
+}
+
+// engineWithDataFile gives engine a data file holding "current" and the log
+// returned, with loaded as the product of its data file, counting each time
+// that product is looked up.
+func engineWithDataFile(t *testing.T, engine *Engine,
+	loaded string) (*Engine, *reloadTestLog, *atomic.Int32) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "data.file")
+	if err := os.WriteFile(path, []byte("current"), 0644); err != nil {
+		t.Fatalf("write the data file: %v", err)
+	}
 	engine.SetDataFile(path)
-	engine.SetProductFunc(func() string { return "IPIV4Basic" })
+	engine.SetEngineName(engineTypeName)
+	var lookups atomic.Int32
+	engine.SetProductFunc(func() string {
+		lookups.Add(1)
+		return loaded
+	})
 	log := &reloadTestLog{}
 	engine.SetCustomLogger(log)
+	return engine, log, &lookups
+}
+
+// A product the product option sets wins. The first request asks for it, and
+// a 300 (Multiple Choices) response to that request is not followed, so the
+// product of the loaded data file is never looked up or asked for in its
+// place, and the address in the Location header is not requested. The update
+// ends with the error of any other response.
+func TestProductSetIsNotReplacedOnA300(t *testing.T) {
+	location, followed := locationServer(t)
+	offered := location.URL + "/api/v2/download?Product="
+	requests := &requestLog{}
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			requests.add(r)
+			w.Header().Set("Location", offered+"IPIV4Basic")
+			w.WriteHeader(http.StatusMultipleChoices)
+			w.Write([]byte(`{"AvailableUris":["` + offered + `IPIV4Basic","` +
+				offered + `IPIV4Enterprise"]}`))
+		}))
+	defer server.Close()
+	engine, log, lookups := productSetEngine(t, server, "IPIV4Enterprise", "IPIV4Basic")
 
 	if _, err := engine.PullOnStart(); err != nil {
 		t.Fatalf("the update on start-up failed: %v", err)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	if len(asked) != 1 || asked[0] != "IPIV4Enterprise" {
-		t.Errorf("the requests asked for the products %q, want IPIV4Enterprise once", asked)
+	if got := requests.products(); !onlyProduct(got, "IPIV4Enterprise") {
+		t.Errorf("the requests asked for the products %q, want IPIV4Enterprise once (%s)",
+			got, configuredProductRules)
+	}
+	if n := followed.Load(); n != 0 {
+		t.Errorf("%d requests went to the address of the Location header, want none", n)
+	}
+	if n := lookups.Load(); n != 0 {
+		t.Errorf("the product of the data file was looked up %d times, want none", n)
 	}
 	if !log.has("HTTP status code '300' from data update service at '") {
 		t.Error("no message gives the error of any other response")
@@ -140,5 +222,122 @@ func TestProductSetIsNotReplacedOnA300(t *testing.T) {
 	}
 	if log.has(productTestKey) {
 		t.Error("a message holds the license key in full")
+	}
+}
+
+// A 403 (Forbidden) answer to a request for the product the option sets is
+// the access denied error, which is what the Distributor answers when the
+// license key does not hold that product.
+func TestProductSetAnd403IsAccessDenied(t *testing.T) {
+	requests := &requestLog{}
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			requests.add(r)
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"Error":"The license key provided does not ` +
+				`contain the requested product."}`))
+		}))
+	defer server.Close()
+	engine, log, _ := productSetEngine(t, server, "IPIV4Enterprise", "IPIV4Basic")
+	var mu sync.Mutex
+	var statuses []common_go.UpdateStatus
+	engine.OnUpdateComplete(func(u common_go.UpdateComplete) {
+		mu.Lock()
+		defer mu.Unlock()
+		statuses = append(statuses, u.Status)
+	})
+
+	if _, err := engine.PullOnStart(); err != nil {
+		t.Fatalf("the update on start-up failed: %v", err)
+	}
+
+	if got := requests.products(); !onlyProduct(got, "IPIV4Enterprise") {
+		t.Errorf("the requests asked for the products %q, want IPIV4Enterprise once", got)
+	}
+	if !log.has("Access denied to data update service at '",
+		"' for engine '"+engineTypeName+"'") {
+		t.Error("no message says access to the data update service was denied")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) != 1 || statuses[0] != common_go.UpdateForbidden {
+		t.Errorf("the update reported %v, want %v once (%s)", statuses,
+			common_go.UpdateForbidden, configuredProductRules)
+	}
+	if log.has(productTestKey) {
+		t.Error("a message holds the license key in full")
+	}
+}
+
+// The product option is sent with a caller's own data update URL too, given
+// before or after the URL. An empty Product in the URL is replaced, and a URL
+// that already names a product, whatever the case of the parameter's name, is
+// requested as it is.
+func TestProductSetWithACallersURLIsSent(t *testing.T) {
+	requests := &requestLog{}
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			requests.add(r)
+			w.WriteHeader(http.StatusNotModified)
+		}))
+	defer server.Close()
+	address := server.URL + "/api/v2/download?"
+	query := "LicenseKeys=" + productTestKey + "&Type=IPIV41"
+	for name, c := range map[string]struct {
+		options []EngineOptions
+		// product is the Product the request asks for once, or empty when
+		// the request is the caller's URL as it is.
+		product string
+	}{
+		"the URL first": {[]EngineOptions{
+			WithDataUpdateUrl(address + query), WithProduct("IPIV4Enterprise")}, "IPIV4Enterprise"},
+		"the product first": {[]EngineOptions{
+			WithProduct("IPIV4Enterprise"), WithDataUpdateUrl(address + query)}, "IPIV4Enterprise"},
+		"an empty product in the URL": {[]EngineOptions{
+			WithDataUpdateUrl(address + query + "&Product="),
+			WithProduct("IPIV4Enterprise")}, "IPIV4Enterprise"},
+		"a product in the URL": {[]EngineOptions{
+			WithDataUpdateUrl(address + query + "&product=IPIV4Basic"),
+			WithProduct("IPIV4Enterprise")}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			*requests = requestLog{}
+			engine := &Engine{
+				FileUpdater: common_go.NewFileUpdater(defaultDataFileUrl),
+			}
+			for _, option := range c.options {
+				if err := option(engine); err != nil {
+					t.Fatalf("the option was refused: %v", err)
+				}
+			}
+			if err := engine.validateAndAppendUrlParams(); err != nil {
+				t.Fatalf("the data update URL could not be completed: %v", err)
+			}
+			engine, log, lookups := engineWithDataFile(t, engine, "IPIV4Basic")
+
+			if _, err := engine.PullOnStart(); err != nil {
+				t.Fatalf("the update on start-up failed: %v", err)
+			}
+
+			if c.product != "" {
+				if got := requests.products(); !onlyProduct(got, c.product) {
+					t.Errorf("the requests asked for the products %q, want %s "+
+						"once (%s)", got, c.product, configuredProductRules)
+				}
+			} else {
+				want := query + "&product=IPIV4Basic"
+				if got := requests.raw(); len(got) != 1 || got[0] != want {
+					t.Errorf("the requests had the queries %q, want %q once (%s)",
+						got, want, configuredProductRules)
+				}
+			}
+			if n := lookups.Load(); n != 0 {
+				t.Errorf("the product of the data file was looked up %d times, "+
+					"want none", n)
+			}
+			if log.has(productTestKey) {
+				t.Error("a message holds the license key in full")
+			}
+		})
 	}
 }
