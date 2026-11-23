@@ -555,7 +555,6 @@ func (e *Engine) appendProduct() error {
 	urlParsed.RawQuery = query.Encode()
 
 	e.SetDataFileUrl(urlParsed.String())
-	e.SetProductConfigured(e.product != "")
 
 	return nil
 }

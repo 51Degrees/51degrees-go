@@ -69,10 +69,6 @@ type fileUpdater struct {
 	// product names the product of the data file the engine has loaded. It
 	// is nil when the engine names none.
 	product func() string
-	// productConfigured is true when the data file URL names a product the
-	// caller configured, which is used in place of the product of the data
-	// file.
-	productConfigured bool
 	// startUpPullDone is set once PullOnStart has run, so that the polling
 	// does not repeat the start-up pull.
 	startUpPullDone bool
@@ -189,17 +185,12 @@ func (e *FileUpdater) SetNextUpdateFunc(nextUpdate func() time.Time) {
 // SetProductFunc sets the function that returns the name the Distributor
 // gives the product of the data file the engine has loaded, such as V4TAC,
 // or an empty string when the engine cannot name it. When a license key
-// holds several products, the update asks for this one.
+// holds several products and the data file URL names no product, the update
+// asks for this one, and calls the function only then. A Product with a
+// value in the data file URL is a configured product, which every request
+// asks for in its place.
 func (e *FileUpdater) SetProductFunc(product func() string) {
 	e.product = product
-}
-
-// SetProductConfigured says whether the data file URL names a product the
-// caller configured. Every request then asks for that product, and a 300
-// (Multiple Choices) response is not followed, so the product of the data
-// file the engine has loaded is not asked for in its place.
-func (e *FileUpdater) SetProductConfigured(configured bool) {
-	e.productConfigured = configured
 }
 
 // SetLoggerEnabled enables or disables the logger for the FileUpdater instance and returns the updated LogWrapper.

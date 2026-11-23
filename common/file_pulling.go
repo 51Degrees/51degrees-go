@@ -330,19 +330,20 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 	e.logger.Infof("Checking for update from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
 
 	// The download goes to a temp file next to the data file and is renamed over it, so the
-	// engine only ever sees the complete old file or the complete new one.
-	fileResponse, err := doProductDataFileRequest(ctx, e.dataFileUrl, e.logger, lastModificationTimestamp,
-		e.GetDataFile(), e.productName(), e.engineLabel(), e.productConfigured)
+	// engine only ever sees the complete old file or the complete new one. The messages that
+	// follow name the URL whose response they report.
+	fileResponse, shown, err := doProductDataFileRequest(ctx, e.dataFileUrl, e.logger,
+		lastModificationTimestamp, e.GetDataFile(), e.productName, e.engineLabel())
 	if err != nil {
 		if ctx.Err() != nil {
 			return e.GetDataFilePullEveryMs(), false, err
 		}
 		if errors.Is(err, ErrFileNotModified) {
 			e.logger.Infof("No data newer than %s found at '%s' for Engine '%s'",
-				formatSince(lastModificationTimestamp), e.maskedDataFileUrl(), e.engineLabel())
+				formatSince(lastModificationTimestamp), shown, e.engineLabel())
 			return e.GetDataFilePullEveryMs(), false, err
 		}
-		e.logPullError(err)
+		e.logPullError(err, shown)
 		if fileResponse != nil && fileResponse.retryAfter > 0 {
 			e.logger.Printf("received retry-after, retrying after %d seconds", fileResponse.retryAfter)
 			// retry after the specified time
@@ -352,7 +353,7 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 		return e.GetDataFilePullEveryMs(), false, err
 	}
 
-	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", e.maskedDataFileUrl(), e.engineLabel())
+	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", shown, e.engineLabel())
 
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
@@ -390,10 +391,10 @@ func formatSince(since *time.Time) string {
 
 // logPullError logs a failed pull as the specification's error table gives it,
 // which follows .NET. A failure the table has a row for is logged at Error as
-// "Error during check for data update", followed by the row's message, and any
-// other failure at Error with the table's last row.
-func (e *FileUpdater) logPullError(err error) {
-	if message, ok := e.pullErrorMessage(err); ok {
+// "Error during check for data update", followed by the row's message, which
+// names url, and any other failure at Error with the table's last row.
+func (e *FileUpdater) logPullError(err error, url string) {
+	if message, ok := e.pullErrorMessage(err, url); ok {
 		e.logCheckError(message)
 		return
 	}
@@ -411,14 +412,15 @@ func (e *FileUpdater) logUnhandledError(err error) {
 		"Error detail: %v", e.engineLabel(), err)
 }
 
-// pullErrorMessage gives the error table's message for a failed pull, and
-// false for a failure the table has no row for.
-func (e *FileUpdater) pullErrorMessage(err error) (string, bool) {
+// pullErrorMessage gives the error table's message for a failed pull, naming
+// url, the masked URL of the request that failed, and false for a failure the
+// table has no row for.
+func (e *FileUpdater) pullErrorMessage(err error, url string) (string, bool) {
 	var pe *pullError
 	if !errors.As(err, &pe) {
 		return "", false
 	}
-	url, engine := e.maskedDataFileUrl(), e.engineLabel()
+	engine := e.engineLabel()
 	switch pe.kind {
 	case pullConnect, pullRead:
 		return fmt.Sprintf("Error accessing data update service at '%s' for engine '%s'. Error detail: %v",
@@ -542,53 +544,69 @@ func tempFilePattern(dataFile string) string {
 // Returns a FileResponse with the temp file path or an error if the request fails or conditions are not met.
 func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
 	dataFile string) (*FileResponse, error) {
-	return doProductDataFileRequest(ctx, url, logger, timestamp, dataFile, "", "Engine", false)
+	response, _, err := doProductDataFileRequest(ctx, url, logger, timestamp, dataFile, noProduct, "Engine")
+	return response, err
 }
 
-// doProductDataFileRequest fetches a data file as doDataFileRequest does. When the server answers 300
-// (Multiple Choices), which the Distributor does for license keys that hold several products, and the
-// response offers product, the request is made again with that product added to its query. Only the
-// product is taken from the response, so the second request goes to url too. engine names the engine
-// in the messages logged. When configured is true, url names a product the caller configured, and a
-// 300 response is not followed. It is then the error of any other response.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md
+// noProduct names no product of the loaded data file.
+func noProduct() string { return "" }
+
+// doProductDataFileRequest fetches a data file as doDataFileRequest does, and also returns the URL of
+// the request whose response it reports, with its license keys masked, for the messages that follow.
+//
+// When the server answers 300 (Multiple Choices), which the Distributor does for license keys that
+// hold several products, and neither url nor the address that answered names a product, the request
+// is made again to the address that answered, with the product of the loaded data file added to its
+// query. product gives that product, and is called only then. Only the product is taken from the
+// response, and the Location header is never followed. A request that names a product, which is a
+// configured product, is not repeated, so its 300 is the error of any other response. engine names
+// the engine in the messages logged.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
-	dataFile string, product string, engine string, configured bool) (*FileResponse, error) {
+	dataFile string, product func() string, engine string) (*FileResponse, string, error) {
 	removeStaleTempFiles(dataFile, logger)
 
 	// An error net/http raises names the URL, so its license keys are masked.
 	keys := LicenseKeysInURL(url)
+	shown := MaskLicenseKeysIn(url, keys)
 	resp, err := getDataFile(ctx, url, timestamp, keys)
 	if err != nil {
-		return nil, err
+		return nil, shown, err
 	}
-	if resp.StatusCode == http.StatusMultipleChoices && !configured {
-		offered, listed := productsOffered(resp)
+	if resp.StatusCode == http.StatusMultipleChoices {
+		// After a redirect, the address that answered 300 is the URL of the first request.
+		first := answeredBy(resp, url)
+		keys = append(keys, LicenseKeysInURL(first)...)
+		shown = MaskLicenseKeysIn(first, keys)
+		var products []string
+		listed := false
+		if !namesProduct(url) && !namesProduct(first) {
+			products, listed = productsOffered(resp)
+		}
 		if listed {
 			resp.Body.Close()
-			chosen, err := chooseProduct(product, offered, keys)
+			chosen, err := chooseProduct(product(), products, keys)
 			if err != nil {
-				return nil, err
+				return nil, shown, err
 			}
-			withProduct, err := urlWithProduct(url, chosen)
+			withProduct, err := urlWithProduct(first, chosen)
 			if err != nil {
-				return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
+				return nil, shown, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 			}
-			logger.Infof("Requesting product '%s' from '%s' for Engine '%s'",
-				chosen, MaskLicenseKeysIn(url, keys), engine)
-			// The second request is logged as the first is.
-			logger.Infof("Checking for update from '%s' for Engine '%s'",
-				MaskLicenseKeysIn(withProduct, keys), engine)
+			logger.Infof("Requesting product '%s' from '%s' for Engine '%s'", chosen, shown, engine)
+			// The second request is logged as the first is, and the messages after it name it.
+			shown = MaskLicenseKeysIn(withProduct, keys)
+			logger.Infof("Checking for update from '%s' for Engine '%s'", shown, engine)
 			resp, err = getDataFile(ctx, withProduct, timestamp, keys)
 			if err != nil {
-				return nil, err
+				return nil, shown, err
 			}
 		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return nil, ErrFileNotModified
+		return nil, shown, ErrFileNotModified
 	}
 
 	//handle retry after
@@ -596,21 +614,21 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 		retryAfter := resp.Header.Get("Retry-After")
 		retryAfterSeconds, err := strconv.Atoi(retryAfter)
 		if err != nil || len(retryAfter) == 0 {
-			return nil, newPullError(pullTooManyRequests,
+			return nil, shown, newPullError(pullTooManyRequests,
 				fmt.Errorf("failed to parse Retry-After header: %v", err))
 		}
 
 		return &FileResponse{
 			retryAfter: retryAfterSeconds,
-		}, newPullError(pullTooManyRequests, fmt.Errorf("retrying after %d seconds", retryAfterSeconds))
+		}, shown, newPullError(pullTooManyRequests, fmt.Errorf("retrying after %d seconds", retryAfterSeconds))
 	}
 
 	if resp.StatusCode == http.StatusForbidden {
-		return nil, newPullError(pullForbidden, errors.New(resp.Status))
+		return nil, shown, newPullError(pullForbidden, errors.New(resp.Status))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, &pullError{
+		return nil, shown, &pullError{
 			kind:   pullStatus,
 			err:    errors.New(resp.Status),
 			status: resp.StatusCode,
@@ -629,16 +647,16 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 	if isGzip(http.DetectContentType(head)) {
 		fileBytes, err = gzip.NewReader(body)
 		if received.err != nil {
-			return nil, newPullError(pullRead, received.err)
+			return nil, shown, newPullError(pullRead, received.err)
 		}
 		if err != nil {
-			return nil, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
+			return nil, shown, newPullError(pullDownload, fmt.Errorf("failed to decompress file: %v", err))
 		}
 	}
 
 	tempFile, err := os.CreateTemp(filepath.Dir(dataFile), tempFilePattern(dataFile))
 	if err != nil {
-		return nil, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
+		return nil, shown, newPullError(pullWrite, fmt.Errorf("failed to create temp file: %v", err))
 	}
 	size, err := writeDataFile(tempFile, fileBytes, received, dataFile)
 	if err == nil {
@@ -654,19 +672,19 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 			}
 		} else {
 			logger.Warnf("No MD5 hash included in data update response for '%s'. "+
-				"Unable to verify data integrity", MaskLicenseKeysIn(url, keys))
+				"Unable to verify data integrity", shown)
 		}
 	}
 	if err != nil {
 		os.Remove(tempFile.Name())
-		return nil, err
+		return nil, shown, err
 	}
 
 	return &FileResponse{
 		path:       tempFile.Name(),
 		size:       size,
 		retryAfter: 0,
-	}, nil
+	}, shown, nil
 }
 
 // getDataFile makes the GET request for a data file, with If-Modified-Since when timestamp is given.
@@ -804,6 +822,34 @@ func queryValue(u *neturl.URL, name string) string {
 		}
 	}
 	return ""
+}
+
+// namesProduct reports whether rawURL has a Product parameter with a value, whatever the case of
+// its name. A request to such a URL asks for a configured product.
+func namesProduct(rawURL string) bool {
+	parsed, err := neturl.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	for name, values := range parsed.Query() {
+		if !strings.EqualFold(name, productParameter) {
+			continue
+		}
+		for _, value := range values {
+			if value != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// answeredBy returns the address that gave resp, which is url unless the client followed a redirect.
+func answeredBy(resp *http.Response, url string) string {
+	if resp.Request == nil || resp.Request.Response == nil || resp.Request.URL == nil {
+		return url
+	}
+	return resp.Request.URL.String()
 }
 
 // writeDataFile copies the uncompressed data into the temp file, flushes the file to disk and gives it the

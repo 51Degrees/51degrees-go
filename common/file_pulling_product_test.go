@@ -147,7 +147,7 @@ func noFullKey(t *testing.T, log *licenseKeyLog, err error) {
 // When the license key holds several products, the Distributor answers 300
 // with a URI for each, and the update repeats its request with the product
 // of the data file the engine has loaded added to it.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func TestPull_FollowsTheProductOfTheDataFile(t *testing.T) {
 	for _, product := range []string{"V4TAC", "IPIV4Enterprise"} {
 		t.Run(product, func(t *testing.T) {

@@ -97,9 +97,24 @@ func (d *scriptedDistributor) updater(t *testing.T, product string) (*FileUpdate
 	return updater, log
 }
 
-// severalProducts answers 300 with the body given.
+// severalProducts answers 300 with the body given, as the Distributor does,
+// with a Location header that names the first URI of its list.
 func severalProducts(body string) func(w http.ResponseWriter) {
+	var choice productChoice
+	location := ""
+	if json.Unmarshal([]byte(body), &choice) == nil && len(choice.AvailableUris) > 0 {
+		location = choice.AvailableUris[0]
+	}
+	return severalProductsAt(location, body)
+}
+
+// severalProductsAt answers 300 with the body given and, when location is
+// set, a Location header that names it.
+func severalProductsAt(location, body string) func(w http.ResponseWriter) {
 	return func(w http.ResponseWriter) {
+		if location != "" {
+			w.Header().Set("Location", location)
+		}
 		w.WriteHeader(http.StatusMultipleChoices)
 		w.Write([]byte(body))
 	}
@@ -136,7 +151,7 @@ func hasLine(log *licenseKeyLog, line string) bool {
 
 // A URI with no Product, or an empty one, is ignored, and the product is
 // requested with the message the specification gives.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func TestPull_IgnoresAURIWithNoProduct(t *testing.T) {
 	d := newScriptedDistributor(
 		severalProducts(availableUris(
@@ -202,7 +217,7 @@ func TestPull_NotOfferedMessage(t *testing.T) {
 }
 
 // A 300 response to the second request is not followed. It is the error of
-// any other response.
+// any other response, and its message names the second request.
 func TestPull_DoesNotFollowASecond300(t *testing.T) {
 	d := newScriptedDistributor(severalProducts(availableUris(
 		"LicenseKeys=" + productTestKey + "&Product=V4TAC")))
@@ -218,7 +233,7 @@ func TestPull_DoesNotFollowASecond300(t *testing.T) {
 		t.Errorf("%d requests were made, want 2", d.count())
 	}
 	want := "ERROR Error during check for data update. HTTP status code '300' from " +
-		"data update service at '" + d.maskedURL() + "' for engine 'Engine'"
+		"data update service at '" + d.maskedSecondURL("V4TAC") + "' for engine 'Engine'"
 	if !hasLine(log, want) {
 		t.Errorf("no message is %q, the messages being\n%s", want,
 			strings.Join(log.all(), "\n"))
