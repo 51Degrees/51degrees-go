@@ -84,6 +84,13 @@ var platform = map[string]bool{
 // Git reads its settings from.
 var platformPrefixes = []string{"GITHUB_", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"}
 
+// ciOnly holds the names only CI uses. No customer sets them, so they have
+// no _51DEGREES_ prefix, and each name says what it holds. The list holds
+// them too, under its heading for names only CI uses.
+var ciOnly = map[string]bool{
+	"CLOUD_STAGING_ENDPOINT": true, "RESOURCE_KEY_BESPOKE_STAGING": true,
+}
+
 // use is a variable named on a line of a file.
 type use struct {
 	line int
@@ -125,12 +132,13 @@ func variablesIn(file string, text []byte) []use {
 }
 
 // allowed reports whether a variable may be read or set, which is when
-// 51Degrees defines it and the list holds it, or the platform defines it.
+// 51Degrees defines it and the list holds it, only CI uses it, or the
+// platform defines it.
 func allowed(name string, listed map[string]bool) bool {
 	if strings.HasPrefix(name, prefix) {
 		return listed[name]
 	}
-	if platform[name] {
+	if ciOnly[name] || platform[name] {
 		return true
 	}
 	for _, start := range platformPrefixes {
@@ -210,6 +218,11 @@ func TestEveryVariableHasA51DegreesName(t *testing.T) {
 	listed := namesListed(list)
 	if len(listed) == 0 {
 		t.Fatalf("%s lists no names", listFile)
+	}
+	for name := range ciOnly {
+		if !bytes.Contains(list, []byte("| `"+name+"` |")) {
+			t.Errorf("%s does not list %s, which only CI uses", listFile, name)
+		}
 	}
 	var found []string
 	for _, file := range files {
@@ -308,21 +321,30 @@ func TestAWorkflowEnvBlockSetsItsKeys(t *testing.T) {
 	}
 }
 
-// A 51Degrees name is allowed when the list holds it, a platform name is
-// allowed as it is, and no other name is.
+// A 51Degrees name is allowed when the list holds it, a name only CI uses
+// and a platform name are allowed as they are, and no other name is, not
+// even one that looks like a name only CI uses.
 func TestOnlyListedAndPlatformNamesAreAllowed(t *testing.T) {
 	listed := namesListed([]byte("| Name | Holds |\n| --- | --- |\n" +
 		"| `" + ours + "` | The path of a data file |\n"))
+	staging := "CLOUD_STAGING" + "_ENDPOINT"
 	for name, want := range map[string]bool{
-		ours:                    true,
-		prefix + "NOT_LISTED":   false,
-		other:                   false,
-		github:                  true,
-		"CI":                    true,
-		"PATH":                  true,
-		"GIT_CONFIG" + "_KEY_0": true,
-		"51DEGREES_DD_PATH":     false,
-		"":                      false,
+		ours:                                   true,
+		prefix + "NOT_LISTED":                  false,
+		other:                                  false,
+		github:                                 true,
+		"CI":                                   true,
+		"PATH":                                 true,
+		"GIT_CONFIG" + "_KEY_0":                true,
+		"51DEGREES_DD_PATH":                    false,
+		"":                                     false,
+		staging:                                true,
+		"RESOURCE_KEY_BESPOKE" + "_STAGING":    true,
+		prefix + staging:                       false,
+		staging + "_2":                         false,
+		strings.ToLower(staging):               false,
+		"RESOURCE_KEY" + "_BESPOKE":            false,
+		"RESOURCE_KEY_BESPOKE" + "_PRODUCTION": false,
 	} {
 		if got := allowed(name, listed); got != want {
 			t.Errorf("allowed(%q) is %v, want %v", name, got, want)

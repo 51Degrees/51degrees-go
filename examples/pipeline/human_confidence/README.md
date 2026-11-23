@@ -71,13 +71,16 @@ go test ./human_confidence
 ```
 
 The tests whose names start `TestLive` make the passive call against the
-cloud service that `_51DEGREES_CLOUD_ENDPOINT` names. With the key in
-`_51DEGREES_RESOURCE_KEY_BESPOKE` the answer has `HumanConfidenceSource` set
-to `Passive` and a plain level. With the key in
+staging cloud, because the production cloud doesn't serve
+`HumanConfidenceSource` or a passive level other than `Unknown` yet.
+`CLOUD_STAGING_ENDPOINT` names the staging cloud, with no default. With the
+key in `RESOURCE_KEY_BESPOKE_STAGING` the answer has `HumanConfidenceSource`
+set to `Passive` and a plain level. With the key in
 `_51DEGREES_RESOURCE_KEY_BASIC`, which is outside the Bespoke product, the
-answer has no source. Each skips when its key isn't set. The active source
-comes back only to a browser that has run the tests, so these tests don't
-check it.
+answer has no source. Only CI sets the two names without the `_51DEGREES_`
+prefix, in `.github/workflows/cloud-human-confidence.yml`, and each test
+skips when a name it needs isn't set. The active source comes back only to a
+browser that has run the tests, so these tests don't check it.
 
 ## What you should see
 

@@ -241,13 +241,16 @@ placeholder key `example-resource-key`.
 
 [`environment-variables.md`](environment-variables.md) lists every environment
 variable that the modules, tests, examples and CI scripts of this repository
-read and set, with what each name holds. Every name 51Degrees defines starts
-`_51DEGREES_`, holds one thing and is never filled from another. When a
-change needs a new name, add it to the list in the same piece of work. The
-name check, [`common/variable_names_test.go`](common/variable_names_test.go),
-fails when a tracked file reads or sets a variable that the list does not
-hold, other than one that Go, Git, GitHub, PowerShell or the operating
-system defines.
+read and set, with what each name holds. Every name 51Degrees defines for
+customers starts `_51DEGREES_`, holds one thing and is never filled from
+another. When a change needs a new name, add it to the list in the same piece
+of work. The name check,
+[`common/variable_names_test.go`](common/variable_names_test.go), fails when
+a tracked file reads or sets a variable that the list does not hold, other
+than one that Go, Git, GitHub, PowerShell or the operating system defines.
+The two names only CI uses, `CLOUD_STAGING_ENDPOINT` and
+`RESOURCE_KEY_BESPOKE_STAGING`, have no prefix and are in the check's
+`ciOnly` list as well as in the list of names.
 
 ## Module paths and tags
 
@@ -424,6 +427,14 @@ into `main`, because common-ci's `steps/get-target-branch.ps1` chooses `rc`
 for a repository that has one. The nightly pipeline merges every pull request
 into `rc` that passes, is not a draft and has no review requested, and
 publishes `main` when it has changed.
+
+The live Human Confidence tests (`TestLive` in
+`examples/pipeline/human_confidence/live_test.go`) call the staging cloud,
+because the production cloud does not serve what they check yet. common-ci
+passes on only `_51DEGREES_` names, so in its builds the tests skip, and
+`.github/workflows/cloud-human-confidence.yml` runs them with
+`CLOUD_STAGING_ENDPOINT` and `RESOURCE_KEY_BESPOKE_STAGING` set. That
+workflow fails when a name is empty or a test is skipped.
 
 ## Releases
 
