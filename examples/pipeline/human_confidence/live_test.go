@@ -22,11 +22,13 @@
 
 package main
 
-// The passive call the example makes, against the live cloud service named
-// by _51DEGREES_CLOUD_ENDPOINT, with keys from the environment. The request
-// names HumanConfidence and HumanConfidenceSource, so the answer carries
-// both whatever the key's own property list holds. A test with no key skips
-// and names the variable it needs. Keys are never printed.
+// The passive call the example makes, against the staging cloud named by
+// CLOUD_STAGING_ENDPOINT, because the production cloud does not serve
+// HumanConfidenceSource or a passive level other than Unknown yet. The
+// request names HumanConfidence and HumanConfidenceSource, so the answer
+// carries both whatever the key's own property list holds. A test without
+// its endpoint or key skips and names the variable it needs. Keys and the
+// staging address are never printed.
 
 import (
 	"encoding/json"
@@ -40,9 +42,12 @@ import (
 )
 
 const (
-	// bespokeKeyVariable holds a Resource Key with the Bespoke product,
-	// which gets the source.
-	bespokeKeyVariable = "_51DEGREES_RESOURCE_KEY_BESPOKE"
+	// stagingEndpointVariable holds the staging cloud's API base. It has no
+	// default, so these tests never call another service.
+	stagingEndpointVariable = "CLOUD_STAGING_ENDPOINT"
+	// stagingBespokeKeyVariable holds a Resource Key with the Bespoke
+	// product that the staging cloud knows, which gets the source.
+	stagingBespokeKeyVariable = "RESOURCE_KEY_BESPOKE_STAGING"
 	// basicKeyVariable holds a Resource Key outside the Bespoke product,
 	// which gets no source.
 	basicKeyVariable = "_51DEGREES_RESOURCE_KEY_BASIC"
@@ -52,26 +57,29 @@ const (
 	liveTimeoutSeconds = 20
 )
 
-// liveKey returns the key in the variable, or skips the test naming it.
-func liveKey(t *testing.T, name string) string {
+// liveSetting returns the value of the variable, or skips the test naming
+// it.
+func liveSetting(t *testing.T, name string) string {
 	t.Helper()
-	key := strings.TrimSpace(os.Getenv(name))
-	if key == "" {
-		t.Skipf("%s is not set, so this live cloud test is skipped. "+
-			"_51DEGREES_CLOUD_ENDPOINT names the service.", name)
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		t.Skipf("%s is not set, so this live test against the staging "+
+			"cloud is skipped.", name)
 	}
-	return key
+	return value
 }
 
-// livePassive posts a browser's User-Agent to the key's JSON path, at the
-// API base the example reads, naming the two properties. It returns the
+// livePassive posts a browser's User-Agent to the JSON path of the key in
+// keyName, on the staging cloud, naming the two properties. It returns the
 // answer's derived object, empty when the answer has none.
-func livePassive(t *testing.T, key string) map[string]any {
+func livePassive(t *testing.T, keyName string) map[string]any {
 	t.Helper()
-	redact := strings.NewReplacer(key, "<key>")
+	api := strings.TrimRight(liveSetting(t, stagingEndpointVariable), "/") + "/"
+	key := liveSetting(t, keyName)
+	redact := strings.NewReplacer(
+		api, "<"+stagingEndpointVariable+">", key, "<key>")
 	client := &http.Client{Timeout: liveTimeoutSeconds * time.Second}
-	response, err := client.PostForm(
-		loadConfig(os.Getenv).API+key+".json",
+	response, err := client.PostForm(api+key+".json",
 		url.Values{"user-agent": {liveUserAgent}, "values": {liveValues}})
 	if err != nil {
 		t.Fatalf("the passive call failed, %s", redact.Replace(err.Error()))
@@ -95,7 +103,7 @@ func livePassive(t *testing.T, key string) map[string]any {
 }
 
 func TestLiveBespokeKeyGetsSourcePassive(t *testing.T) {
-	derived := livePassive(t, liveKey(t, bespokeKeyVariable))
+	derived := livePassive(t, stagingBespokeKeyVariable)
 	if derived["humanconfidencesource"] != "Passive" {
 		t.Errorf("a request with no browser tests is passive, got %v", derived)
 	}
@@ -106,8 +114,10 @@ func TestLiveBespokeKeyGetsSourcePassive(t *testing.T) {
 	}
 }
 
+// The production cloud serves the source to no key, so only the staging
+// cloud makes this a check.
 func TestLiveKeyOutsideBespokeGetsNoSource(t *testing.T) {
-	derived := livePassive(t, liveKey(t, basicKeyVariable))
+	derived := livePassive(t, basicKeyVariable)
 	if source := derived["humanconfidencesource"]; source != nil {
 		t.Errorf("a key outside Bespoke gets no source, got %v", derived)
 	}
