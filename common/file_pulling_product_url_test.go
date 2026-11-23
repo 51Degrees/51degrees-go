@@ -365,3 +365,72 @@ func TestPull_TwoRequestsAreReportedOnce(t *testing.T) {
 		})
 	}
 }
+
+// The name of the Product parameter of each offered URI is matched ignoring
+// case, so a URI that writes it in another case still offers its product.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func TestPull_MatchesTheProductParameterIgnoringCase(t *testing.T) {
+	for _, parameter := range []string{"product", "PRODUCT", "pRoDuCt"} {
+		t.Run(parameter, func(t *testing.T) {
+			d := newScriptedDistributor(
+				severalProducts(availableUris(
+					"LicenseKeys="+productTestKey+"&"+parameter+"=IPIV4Enterprise",
+					"LicenseKeys="+productTestKey+"&"+parameter+"=V4TAC")),
+				dataFile)
+			defer d.server.Close()
+			updater, log := d.updater(t, "V4TAC")
+
+			_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+			if err != nil || !downloaded {
+				t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+					downloaded, err, productLines(log))
+			}
+			if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
+				t.Errorf("the requests asked for the products %q, want none and then V4TAC", got)
+			}
+			line := "INFO Requesting product 'V4TAC' from '" + d.maskedURL() + "' for Engine 'Engine'"
+			if !hasLine(log, line) {
+				t.Errorf("no message is %q, the messages being\n%s", line, productLines(log))
+			}
+		})
+	}
+}
+
+// A redirect to an address that names a product, which answers 300, is not
+// followed further. The request named a product, so the 300 is the error of
+// any other response, and the product of the loaded data file is not asked
+// for in place of the one named.
+func TestPull_ARedirectToAProductIsNotReplacedOnA300(t *testing.T) {
+	d := newScriptedDistributor(
+		severalProducts(availableUris(
+			"LicenseKeys="+productTestKey+"&Product=V4Enterprise",
+			"LicenseKeys="+productTestKey+"&Product=V4TAC")),
+		dataFile)
+	defer d.server.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, d.server.URL+r.URL.RequestURI()+"&Product=V4Enterprise",
+				http.StatusTemporaryRedirect)
+		}))
+	defer redirect.Close()
+	updater, log := d.updater(t, "V4TAC")
+	updater.SetDataFileUrl(redirect.URL + "/api/v2/download?LicenseKeys=" +
+		productTestKey + "&Type=HashV41&Download=True")
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err == nil || downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want an error", downloaded, err)
+	}
+	if got := d.products(); len(got) != 1 || len(got[0]) != 1 || got[0][0] != "V4Enterprise" {
+		t.Errorf("the address that answered 300 was asked for the products %q, "+
+			"want V4Enterprise once", got)
+	}
+	line := "ERROR Error during check for data update. HTTP status code '300' from " +
+		"data update service at '" + d.maskedURL() + "&Product=V4Enterprise' for engine 'Engine'"
+	if !hasLine(log, line) {
+		t.Errorf("no message is %q, the messages being\n%s", line, productLines(log))
+	}
+	noFullKey(t, log, err)
+}
