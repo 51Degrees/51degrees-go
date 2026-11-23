@@ -163,6 +163,20 @@ instance must not be members of the same parallel group, so two Derived
 Property Elements MUST NOT be members of the same parallel group, nor two
 Translation Engines.
 
+Once its Flow Element has finished, Element Data may be read from several
+goroutines at once, except Element Data that reads its values from native
+results, such as the Device Detection `DeviceData` and the IP Intelligence
+`Data`. That Element Data takes no lock and is not safe to use from several
+goroutines at once. Members of a parallel group after the Device Detection
+or IP Intelligence on-premise Engine that read its Element Data are
+responsible for thread-safe access to it. A `sync.Mutex` the readers share
+protects it only when every reader takes it, and the Flow Elements in this
+module, such as the JSON Builder, the JavaScript Builder, the Set Headers
+Element, the Derived Property Element and the Translation Engine, take no
+lock when they read other Element Data. So a member that reads that
+Engine's Element Data must not share a parallel group with any other member
+that reads it.
+
 `FlowData.Close` returns its Element Data to a pool, to be used again by a
 later Flow Data. Call it once the Flow Data and its values are no longer
 needed. Keeping a reference to Element Data after its Flow Data is closed is

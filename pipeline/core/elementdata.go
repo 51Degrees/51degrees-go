@@ -42,11 +42,19 @@ import (
 // instance may be read from several goroutines at once, as the members of a
 // parallel group read it, so an implementation must allow that.
 //
+// The exception is Element Data that reads its values from native results,
+// such as the Device Detection DeviceData and the IP Intelligence Data. Such
+// Element Data takes no lock and is not safe to use from several goroutines
+// at once. Code that reads one instance from several goroutines, as the
+// members of a parallel group after the Engine may, is responsible for
+// thread-safe access, for example with a sync.Mutex the readers share.
+//
 // Keeping a reference to Element Data after the Flow Data that holds it is
 // closed is not supported, because a pool may give the instance to another
 // request, and nothing checks for it.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#element-data
 // See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/thread-safety.md#element-data
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L196-L221
 type ElementData interface {
 	// Get returns the value of a Property by its (case-insensitive) string name.
 	// It returns an error if the Property is not present.
@@ -135,7 +143,7 @@ var baseElementDataPool = sync.Pool{New: func() any {
 // writing from several goroutines at once, because only the Flow Element that
 // creates the instance writes it. Once that Flow Element has finished,
 // several goroutines can read the instance at once.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/thread-safety.md#element-data
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/thread-safety.md?plain=1#L143-L164
 func NewBaseElementData() *BaseElementData {
 	return baseElementDataPool.Get().(*BaseElementData)
 }
