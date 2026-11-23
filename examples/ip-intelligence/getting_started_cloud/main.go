@@ -85,6 +85,7 @@ Find out more
 // ipAddresses are the addresses the example looks up.
 var ipAddresses = []string{
 	"116.154.188.222",
+	"82.12.34.23",
 	"1.3.32.31",
 	"45.236.48.61",
 	"2001:0db8:085a:0000:0000:8a2e:0370:7334",

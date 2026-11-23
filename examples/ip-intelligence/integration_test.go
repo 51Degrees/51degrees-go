@@ -236,8 +236,139 @@ func TestWithResourceKeyGivesTheExampleTheTiersKey(t *testing.T) {
 	}
 }
 
+// knownAddress is the address the cloud example looks up whose values the
+// tests require, the one the .NET tests of the same example check.
+const knownAddress = "82.12.34.23"
+
+// knownValue is a value the cloud service gives for the known address: the
+// text printed for one of the properties must contain one of the values.
+type knownValue struct {
+	properties []string
+	values     []string
+}
+
+// registeredName is the network the known address is registered to.
+var registeredName = knownValue{
+	[]string{"RegisteredName"}, []string{"VMCBBUK"}}
+
+// registeredCountry is the country the known address is registered in.
+var registeredCountry = knownValue{
+	[]string{"RegisteredCountry"}, []string{"United Kingdom", "GB"}}
+
+// country is the country of the known address.
+var country = knownValue{
+	[]string{"Country", "CountryCode"}, []string{"United Kingdom", "GB"}}
+
+// ipRange is the range the known address belongs to.
+var ipRange = knownValue{
+	[]string{"IpRangeStart", "IpRangeEnd"},
+	[]string{"82.12.34.0", "82.12.34.255"}}
+
+// knownValues returns the values the tier's Resource Key gives for the known
+// address. The free and basic tiers give the registration properties, which
+// the free data tier has. The Bespoke key has every property, and gives the
+// values the .NET tests require.
+func knownValues(tier string) []knownValue {
+	if tier == "_51DEGREES_RESOURCE_KEY_BESPOKE" {
+		return []knownValue{registeredName, country, ipRange}
+	}
+	return []knownValue{registeredName, registeredCountry}
+}
+
+// resultsFor returns what the cloud example printed for the address, from
+// its heading to the next one.
+func resultsFor(output, address string) string {
+	heading := "Results for " + address + ":"
+	start := strings.Index(output, heading)
+	if start < 0 {
+		return ""
+	}
+	results := output[start+len(heading):]
+	if end := strings.Index(results, "Results for "); end >= 0 {
+		results = results[:end]
+	}
+	return results
+}
+
+// printedValue returns the text printed for the property in the results, or
+// "" when no line names it.
+func printedValue(results, property string) string {
+	for _, line := range strings.Split(results, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if value, ok := strings.CutPrefix(line, "\t"+property+": "); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+// in reports whether the results give one of the values for one of the
+// properties.
+func (k knownValue) in(results string) bool {
+	for _, property := range k.properties {
+		text := printedValue(results, property)
+		for _, value := range k.values {
+			if strings.Contains(text, value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// checkKnownAddress checks the cloud example printed each of the values
+// for the known address. A property the Resource Key does not include, or
+// one with no value, fails.
+func checkKnownAddress(t *testing.T, output string, want []knownValue) {
+	results := resultsFor(output, knownAddress)
+	if results == "" {
+		t.Errorf("getting_started_cloud prints no results for %s",
+			knownAddress)
+		return
+	}
+	for _, w := range want {
+		if !w.in(results) {
+			t.Errorf("getting_started_cloud does not give %s as the %s of %s",
+				strings.Join(w.values, " or "),
+				strings.Join(w.properties, " or "), knownAddress)
+		}
+	}
+}
+
+// TestKnownValuesAreFoundOnlyInTheirOwnResults checks a value is found on
+// its property's line of the known address's results, and not on another
+// property's line or in another address's results.
+func TestKnownValuesAreFoundOnlyInTheirOwnResults(t *testing.T) {
+	output := "Results for 1.2.3.4:\n" +
+		"\tRegisteredCountry: GB\n" +
+		"Results for " + knownAddress + ":\r\n" +
+		"\tRegisteredName: VMCBBUK (1.00)\r\n" +
+		"\tRegisteredOwner: GB\r\n" +
+		"\tCountry: This property is not in the results, so the Resource " +
+		"Key may not include it.\r\n" +
+		"\tIpRangeEnd: 82.12.34.255\r\n" +
+		"Results for 1.2.3.5:\n" +
+		"\tCountryCode: GB\n"
+	results := resultsFor(output, knownAddress)
+	for _, k := range []knownValue{registeredName, ipRange} {
+		if !k.in(results) {
+			t.Errorf("%s is not found in %q", k.properties, results)
+		}
+	}
+	for _, k := range []knownValue{registeredCountry, country} {
+		if k.in(results) {
+			t.Errorf("%s is found in %q", k.properties, results)
+		}
+	}
+	if k := registeredName; k.in(resultsFor(output, "1.2.3.6")) {
+		t.Errorf("%s is found for an address the example did not print", k.properties)
+	}
+}
+
 // The cloud example is always built, and is run once with the Resource Key
-// of each data tier that is set, as a customer with that key would run it.
+// of each data tier, as a customer with that key would run it. Each run must
+// give the values that tier's key gives for the known address. A tier whose
+// key is not set is skipped.
 func TestGettingStartedCloud(t *testing.T) {
 	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
 	build.Stdout = os.Stdout
@@ -245,20 +376,16 @@ func TestGettingStartedCloud(t *testing.T) {
 	if err := build.Run(); err != nil {
 		t.Fatal(err)
 	}
-	ran := false
 	for _, tier := range resourceKeyTiers {
-		environment, ok := withResourceKey(os.Environ(), tier)
-		if !ok {
-			continue
-		}
-		ran = true
 		t.Run(tier, func(t *testing.T) {
-			run(t, "getting_started_cloud", environment)
+			environment, ok := withResourceKey(os.Environ(), tier)
+			if !ok {
+				t.Skipf("%s is not set, so the cloud example is not run "+
+					"with it", tier)
+			}
+			output := run(t, "getting_started_cloud", environment)
+			checkKnownAddress(t, output, knownValues(tier))
 		})
-	}
-	if !ran {
-		t.Skipf("none of %s is set, so the cloud example is not run",
-			strings.Join(resourceKeyTiers, ", "))
 	}
 }
 

@@ -17,7 +17,7 @@ The test `TestEveryVariableHasA51DegreesName` in [`common/variable_names_test.go
 
 ## Names the tests read
 
-The tests of the cloud examples run each example once for each of these keys that is set, with `_51DEGREES_RESOURCE_KEY` set to that key. A test whose keys are all unset is skipped.
+The tests of the cloud examples run each example once for each of these keys, with `_51DEGREES_RESOURCE_KEY` set to that key, and require the values that key gives for a known address. A run whose key is not set is skipped.
 
 | Name | Holds |
 | --- | --- |
