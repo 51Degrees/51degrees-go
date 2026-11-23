@@ -66,6 +66,9 @@ func severalProductsServer(products ...string) *httptest.Server {
 					productTestKey+"&LicenceKeys=&Type=HashV41&Product="+product)
 			}
 			body, _ := json.Marshal(map[string]interface{}{"AvailableUris": uris})
+			if len(uris) > 0 {
+				w.Header().Set("Location", uris[0])
+			}
 			w.WriteHeader(http.StatusMultipleChoices)
 			w.Write(body)
 		}))
