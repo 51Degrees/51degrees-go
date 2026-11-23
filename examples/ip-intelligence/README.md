@@ -1,0 +1,83 @@
+# 51Degrees Ip Intelligence API Examples
+
+![51Degrees](https://raw.githubusercontent.com/51Degrees/51degrees-go/main/.github/images/logo-160.png "Data rewards the curious")
+**IP Intelligence Go Examples**
+
+## Introduction
+
+This directory contains usage examples of the [ip-intelligence-go](https://github.com/51Degrees/51degrees-go/tree/main/ip-intelligence) module.
+
+## Pre-requisites
+
+The examples run with the free Lite data file, `51Degrees-LiteV41.ipi`, and the example evidence in
+`cxx/data/ip-intelligence/evidence.yml`, unless `_51DEGREES_IPI_PATH` and `_51DEGREES_EVIDENCE_YAML` name other files, as shown below. The
+Lite file has RegisteredCountry, RegisteredName and RegisteredOwner. The performance, reload and update examples use
+the free Asn data file, `51Degrees-IPIV4AsnIpiV41.ipi`, which has Asn and AsnName and is far smaller to download. The
+examples also show properties only the Enterprise data file has, as needing it, and say where to ask for a copy.
+
+The [data](https://github.com/51Degrees/data) repository, which is the `cxx/data` submodule of this repository, links to
+the free Lite and Asn data files and holds example evidence in `cxx/data/ip-intelligence/evidence.yml`. To download the
+Lite and Asn files into `cxx/data/ip-intelligence`, run one of these from the repository root.
+
+```
+sh cxx/data/get-data-files.sh ip-intelligence
+```
+
+```
+./cxx/data/get-data-files.ps1 ip-intelligence
+```
+
+When `_51DEGREES_IPI_PATH` names a file that the data repository links to and the file is missing, the examples download it by
+running the same script for that file.
+
+### Software
+
+The dependency library `ip-intelligence-go` uses CGO, so make sure `CGO_ENABLED=1` - this is the default, unless you override it.
+
+### Windows
+
+If you are on Windows, make sure that:
+
+- The path to the `MinGW-x64` `bin` folder is included in the `PATH`. By default, the path should be
+  `C:\msys64\ucrt64\bin`
+- Go environment variable `CGO_ENABLED` is set to `1`
+
+```
+go env -w CGO_ENABLED=1
+```
+
+## Running the examples
+
+- All examples under `ipi_onpremise` directory are console program examples and are run using `go run`.
+
+Below is a table that describes the examples:
+
+| Example                       | Description                                                                                                               |
+|-------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| getting_started               | An example showing how to initialize the IPI engine, minimum required parameters, calling the engine and printing the result |
+| offline_processing            | Example showing how to get values from the engine in weighted value format; writing the obtained values to a yaml file    |
+| performance                   | A benchmarking example to measure the speed of data processing in single and multi-threaded modes                         |
+| reload_from_file              | An example that demonstrates how a data file can be reloaded while serving IP Intelligence requests                       |
+| update_polling_interval       | An example doing periodic polling for the updated data file                                                               |
+| metadata                      | An example listing the data file's dates, the Evidence keys the engine reads in the order it tries them, and each component with its properties and their descriptions |
+| getting_started_cloud         | The getting started example using the 51Degrees cloud service and a Resource Key, rather than a data file                 |
+| mixed/getting_started_console | A command line example featuring both device detection and IP intelligence                                                |
+| mixed/getting_started_web     | A web example featuring both device detection and IP intelligence                                                |
+
+The `mixed` examples intentionally combine Device Detection and IP Intelligence
+and live in their own Go module. See [mixed/README.md](../mixed/README.md) for
+how to run them, as they cannot be run with `go run` from the repository root.
+
+## Run examples
+
+```
+go run ./example_dir
+```
+For further details of how to run each example, please read more in the comment section located at the top of each example file.
+
+To provide a different path to a data file or evidence file use environment variables, e.g.
+```bash
+_51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi go run ./getting_started
+_51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./offline_processing
+_51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./update_polling_interval
+```

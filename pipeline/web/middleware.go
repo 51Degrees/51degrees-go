@@ -1,0 +1,598 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+package web
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"hash/fnv"
+	"io"
+	"log/slog"
+	"mime"
+	"net"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/javascriptbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/jsonbuilder"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/setheaders"
+)
+
+// Default intercepted URL paths.
+const (
+	DefaultJavaScriptURL = "/51Degrees.core.js"
+	DefaultJSONURL       = javascriptbuilder.DefaultEndpoint
+	DefaultMaxAge        = 30 * time.Minute
+)
+
+type contextKey struct{}
+
+var flowDataKey = contextKey{}
+
+// Middleware integrates a Pipeline into a net/http handler chain. For each
+// request it creates a Flow Data, populates Evidence from the request, processes
+// it, sets any requested response headers, and makes the Flow Data available via
+// FromContext. It also serves the intercepted client-side JavaScript and JSON
+// endpoints.
+//
+// A Flow Data cannot be used by two goroutines at once. A handler that hands
+// work to another goroutine copies the values that work needs out of the
+// Flow Data first, and passes those values rather than the Flow Data.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L25-L40
+type Middleware struct {
+	pipeline       core.Pipeline
+	javaScriptURL  string
+	jsonURL        string
+	maxAge         time.Duration
+	trustedProxies []*net.IPNet
+}
+
+// Option configures a Middleware.
+type Option func(*Middleware)
+
+// WithJavaScriptURL overrides the intercepted JavaScript endpoint path.
+func WithJavaScriptURL(path string) Option { return func(m *Middleware) { m.javaScriptURL = path } }
+
+// WithJSONURL overrides the intercepted JSON endpoint path.
+func WithJSONURL(path string) Option { return func(m *Middleware) { m.jsonURL = path } }
+
+// WithMaxAge sets the client cache lifetime for the intercepted endpoints.
+func WithMaxAge(d time.Duration) Option { return func(m *Middleware) { m.maxAge = d } }
+
+// WithTrustedProxies enables use of X-Forwarded-For / X-Real-IP for the client
+// IP, but only when the immediate peer is one of the given trusted-proxy CIDR
+// ranges. Without this option the peer address is always used, so a client
+// cannot spoof its IP by setting a forwarding header. Invalid CIDRs are ignored.
+func WithTrustedProxies(cidrs ...string) Option {
+	return func(m *Middleware) {
+		for _, c := range cidrs {
+			if _, n, err := net.ParseCIDR(c); err == nil {
+				m.trustedProxies = append(m.trustedProxies, n)
+			}
+		}
+	}
+}
+
+// NewMiddleware creates a Middleware for the given Pipeline.
+func NewMiddleware(pipeline core.Pipeline, opts ...Option) *Middleware {
+	m := &Middleware{
+		pipeline:      pipeline,
+		javaScriptURL: DefaultJavaScriptURL,
+		jsonURL:       DefaultJSONURL,
+		maxAge:        DefaultMaxAge,
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// FromContext returns the processed Flow Data stored on the request context.
+// Use it on the request's goroutine. Work handed to another goroutine gets the
+// values it needs copied out of the Flow Data, never the Flow Data.
+func FromContext(ctx context.Context) (core.FlowData, bool) {
+	fd, ok := ctx.Value(flowDataKey).(core.FlowData)
+	return fd, ok
+}
+
+// Handler wraps next so that every request is processed by the Pipeline and the
+// resulting Flow Data is attached to the request context. The intercepted
+// endpoints are served directly and do not call next. The Flow Data is closed
+// when the request ends, which cleans up the Element Data that needs it, such
+// as Element Data holding native results, and gives its Element Data back to
+// the pools, so neither may be kept once next returns. A time limit such as
+// http.TimeoutHandler goes around the handler Handler returns, not inside it,
+// because the handler inside a time limit keeps running after it has given up.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L27-L28
+func (m *Middleware) Handler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case m.javaScriptURL:
+			m.serveJavaScript(w, r)
+			return
+		case m.jsonURL:
+			m.serveJSON(w, r)
+			return
+		}
+
+		fd, _ := m.process(r)
+		defer fd.Close()
+		m.applyResponseHeaders(w, fd)
+		ctx := context.WithValue(r.Context(), flowDataKey, fd)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// process creates a Flow Data, populates Evidence from the request, and runs the
+// Pipeline. Errors are guarded so that a processing failure cannot take down the
+// host application. failed reports whether processing recorded or returned an
+// error, or panicked.
+func (m *Middleware) process(r *http.Request) (core.FlowData, bool) {
+	fd := m.newFlowData(r)
+	return fd, m.run(fd)
+}
+
+// newFlowData creates a Flow Data holding the Evidence from the request.
+func (m *Middleware) newFlowData(r *http.Request) core.FlowData {
+	fd := m.pipeline.CreateFlowData()
+	m.populateEvidence(fd, r)
+	return fd
+}
+
+// run runs the Pipeline on fd and reports whether processing recorded or
+// returned an error, or panicked.
+func (m *Middleware) run(fd core.FlowData) (failed bool) {
+	// The web integration MUST NOT take down the host site, so any processing
+	// error or panic is contained here. Errors remain available via fd.Errors();
+	// a recovered panic is logged so production failures are still visible.
+	defer func() {
+		if rec := recover(); rec != nil {
+			m.logger().Warn("panic recovered during pipeline processing", "error", rec)
+			failed = true
+		}
+	}()
+	err := fd.Process()
+	return err != nil || fd.HasErrors()
+}
+
+// logger returns a logger for the middleware: slog.Default, since the Pipeline
+// does not expose its own.
+func (m *Middleware) logger() *slog.Logger { return slog.Default() }
+
+// populateEvidence adds Evidence from the HTTP request: headers (except cookie),
+// cookies, query and form parameters, client IP, host and protocol, the
+// request line where an element accepts it, and the request itself as
+// core.EvidenceHTTPRequest.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#populating-evidence
+func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
+	for name, values := range r.Header {
+		if strings.EqualFold(name, "Cookie") {
+			continue
+		}
+		if len(values) > 0 {
+			fd.AddEvidence("header."+strings.ToLower(name), values[0])
+		}
+	}
+	fd.AddEvidence("header.host", r.Host)
+
+	for _, c := range r.Cookies() {
+		fd.AddEvidence("cookie."+c.Name, c.Value)
+	}
+
+	// Form parameters are exposed as query evidence. ParseForm consumes the
+	// request body only for a urlencoded form (POST/PUT/PATCH); only in that
+	// case is the body buffered - capped at the same ~10 MB that net/http
+	// itself applies to urlencoded forms - and reset afterwards so a
+	// downstream handler can still read it in full. Any other body is never
+	// read.
+	if hasFormBody(r) {
+		body, overflow := readCapped(r.Body, maxFormBodyBytes)
+		if overflow {
+			// Too large to buffer: skip the form evidence and splice the read
+			// bytes back so the downstream handler still sees the full body.
+			m.logger().Warn("request form body exceeds the evidence buffer cap, skipping form evidence",
+				"cap", maxFormBodyBytes)
+			r.Body = spliceBody(body, r.Body)
+		} else {
+			_ = r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if err := r.ParseForm(); err != nil {
+				m.logger().Warn("could not parse request form", "error", err)
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+	} else if err := r.ParseForm(); err != nil {
+		// No form body: ParseForm only parses the URL query and reads nothing.
+		m.logger().Warn("could not parse request query", "error", err)
+	}
+	for name, values := range r.Form {
+		if len(values) > 0 {
+			fd.AddEvidence("query."+name, values[0])
+		}
+	}
+
+	clientIP, protocol := m.clientIP(r), m.requestProtocol(r)
+	fd.AddEvidence("server.client-ip", clientIP)
+	fd.AddEvidence("header.protocol", protocol)
+
+	request := core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol)
+	m.addRequestLine(fd, r, request)
+
+	// The request itself, whether or not an element accepts it, so that the
+	// Usage Sharing Element can share headers no element accepts.
+	fd.AddEvidence(core.EvidenceHTTPRequest, request)
+}
+
+// addRequestLine adds the method, path and query string of the request line,
+// exactly as it was sent. All three are added when an element in the
+// Pipeline accepts any one of them, so that an absent key means the request
+// line is not supplied, and none when no element does, so a Pipeline with no
+// such element carries no new values. The query string is added empty when
+// the request has none. A request that a server did not read has no request
+// line, so none of it is added.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/web-integration.md?plain=1#L122-L140
+func (m *Middleware) addRequestLine(fd core.FlowData, r *http.Request, request core.WebRequest) {
+	filter := m.pipeline.EvidenceKeyFilter()
+	if filter == nil || r.RequestURI == "" {
+		return
+	}
+	if !filter.Include(core.EvidenceRequestMethod) &&
+		!filter.Include(core.EvidenceRequestPath) &&
+		!filter.Include(core.EvidenceRequestQuery) {
+		return
+	}
+	fd.AddEvidence(core.EvidenceRequestMethod, request.Method())
+	fd.AddEvidence(core.EvidenceRequestPath, request.Path())
+	fd.AddEvidence(core.EvidenceRequestQuery, request.RawQuery())
+}
+
+// applyResponseHeaders sets the response headers requested by the Set Headers
+// Element, appending to any header that is already present.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#setting-response-headers
+func (m *Middleware) applyResponseHeaders(w http.ResponseWriter, fd core.FlowData) {
+	data, err := fd.Get(setheaders.DataKey)
+	if err != nil {
+		return
+	}
+	shd, ok := data.(*setheaders.Data)
+	if !ok {
+		return
+	}
+	for name, value := range shd.ResponseHeaders() {
+		if value == "" {
+			continue
+		}
+		if existing := w.Header().Get(name); existing != "" {
+			w.Header().Set(name, existing+","+value)
+		} else {
+			w.Header().Set(name, value)
+		}
+	}
+}
+
+func (m *Middleware) serveJavaScript(w http.ResponseWriter, r *http.Request) {
+	m.serveCacheable(w, r, "application/x-javascript", func(fd core.FlowData) []byte {
+		if data, err := fd.Get(javascriptbuilder.DataKey); err == nil {
+			if d, ok := data.(*javascriptbuilder.Data); ok {
+				return []byte(d.JavaScript())
+			}
+		}
+		return nil
+	})
+}
+
+func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
+	m.serveCacheable(w, r, "application/json", func(fd core.FlowData) []byte {
+		if data, err := fd.Get(jsonbuilder.DataKey); err == nil {
+			if d, ok := data.(*jsonbuilder.Data); ok {
+				return []byte(d.JSON())
+			}
+		}
+		return []byte("{}")
+	})
+}
+
+// failedCacheControl is the Cache-Control of a response to a request whose
+// processing failed. A browser may keep the response but must ask again
+// before using it, and as the response has no ETag, asking again gets a full
+// response rather than a 304 that keeps the faulty one.
+const failedCacheControl = "private, no-cache"
+
+// serveCacheable answers a request to an intercepted endpoint. The ETag
+// depends on the Evidence the request supplies alone, so it is compared with
+// If-None-Match before the Pipeline runs, and a request that matches is not
+// processed. A matching GET or HEAD gets 304 Not Modified with the
+// Cache-Control, Vary, ETag and CORS headers of a 200 whose processing
+// recorded no errors, even while processing fails, so a browser keeps a good
+// response and its max-age. Any other matching method gets 412 Precondition
+// Failed with only the CORS header (RFC 9110 sections 13.1.2 and 15.4.5).
+// Otherwise the Pipeline runs and content gives the body. When processing
+// failed the response has failedCacheControl and no ETag.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#cache-header-detail
+func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request,
+	contentType string, content func(core.FlowData) []byte) {
+	fd := m.newFlowData(r)
+	defer fd.Close()
+	etag := m.etag(fd)
+	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
+	// Reflect the request Origin so a cross-origin client-side callback to these
+	// endpoints is permitted, and can read a 304 or 412. The literal "null"
+	// origin is not reflected.
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+	if matched && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	}
+	if matched {
+		m.setCacheHeaders(w, etag)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	failed := m.run(fd)
+	body := content(fd)
+	if failed {
+		w.Header().Set("Cache-Control", failedCacheControl)
+		if vary := m.varyHeader(); vary != "" {
+			w.Header().Set("Vary", vary)
+		}
+	} else {
+		// A cloud engine can learn its Evidence keys while processing, so
+		// the ETag sent is worked out again from the filter that later
+		// requests will be compared with.
+		m.setCacheHeaders(w, m.etag(fd))
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+// setCacheHeaders sets the Cache-Control, ETag and Vary headers of a response
+// whose processing recorded no errors, and of a 304.
+func (m *Middleware) setCacheHeaders(w http.ResponseWriter, etag string) {
+	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(m.maxAge.Seconds())))
+	w.Header().Set("ETag", etag)
+	if vary := m.varyHeader(); vary != "" {
+		w.Header().Set("Vary", vary)
+	}
+}
+
+// etag computes a hash over the Evidence values that the Pipeline's filter
+// accepts, as the request supplied them, so that the cached content is
+// revalidated when relevant Evidence changes. Values that Flow Elements add
+// while processing, such as a new session id, are left out. FNV-1a over the
+// sorted keys and their values has no per-process seed, so the same Evidence
+// gives the same ETag in every process, as a browser revalidating after a
+// restart or against another server needs.
+// The ETag is weak, W/"...", because a data file update can change the
+// content for the same Evidence without changing the hash (RFC 9110 sections
+// 8.8.1 and 8.8.3).
+func (m *Middleware) etag(fd core.FlowData) string {
+	filter := m.pipeline.EvidenceKeyFilter()
+	all := core.SuppliedEvidence(fd)
+	keys := make([]string, 0, len(all))
+	for k := range all {
+		if filter == nil || filter.Include(k) {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	h := fnv.New64a()
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte{0x1f})
+		h.Write([]byte(fmt.Sprintf("%v", all[k])))
+		h.Write([]byte{0x1e})
+	}
+	return fmt.Sprintf(`W/"%x"`, h.Sum64())
+}
+
+// ifNoneMatchMatches reports whether the If-None-Match field lines match
+// etag, with the weak comparison RFC 9110 section 13.1.2 requires. The field
+// is "*", which matches because the endpoints always have content, or a list
+// of entity tags, one of which matches when its quoted part equals etag's,
+// with or without W/ on either (section 8.8.3.2). A field that is neither "*"
+// nor a comma separated list of entity tags does not match (section 13.1.2,
+// step 3).
+func ifNoneMatchMatches(lines []string, etag string) bool {
+	field := strings.TrimSpace(strings.Join(lines, ","))
+	if field == "*" {
+		return true
+	}
+	want := strings.TrimPrefix(etag, "W/")
+	matched, needComma := false, false
+	for {
+		field = strings.TrimLeft(field, " \t")
+		if field == "" {
+			return matched
+		}
+		if field[0] == ',' {
+			field, needComma = field[1:], false
+			continue
+		}
+		if needComma {
+			return false
+		}
+		opaque, rest, ok := scanEntityTag(field)
+		if !ok {
+			return false
+		}
+		matched = matched || opaque == want
+		field, needComma = rest, true
+	}
+}
+
+// scanEntityTag reads the entity tag at the start of s, as RFC 9110 section
+// 8.8.3 defines it, and returns its quoted part without W/ and the text after
+// it. ok is false when s does not start with an entity tag.
+func scanEntityTag(s string) (opaque, rest string, ok bool) {
+	s = strings.TrimPrefix(s, "W/")
+	if !strings.HasPrefix(s, `"`) {
+		return "", "", false
+	}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return s[:i+1], s[i+1:], true
+		case c == 0x21 || c >= 0x23 && c != 0x7f:
+			// etagc, a visible character other than '"', or obs-text.
+		default:
+			return "", "", false
+		}
+	}
+	return "", "", false
+}
+
+// varyHeader lists the HTTP headers in the Pipeline's Evidence key filter that
+// can be enumerated, so caches re-fetch when those request headers change. It
+// is empty, and no Vary header is sent, when the filter holds no header or
+// cannot list its keys, because Vary names only headers the filter holds.
+func (m *Middleware) varyHeader() string {
+	filter := m.pipeline.EvidenceKeyFilter()
+	lister, ok := filter.(core.KeyLister)
+	if !ok {
+		return ""
+	}
+	var headers []string
+	for _, key := range lister.Keys() {
+		prefix, field := core.SplitEvidenceKey(key)
+		if prefix == core.PrefixHeader {
+			headers = append(headers, http.CanonicalHeaderKey(field))
+		}
+	}
+	return strings.Join(headers, ", ")
+}
+
+// clientIP returns the client IP address. By default this is the connection's
+// peer address, which a client cannot forge. Forwarding headers
+// (X-Forwarded-For, X-Real-IP) are consulted only when trusted proxies are
+// configured and the immediate peer is one of them; X-Forwarded-For is then
+// walked from the right, skipping trusted hops, so the returned address is the
+// client as seen by the trusted edge rather than a value the client supplied.
+func (m *Middleware) clientIP(r *http.Request) string {
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(peer); err == nil {
+		peer = host
+	}
+	if len(m.trustedProxies) == 0 || !m.isTrustedProxy(peer) {
+		return peer
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(parts[i])
+			if ip != "" && !m.isTrustedProxy(ip) {
+				return ip
+			}
+		}
+	}
+	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
+		return xr
+	}
+	return peer
+}
+
+// isTrustedProxy reports whether ip falls within a configured trusted-proxy range.
+func (m *Middleware) isTrustedProxy(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, n := range m.trustedProxies {
+		if n.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+// maxFormBodyBytes caps how much of a urlencoded form body is buffered for
+// evidence, mirroring net/http's own ~10 MB limit for urlencoded forms.
+const maxFormBodyBytes = 10 << 20
+
+// hasFormBody reports whether ParseForm would read this request's body: a
+// POST/PUT/PATCH carrying a urlencoded form.
+func hasFormBody(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+	default:
+		return false
+	}
+	if r.Body == nil {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mt == "application/x-www-form-urlencoded"
+}
+
+// readCapped reads at most cap bytes from rc, reporting whether more data
+// remained (overflow). The reader is not closed.
+func readCapped(rc io.Reader, capBytes int64) ([]byte, bool) {
+	data, _ := io.ReadAll(io.LimitReader(rc, capBytes+1))
+	if int64(len(data)) > capBytes {
+		return data, true
+	}
+	return data, false
+}
+
+// spliceBody rejoins already-read bytes with the unread remainder of the
+// original body so the downstream handler sees the full stream.
+func spliceBody(read []byte, rest io.ReadCloser) io.ReadCloser {
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(read), rest), rest}
+}
+
+// requestProtocol returns the request protocol. The actual connection is
+// trusted first (it cannot be spoofed). The forwarding headers are consulted
+// only when the immediate peer is a configured trusted proxy - the same gate as
+// clientIP - and only the literal values "http"/"https" are accepted, because
+// the value becomes header.protocol evidence and reaches the client-side
+// callback URL.
+func (m *Middleware) requestProtocol(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(peer); err == nil {
+		peer = host
+	}
+	if len(m.trustedProxies) > 0 && m.isTrustedProxy(peer) {
+		for _, name := range []string{"X-Origin-Proto", "X-Forwarded-Proto"} {
+			proto := strings.ToLower(strings.TrimSpace(r.Header.Get(name)))
+			if proto == "http" || proto == "https" {
+				return proto
+			}
+		}
+	}
+	return "http"
+}

@@ -1,0 +1,207 @@
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2019 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+/**
+@example web/web_integration.go
+This example shows how to perform device detection on the User-Agent of a
+web request, in a web application at localhost:5151.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/web).
+
+@include{doc} example-require-datafile.txt
+*/
+
+package main
+
+/*
+This example illustrates how to perform device detection on User-Agent extracted
+from web request.
+
+To run this example, perform the following command:
+```
+go run web_integration.go
+```
+This will start the application at "localhost:5151". From a browser of your choice,
+enter "localhost:5151" in the URL input. A similar return as the following is expected:
+```
+Browser: Chrome
+
+Screen Pixels Width: Unknown
+
+HardwareVendor: needs the Enterprise data file
+
+HardwareName: needs the Enterprise data file
+
+DeviceType: needs the Enterprise data file
+
+Some of these properties need the Enterprise data file. Contact us for a copy.
+```
+With the free Lite data file, the properties that only the Enterprise data file
+has are shown as needing it, with a link to ask for a copy.
+
+To be sure that the application works with different User-Agents, `curl` can be
+used:
+```
+curl -A [User-Agent string] localhost:5151
+```
+*/
+
+import (
+	"fmt"
+	"html/template"
+	"log"
+	"net/http"
+
+	"github.com/51Degrees/51degrees-go/device-detection/v4/dd"
+	examples "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
+)
+
+// contactUs is where to ask for a copy of the Enterprise data file, which has
+// the properties the free data file leaves out.
+const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-web-web_integration.go&utm_term=enterprise-data-file"
+
+// Properties required for a response page. Enterprise holds the properties
+// only the Enterprise data file has, and ContactUs is set when the data file
+// lacks any of them.
+type Page struct {
+	BrowserName       string
+	ScreenPixelsWidth string
+	Enterprise        []examples.Property
+	ContactUs         string
+	FindOutMore       []examples.Property
+}
+
+var manager *dd.ResourceManager
+var config *dd.ConfigHash
+
+// Template for the response HTML page.
+var templ = `<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Web Integration Example</title>
+  </head>
+  <body>
+    <p id=browsername>Browser: <b>{{.BrowserName}}</b></p>
+    <p id=screenpixelswidth>Screen Pixels Width: <b>{{.ScreenPixelsWidth}}</b></p>
+    {{range .Enterprise}}<p>{{.Name}}: <b>{{.Value}}</b></p>
+    {{end}}{{if .ContactUs}}<p>Some of these properties need the Enterprise data file. <a href="{{.ContactUs}}">Contact us</a> for a copy.</p>
+    {{end}}<h3>Find out more</h3>
+    <ul>{{range .FindOutMore}}<li>{{.Name}}: <a href="{{.Value}}">{{.Value}}</a></li>{{end}}</ul>
+  </body>
+</html>`
+
+// function match performs a match on an input User-Agent string and determine
+// if the device is a mobile device.
+func match(
+	results *dd.ResultsHash,
+	ua string) {
+	// Perform detection
+	err := results.MatchUserAgent(ua)
+	if err != nil {
+		log.Fatalf("ERROR: Failed to perform detection on User-Agent \"%s\".\n", ua)
+	}
+}
+
+// function getValue return a value results for a property
+func getValue(
+	results *dd.ResultsHash,
+	propertyName string) string {
+	// Get the values in string
+	value, err := results.ValuesString(
+		propertyName,
+		",")
+	if err != nil {
+		log.Fatalln("ERROR: Failed to get results values string.")
+	}
+
+	hasValues, err := results.HasValues(propertyName)
+	if err != nil {
+		log.Fatalf(
+			"ERROR: Failed to check if a matched value exists for property "+
+				"%s.\n", propertyName)
+	}
+
+	if !hasValues {
+		log.Printf("Property %s does not have a matched value.\n", propertyName)
+		return ""
+	}
+
+	return value
+}
+
+// Handler for web request
+func handler(w http.ResponseWriter, r *http.Request) {
+	// Create results. A results instance is not safe to use from several
+	// goroutines at once, so each request makes its own.
+	results := dd.NewResultsHash(manager, 1, 0)
+
+	// Make sure results object is freed after function execution.
+	defer results.Free()
+
+	// Perform detection on mobile User-Agent
+	match(results, r.UserAgent())
+	browserName := getValue(results, "BrowserName")
+	screenPixelWidth := getValue(results, "ScreenPixelsWidth")
+	enterprise, missing := examples.Enterprise(results)
+	p := &Page{
+		BrowserName:       browserName,
+		ScreenPixelsWidth: screenPixelWidth,
+		Enterprise:        enterprise,
+	}
+	if missing {
+		p.ContactUs = contactUs
+	}
+	p.FindOutMore = examples.FindOutMoreLinks(
+		"examples-device-detection-web-web_integration.go")
+
+	// Construct the template
+	t := template.Must(template.New("dd").Parse(templ))
+	// Return the constructed template in a response
+	t.Execute(w, p)
+}
+
+func main() {
+	// Initialise manager
+	manager = dd.NewResourceManager()
+	config = dd.NewConfigHash(dd.Balanced)
+	// The data file is found by searching up from here, and when it is
+	// missing it is downloaded from the data repository, which links to it.
+	filePath := examples.GetFilePathByName([]string{"51Degrees-LiteV4.1.hash"})
+	// Init manager
+	err := dd.InitManagerFromFile(
+		manager,
+		*config,
+		"",
+		filePath)
+	if err != nil {
+		log.Fatalln("ERROR: Failed to initialize resource manager.")
+	}
+
+	// Make sure manager object will be freed after the function execution
+	defer manager.Free()
+
+	http.HandleFunc("/", handler)
+	const port = 5151
+	fmt.Printf("Server listening on port: %d\n", port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil))
+}

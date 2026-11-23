@@ -1,0 +1,17 @@
+# Binaries
+*.exe
+*.test
+
+# Test/coverage output
+*.out
+coverage.*
+test-results/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE/OS
+.idea/
+.vscode/
+.DS_Store
