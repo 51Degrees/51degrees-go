@@ -69,6 +69,10 @@ type fileUpdater struct {
 	// product names the product of the data file the engine has loaded. It
 	// is nil when the engine names none.
 	product func() string
+	// productConfigured is true when the data file URL names a product the
+	// caller configured, which is used in place of the product of the data
+	// file.
+	productConfigured bool
 	// startUpPullDone is set once PullOnStart has run, so that the polling
 	// does not repeat the start-up pull.
 	startUpPullDone bool
@@ -188,6 +192,14 @@ func (e *FileUpdater) SetNextUpdateFunc(nextUpdate func() time.Time) {
 // holds several products, the update asks for this one.
 func (e *FileUpdater) SetProductFunc(product func() string) {
 	e.product = product
+}
+
+// SetProductConfigured says whether the data file URL names a product the
+// caller configured. Every request then asks for that product, and a 300
+// (Multiple Choices) response is not followed, so the product of the data
+// file the engine has loaded is not asked for in its place.
+func (e *FileUpdater) SetProductConfigured(configured bool) {
+	e.productConfigured = configured
 }
 
 // SetLoggerEnabled enables or disables the logger for the FileUpdater instance and returns the updated LogWrapper.

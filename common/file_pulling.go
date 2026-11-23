@@ -332,7 +332,7 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 	// The download goes to a temp file next to the data file and is renamed over it, so the
 	// engine only ever sees the complete old file or the complete new one.
 	fileResponse, err := doProductDataFileRequest(ctx, e.dataFileUrl, e.logger, lastModificationTimestamp,
-		e.GetDataFile(), e.productName(), e.engineLabel())
+		e.GetDataFile(), e.productName(), e.engineLabel(), e.productConfigured)
 	if err != nil {
 		if ctx.Err() != nil {
 			return e.GetDataFilePullEveryMs(), false, err
@@ -542,17 +542,18 @@ func tempFilePattern(dataFile string) string {
 // Returns a FileResponse with the temp file path or an error if the request fails or conditions are not met.
 func doDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
 	dataFile string) (*FileResponse, error) {
-	return doProductDataFileRequest(ctx, url, logger, timestamp, dataFile, "", "Engine")
+	return doProductDataFileRequest(ctx, url, logger, timestamp, dataFile, "", "Engine", false)
 }
 
 // doProductDataFileRequest fetches a data file as doDataFileRequest does. When the server answers 300
 // (Multiple Choices), which the Distributor does for license keys that hold several products, and the
 // response offers product, the request is made again with that product added to its query. Only the
 // product is taken from the response, so the second request goes to url too. engine names the engine
-// in the message logged.
+// in the messages logged. When configured is true, url names a product the caller configured, and a
+// 300 response is not followed. It is then the error of any other response.
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md
 func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
-	dataFile string, product string, engine string) (*FileResponse, error) {
+	dataFile string, product string, engine string, configured bool) (*FileResponse, error) {
 	removeStaleTempFiles(dataFile, logger)
 
 	// An error net/http raises names the URL, so its license keys are masked.
@@ -561,7 +562,7 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusMultipleChoices {
+	if resp.StatusCode == http.StatusMultipleChoices && !configured {
 		offered, listed := productsOffered(resp)
 		if listed {
 			resp.Body.Close()
@@ -575,6 +576,9 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 			}
 			logger.Infof("Requesting product '%s' from '%s' for Engine '%s'",
 				chosen, MaskLicenseKeysIn(url, keys), engine)
+			// The second request is logged as the first is.
+			logger.Infof("Checking for update from '%s' for Engine '%s'",
+				MaskLicenseKeysIn(withProduct, keys), engine)
 			resp, err = getDataFile(ctx, withProduct, timestamp, keys)
 			if err != nil {
 				return nil, err
@@ -709,7 +713,8 @@ type productChoice struct {
 // productsOffered reads the products a 300 (Multiple Choices) response offers, being the Product
 // parameter of each of its AvailableUris, in the order of the response. A URI with no Product, or with
 // one that is not a product name, is left out, and the first productsOfferedCount products are kept.
-// It reports false when the body is not JSON with a list of AvailableUris.
+// It reports false when the body is not JSON with a list of AvailableUris, or when the list gives no
+// product.
 func productsOffered(resp *http.Response) ([]string, bool) {
 	var choice productChoice
 	body, err := io.ReadAll(io.LimitReader(resp.Body, productChoiceBytes))
@@ -729,7 +734,7 @@ func productsOffered(resp *http.Response) ([]string, bool) {
 			}
 		}
 	}
-	return offered, true
+	return offered, len(offered) > 0
 }
 
 // isProductName reports whether name is one to productNameCharacters letters, digits, '_', '-' and

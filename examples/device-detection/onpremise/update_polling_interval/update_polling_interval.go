@@ -94,8 +94,8 @@ func runWithoutUpdates(params common.ExampleParams) {
 	processExampleEvidence(engine, common.ExampleEvidenceDesktop)
 	processExampleEvidence(engine, common.ExampleEvidenceMobile)
 
-	fmt.Printf("Automatic updates download the Enterprise data file with a "+
-		"licence key, which _51DEGREES_LICENSE_KEY gives. Contact us for a "+
+	fmt.Printf("Automatic updates download a new data file with a "+
+		"License Key, which _51DEGREES_LICENSE_KEY gives. Contact us for a "+
 		"key and a copy at %s\n", contactUs)
 }
 
@@ -116,13 +116,13 @@ func main() {
 				// A license key comes with a paid data file, from https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
 				onpremise.WithLicenseKey(params.LicenseKey),
 
-				// Ask for the TAC data file, which the Distributor names
-				// V4TAC, so this example downloads that file whichever data
-				// file it starts with. The option is optional. Without it
-				// the first request names no product, and when the license
-				// key holds several products the engine asks for the product
-				// of the data file it has loaded.
-				onpremise.WithProduct("V4TAC"),
+				// Ask for the product _51DEGREES_DD_PRODUCT names, as the
+				// Distributor spells it, such as V4TAC. When the variable is
+				// not set, no product is named. The first request then names
+				// no product, and when the License Key holds several
+				// products the engine asks for the product of the data file
+				// it has loaded.
+				onpremise.WithProduct(params.Product),
 
 				// Enable automatic updates.
 				onpremise.WithAutoUpdate(true),

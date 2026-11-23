@@ -11,6 +11,7 @@ The test `TestEveryVariableHasA51DegreesName` in [`common/variable_names_test.go
 | `_51DEGREES_RESOURCE_KEY` | Your Resource Key for the 51Degrees cloud service | The cloud examples |
 | `_51DEGREES_LICENSE_KEY` | Your License Key for data file updates | The on-premise examples that update a data file, and the CI script that fetches the data files |
 | `_51DEGREES_DD_PATH` | The path of a Device Detection data file, in place of the free Lite file | The Device Detection and mixed examples, and their tests |
+| `_51DEGREES_DD_PRODUCT` | The product the Device Detection update example asks the Distributor for, such as `V4TAC`. When it is not set, the example names no product | The Device Detection update polling interval example |
 | `_51DEGREES_IPI_PATH` | The path of an IP Intelligence data file, in place of the free Lite file | The IP Intelligence and mixed examples, the IP Intelligence tests, and the performance tests |
 | `_51DEGREES_EVIDENCE_YAML` | The path of a YAML evidence file, in place of the free evidence file | The on-premise examples and their tests |
 | `_51DEGREES_CLOUD_ENDPOINT` | The address of the cloud service, in place of the public one | The Cloud Request Engine, when `SetEndpoint` is not used |

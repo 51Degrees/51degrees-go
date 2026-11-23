@@ -165,7 +165,6 @@ func TestPull_IgnoresAURIWithNoProduct(t *testing.T) {
 
 // A product that is not offered gives the whole message of the specification,
 // with the license key masked and the products in the order of the response.
-// A response whose URIs all name no product offers none.
 func TestPull_NotOfferedMessage(t *testing.T) {
 	for name, c := range map[string]struct {
 		queries []string
@@ -176,10 +175,6 @@ func TestPull_NotOfferedMessage(t *testing.T) {
 			"LicenseKeys=" + productTestKey,
 			"LicenseKeys=" + productTestKey + "&Product=V4TAC"},
 			"IPIV4Enterprise,V4TAC"},
-		"no product named": {[]string{
-			"LicenseKeys=" + productTestKey,
-			"LicenseKeys=" + productTestKey + "&Product="},
-			""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := newScriptedDistributor(severalProducts(availableUris(c.queries...)))
@@ -234,17 +229,22 @@ func TestPull_DoesNotFollowASecond300(t *testing.T) {
 	noFullKey(t, log, err)
 }
 
-// A 300 response whose body is not JSON with a list of AvailableUris is the
-// error of any other response, and no second request is made.
+// A 300 response whose body is not JSON with a list of AvailableUris, or
+// whose list is empty or gives no Product value, is the error of any other
+// response, and no second request is made.
 func TestPull_300WithoutAListIsAnHTTPError(t *testing.T) {
 	tooLong := `{"Padding":"` + strings.Repeat("a", 2*productChoiceBytes) +
 		`","AvailableUris":["https://distributor.example/?Product=V4TAC"]}`
+	noProduct := availableUris(
+		"LicenseKeys="+productTestKey,
+		"LicenseKeys="+productTestKey+"&Product=")
 	for name, body := range map[string]string{
 		"not JSON":        "There are multiple products",
 		"no list":         `{"Error":"There are multiple products"}`,
 		"an empty list":   `{"AvailableUris":[]}`,
 		"a list of other": `{"AvailableUris":"V4TAC"}`,
 		"too long a body": tooLong,
+		"no product name": noProduct,
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := newScriptedDistributor(severalProducts(body))
@@ -268,6 +268,47 @@ func TestPull_300WithoutAListIsAnHTTPError(t *testing.T) {
 			noFullKey(t, log, err)
 		})
 	}
+}
+
+// The second request is logged as a request is, so the check for an update is
+// logged for the first request and again for the second, with the license
+// key masked in both.
+func TestPull_LogsTheSecondRequest(t *testing.T) {
+	d := newScriptedDistributor(
+		severalProducts(availableUris(
+			"LicenseKeys="+productTestKey+"&Product=IPIV4Enterprise",
+			"LicenseKeys="+productTestKey+"&Product=V4TAC")),
+		dataFile)
+	defer d.server.Close()
+	updater, log := d.updater(t, "V4TAC")
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err != nil || !downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want the data file", downloaded, err)
+	}
+	if d.count() != 2 {
+		t.Errorf("%d requests were made, want 2", d.count())
+	}
+	second := d.server.URL + "/api/v2/download?Download=True&LicenseKeys=" +
+		MaskLicenseKey(productTestKey) + "&Product=V4TAC&Type=HashV41"
+	for _, masked := range []string{d.maskedURL(), second} {
+		want := "INFO Checking for update from '" + masked + "' for Engine 'Engine'"
+		if !hasLine(log, want) {
+			t.Errorf("no message is %q, the messages being\n%s", want,
+				strings.Join(log.all(), "\n"))
+		}
+	}
+	checks := 0
+	for _, line := range log.all() {
+		if strings.HasPrefix(line, "INFO Checking for update from '") {
+			checks++
+		}
+	}
+	if checks != 2 {
+		t.Errorf("%d messages say a request checks for an update, want 2", checks)
+	}
+	noFullKey(t, log, nil)
 }
 
 // The second request is the first with its Product set to the product, in

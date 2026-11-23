@@ -539,7 +539,9 @@ func (e *Engine) validateAndAppendUrlParams() error {
 
 // appendProduct sets the Product parameter of the data file URL to the product
 // option. When the option is not set the URL has no Product parameter, so the
-// first request of an update names no product.
+// first request of an update names no product. When it is set, every request
+// asks for that product, and a 300 (Multiple Choices) response is not
+// followed.
 func (e *Engine) appendProduct() error {
 	urlParsed, err := url.Parse(e.GetDataFileUrl())
 	if err != nil {
@@ -553,6 +555,7 @@ func (e *Engine) appendProduct() error {
 	urlParsed.RawQuery = query.Encode()
 
 	e.SetDataFileUrl(urlParsed.String())
+	e.SetProductConfigured(e.product != "")
 
 	return nil
 }

@@ -57,6 +57,7 @@ func RunExample(exampleFunc ExampleFunc) {
 
 	params := ExampleParams{
 		LicenseKey:   licenseKey,
+		Product:      os.Getenv("_51DEGREES_DD_PRODUCT"),
 		DataFile:     dd_example.GetDataFile(dataFile),
 		EvidenceYaml: evidenceYaml,
 	}
