@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx ad2ccae59e59a647ca8d760ae3dc5fb921f250e9 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 560de81e2ea8f871e2ba9c124d2deb86763eda8f by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -20955,7 +20955,9 @@ void fiftyoneDegreesResourceReplace(
 	assert(getInUse(&(*newResourceHandle)->counter) == 0);
 	assert(getHandle(&(*newResourceHandle)->counter) == *newResourceHandle);
 #ifndef FIFTYONE_DEGREES_NO_THREADING
-	// Switch the active handle for the manager to the newly created one.
+	// Switch the active handle for the manager to the newly created one. If
+	// another thread switched it first, the swap fails, so take the handle
+	// that is now active and try again.
 	do {
 		if (oldHandle != NULL) {
 			ResourceHandleDecUse(oldHandle);
@@ -20966,14 +20968,14 @@ void fiftyoneDegreesResourceReplace(
 	} while (INTERLOCK_EXCHANGE_PTR(
 		manager->active,
 		*newResourceHandle,
-		oldHandle) == false);
+		oldHandle) != oldHandle);
 #else
 	oldHandle = ResourceHandleIncUse(manager);
 	((RetainedHandle*)*newResourceHandle)->replaced = oldHandle;
 	manager->active = *newResourceHandle;
 #endif
-	// Release the existing resource can be freed. If nothing else is
-	// holding onto a reference to it then free it will be freed.
+	// Release this thread's use of the replaced resource. It is freed once
+	// nothing else holds it.
 	ResourceHandleDecUse(oldHandle);
 }
 #ifdef _MSC_VER
