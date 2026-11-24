@@ -144,7 +144,7 @@ func TestPull_DoesNotFollowTheLocationOfA300(t *testing.T) {
 // of the loaded data file is not looked up.
 // See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#configured-product
 func TestPull_ProductInTheURLIsNotReplacedOnA300(t *testing.T) {
-	for _, parameter := range []string{"Product", "product", "PRODUCT"} {
+	for _, parameter := range []string{"Product", "product", "PRODUCT", "Pro%64uct"} {
 		t.Run(parameter, func(t *testing.T) {
 			d := newScriptedDistributor(
 				severalProducts(availableUris(
@@ -153,7 +153,13 @@ func TestPull_ProductInTheURLIsNotReplacedOnA300(t *testing.T) {
 				dataFile)
 			defer d.server.Close()
 			updater, log := d.updater(t, "V4TAC")
-			configured := d.url() + "&" + parameter + "=V4Enterprise"
+			value := "V4Enterprise"
+			if parameter == "Pro%64uct" {
+				// The value is taken as it is written, even where its
+				// escaping does not decode.
+				value = "V4%ZZ"
+			}
+			configured := d.url() + "&" + parameter + "=" + value
 			updater.SetDataFileUrl(configured)
 			var lookups atomic.Int32
 			updater.SetProductFunc(func() string {
@@ -226,7 +232,7 @@ func TestPull_EmptyProductInTheURLIsNotConfigured(t *testing.T) {
 	noFullKey(t, log, nil)
 }
 
-// A 300 response can come after a 301, 302, 307 or 308 redirect. The address
+// A 300 response can come after a 301, 302, 303, 307 or 308 redirect. The address
 // that answered 300 is then the URL of the first request, so the second
 // request goes there and the messages name it.
 // See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
@@ -234,6 +240,7 @@ func TestPull_SecondRequestGoesToTheAddressThatAnswered300(t *testing.T) {
 	for _, status := range []int{
 		http.StatusMovedPermanently,
 		http.StatusFound,
+		http.StatusSeeOther,
 		http.StatusTemporaryRedirect,
 		http.StatusPermanentRedirect,
 	} {

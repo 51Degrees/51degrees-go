@@ -69,17 +69,12 @@ func (e *Engine) dataFileProduct() string {
 // product.
 const productParameter = "Product"
 
-// namesProduct reports whether query has a Product parameter with a value,
-// whatever the case of its name.
-func namesProduct(query url.Values) bool {
-	for name, values := range query {
-		if !strings.EqualFold(name, productParameter) {
-			continue
-		}
-		for _, value := range values {
-			if value != "" {
-				return true
-			}
+// namesProduct reports whether rawQuery, as it is written, has a Product
+// parameter with a value, whatever the case or escaping of its name.
+func namesProduct(rawQuery string) bool {
+	for _, pair := range queryPairs(rawQuery) {
+		if _, value, _ := strings.Cut(pair, "="); value != "" && isProductPair(pair) {
+			return true
 		}
 	}
 	return false
@@ -87,21 +82,33 @@ func namesProduct(query url.Values) bool {
 
 // queryWithProduct returns rawQuery with product as its one Product
 // parameter, added at its end. Any Product parameter it has, whatever the case
-// or escaping of its name, is removed, and the other parameters are kept as
-// they are written, in their order.
+// or escaping of its name, is removed, and the other pairs, empty ones
+// included, are kept as they are written, in their order.
 func queryWithProduct(rawQuery string, product string) string {
 	var kept []string
-	for _, pair := range strings.Split(rawQuery, "&") {
-		if pair == "" {
-			continue
-		}
-		name, _, _ := strings.Cut(pair, "=")
-		if unescaped, err := url.QueryUnescape(name); err == nil {
-			name = unescaped
-		}
-		if !strings.EqualFold(name, productParameter) {
+	for _, pair := range queryPairs(rawQuery) {
+		if !isProductPair(pair) {
 			kept = append(kept, pair)
 		}
 	}
 	return strings.Join(append(kept, productParameter+"="+url.QueryEscape(product)), "&")
+}
+
+// queryPairs splits a query as it is written into its pairs, empty ones
+// included, and gives none for an empty query.
+func queryPairs(rawQuery string) []string {
+	if rawQuery == "" {
+		return nil
+	}
+	return strings.Split(rawQuery, "&")
+}
+
+// isProductPair reports whether a pair of a query as it is written is a
+// Product parameter, whatever the case or escaping of its name.
+func isProductPair(pair string) bool {
+	name, _, _ := strings.Cut(pair, "=")
+	if unescaped, err := url.QueryUnescape(name); err == nil {
+		name = unescaped
+	}
+	return strings.EqualFold(name, productParameter)
 }

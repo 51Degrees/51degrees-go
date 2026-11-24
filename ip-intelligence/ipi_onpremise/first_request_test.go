@@ -305,6 +305,12 @@ func TestProductSetWithACallersURLIsSent(t *testing.T) {
 		"a product in the URL": {[]EngineOptions{
 			WithDataUpdateUrl(address + query + "&product=IPIV4Basic"),
 			WithProduct("IPIV4Enterprise")}, query + "&product=IPIV4Basic"},
+		"a product whose escaping does not decode": {[]EngineOptions{
+			WithDataUpdateUrl(address + query + "&Product=V4%ZZ"),
+			WithProduct("IPIV4Enterprise")}, query + "&Product=V4%ZZ"},
+		"an empty pair": {[]EngineOptions{
+			WithDataUpdateUrl(address + query + "&&Download=True"),
+			WithProduct("IPIV4Enterprise")}, query + "&&Download=True&Product=IPIV4Enterprise"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			*requests = requestLog{}

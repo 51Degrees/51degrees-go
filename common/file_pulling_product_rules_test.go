@@ -349,6 +349,9 @@ func TestURLWithProduct(t *testing.T) {
 			"https://d.example/api?LicenseKeys=A|B&Type=HashV41&Download=True&PRODUCT=Other&" +
 				"Product=More",
 			"LicenseKeys=A|B&Type=HashV41&Download=True&Product=V4TAC"},
+		"an empty pair": {
+			"https://d.example/api?LicenseKeys=A%7CB&&Type=HashV41&Product=&Download=True",
+			"LicenseKeys=A%7CB&&Type=HashV41&Download=True&Product=V4TAC"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			first := c.first

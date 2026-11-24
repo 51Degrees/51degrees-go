@@ -536,7 +536,7 @@ func (e *Engine) appendProduct() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse data file url: %w", err)
 	}
-	if namesProduct(urlParsed.Query()) {
+	if namesProduct(urlParsed.RawQuery) {
 		return nil
 	}
 	urlParsed.RawQuery = queryWithProduct(urlParsed.RawQuery, e.product)

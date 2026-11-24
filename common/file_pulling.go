@@ -843,21 +843,33 @@ func urlWithProduct(rawURL string, product string) (string, error) {
 		return "", err
 	}
 	var kept []string
-	for _, pair := range strings.Split(parsed.RawQuery, "&") {
-		if pair == "" {
-			continue
-		}
-		name, _, _ := strings.Cut(pair, "=")
-		if unescaped, err := neturl.QueryUnescape(name); err == nil {
-			name = unescaped
-		}
-		if !strings.EqualFold(name, productParameter) {
+	for _, pair := range queryPairs(parsed.RawQuery) {
+		if !isProductPair(pair) {
 			kept = append(kept, pair)
 		}
 	}
 	parsed.RawQuery = strings.Join(
 		append(kept, productParameter+"="+neturl.QueryEscape(product)), "&")
 	return parsed.String(), nil
+}
+
+// queryPairs splits a query as it is written into its pairs, empty ones included, and gives none for
+// an empty query.
+func queryPairs(rawQuery string) []string {
+	if rawQuery == "" {
+		return nil
+	}
+	return strings.Split(rawQuery, "&")
+}
+
+// isProductPair reports whether a pair of a query as it is written is a Product parameter, whatever
+// the case or escaping of its name.
+func isProductPair(pair string) bool {
+	name, _, _ := strings.Cut(pair, "=")
+	if unescaped, err := neturl.QueryUnescape(name); err == nil {
+		name = unescaped
+	}
+	return strings.EqualFold(name, productParameter)
 }
 
 // queryValue returns the first value of the query parameter of u called name, whatever its case.
@@ -870,21 +882,17 @@ func queryValue(u *neturl.URL, name string) string {
 	return ""
 }
 
-// namesProduct reports whether rawURL has a Product parameter with a value, whatever the case of
-// its name. A request to such a URL asks for a configured product.
+// namesProduct reports whether rawURL has a Product parameter with a value, whatever the case or
+// escaping of its name, taking the value as it is written. A request to such a URL asks for a
+// configured product.
 func namesProduct(rawURL string) bool {
 	parsed, err := neturl.Parse(rawURL)
 	if err != nil {
 		return false
 	}
-	for name, values := range parsed.Query() {
-		if !strings.EqualFold(name, productParameter) {
-			continue
-		}
-		for _, value := range values {
-			if value != "" {
-				return true
-			}
+	for _, pair := range queryPairs(parsed.RawQuery) {
+		if _, value, _ := strings.Cut(pair, "="); value != "" && isProductPair(pair) {
+			return true
 		}
 	}
 	return false
