@@ -872,11 +872,15 @@ func isProductPair(pair string) bool {
 	return strings.EqualFold(name, productParameter)
 }
 
-// queryValue returns the first value of the query parameter of u called name, whatever its case.
+// queryValue returns the value of the first parameter of u called name, whatever its case, in the
+// order the query is written. A pair whose escaping does not decode is passed over.
 func queryValue(u *neturl.URL, name string) string {
-	for key, values := range u.Query() {
-		if strings.EqualFold(key, name) && len(values) > 0 {
-			return values[0]
+	for _, pair := range queryPairs(u.RawQuery) {
+		key, value, _ := strings.Cut(pair, "=")
+		key, keyErr := neturl.QueryUnescape(key)
+		value, valueErr := neturl.QueryUnescape(value)
+		if keyErr == nil && valueErr == nil && strings.EqualFold(key, name) {
+			return value
 		}
 	}
 	return ""

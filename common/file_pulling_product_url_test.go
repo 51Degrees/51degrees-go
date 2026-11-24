@@ -510,3 +510,23 @@ func TestPull_ARedirectToAProductIsNotReplacedOnA300(t *testing.T) {
 	}
 	noFullKey(t, log, err)
 }
+
+// A URI that has two Product parameters offers the product of the first, in
+// the order the URI writes them, every time.
+func TestPull_ReadsTheFirstProductOfAURI(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		d := newScriptedDistributor(
+			severalProducts(availableUris(
+				"LicenseKeys="+productTestKey+"&Product=V4TAC&product=IPIV4Enterprise")),
+			dataFile)
+		updater, log := d.updater(t, "V4TAC")
+
+		_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+		d.server.Close()
+		if err != nil || !downloaded {
+			t.Fatalf("pull %d gave downloaded %v and error %v, want the data file\n%s",
+				i, downloaded, err, productLines(log))
+		}
+	}
+}
