@@ -34,8 +34,9 @@ package ipi_interop
 * The C math library is part of the system library on macOS, which every
 * program links, so -lm is given only on the other systems.
 *
-* Every C warning is an error. A warning in the amalgamated sources is fixed
-* in 51degrees-cxx, and the amalgamation made again.
+* The C code builds with the warnings of -Wall -Wextra, each one an error, and
+* no pragma in it turns a warning off. A warning in the amalgamated sources is
+* fixed in 51degrees-cxx, and the amalgamation made again.
  */
 
 /*

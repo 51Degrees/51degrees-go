@@ -30,53 +30,97 @@ import (
 	"testing"
 )
 
-// cgoCompilerFlags gives every flag the #cgo CFLAGS and CPPFLAGS directives
-// in the package's Go files pass to the C compiler, whatever their build
-// constraints.
-func cgoCompilerFlags(t *testing.T) []string {
+// cgoDirective is one #cgo CFLAGS or CPPFLAGS line in the package's Go files.
+type cgoDirective struct {
+	file       string
+	constraint string
+	flags      []string
+}
+
+// cgoCompilerDirectives gives every #cgo CFLAGS and CPPFLAGS line in the
+// package's Go files, with the build constraint each one has, if any.
+func cgoCompilerDirectives(t *testing.T) []cgoDirective {
 	t.Helper()
-	directive := regexp.MustCompile(`#cgo\s+[^:]*\b(CFLAGS|CPPFLAGS):(.*)`)
+	directive := regexp.MustCompile(
+		`^\s*#cgo\s+(.*?)\s*\b(CFLAGS|CPPFLAGS):(.*)$`)
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var flags []string
+	var directives []cgoDirective
 	for _, file := range files {
 		text, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(string(text), "\n") {
-			if match := directive.FindStringSubmatch(line); match != nil {
-				flags = append(flags, strings.Fields(match[2])...)
+			match := directive.FindStringSubmatch(strings.TrimRight(line, "\r"))
+			if match != nil {
+				directives = append(directives, cgoDirective{
+					file:       file,
+					constraint: match[1],
+					flags:      strings.Fields(match[3])})
 			}
 		}
 	}
-	return flags
+	return directives
 }
 
-// The C sources build with every warning the cxx build turns on, and any
-// warning stops the build.
+// The C sources build with the warnings of -Wall -Wextra on every system, and
+// any warning stops the build.
 func TestCgoFlagsTreatWarningsAsErrors(t *testing.T) {
-	flags := cgoCompilerFlags(t)
+	directives := cgoCompilerDirectives(t)
 	for _, want := range []string{"-Wall", "-Wextra", "-Werror"} {
 		found := false
-		for _, flag := range flags {
-			if flag == want {
-				found = true
+		for _, d := range directives {
+			for _, flag := range d.flags {
+				if flag == want && d.constraint == "" {
+					found = true
+				}
 			}
 		}
 		if !found {
-			t.Errorf("the #cgo compiler flags %v do not include %s",
-				flags, want)
+			t.Errorf("no #cgo compiler flags line without a build constraint "+
+				"includes %s", want)
 		}
 	}
-	for _, flag := range flags {
-		if flag == "-w" ||
-			strings.HasPrefix(flag, "-Wno-") ||
-			flag == "-fcommon" ||
-			flag == "-fpermissive" {
-			t.Errorf("the #cgo compiler flags include %s", flag)
+	for _, d := range directives {
+		for _, flag := range d.flags {
+			if flag == "-w" ||
+				strings.HasPrefix(flag, "-Wno-") ||
+				flag == "-fcommon" ||
+				flag == "-fpermissive" {
+				t.Errorf("%s: the #cgo compiler flags include %s", d.file, flag)
+			}
+		}
+	}
+}
+
+// No C code the package compiles turns a GCC or Clang warning off, or turns it
+// back from an error into a warning. That covers the C and header files and the
+// C in the Go files' preambles.
+func TestCSourcesKeepEveryWarning(t *testing.T) {
+	pragma := regexp.MustCompile(
+		`^\s*#\s*pragma\s+(GCC|clang)\s+diagnostic\s+(ignored|warning)\b|` +
+			`_Pragma\s*\(\s*"\s*(GCC|clang)\s+diagnostic\s+(ignored|warning)\b`)
+	var files []string
+	for _, pattern := range []string{"*.c", "*.h", "*.go"} {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, matches...)
+	}
+	for _, file := range files {
+		text, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(text), "\n") {
+			if pragma.MatchString(line) {
+				t.Errorf("%s:%d turns a warning off: %s",
+					file, i+1, strings.TrimSpace(line))
+			}
 		}
 	}
 }
