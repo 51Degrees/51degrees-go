@@ -561,7 +561,7 @@ func noProduct() string { return "" }
 // response, and the Location header is never followed. A request that names a product, which is a
 // configured product, is not repeated, so its 300 is the error of any other response. engine names
 // the engine in the messages logged.
-// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
 	dataFile string, product func() string, engine string) (*FileResponse, string, error) {
 	removeStaleTempFiles(dataFile, logger)

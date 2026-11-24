@@ -541,7 +541,7 @@ func (e *Engine) validateAndAppendUrlParams() error {
 // names a product already, which only a caller's own URL can, is left as it
 // is, and so is any URL when the option is not set, so the first request of
 // an update then names no product.
-// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#configured-product
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#configured-product
 func (e *Engine) appendProduct() error {
 	if e.product == "" {
 		return nil
