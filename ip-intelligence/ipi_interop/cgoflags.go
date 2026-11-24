@@ -30,12 +30,14 @@ package ipi_interop
 * take an off_t, and with _fseeki64 and _ftelli64 on Windows.
 * _FILE_OFFSET_BITS=64 makes off_t 64 bit where it is not already, as on 32 bit
 * Linux.
+*
+* The C math library is part of the system library on macOS, which every
+* program links, so -lm is given only on the other systems.
  */
 
 /*
 #cgo CFLAGS: -DFIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT=1 -D_FILE_OFFSET_BITS=64 -DFIFTYONE_DEGREES_REDUCED_FILE -DFIFTYONE_DEGREES_IPI_SYMBOLS
 #cgo CFLAGS: -fcommon
-#cgo LDFLAGS: -lm
-#cgo !darwin LDFLAGS: -latomic
+#cgo !darwin LDFLAGS: -lm -latomic
 */
 import "C"

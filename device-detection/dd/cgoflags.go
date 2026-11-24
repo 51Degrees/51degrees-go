@@ -25,11 +25,13 @@ package dd
 /*
 * Cgo concatenate all C linker and compiler directives so create this file to
 * centralize the specifications of these flags.
+*
+* The C math library is part of the system library on macOS, which every
+* program links, so -lm is given only on the other systems.
  */
 
 /*
 #cgo CFLAGS: -fcommon
-#cgo LDFLAGS: -lm
-#cgo !darwin LDFLAGS: -latomic
+#cgo !darwin LDFLAGS: -lm -latomic
 */
 import "C"

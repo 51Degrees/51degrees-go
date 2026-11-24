@@ -130,10 +130,6 @@ function Invoke-GoTests {
     # Absolute, because the tests run from the module folder.
     $JUnitPath = [System.IO.Path]::GetFullPath($JUnitPath)
     New-Item -ItemType Directory -Force -Path (Split-Path $JUnitPath) | Out-Null
-    if ($IsMacOS) {
-        # The linker warns that -lm is given more than once, which is harmless.
-        $env:CGO_LDFLAGS = '-Wl,-no_warn_duplicate_libraries'
-    }
     Push-Location $ModulePath
     try {
         Write-Host "Testing $Packages in '$ModulePath'"
