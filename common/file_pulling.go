@@ -751,26 +751,34 @@ const productsOfferedCount = 32
 // productChoiceBytes is the most that is read of a 300 (Multiple Choices) response.
 const productChoiceBytes = 1 << 20
 
-// productChoice is the body of the 300 (Multiple Choices) response the Distributor gives for a license
-// key that holds several products.
-type productChoice struct {
-	// AvailableUris holds one URI for each product, with the product as its Product parameter.
-	AvailableUris []string
-}
+// availableUrisName names the list in the body of the 300 (Multiple Choices) response the Distributor
+// gives for a license key that holds several products, which holds one URI for each product, with
+// the product as its Product parameter. The name is matched by exact case.
+const availableUrisName = "AvailableUris"
 
 // productsOffered reads the products a 300 (Multiple Choices) response offers, being the Product
-// parameter of each of its AvailableUris, in the order of the response. A URI with no Product, or with
-// one that is not a product name, is left out, and the first productsOfferedCount products are kept.
-// It reports false when the body is not JSON with a list of AvailableUris, or when the list gives no
-// product.
+// parameter of each URI in its AvailableUris list, in the order of the response. An entry that is
+// not a string, a URI with no Product, or one whose Product is not a product name, is left out, and
+// the first productsOfferedCount products are kept. It reports false when the body is not a JSON
+// object with an AvailableUris list, or when the list gives no product.
 func productsOffered(resp *http.Response) ([]string, bool) {
-	var choice productChoice
 	body, err := io.ReadAll(io.LimitReader(resp.Body, productChoiceBytes))
-	if err != nil || json.Unmarshal(body, &choice) != nil || len(choice.AvailableUris) == 0 {
+	if err != nil {
+		return nil, false
+	}
+	// A map keeps the exact case of each name, where decoding into a struct would match any case.
+	var fields map[string]json.RawMessage
+	var entries []json.RawMessage
+	if json.Unmarshal(body, &fields) != nil || json.Unmarshal(fields[availableUrisName], &entries) != nil ||
+		len(entries) == 0 {
 		return nil, false
 	}
 	var offered []string
-	for _, uri := range choice.AvailableUris {
+	for _, entry := range entries {
+		var uri string
+		if json.Unmarshal(entry, &uri) != nil {
+			continue
+		}
 		parsed, err := neturl.Parse(uri)
 		if err != nil {
 			continue

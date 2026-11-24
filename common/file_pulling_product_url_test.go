@@ -444,6 +444,28 @@ func TestPull_MatchesTheProductParameterIgnoringCase(t *testing.T) {
 	})
 }
 
+// An entry of the AvailableUris list that is not a string is left out, and
+// the strings in the list still offer their products.
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func TestPull_IgnoresAnEntryThatIsNotAString(t *testing.T) {
+	d := newScriptedDistributor(
+		severalProducts(`{"AvailableUris":[1,null,true,{"Product":"V4TAC"},["x"],`+
+			`"https://distributor.example/api/v2/download?Product=V4TAC"]}`),
+		dataFile)
+	defer d.server.Close()
+	updater, log := d.updater(t, "V4TAC")
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err != nil || !downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+			downloaded, err, productLines(log))
+	}
+	if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
+		t.Errorf("the requests asked for the products %q, want none and then V4TAC", got)
+	}
+}
+
 // A redirect to an address that names a product, which answers 300, is not
 // followed further. The request named a product, so the 300 is the error of
 // any other response, and the product of the loaded data file is not asked

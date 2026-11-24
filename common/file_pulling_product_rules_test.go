@@ -100,7 +100,7 @@ func (d *scriptedDistributor) updater(t *testing.T, product string) (*FileUpdate
 // severalProducts answers 300 with the body given, as the Distributor does,
 // with a Location header that names the first URI of its list.
 func severalProducts(body string) func(w http.ResponseWriter) {
-	var choice productChoice
+	var choice struct{ AvailableUris []string }
 	location := ""
 	if json.Unmarshal([]byte(body), &choice) == nil && len(choice.AvailableUris) > 0 {
 		location = choice.AvailableUris[0]
@@ -260,6 +260,9 @@ func TestPull_300WithoutAListIsAnHTTPError(t *testing.T) {
 		"a list of other": `{"AvailableUris":"V4TAC"}`,
 		"too long a body": tooLong,
 		"no product name": noProduct,
+		// The name of the list is matched by exact case.
+		"a list named in another case": `{"availableUris":["https://distributor.example/?Product=V4TAC"]}`,
+		"no string in the list":        `{"AvailableUris":[1,null,{"Product":"V4TAC"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := newScriptedDistributor(severalProducts(body))
