@@ -83,7 +83,7 @@ func TestExtractEvidence(t *testing.T) {
 		expectedCount int
 	}{
 		{
-			[]dd.EvidenceKey{{dd.HttpHeaderString, "User-Agent"}},
+			[]dd.EvidenceKey{{Prefix: dd.HttpHeaderString, Key: "User-Agent"}},
 			[]evidenceStruct{
 				{dd.HttpHeaderString, "User-Agent", "TestUserAgent"},
 				{dd.HttpEvidenceQuery, "query-param", "TestQueryParam"},
@@ -91,7 +91,7 @@ func TestExtractEvidence(t *testing.T) {
 			1,
 		},
 		{
-			[]dd.EvidenceKey{{dd.HttpEvidenceQuery, "Query-Param"}},
+			[]dd.EvidenceKey{{Prefix: dd.HttpEvidenceQuery, Key: "Query-Param"}},
 			[]evidenceStruct{
 				{dd.HttpHeaderString, "User-Agent", "TestUserAgent"},
 				{dd.HttpEvidenceQuery, "query-param", "TestQueryParam"},
@@ -100,8 +100,8 @@ func TestExtractEvidence(t *testing.T) {
 		},
 		{
 			[]dd.EvidenceKey{
-				{dd.HttpHeaderString, "User-Agent"},
-				{dd.HttpEvidenceQuery, "Query-Param"},
+				{Prefix: dd.HttpHeaderString, Key: "User-Agent"},
+				{Prefix: dd.HttpEvidenceQuery, Key: "Query-Param"},
 			},
 			[]evidenceStruct{
 				{dd.HttpHeaderString, "User-Agent", "TestUserAgent"},
