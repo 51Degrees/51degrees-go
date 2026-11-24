@@ -112,6 +112,29 @@ func TestPull_DoesNotFollowTheLocationOfA300(t *testing.T) {
 	if len(got) != 2 || len(got[0]) != 0 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
 		t.Errorf("the requests asked for the products %q, want none and then V4TAC", got)
 	}
+	// The second request is the first with Product=V4TAC as its last
+	// parameter and the rest of its query unchanged.
+	first := d.url()[strings.IndexByte(d.url(), '?')+1:]
+	if queries := d.queries(); len(queries) != 2 || queries[1] != first+"&Product=V4TAC" {
+		t.Errorf("the requests had the queries %q, want the second to be %q",
+			queries, first+"&Product=V4TAC")
+	}
+	// Requesting product comes first, then the second Checking for update,
+	// both at Information level.
+	requesting, checking := -1, -1
+	for i, line := range log.all() {
+		switch {
+		case strings.HasPrefix(line, "INFO Requesting product 'V4TAC' from '"+d.maskedURL()+"'"):
+			requesting = i
+		case line == "INFO Checking for update from '"+d.maskedSecondURL("V4TAC")+"' for Engine 'Engine'":
+			checking = i
+		}
+	}
+	if requesting < 0 || checking < 0 || requesting > checking {
+		t.Errorf("Requesting product is message %d and the second Checking for update "+
+			"is message %d, want both at Information level, in that order\n%s",
+			requesting, checking, productLines(log))
+	}
 	noFullKey(t, log, nil)
 }
 
@@ -194,6 +217,11 @@ func TestPull_EmptyProductInTheURLIsNotConfigured(t *testing.T) {
 	}
 	if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
 		t.Errorf("the requests asked for the products %q, want V4TAC once in the second", got)
+	}
+	if want := d.url()[strings.IndexByte(d.url(), '?')+1:] + "&Product=V4TAC"; len(queries) != 2 ||
+		queries[1] != want {
+		t.Errorf("the second request had the query %q, want %q, with Product last",
+			queries, want)
 	}
 	noFullKey(t, log, nil)
 }
@@ -395,6 +423,25 @@ func TestPull_MatchesTheProductParameterIgnoringCase(t *testing.T) {
 			}
 		})
 	}
+	// The value is compared ignoring case too, and sent as the response
+	// wrote it.
+	t.Run("product=v4tac", func(t *testing.T) {
+		d := newScriptedDistributor(
+			severalProducts(availableUris("LicenseKeys="+productTestKey+"&product=v4tac")),
+			dataFile)
+		defer d.server.Close()
+		updater, log := d.updater(t, "V4TAC")
+
+		_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+		if err != nil || !downloaded {
+			t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+				downloaded, err, productLines(log))
+		}
+		if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "v4tac" {
+			t.Errorf("the requests asked for the products %q, want none and then v4tac", got)
+		}
+	})
 }
 
 // A redirect to an address that names a product, which answers 300, is not
