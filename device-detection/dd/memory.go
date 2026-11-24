@@ -22,7 +22,18 @@
 
 package dd
 
-// #include "device-detection-cxx.h"
+/*
+#include "device-detection-cxx.h"
+
+// startMemoryTracking switches the library's memory tracking on. It returns
+// a value only because cgo, for a C function with no parameters and no
+// result, generates a wrapper with a variable it never uses, which -Wall
+// reports.
+static int startMemoryTracking(void) {
+	fiftyoneDegreesSetUpMemoryTracking();
+	return 0;
+}
+*/
 import "C"
 
 // allocatedDuring runs f with the C library's memory tracking switched on and
@@ -33,7 +44,7 @@ import "C"
 // switches the tracking off itself. Tracking is switched off even when f stops
 // the test early, so it is not left on for the tests that follow.
 func allocatedDuring(f func()) (left uint64) {
-	C.fiftyoneDegreesSetUpMemoryTracking()
+	C.startMemoryTracking()
 	defer func() {
 		left = uint64(C.fiftyoneDegreesUnsetMemoryTracking())
 	}()
