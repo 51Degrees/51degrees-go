@@ -18,7 +18,8 @@ $PSNativeCommandUseErrorActionPreference = $true
 # repository at the version the next release publishes is not published yet,
 # so it is taken from that module's folder, through a copy of go.mod.
 $repoRoot = (Resolve-Path $RepoName).Path
-foreach ($product in Get-AffectedProducts $RepoName $Branch) {
+$products = @(Get-AffectedProducts $RepoName $Branch)
+foreach ($product in $products) {
     $replaces = @(Get-UnreleasedRequirementReplaces $repoRoot $product)
     Push-Location (Get-ProductPath $RepoName $product)
     try {
@@ -42,4 +43,25 @@ foreach ($product in Get-AffectedProducts $RepoName $Branch) {
         Remove-Item go.unreleased.mod, go.unreleased.sum -ErrorAction SilentlyContinue
         Pop-Location
     }
+}
+
+# go vet checks each module and its examples, tests included, and any finding
+# fails the build. go test runs only some of its checks. Each module is checked
+# before the build fails, so one run shows every finding.
+$vetFailed = @()
+$modules = @($products) + @($products | ForEach-Object { $ProductExamples[$_] }) |
+    Select-Object -Unique
+foreach ($module in $modules) {
+    Push-Location (Join-Path $RepoName $module)
+    try {
+        Write-Host "Vetting $module"
+        go vet ./...
+    } catch {
+        $vetFailed += $module
+    } finally {
+        Pop-Location
+    }
+}
+if ($vetFailed) {
+    throw "go vet reported findings in $($vetFailed -join ', ')"
 }

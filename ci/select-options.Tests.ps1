@@ -74,6 +74,18 @@ Describe 'Resolve-AffectedProducts' {
     }
 }
 
+Describe 'ProductExamples' {
+    It 'with the products, names every module in go.work, which go vet checks' {
+        $work = Get-Content -Raw (Join-Path $PSScriptRoot '..' 'go.work')
+        $null = $work -match '(?s)use \((.*?)\)'
+        $inWork = @($Matches[1] -split '\s+' | Where-Object { $_ } |
+            ForEach-Object { $_ -replace '^\./', '' }) | Sort-Object
+        $vetted = @($AllProducts) + @($AllProducts | ForEach-Object { $ProductExamples[$_] }) |
+            Select-Object -Unique | Sort-Object
+        $vetted -join ',' | Should -Be ($inWork -join ',')
+    }
+}
+
 Describe 'Get-AffectedProducts' {
     AfterEach { if ($repo) { Remove-Item -Recurse -Force $repo } }
 

@@ -12,6 +12,15 @@ $ProductPaths = @{
     'pipeline' = @('pipeline/', 'examples/pipeline/')
 }
 
+# The example modules of each product. The mixed examples use both engines, so
+# they belong to each.
+$ProductExamples = @{
+    'common' = @()
+    'device-detection' = @('examples/device-detection', 'examples/mixed')
+    'ip-intelligence' = @('examples/ip-intelligence', 'examples/mixed')
+    'pipeline' = @('examples/pipeline')
+}
+
 # The modules each module requires, from packages.json. The workspace builds a
 # module against the folders of the modules it requires, so a change to one of
 # those has to build and test it too.
