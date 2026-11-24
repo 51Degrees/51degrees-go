@@ -32,6 +32,13 @@ package dd
 * The C code builds with the warnings of -Wall -Wextra, each one an error, and
 * no pragma in it turns a warning off. A warning in the amalgamated sources is
 * fixed in 51degrees-cxx, and the amalgamation made again.
+*
+* -Werror is here, not in a build tag or in CGO_CFLAGS set by CI, so that every
+* build is the same: CI, the tests, the examples and every program that imports
+* this package. If a newer compiler adds a warning, a program can build with
+* CGO_CFLAGS=-Wno-error=<warning> until a release fixes it. The go command puts
+* CGO_CFLAGS before these flags, and -Wno-error=<warning> holds against a later
+* -Werror, so the warning is still printed.
  */
 
 /*
