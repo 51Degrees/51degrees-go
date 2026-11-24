@@ -76,6 +76,31 @@ func TestLicenseKeysInURL(t *testing.T) {
 	}
 }
 
+// The keys named anywhere in a text are found, as written and decoded, up to
+// the end of a query value or a quoted address.
+func TestLicenseKeysInText(t *testing.T) {
+	cases := []struct {
+		text string
+		want []string
+	}{
+		{`failed to parse Location header "http://h/%zz?LicenseKeys=ABCDEFGH1234": bad`,
+			[]string{"ABCDEFGH1234", "ABCDEFGH1234"}},
+		{"Get 'http://h/?Type=HashV41&licensekey=ABCD%4bFGH1234&Download=True'",
+			[]string{"ABCD%4bFGH1234", "ABCDKFGH1234"}},
+		{"http://h/?License=ABCDEFGH1234|ZYXWVUTS5678 refused",
+			[]string{"ABCDEFGH1234", "ZYXWVUTS5678", "ABCDEFGH1234", "ZYXWVUTS5678"}},
+		{"http%3A%2F%2Fh%2F%3FLicenseKeys%3DABCDEFGH1234",
+			[]string{"ABCDEFGH1234", "ABCDEFGH1234"}},
+		{"the license has expired", nil},
+		{"LicenseKeys= empty", nil},
+	}
+	for _, c := range cases {
+		if got := LicenseKeysInText(c.text); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("LicenseKeysInText(%q) = %q, want %q", c.text, got, c.want)
+		}
+	}
+}
+
 // Each key is masked wherever it appears, as written and as encoded in a
 // URL, and a key holding another is masked whole.
 func TestMaskLicenseKeysIn(t *testing.T) {

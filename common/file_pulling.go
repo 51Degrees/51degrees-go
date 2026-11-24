@@ -736,11 +736,13 @@ func getDataFile(ctx context.Context, client *http.Client, url string, timestamp
 	resp, err := client.Do(req)
 	if err != nil {
 		// The error names the URL of the request that failed, which after a redirect is the
-		// address it named, so the keys of that address are masked too.
+		// address it named, and may quote a Location header that could not be parsed, so the
+		// keys of every address its text names are masked too.
 		var urlErr *neturl.Error
 		if errors.As(err, &urlErr) {
 			keys = append(keys, LicenseKeysInURL(urlErr.URL)...)
 		}
+		keys = append(keys, LicenseKeysInText(err.Error())...)
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
 	return resp, nil

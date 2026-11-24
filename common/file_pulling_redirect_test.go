@@ -248,34 +248,57 @@ func TestPull_UsesTheSettingsOfTheDefaultClient(t *testing.T) {
 	}
 }
 
-// The license key of an address a redirect names is masked too, when the
-// request to that address fails.
+// The license keys of an address a redirect names are masked too, when the
+// request to that address fails, whatever the parameter's case, with several
+// keys in one parameter, with the key escaped in another way, and when the
+// address cannot be parsed and so is named only in the error's text.
 // See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/logging.md#license-keys
 func TestPull_MasksTheKeyOfARedirectTarget(t *testing.T) {
-	const otherKey = "OTHERKEY1234"
-	dead := httptest.NewServer(http.NotFoundHandler())
-	dead.Close()
-	redirect := httptest.NewServer(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, dead.URL+"/api/v2/download?LicenseKeys="+otherKey,
-				http.StatusFound)
-		}))
-	defer redirect.Close()
-	d := &scriptedDistributor{server: redirect}
-	updater, log := d.updater(t, "V4TAC")
+	cases := []struct {
+		name  string
+		query string
+		held  []string
+	}{
+		{"LicenseKeys", "/api/v2/download?LicenseKeys=OTHERKEY1234",
+			[]string{"OTHERKEY1234"}},
+		{"licensekey", "/api/v2/download?Type=HashV41&licensekey=OTHERKEY1234",
+			[]string{"OTHERKEY1234"}},
+		{"License with two keys", "/api/v2/download?License=KEYONE5678%7CKEYTWO9012",
+			[]string{"KEYONE5678", "KEYTWO9012"}},
+		{"key escaped in another way", "/api/v2/download?LicenseKeys=OTHER%4bEY1234",
+			[]string{"OTHERKEY1234", "OTHER%4bEY1234"}},
+		{"Location that does not parse", "/%zz/download?LicenseKeys=OTHERKEY1234",
+			[]string{"OTHERKEY1234"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dead := httptest.NewServer(http.NotFoundHandler())
+			dead.Close()
+			redirect := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Location", dead.URL+c.query)
+					w.WriteHeader(http.StatusFound)
+				}))
+			defer redirect.Close()
+			d := &scriptedDistributor{server: redirect}
+			updater, log := d.updater(t, "V4TAC")
 
-	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+			_, downloaded, err := updater.pull(make(chan struct{}, 1))
 
-	if err == nil || downloaded {
-		t.Fatalf("pull gave downloaded %v and error %v, want an error", downloaded, err)
+			if err == nil || downloaded {
+				t.Fatalf("pull gave downloaded %v and error %v, want an error", downloaded, err)
+			}
+			for _, key := range c.held {
+				for _, line := range log.all() {
+					if strings.Contains(line, key) {
+						t.Errorf("%q holds %q in full", line, key)
+					}
+				}
+				if strings.Contains(err.Error(), key) {
+					t.Errorf("the error %q holds %q in full", err, key)
+				}
+			}
+			noFullKey(t, log, err)
+		})
 	}
-	for _, line := range log.all() {
-		if strings.Contains(line, otherKey) {
-			t.Errorf("%q holds the license key of the redirect target in full", line)
-		}
-	}
-	if strings.Contains(err.Error(), otherKey) {
-		t.Errorf("the error %q holds the license key of the redirect target in full", err)
-	}
-	noFullKey(t, log, err)
 }
