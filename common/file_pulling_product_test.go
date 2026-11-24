@@ -258,6 +258,15 @@ func TestPull_OneProductNeedsNoChoice(t *testing.T) {
 	if asked := d.products(); len(asked) != 1 || asked[0] != "" {
 		t.Errorf("the requests asked for the products %q, want one request naming none", asked)
 	}
+	checks := 0
+	for _, line := range log.all() {
+		if strings.HasPrefix(line, "INFO Checking for update from '") {
+			checks++
+		}
+	}
+	if checks != 1 {
+		t.Errorf("%d messages say a request checks for an update, want 1", checks)
+	}
 	noFullKey(t, log, nil)
 }
 
