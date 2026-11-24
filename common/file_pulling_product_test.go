@@ -97,6 +97,9 @@ func (d *fakeDistributor) serve(w http.ResponseWriter, r *http.Request) {
 		"Error": "There are multiple products associated with this license " +
 			"key. Please use the URI returned in the Location header.",
 	})
+	if len(uris) > 0 {
+		w.Header().Set("Location", uris[0])
+	}
 	w.WriteHeader(http.StatusMultipleChoices)
 	w.Write(body)
 }

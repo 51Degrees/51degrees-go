@@ -70,10 +70,10 @@ func (d *scriptedDistributor) products() [][]string {
 }
 
 // maskedSecondURL is the second request, asking for the product given, as a
-// message shows it.
+// message shows it. It is the first with the product added to the end of its
+// query.
 func (d *scriptedDistributor) maskedSecondURL(product string) string {
-	return d.server.URL + "/api/v2/download?Download=True&LicenseKeys=" +
-		MaskLicenseKey(productTestKey) + "&Product=" + product + "&Type=HashV41"
+	return d.maskedURL() + "&Product=" + product
 }
 
 // productLines are the messages, for a test failure.
@@ -112,6 +112,29 @@ func TestPull_DoesNotFollowTheLocationOfA300(t *testing.T) {
 	if len(got) != 2 || len(got[0]) != 0 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
 		t.Errorf("the requests asked for the products %q, want none and then V4TAC", got)
 	}
+	// The second request is the first with Product=V4TAC as its last
+	// parameter and the rest of its query unchanged.
+	first := d.url()[strings.IndexByte(d.url(), '?')+1:]
+	if queries := d.queries(); len(queries) != 2 || queries[1] != first+"&Product=V4TAC" {
+		t.Errorf("the requests had the queries %q, want the second to be %q",
+			queries, first+"&Product=V4TAC")
+	}
+	// Requesting product comes first, then the second Checking for update,
+	// both at Information level.
+	requesting, checking := -1, -1
+	for i, line := range log.all() {
+		switch {
+		case strings.HasPrefix(line, "INFO Requesting product 'V4TAC' from '"+d.maskedURL()+"'"):
+			requesting = i
+		case line == "INFO Checking for update from '"+d.maskedSecondURL("V4TAC")+"' for Engine 'Engine'":
+			checking = i
+		}
+	}
+	if requesting < 0 || checking < 0 || requesting > checking {
+		t.Errorf("Requesting product is message %d and the second Checking for update "+
+			"is message %d, want both at Information level, in that order\n%s",
+			requesting, checking, productLines(log))
+	}
 	noFullKey(t, log, nil)
 }
 
@@ -121,7 +144,7 @@ func TestPull_DoesNotFollowTheLocationOfA300(t *testing.T) {
 // of the loaded data file is not looked up.
 // See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#configured-product
 func TestPull_ProductInTheURLIsNotReplacedOnA300(t *testing.T) {
-	for _, parameter := range []string{"Product", "product", "PRODUCT"} {
+	for _, parameter := range []string{"Product", "product", "PRODUCT", "Pro%64uct"} {
 		t.Run(parameter, func(t *testing.T) {
 			d := newScriptedDistributor(
 				severalProducts(availableUris(
@@ -130,7 +153,13 @@ func TestPull_ProductInTheURLIsNotReplacedOnA300(t *testing.T) {
 				dataFile)
 			defer d.server.Close()
 			updater, log := d.updater(t, "V4TAC")
-			configured := d.url() + "&" + parameter + "=V4Enterprise"
+			value := "V4Enterprise"
+			if parameter == "Pro%64uct" {
+				// The value is taken as it is written, even where its
+				// escaping does not decode.
+				value = "V4%ZZ"
+			}
+			configured := d.url() + "&" + parameter + "=" + value
 			updater.SetDataFileUrl(configured)
 			var lookups atomic.Int32
 			updater.SetProductFunc(func() string {
@@ -195,10 +224,15 @@ func TestPull_EmptyProductInTheURLIsNotConfigured(t *testing.T) {
 	if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
 		t.Errorf("the requests asked for the products %q, want V4TAC once in the second", got)
 	}
+	if want := d.url()[strings.IndexByte(d.url(), '?')+1:] + "&Product=V4TAC"; len(queries) != 2 ||
+		queries[1] != want {
+		t.Errorf("the second request had the query %q, want %q, with Product last",
+			queries, want)
+	}
 	noFullKey(t, log, nil)
 }
 
-// A 300 response can come after a 301, 302, 307 or 308 redirect. The address
+// A 300 response can come after a 301, 302, 303, 307 or 308 redirect. The address
 // that answered 300 is then the URL of the first request, so the second
 // request goes there and the messages name it.
 // See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
@@ -206,6 +240,7 @@ func TestPull_SecondRequestGoesToTheAddressThatAnswered300(t *testing.T) {
 	for _, status := range []int{
 		http.StatusMovedPermanently,
 		http.StatusFound,
+		http.StatusSeeOther,
 		http.StatusTemporaryRedirect,
 		http.StatusPermanentRedirect,
 	} {
@@ -364,4 +399,114 @@ func TestPull_TwoRequestsAreReportedOnce(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The name of the Product parameter of each offered URI is matched ignoring
+// case, so a URI that writes it in another case still offers its product.
+// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func TestPull_MatchesTheProductParameterIgnoringCase(t *testing.T) {
+	for _, parameter := range []string{"product", "PRODUCT", "pRoDuCt"} {
+		t.Run(parameter, func(t *testing.T) {
+			d := newScriptedDistributor(
+				severalProducts(availableUris(
+					"LicenseKeys="+productTestKey+"&"+parameter+"=IPIV4Enterprise",
+					"LicenseKeys="+productTestKey+"&"+parameter+"=V4TAC")),
+				dataFile)
+			defer d.server.Close()
+			updater, log := d.updater(t, "V4TAC")
+
+			_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+			if err != nil || !downloaded {
+				t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+					downloaded, err, productLines(log))
+			}
+			if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
+				t.Errorf("the requests asked for the products %q, want none and then V4TAC", got)
+			}
+			line := "INFO Requesting product 'V4TAC' from '" + d.maskedURL() + "' for Engine 'Engine'"
+			if !hasLine(log, line) {
+				t.Errorf("no message is %q, the messages being\n%s", line, productLines(log))
+			}
+		})
+	}
+	// The value is compared ignoring case too, and sent as the response
+	// wrote it.
+	t.Run("product=v4tac", func(t *testing.T) {
+		d := newScriptedDistributor(
+			severalProducts(availableUris("LicenseKeys="+productTestKey+"&product=v4tac")),
+			dataFile)
+		defer d.server.Close()
+		updater, log := d.updater(t, "V4TAC")
+
+		_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+		if err != nil || !downloaded {
+			t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+				downloaded, err, productLines(log))
+		}
+		if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "v4tac" {
+			t.Errorf("the requests asked for the products %q, want none and then v4tac", got)
+		}
+	})
+}
+
+// An entry of the AvailableUris list that is not a string is left out, and
+// the strings in the list still offer their products.
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func TestPull_IgnoresAnEntryThatIsNotAString(t *testing.T) {
+	d := newScriptedDistributor(
+		severalProducts(`{"AvailableUris":[1,null,true,{"Product":"V4TAC"},["x"],`+
+			`"https://distributor.example/api/v2/download?Product=V4TAC"]}`),
+		dataFile)
+	defer d.server.Close()
+	updater, log := d.updater(t, "V4TAC")
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err != nil || !downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+			downloaded, err, productLines(log))
+	}
+	if got := d.products(); len(got) != 2 || len(got[1]) != 1 || got[1][0] != "V4TAC" {
+		t.Errorf("the requests asked for the products %q, want none and then V4TAC", got)
+	}
+}
+
+// A redirect to an address that names a product, which answers 300, is not
+// followed further. The request named a product, so the 300 is the error of
+// any other response, and the product of the loaded data file is not asked
+// for in place of the one named.
+func TestPull_ARedirectToAProductIsNotReplacedOnA300(t *testing.T) {
+	d := newScriptedDistributor(
+		severalProducts(availableUris(
+			"LicenseKeys="+productTestKey+"&Product=V4Enterprise",
+			"LicenseKeys="+productTestKey+"&Product=V4TAC")),
+		dataFile)
+	defer d.server.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, d.server.URL+r.URL.RequestURI()+"&Product=V4Enterprise",
+				http.StatusTemporaryRedirect)
+		}))
+	defer redirect.Close()
+	updater, log := d.updater(t, "V4TAC")
+	updater.SetDataFileUrl(redirect.URL + "/api/v2/download?LicenseKeys=" +
+		productTestKey + "&Type=HashV41&Download=True")
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err == nil || downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want an error", downloaded, err)
+	}
+	if got := d.products(); len(got) != 1 || len(got[0]) != 1 || got[0][0] != "V4Enterprise" {
+		t.Errorf("the address that answered 300 was asked for the products %q, "+
+			"want V4Enterprise once", got)
+	}
+	line := "ERROR Error during check for data update. HTTP status code '300' from " +
+		"data update service at '" + d.maskedURL() + "&Product=V4Enterprise' for engine 'Engine'"
+	if !hasLine(log, line) {
+		t.Errorf("no message is %q, the messages being\n%s", line, productLines(log))
+	}
+	noFullKey(t, log, err)
 }

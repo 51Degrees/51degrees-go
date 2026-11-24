@@ -569,7 +569,8 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 	// An error net/http raises names the URL, so its license keys are masked.
 	keys := LicenseKeysInURL(url)
 	shown := MaskLicenseKeysIn(url, keys)
-	resp, err := getDataFile(ctx, url, timestamp, keys)
+	client := newDataFileClient()
+	resp, err := getDataFile(ctx, client, url, timestamp, keys)
 	if err != nil {
 		return nil, shown, err
 	}
@@ -597,7 +598,7 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 			// The second request is logged as the first is, and the messages after it name it.
 			shown = MaskLicenseKeysIn(withProduct, keys)
 			logger.Infof("Checking for update from '%s' for Engine '%s'", shown, engine)
-			resp, err = getDataFile(ctx, withProduct, timestamp, keys)
+			resp, err = getDataFile(ctx, client, withProduct, timestamp, keys)
 			if err != nil {
 				return nil, shown, err
 			}
@@ -687,9 +688,38 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 	}, shown, nil
 }
 
-// getDataFile makes the GET request for a data file, with If-Modified-Since when timestamp is given.
-// The caller closes the body of the response.
-func getDataFile(ctx context.Context, url string, timestamp *time.Time, keys []string) (*http.Response, error) {
+// redirectLimit is the most redirects that one check for an update follows, over all its requests.
+const redirectLimit = 20
+
+// dataFileTransport makes the requests of each check for an update. When it is nil, which it is
+// unless a test sets it, http.DefaultTransport does.
+var dataFileTransport http.RoundTripper
+
+// newDataFileClient returns the HTTP client for one check for an update. It follows a 301, 302,
+// 303, 307 or 308 response up to redirectLimit times over all the requests of the check, and never
+// from an https address to an http address. A redirect it does not follow is returned as the
+// response, which is then the error of any other response. net/http never follows a 300 (Multiple
+// Choices) response, so its Location header is not requested.
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+func newDataFileClient() *http.Client {
+	followed := 0
+	return &http.Client{
+		Transport: dataFileTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			from := via[len(via)-1].URL
+			if followed >= redirectLimit || (from.Scheme == "https" && req.URL.Scheme == "http") {
+				return http.ErrUseLastResponse
+			}
+			followed++
+			return nil
+		},
+	}
+}
+
+// getDataFile makes the GET request for a data file with client, with If-Modified-Since when timestamp
+// is given. The caller closes the body of the response.
+func getDataFile(ctx context.Context, client *http.Client, url string, timestamp *time.Time,
+	keys []string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
@@ -699,7 +729,7 @@ func getDataFile(ctx context.Context, url string, timestamp *time.Time, keys []s
 		req.Header.Set("If-Modified-Since", timestamp.UTC().Format(http.TimeFormat))
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
@@ -721,26 +751,34 @@ const productsOfferedCount = 32
 // productChoiceBytes is the most that is read of a 300 (Multiple Choices) response.
 const productChoiceBytes = 1 << 20
 
-// productChoice is the body of the 300 (Multiple Choices) response the Distributor gives for a license
-// key that holds several products.
-type productChoice struct {
-	// AvailableUris holds one URI for each product, with the product as its Product parameter.
-	AvailableUris []string
-}
+// availableUrisName names the list in the body of the 300 (Multiple Choices) response the Distributor
+// gives for a license key that holds several products, which holds one URI for each product, with
+// the product as its Product parameter. The name is matched by exact case.
+const availableUrisName = "AvailableUris"
 
 // productsOffered reads the products a 300 (Multiple Choices) response offers, being the Product
-// parameter of each of its AvailableUris, in the order of the response. A URI with no Product, or with
-// one that is not a product name, is left out, and the first productsOfferedCount products are kept.
-// It reports false when the body is not JSON with a list of AvailableUris, or when the list gives no
-// product.
+// parameter of each URI in its AvailableUris list, in the order of the response. An entry that is
+// not a string, a URI with no Product, or one whose Product is not a product name, is left out, and
+// the first productsOfferedCount products are kept. It reports false when the body is not a JSON
+// object with an AvailableUris list, or when the list gives no product.
 func productsOffered(resp *http.Response) ([]string, bool) {
-	var choice productChoice
 	body, err := io.ReadAll(io.LimitReader(resp.Body, productChoiceBytes))
-	if err != nil || json.Unmarshal(body, &choice) != nil || len(choice.AvailableUris) == 0 {
+	if err != nil {
+		return nil, false
+	}
+	// A map keeps the exact case of each name, where decoding into a struct would match any case.
+	var fields map[string]json.RawMessage
+	var entries []json.RawMessage
+	if json.Unmarshal(body, &fields) != nil || json.Unmarshal(fields[availableUrisName], &entries) != nil ||
+		len(entries) == 0 {
 		return nil, false
 	}
 	var offered []string
-	for _, uri := range choice.AvailableUris {
+	for _, entry := range entries {
+		var uri string
+		if json.Unmarshal(entry, &uri) != nil {
+			continue
+		}
 		parsed, err := neturl.Parse(uri)
 		if err != nil {
 			continue
@@ -796,22 +834,42 @@ func chooseProduct(product string, offered []string, keys []string) (string, err
 	}
 }
 
-// urlWithProduct returns rawURL with product as the Product parameter of its query, in place of any
-// Product parameter it has.
+// urlWithProduct returns rawURL with product added to the end of its query as its one Product
+// parameter. Any Product parameter it has, whatever the case or escaping of its name, is removed,
+// and the other parameters are kept as they are written, in their order.
 func urlWithProduct(rawURL string, product string) (string, error) {
 	parsed, err := neturl.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	query := parsed.Query()
-	for name := range query {
-		if strings.EqualFold(name, productParameter) {
-			query.Del(name)
+	var kept []string
+	for _, pair := range queryPairs(parsed.RawQuery) {
+		if !isProductPair(pair) {
+			kept = append(kept, pair)
 		}
 	}
-	query.Set(productParameter, product)
-	parsed.RawQuery = query.Encode()
+	parsed.RawQuery = strings.Join(
+		append(kept, productParameter+"="+neturl.QueryEscape(product)), "&")
 	return parsed.String(), nil
+}
+
+// queryPairs splits a query as it is written into its pairs, empty ones included, and gives none for
+// an empty query.
+func queryPairs(rawQuery string) []string {
+	if rawQuery == "" {
+		return nil
+	}
+	return strings.Split(rawQuery, "&")
+}
+
+// isProductPair reports whether a pair of a query as it is written is a Product parameter, whatever
+// the case or escaping of its name.
+func isProductPair(pair string) bool {
+	name, _, _ := strings.Cut(pair, "=")
+	if unescaped, err := neturl.QueryUnescape(name); err == nil {
+		name = unescaped
+	}
+	return strings.EqualFold(name, productParameter)
 }
 
 // queryValue returns the first value of the query parameter of u called name, whatever its case.
@@ -824,21 +882,17 @@ func queryValue(u *neturl.URL, name string) string {
 	return ""
 }
 
-// namesProduct reports whether rawURL has a Product parameter with a value, whatever the case of
-// its name. A request to such a URL asks for a configured product.
+// namesProduct reports whether rawURL has a Product parameter with a value, whatever the case or
+// escaping of its name, taking the value as it is written. A request to such a URL asks for a
+// configured product.
 func namesProduct(rawURL string) bool {
 	parsed, err := neturl.Parse(rawURL)
 	if err != nil {
 		return false
 	}
-	for name, values := range parsed.Query() {
-		if !strings.EqualFold(name, productParameter) {
-			continue
-		}
-		for _, value := range values {
-			if value != "" {
-				return true
-			}
+	for _, pair := range queryPairs(parsed.RawQuery) {
+		if _, value, _ := strings.Cut(pair, "="); value != "" && isProductPair(pair) {
+			return true
 		}
 	}
 	return false

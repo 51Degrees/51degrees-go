@@ -45,6 +45,8 @@ func TestDistributorProduct(t *testing.T) {
 		"V4TAC": "V4TAC",
 		"v4tac": "v4tac",
 		"":      "",
+		"V4":    "",
+		"v4":    "",
 	} {
 		if got := distributorProduct(tier); got != want {
 			t.Errorf("distributorProduct(%q) = %q, want %q", tier, got, want)
@@ -64,6 +66,9 @@ func severalProductsServer(products ...string) *httptest.Server {
 					productTestKey+"&LicenceKeys=&Type=HashV41&Product="+product)
 			}
 			body, _ := json.Marshal(map[string]interface{}{"AvailableUris": uris})
+			if len(uris) > 0 {
+				w.Header().Set("Location", uris[0])
+			}
 			w.WriteHeader(http.StatusMultipleChoices)
 			w.Write(body)
 		}))

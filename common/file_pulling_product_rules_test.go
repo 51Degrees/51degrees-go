@@ -100,7 +100,7 @@ func (d *scriptedDistributor) updater(t *testing.T, product string) (*FileUpdate
 // severalProducts answers 300 with the body given, as the Distributor does,
 // with a Location header that names the first URI of its list.
 func severalProducts(body string) func(w http.ResponseWriter) {
-	var choice productChoice
+	var choice struct{ AvailableUris []string }
 	location := ""
 	if json.Unmarshal([]byte(body), &choice) == nil && len(choice.AvailableUris) > 0 {
 		location = choice.AvailableUris[0]
@@ -260,6 +260,9 @@ func TestPull_300WithoutAListIsAnHTTPError(t *testing.T) {
 		"a list of other": `{"AvailableUris":"V4TAC"}`,
 		"too long a body": tooLong,
 		"no product name": noProduct,
+		// The name of the list is matched by exact case.
+		"a list named in another case": `{"availableUris":["https://distributor.example/?Product=V4TAC"]}`,
+		"no string in the list":        `{"AvailableUris":[1,null,{"Product":"V4TAC"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := newScriptedDistributor(severalProducts(body))
@@ -305,8 +308,7 @@ func TestPull_LogsTheSecondRequest(t *testing.T) {
 	if d.count() != 2 {
 		t.Errorf("%d requests were made, want 2", d.count())
 	}
-	second := d.server.URL + "/api/v2/download?Download=True&LicenseKeys=" +
-		MaskLicenseKey(productTestKey) + "&Product=V4TAC&Type=HashV41"
+	second := d.maskedSecondURL("V4TAC")
 	for _, masked := range []string{d.maskedURL(), second} {
 		want := "INFO Checking for update from '" + masked + "' for Engine 'Engine'"
 		if !hasLine(log, want) {
@@ -327,16 +329,32 @@ func TestPull_LogsTheSecondRequest(t *testing.T) {
 }
 
 // The second request is the first with its Product set to the product, in
-// place of any Product it has, and with its other parameters as they were.
+// place of any Product it has whatever the case or escaping of its name, and
+// with its other parameters as they were written, in their order.
 func TestURLWithProduct(t *testing.T) {
-	for name, first := range map[string]string{
-		"no product":       "https://d.example/api?LicenseKeys=A%7CB&Type=HashV41&Download=True",
-		"an empty product": "https://d.example/api?LicenseKeys=A%7CB&Product=&Type=HashV41&Download=True",
-		"another product":  "https://d.example/api?LicenseKeys=A%7CB&Type=HashV41&Download=True&product=Other",
-		"a key not escaped": "https://d.example/api?LicenseKeys=A|B&Type=HashV41&Download=True&PRODUCT=Other&" +
-			"Product=More",
+	for name, c := range map[string]struct{ first, query string }{
+		"no product": {
+			"https://d.example/api?LicenseKeys=A%7CB&Type=HashV41&Download=True",
+			"LicenseKeys=A%7CB&Type=HashV41&Download=True&Product=V4TAC"},
+		"an empty product": {
+			"https://d.example/api?LicenseKeys=A%7CB&Product=&Type=HashV41&Download=True",
+			"LicenseKeys=A%7CB&Type=HashV41&Download=True&Product=V4TAC"},
+		"another product": {
+			"https://d.example/api?LicenseKeys=A%7CB&Type=HashV41&Download=True&product=Other",
+			"LicenseKeys=A%7CB&Type=HashV41&Download=True&Product=V4TAC"},
+		"an escaped name": {
+			"https://d.example/api?Pro%64uct=Other&LicenseKeys=A%7CB&Type=HashV41&Download=True",
+			"LicenseKeys=A%7CB&Type=HashV41&Download=True&Product=V4TAC"},
+		"a key not escaped": {
+			"https://d.example/api?LicenseKeys=A|B&Type=HashV41&Download=True&PRODUCT=Other&" +
+				"Product=More",
+			"LicenseKeys=A|B&Type=HashV41&Download=True&Product=V4TAC"},
+		"an empty pair": {
+			"https://d.example/api?LicenseKeys=A%7CB&&Type=HashV41&Product=&Download=True",
+			"LicenseKeys=A%7CB&&Type=HashV41&Download=True&Product=V4TAC"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			first := c.first
 			second, err := urlWithProduct(first, "V4TAC")
 			if err != nil {
 				t.Fatalf("urlWithProduct failed: %v", err)
@@ -357,6 +375,10 @@ func TestURLWithProduct(t *testing.T) {
 			if got := parsed.Query(); got.Encode() != want.Encode() {
 				t.Errorf("the second request has the query %q, want %q",
 					got.Encode(), want.Encode())
+			}
+			if parsed.RawQuery != c.query {
+				t.Errorf("the second request has the query %q as written, want %q",
+					parsed.RawQuery, c.query)
 			}
 		})
 	}

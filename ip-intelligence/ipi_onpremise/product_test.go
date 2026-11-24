@@ -45,6 +45,8 @@ func TestDistributorProduct(t *testing.T) {
 		"IPIV4Enterprise": "IPIV4Enterprise",
 		"ipiv4asn":        "ipiv4asn",
 		"":                "",
+		"IPIV4":           "",
+		"ipiv4":           "",
 	} {
 		if got := distributorProduct(tier); got != want {
 			t.Errorf("distributorProduct(%q) = %q, want %q", tier, got, want)
@@ -64,6 +66,9 @@ func severalProductsServer(products ...string) *httptest.Server {
 					productTestKey+"&LicenceKeys=&Type=IPIV41&Product="+product)
 			}
 			body, _ := json.Marshal(map[string]interface{}{"AvailableUris": uris})
+			if len(uris) > 0 {
+				w.Header().Set("Location", uris[0])
+			}
 			w.WriteHeader(http.StatusMultipleChoices)
 			w.Write(body)
 		}))
@@ -108,7 +113,8 @@ func TestEnterpriseDataFileNamesItsProduct(t *testing.T) {
 	e := newReloadTestEngine(t,
 		WithDataFile(testDataPath(t, enterpriseTestDataFile)),
 		WithAutoUpdate(false),
-		WithFileWatch(false))
+		WithFileWatch(false),
+		WithTempDataCopy(false))
 
 	if product := e.dataFileProduct(); product != "IPIV4Enterprise" {
 		t.Errorf("the Enterprise data file is of the product %q, want "+
