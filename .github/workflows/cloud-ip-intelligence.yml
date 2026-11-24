@@ -1,0 +1,77 @@
+name: Cloud IP Intelligence Example Test
+
+# Runs the IP Intelligence getting started cloud example's test
+# (TestGettingStartedCloud in examples/ip-intelligence/integration_test.go)
+# against the cloud, with the Bespoke Resource Key. The test requires the
+# values the key gives for a known address.
+#
+# _51DEGREES_CLOUD_ENDPOINT, the cloud's API base, is an organization
+# variable, and _51DEGREES_RESOURCE_KEY_BESPOKE is an organization secret.
+#
+# The job fails when a name is empty or when the test was skipped or did not
+# run. A cloud test that passes without calling the cloud has proved
+# nothing.
+
+on:
+  workflow_dispatch:
+  # Nightly as well, so a change in what the service answers is found the
+  # next morning rather than by a customer.
+  schedule:
+    - cron: '40 6 * * *'
+  pull_request:
+    branches: [main, rc]
+    # The example, and the files that set the job's Go version and build.
+    paths:
+      - 'examples/ip-intelligence/**'
+      - 'ip-intelligence/ipi_cloud/**'
+      - 'pipeline/cloud/**'
+      - 'go.work'
+      - '.github/workflows/cloud-ip-intelligence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cloud-ip-intelligence:
+    name: Cloud IP Intelligence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: examples/ip-intelligence/go.mod
+          cache: false
+
+      # go test -run exits 0 when its pattern matches nothing, and a skipped
+      # test does not fail, so the subtest's PASS line is required. -count=1
+      # calls the cloud on every run rather than replaying a cached result.
+      - name: Example test against the cloud
+        working-directory: examples/ip-intelligence
+        shell: bash
+        env:
+          _51DEGREES_CLOUD_ENDPOINT: ${{ vars._51DEGREES_CLOUD_ENDPOINT }}
+          _51DEGREES_RESOURCE_KEY_BESPOKE: ${{ secrets._51DEGREES_RESOURCE_KEY_BESPOKE }}
+        run: |
+          missing=0
+          for name in _51DEGREES_CLOUD_ENDPOINT _51DEGREES_RESOURCE_KEY_BESPOKE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is empty or missing, so the test cannot run."
+              missing=1
+            fi
+          done
+          if [ $missing -ne 0 ]; then exit 1; fi
+          name='TestGettingStartedCloud/_51DEGREES_RESOURCE_KEY_BESPOKE'
+          set +e
+          output=$(go test -count=1 -v -run '^TestGettingStartedCloud$' . 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if ! grep -q -- "--- PASS: $name" <<< "$output"; then
+            echo "::error::$name did not pass, so it failed, was skipped or did not run."
+            status=1
+          fi
+          exit $status

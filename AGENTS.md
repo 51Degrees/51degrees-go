@@ -192,7 +192,7 @@ Two examples call the 51Degrees cloud service. The first,
 `examples/ip-intelligence/getting_started_cloud`, needs a Resource Key in
 the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument.
 Run with none, it says where to create one and which variable to put it in,
-then ends without an error (`main.go` lines 119 to 130), so CI runs it with no
+then ends without an error (`main.go` lines 120 to 131), so CI runs it with no
 settings (`TestGettingStartedCloudWithNoResourceKey`) and with the cloud
 service only when a key is set. The second,
 `examples/device-detection/cloud/getting_started`, does the same for Device
