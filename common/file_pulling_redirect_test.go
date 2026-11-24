@@ -23,7 +23,9 @@
 package common_go
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -248,27 +250,63 @@ func TestPull_UsesTheSettingsOfTheDefaultClient(t *testing.T) {
 	}
 }
 
-// The license keys of an address a redirect names are masked too, when the
-// request to that address fails, whatever the parameter's case, with several
-// keys in one parameter, with the key escaped in another way, and when the
-// address cannot be parsed and so is named only in the error's text.
+// A Timeout set on http.DefaultClient stops a request of an update that takes
+// longer, and the pull fails with the access error.
+func TestPull_StopsAtTheTimeoutOfTheDefaultClient(t *testing.T) {
+	const timeoutMilliseconds = 100
+	const answerDelayMilliseconds = 1000
+	d := newScriptedDistributor(func(w http.ResponseWriter) {
+		time.Sleep(answerDelayMilliseconds * time.Millisecond)
+		dataFile(w)
+	})
+	defer d.server.Close()
+	updater, log := d.updater(t, "V4TAC")
+	saved := *http.DefaultClient
+	defer func() { *http.DefaultClient = saved }()
+	http.DefaultClient.Timeout = timeoutMilliseconds * time.Millisecond
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	var netErr net.Error
+	if downloaded || !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Fatalf("pull gave downloaded %v and error %v, want the timeout's error\n%s",
+			downloaded, err, productLines(log))
+	}
+	line := "ERROR Error during check for data update. Error accessing data update " +
+		"service at '" + d.maskedURL() + "' for engine 'Engine'. Error detail: " + err.Error()
+	if !hasLine(log, line) {
+		t.Errorf("no message is %q, the messages being\n%s", line, productLines(log))
+	}
+	noFullKey(t, log, err)
+}
+
+// The license keys of an address a redirect names are masked too, so the
+// error holds only their masked form, when the request to that address fails,
+// whatever the parameter's case, with several keys in one parameter, with the
+// key escaped in another way, and when the address cannot be parsed and so is
+// named only in the error's text.
 // See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/logging.md#license-keys
 func TestPull_MasksTheKeyOfARedirectTarget(t *testing.T) {
 	cases := []struct {
 		name  string
 		query string
 		held  []string
+		// shown is the parameter as the error holds it, with its value as
+		// written masked.
+		shown string
 	}{
 		{"LicenseKeys", "/api/v2/download?LicenseKeys=OTHERKEY1234",
-			[]string{"OTHERKEY1234"}},
+			[]string{"OTHERKEY1234"}, "LicenseKeys=" + MaskLicenseKey("OTHERKEY1234")},
 		{"licensekey", "/api/v2/download?Type=HashV41&licensekey=OTHERKEY1234",
-			[]string{"OTHERKEY1234"}},
+			[]string{"OTHERKEY1234"}, "licensekey=" + MaskLicenseKey("OTHERKEY1234")},
 		{"License with two keys", "/api/v2/download?License=KEYONE5678%7CKEYTWO9012",
-			[]string{"KEYONE5678", "KEYTWO9012"}},
+			[]string{"KEYONE5678", "KEYTWO9012"},
+			"License=" + MaskLicenseKey("KEYONE5678%7CKEYTWO9012")},
 		{"key escaped in another way", "/api/v2/download?LicenseKeys=OTHER%4bEY1234",
-			[]string{"OTHERKEY1234", "OTHER%4bEY1234"}},
+			[]string{"OTHERKEY1234", "OTHER%4bEY1234"},
+			"LicenseKeys=" + MaskLicenseKey("OTHER%4bEY1234")},
 		{"Location that does not parse", "/%zz/download?LicenseKeys=OTHERKEY1234",
-			[]string{"OTHERKEY1234"}},
+			[]string{"OTHERKEY1234"}, "LicenseKeys=" + MaskLicenseKey("OTHERKEY1234")},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -297,6 +335,47 @@ func TestPull_MasksTheKeyOfARedirectTarget(t *testing.T) {
 				if strings.Contains(err.Error(), key) {
 					t.Errorf("the error %q holds %q in full", err, key)
 				}
+			}
+			if !strings.Contains(err.Error(), c.shown) {
+				t.Errorf("the error %q does not hold %q", err, c.shown)
+			}
+			noFullKey(t, log, err)
+		})
+	}
+}
+
+// A value shorter than 5 characters that a redirect names is no license key,
+// so it is left as it is rather than masked wherever it appears in the error,
+// and a value of 5 characters is masked.
+func TestPull_LeavesAShortValueOfARedirectTarget(t *testing.T) {
+	cases := []struct {
+		value string
+		shown string
+	}{
+		{"e", "License=e\""},
+		{"VALU5", "License=" + MaskLicenseKey("VALU5") + "\""},
+	}
+	for _, c := range cases {
+		t.Run(c.value, func(t *testing.T) {
+			dead := httptest.NewServer(http.NotFoundHandler())
+			dead.Close()
+			redirect := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Location", dead.URL+"/api/v2/download?License="+c.value)
+					w.WriteHeader(http.StatusFound)
+				}))
+			defer redirect.Close()
+			d := &scriptedDistributor{server: redirect}
+			updater, log := d.updater(t, "V4TAC")
+
+			_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+			if err == nil || downloaded {
+				t.Fatalf("pull gave downloaded %v and error %v, want an error", downloaded, err)
+			}
+			want := dead.URL + "/api/v2/download?" + c.shown
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the error %q does not hold %q", err, want)
 			}
 			noFullKey(t, log, err)
 		})

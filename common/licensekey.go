@@ -96,12 +96,12 @@ func LicenseKeysInURL(rawURL string) []string {
 // to the end of a query value or of a quoted address.
 var licenseKeyInText = regexp.MustCompile(`(?i)license(?:keys?)?(?:=|%3D)([^&\s"'#<>\\]*)`)
 
-// LicenseKeysInText returns the license keys named by a LicenseKeys,
+// licenseKeysInText returns the license keys named by a LicenseKeys,
 // LicenseKey or License parameter anywhere in text, such as an error message
 // that quotes an address which cannot be parsed. Each value is returned both
 // as it is written and decoded, and split where it holds several keys
 // separated by '|', so a key is found however it is escaped.
-func LicenseKeysInText(text string) []string {
+func licenseKeysInText(text string) []string {
 	var keys []string
 	for _, match := range licenseKeyInText.FindAllStringSubmatch(text, -1) {
 		written := match[1]

@@ -720,6 +720,11 @@ func newDataFileClient() *http.Client {
 	return &client
 }
 
+// foundLicenseKeyMinimumCharacters is the shortest value found in an error that is masked as a
+// license key. Each one is masked wherever it appears in the message, so a shorter value, which is
+// no license key, would mask those characters in every word.
+const foundLicenseKeyMinimumCharacters = 5
+
 // getDataFile makes the GET request for a data file with client, with If-Modified-Since when timestamp
 // is given. The caller closes the body of the response.
 func getDataFile(ctx context.Context, client *http.Client, url string, timestamp *time.Time,
@@ -738,11 +743,16 @@ func getDataFile(ctx context.Context, client *http.Client, url string, timestamp
 		// The error names the URL of the request that failed, which after a redirect is the
 		// address it named, and may quote a Location header that could not be parsed, so the
 		// keys of every address its text names are masked too.
+		found := licenseKeysInText(err.Error())
 		var urlErr *neturl.Error
 		if errors.As(err, &urlErr) {
-			keys = append(keys, LicenseKeysInURL(urlErr.URL)...)
+			found = append(found, LicenseKeysInURL(urlErr.URL)...)
 		}
-		keys = append(keys, LicenseKeysInText(err.Error())...)
+		for _, key := range found {
+			if len(key) >= foundLicenseKeyMinimumCharacters {
+				keys = append(keys, key)
+			}
+		}
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
 	return resp, nil

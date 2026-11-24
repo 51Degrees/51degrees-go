@@ -95,8 +95,8 @@ func TestLicenseKeysInText(t *testing.T) {
 		{"LicenseKeys= empty", nil},
 	}
 	for _, c := range cases {
-		if got := LicenseKeysInText(c.text); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("LicenseKeysInText(%q) = %q, want %q", c.text, got, c.want)
+		if got := licenseKeysInText(c.text); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("licenseKeysInText(%q) = %q, want %q", c.text, got, c.want)
 		}
 	}
 }
