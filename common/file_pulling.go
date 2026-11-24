@@ -691,29 +691,33 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 // redirectLimit is the most redirects that one check for an update follows, over all its requests.
 const redirectLimit = 20
 
-// dataFileTransport makes the requests of each check for an update. When it is nil, which it is
-// unless a test sets it, http.DefaultTransport does.
+// dataFileTransport, when a test sets it, makes the requests of each check for an update in place
+// of the transport of http.DefaultClient.
 var dataFileTransport http.RoundTripper
 
-// newDataFileClient returns the HTTP client for one check for an update. It follows a 301, 302,
-// 303, 307 or 308 response up to redirectLimit times over all the requests of the check, and never
-// from an https address to an http address. A redirect it does not follow is returned as the
-// response, which is then the error of any other response. net/http never follows a 300 (Multiple
-// Choices) response, so its Location header is not requested.
+// newDataFileClient returns the HTTP client for one check for an update. It is a copy of
+// http.DefaultClient, so a program's own transport, timeout and cookie jar there still apply, with
+// its own redirect policy. It follows a 301, 302, 303, 307 or 308 response up to redirectLimit times
+// over all the requests of the check, and never from an https address to an http address. A
+// redirect it does not follow is returned as the response, which is then the error of any other
+// response. net/http never follows a 300 (Multiple Choices) response, so its Location header is not
+// requested.
 // See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func newDataFileClient() *http.Client {
-	followed := 0
-	return &http.Client{
-		Transport: dataFileTransport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			from := via[len(via)-1].URL
-			if followed >= redirectLimit || (from.Scheme == "https" && req.URL.Scheme == "http") {
-				return http.ErrUseLastResponse
-			}
-			followed++
-			return nil
-		},
+	client := *http.DefaultClient
+	if dataFileTransport != nil {
+		client.Transport = dataFileTransport
 	}
+	followed := 0
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		from := via[len(via)-1].URL
+		if followed >= redirectLimit || (from.Scheme == "https" && req.URL.Scheme == "http") {
+			return http.ErrUseLastResponse
+		}
+		followed++
+		return nil
+	}
+	return &client
 }
 
 // getDataFile makes the GET request for a data file with client, with If-Modified-Since when timestamp
@@ -731,6 +735,12 @@ func getDataFile(ctx context.Context, client *http.Client, url string, timestamp
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// The error names the URL of the request that failed, which after a redirect is the
+		// address it named, so the keys of that address are masked too.
+		var urlErr *neturl.Error
+		if errors.As(err, &urlErr) {
+			keys = append(keys, LicenseKeysInURL(urlErr.URL)...)
+		}
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
 	return resp, nil

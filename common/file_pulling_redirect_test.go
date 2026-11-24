@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // redirectRules is the specification text the redirect tests follow.
@@ -79,7 +80,7 @@ func TestPull_FollowsUpTo20Redirects(t *testing.T) {
 	for _, c := range []struct {
 		hops       int
 		downloaded bool
-	}{{redirectLimit, true}, {redirectLimit + 1, false}} {
+	}{{20, true}, {21, false}} {
 		t.Run(fmt.Sprint(c.hops), func(t *testing.T) {
 			server, redirects := redirectChain(t, func(w http.ResponseWriter, r *http.Request) {
 				dataFile(w)
@@ -92,12 +93,8 @@ func TestPull_FollowsUpTo20Redirects(t *testing.T) {
 				t.Fatalf("pull gave downloaded %v and error %v, want downloaded %v (%s)\n%s",
 					downloaded, err, c.downloaded, redirectRules, productLines(log))
 			}
-			want := c.hops
-			if want > redirectLimit+1 {
-				want = redirectLimit + 1
-			}
-			if n := redirects.Load(); n != int32(want) {
-				t.Errorf("%d redirects were given, want %d", n, want)
+			if n := redirects.Load(); n != int32(c.hops) {
+				t.Errorf("%d redirects were given, want %d", n, c.hops)
 			}
 			if !c.downloaded {
 				line := "ERROR Error during check for data update. HTTP status code '302' from " +
@@ -121,7 +118,7 @@ func TestPull_RedirectsAreCountedOverTheCheck(t *testing.T) {
 	for _, c := range []struct {
 		secondHops int
 		downloaded bool
-	}{{redirectLimit - firstHops, true}, {redirectLimit - firstHops + 1, false}} {
+	}{{8, true}, {9, false}} {
 		t.Run(fmt.Sprint(c.secondHops), func(t *testing.T) {
 			hop := func(r *http.Request, prefix string) int {
 				n, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, prefix))
@@ -208,6 +205,77 @@ func TestPull_DoesNotFollowARedirectFromHTTPSToHTTP(t *testing.T) {
 		"data update service at '" + d.maskedURL() + "' for engine 'Engine'"
 	if !hasLine(log, line) {
 		t.Errorf("no message is %q, the messages being\n%s", line, productLines(log))
+	}
+	noFullKey(t, log, err)
+}
+
+// countingTransport counts the requests it makes for the transport it wraps.
+type countingTransport struct {
+	next  http.RoundTripper
+	count atomic.Int32
+}
+
+func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.count.Add(1)
+	return c.next.RoundTrip(r)
+}
+
+// A program's own settings on http.DefaultClient, such as its Transport and
+// Timeout, still apply to the requests of an update, as they did when the
+// update used that client.
+func TestPull_UsesTheSettingsOfTheDefaultClient(t *testing.T) {
+	d := newScriptedDistributor(dataFile)
+	defer d.server.Close()
+	updater, log := d.updater(t, "V4TAC")
+	saved := *http.DefaultClient
+	defer func() { *http.DefaultClient = saved }()
+	transport := &countingTransport{next: http.DefaultTransport}
+	http.DefaultClient.Transport = transport
+	http.DefaultClient.Timeout = time.Hour
+
+	if client := newDataFileClient(); client.Timeout != time.Hour {
+		t.Errorf("the update's client has the timeout %v, want the default client's %v",
+			client.Timeout, time.Hour)
+	}
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err != nil || !downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want the data file\n%s",
+			downloaded, err, productLines(log))
+	}
+	if n := transport.count.Load(); n != 1 {
+		t.Errorf("the default client's transport made %d requests, want 1", n)
+	}
+}
+
+// The license key of an address a redirect names is masked too, when the
+// request to that address fails.
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/logging.md#license-keys
+func TestPull_MasksTheKeyOfARedirectTarget(t *testing.T) {
+	const otherKey = "OTHERKEY1234"
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, dead.URL+"/api/v2/download?LicenseKeys="+otherKey,
+				http.StatusFound)
+		}))
+	defer redirect.Close()
+	d := &scriptedDistributor{server: redirect}
+	updater, log := d.updater(t, "V4TAC")
+
+	_, downloaded, err := updater.pull(make(chan struct{}, 1))
+
+	if err == nil || downloaded {
+		t.Fatalf("pull gave downloaded %v and error %v, want an error", downloaded, err)
+	}
+	for _, line := range log.all() {
+		if strings.Contains(line, otherKey) {
+			t.Errorf("%q holds the license key of the redirect target in full", line)
+		}
+	}
+	if strings.Contains(err.Error(), otherKey) {
+		t.Errorf("the error %q holds the license key of the redirect target in full", err)
 	}
 	noFullKey(t, log, err)
 }
