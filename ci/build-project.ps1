@@ -24,7 +24,7 @@ foreach ($product in $products) {
     Push-Location (Get-ProductPath $RepoName $product)
     try {
         Write-Host "Building $product"
-        go build ./...
+        Invoke-Go @('build', './...')
         Write-Host "Building $product without the workspace"
         $env:GOWORK = 'off'
         if ($replaces) {
@@ -32,11 +32,9 @@ foreach ($product in $products) {
             Copy-Item go.mod go.unreleased.mod
             Copy-Item go.sum go.unreleased.sum -ErrorAction SilentlyContinue
             go mod edit @replaces go.unreleased.mod
-            # Quoted, because PowerShell splits an unquoted -name=value argument
-            # at its first dot.
-            go build "-modfile=go.unreleased.mod" ./...
+            Invoke-Go @('build', '-modfile=go.unreleased.mod', './...')
         } else {
-            go build ./...
+            Invoke-Go @('build', './...')
         }
     } finally {
         Remove-Item Env:GOWORK -ErrorAction SilentlyContinue
@@ -46,8 +44,8 @@ foreach ($product in $products) {
 }
 
 # go vet checks each module and its examples, tests included, and any finding
-# fails the build. go test runs only some of its checks. Each module is checked
-# before the build fails, so one run shows every finding.
+# or warning fails the build. go test runs only some of its checks. Each module
+# is checked before the build fails, so one run shows every finding.
 $vetFailed = @()
 $modules = @($products) + @($products | ForEach-Object { $ProductExamples[$_] }) |
     Select-Object -Unique
@@ -55,8 +53,9 @@ foreach ($module in $modules) {
     Push-Location (Join-Path $RepoName $module)
     try {
         Write-Host "Vetting $module"
-        go vet ./...
+        Invoke-Go @('vet', './...')
     } catch {
+        Write-Host $_
         $vetFailed += $module
     } finally {
         Pop-Location

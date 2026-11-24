@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 699a9789a2b7d523f2bf64f6a46826717c23d34f by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx 98701d9ce93f9d376fa6e13df13f92f11939124a by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -95,10 +95,7 @@
 #include <ctype.h>
 #include <assert.h>
 #ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 5105)
 #include <windows.h>
-#pragma warning(pop)
 #endif
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
@@ -197,6 +194,7 @@
 #define fiftyoneDegreesCollectionHeldStringsFreeOffsets ipi_fiftyoneDegreesCollectionHeldStringsFreeOffsets
 #define fiftyoneDegreesCollectionHeldStringsInit ipi_fiftyoneDegreesCollectionHeldStringsInit
 #define fiftyoneDegreesCollectionHeldStringsPlan ipi_fiftyoneDegreesCollectionHeldStringsPlan
+#define fiftyoneDegreesCollectionIndexOrOffset_Zero ipi_fiftyoneDegreesCollectionIndexOrOffset_Zero
 #define fiftyoneDegreesCollectionReadFileFixed ipi_fiftyoneDegreesCollectionReadFileFixed
 #define fiftyoneDegreesCollectionReadFilePosition ipi_fiftyoneDegreesCollectionReadFilePosition
 #define fiftyoneDegreesCollectionReadFileVariable ipi_fiftyoneDegreesCollectionReadFileVariable
@@ -363,6 +361,9 @@
 #define fiftyoneDegreesResourceManagerFree ipi_fiftyoneDegreesResourceManagerFree
 #define fiftyoneDegreesResourceManagerInit ipi_fiftyoneDegreesResourceManagerInit
 #define fiftyoneDegreesResourceReplace ipi_fiftyoneDegreesResourceReplace
+#define fiftyoneDegreesResultsEvaluateAll ipi_fiftyoneDegreesResultsEvaluateAll
+#define fiftyoneDegreesResultsGetOverrideValues ipi_fiftyoneDegreesResultsGetOverrideValues
+#define fiftyoneDegreesResultsHasOverrideValue ipi_fiftyoneDegreesResultsHasOverrideValue
 #define fiftyoneDegreesResultsInit ipi_fiftyoneDegreesResultsInit
 #define fiftyoneDegreesSetUpMemoryTracking ipi_fiftyoneDegreesSetUpMemoryTracking
 #define fiftyoneDegreesSignalClose ipi_fiftyoneDegreesSignalClose
@@ -986,10 +987,15 @@ fiftyoneDegreesException *exception = &exceptionValue; \
 FIFTYONE_DEGREES_EXCEPTION_CLEAR
 
 /**
- * Macro to test if the exception has been set and is failed.
+ * Macro to test if the exception has been set and is failed. Where exceptions
+ * are disabled nothing can fail, so it is plain false.
  */
+#ifndef FIFTYONE_DEGREES_EXCEPTIONS_DISABLED
 #define FIFTYONE_DEGREES_EXCEPTION_FAILED \
 (FIFTYONE_DEGREES_EXCEPTION_OKAY == false)
+#else
+#define FIFTYONE_DEGREES_EXCEPTION_FAILED false
+#endif
 
 /**
  * Returns an English error message for the exception. The caller must free the
@@ -1097,11 +1103,7 @@ typedef void*(*FIFTYONE_DEGREES_THREAD_ROUTINE)(void*);
 #endif
 
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #include <intrin.h>
 #pragma intrinsic (_InterlockedIncrement)
 #pragma intrinsic (_InterlockedDecrement)
@@ -1432,84 +1434,6 @@ supported. */
 #endif
 
 /**
- * Double width (64 or 128 depending on the architecture) compare and exchange.
- * Replaces the destination value with the exchange value, only if the
- * destination value matched the comparand. Returns true if the value was
- * exchanged.
- * 
- * Windows: Either InterlockedCompareExchange128 or InterlockedCompareExchange64
- * is used, depending on whether the source is compiled in 32 or 64 bit.
- * InterlockedCompareExchange128 will use the cmpxchg16b instruction on modern
- * Intel and AMD CPUs.
- * 
- * see: https://docs.microsoft.com/en-us/cpp/intrinsics/interlockedcompareexchange128?view=msvc-160
- *
- * Linux: __atomic_compare_exchange is used regardless of architecture. The size
- * of fiftyoneDegreesInterlockDoubleWidth dictates whether
- * __atomic_compare_exchange_8 or __atomic_compare_exchange_16 will be called.
- * The underlying implementation will depend on the hardware - either the compiler
- * intrinsic will be used, or a library function if that is not available.
- *
- * __atomic_compare_exchange_16 will use the cmpxchg16b on modern Intel and AMD CPUs.
- * However, most ARM chips will not support this, so the fallback library function
- * may not offer the same performance. Falling back to a library function may mean
- * that the operation is not lock free. To check, see the
- * FIFTYONE_DEGREES_IS_LOCK_FREE macro.
- *
- * see: https://gcc.gnu.org/onlinedocs/libstdc++/manual/ext_concurrency_impl.html
- * 
- * @param d the destination to swap
- * @param e the exchange value
- * @param c the comparand
- */
-#ifdef _MSC_VER
-#ifdef _WIN64
-typedef struct fiftyone_degrees_interlock_dw_type_t {
-    LONG64 low;
-    LONG64 high;
-} fiftyoneDegreesInterlockDoubleWidth;
-#define FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_DW(d,e,c) \
-    InterlockedCompareExchange128(&d.low, e.high, e.low, &c.low)
-#else // _WIN64
-typedef struct fiftyone_degrees_interlock_dw_type_t {
-    LONG64 value;
-} fiftyoneDegreesInterlockDoubleWidth;
-#define FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_DW(d,e,c) \
-    InterlockedCompareExchange64(&d.value, e.value, c.value) == c.value
-#endif // _WIN64
-#else // _MSC_VER
-#if (defined(_LP64) || defined(__MINGW64__))
-typedef struct fiftyone_degrees_interlock_dw_type_t {
-    int64_t low;
-    int64_t high;
-} __attribute__((aligned(16),packed)) fiftyoneDegreesInterlockDoubleWidth;
-#else // _LP64
-typedef struct fiftyone_degrees_interlock_dw_type_t {
-    int64_t value;
-} fiftyoneDegreesInterlockDoubleWidth;
-#endif //_LP64
-#define FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_DW(d,e,c) \
-    (__atomic_compare_exchange( \
-        (fiftyoneDegreesInterlockDoubleWidth*)&d, \
-        (fiftyoneDegreesInterlockDoubleWidth*)&c, \
-        (fiftyoneDegreesInterlockDoubleWidth*)&e, \
-        false, \
-        __ATOMIC_SEQ_CST, \
-        __ATOMIC_SEQ_CST))
-#endif // _MSC_VER
-
-
-#ifdef _MSC_VER
-#ifdef _WIN64
-#define FIFTYONE_DEGREES_IS_LOCK_FREE IsProcessorFeaturePresent(PF_COMPARE_EXCHANGE128)
-#else
-#define FIFTYONE_DEGREES_IS_LOCK_FREE true
-#endif
-#else
-#define FIFTYONE_DEGREES_IS_LOCK_FREE __atomic_is_lock_free(sizeof(fiftyoneDegreesInterlockDoubleWidth), NULL)
-#endif
-
-/**
  * @}
  */
 
@@ -1673,11 +1597,7 @@ typedef struct fiftyone_degrees_interlock_dw_type_t {
 #include <stdint.h>
 #include <stdbool.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #include <direct.h>
 #include <tchar.h>
 #else
@@ -2300,11 +2220,7 @@ EXTERNAL_VAR void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFreeAligned)(void*
 #include <errno.h>
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 #include <assert.h>
 #include <limits.h>
@@ -2357,15 +2273,24 @@ typedef struct fiftyone_degrees_pool_item_t {
 } fiftyoneDegreesPoolItem;
 
 /**
- * The head of the stack used for pop and push operations.
+ * The head of the stack used for pop and push operations. The ABA value
+ * counts every change to the head, so that a thread that read the head
+ * before other threads changed it finds it changed. It is 32 bits, as a 16
+ * bit count comes back to the same value after 65536 changes, which threads
+ * using a pool at once can make while another thread is paused.
  */
 typedef union fiftyone_degrees_pool_head_t {
-	volatile long exchange; /**< Number used in the compare exchange operation */
+	volatile int64_t exchange; /**< Number used in the compare exchange
+								   operation */
 	struct {
-		uint16_t index; /**< Index of the item in the linked list */
-		uint16_t aba; /**< ABA value used to ensure proper operation */
+		uint32_t index; /**< Index of the item in the linked list */
+		uint32_t aba; /**< ABA value used to ensure proper operation */
 	} values; /**< Value index with its ABA value */
+#ifdef _MSC_VER
 } fiftyoneDegreesPoolHead;
+#else
+} __attribute__((aligned(8))) fiftyoneDegreesPoolHead;
+#endif
 
 /**
  * Pool of resources stored as items in a stack.
@@ -2461,11 +2386,7 @@ EXTERNAL void fiftyoneDegreesPoolReset(fiftyoneDegreesPool *pool);
  */
 #ifdef _MSC_FULL_VER
 #define GET_CURRENT_DIR _getcwd
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #include <direct.h>
 #include <tchar.h>
 #else
@@ -2630,7 +2551,8 @@ EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesFileGetPath(
  * @param count number of paths in the array
  * @param bytesToCompare number of from the start of the file to compare for
  * equality with the master file, or -1 to compare the whole file
- * @param destination memory to write the found file path to
+ * @param destination memory to write the found file path to, which must hold
+ * at least #FIFTYONE_DEGREES_FILE_MAX_PATH characters
  * @return true if a copy of the master file was found, and its path written to
  * destination
  */
@@ -2708,7 +2630,8 @@ EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesFileNewTempFile(
  * @param masterFile full path to the file containing the master data to copy
  * @param paths list of paths to use in order of preference
  * @param count number of paths in the array
- * @param destination memory to write the new file path to
+ * @param destination memory to write the new file path to, which must hold
+ * at least #FIFTYONE_DEGREES_FILE_MAX_PATH characters
  * @return the result of the create operation
  */
 EXTERNAL DEPRECATED fiftyoneDegreesStatusCode fiftyoneDegreesFileCreateTempFile(
@@ -3220,8 +3143,13 @@ typedef union fiftyone_degrees_collection_index_or_offset_t {
 	uint32_t offset;  /**< byte offset of the item from the start of collection. */
 } fiftyoneDegreesCollectionIndexOrOffset;
 
-static const fiftyoneDegreesCollectionIndexOrOffset
-	fiftyoneDegreesCollectionIndexOrOffset_Zero = { 0 };
+/**
+ * The location of the first item. Defined once in collection.c, so that a
+ * source which doesn't use it has nothing unused, even with the headers pasted
+ * into one file.
+ */
+EXTERNAL_VAR const fiftyoneDegreesCollectionIndexOrOffset
+	fiftyoneDegreesCollectionIndexOrOffset_Zero;
 
 /**
  * Explains to a collection how to properly extract the requested value.
@@ -3353,11 +3281,7 @@ typedef struct fiftyone_degrees_collection_key_t {
 #ifdef _MSC_VER
 #endif
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 #include <assert.h>
 
@@ -5994,17 +5918,31 @@ typedef struct fiftyone_degrees_resource_handle_t
 /** @endcond */
 
 /**
- * Handle for a shared resource. The first data structure counter tracks use
- * of the resource and free resources that are not longer active.
- * Counter must be the first member to ensure correct memory aligned for 
- * interlocked operations.
+ * The bit of a handle's counter that is set once a thread has claimed the
+ * handle to free it. A claimed handle is never given to another user.
+ */
+#define FIFTYONE_DEGREES_RESOURCE_CLAIMED 0x40000000L
+
+/**
+ * The most users a handle can have at once. The count is held in the bits
+ * below #FIFTYONE_DEGREES_RESOURCE_CLAIMED, so a thread that would go past it
+ * waits until another releases the handle.
+ */
+#define FIFTYONE_DEGREES_RESOURCE_IN_USE_MAX \
+    (FIFTYONE_DEGREES_RESOURCE_CLAIMED - 1)
+
+/**
+ * Handle for a shared resource. The counter tracks the use of the resource,
+ * so that a resource which is no longer active is freed when its last user
+ * releases it.
  */
 typedef struct fiftyone_degrees_resource_handle_t {
 #ifndef FIFTYONE_DEGREES_NO_THREADING
-    volatile 
-#endif 
-    fiftyoneDegreesInterlockDoubleWidth counter; /**< Counter for this 
-                                                 handle. */
+    volatile
+#endif
+    long counter; /**< The number of users of the handle, with
+                  #FIFTYONE_DEGREES_RESOURCE_CLAIMED set once a thread has
+                  claimed the handle to free it. */
     const void* resource; /**< Pointer to the resource being managed. */
     const fiftyoneDegreesResourceManager* manager; /**< Pointer to the manager
                                                    the handle relates to. */
@@ -6465,7 +6403,10 @@ EXTERNAL fiftyoneDegreesString*
 		int requiredPropertyIndex);
 
 /**
- * The functions below are inline, so they add no name to the library.
+ * The functions below are inline, so they add no name to the library. Both
+ * Device Detection and IP Intelligence call each of them, so neither product
+ * has one it doesn't use when its sources and these headers are pasted into
+ * one file. A function only one product calls belongs in properties.c.
  */
 #if defined(_MSC_VER)
 #define FIFTYONE_DEGREES_PROPERTIES_INLINE static __inline
@@ -6632,11 +6573,7 @@ EXTERNAL void fiftyoneDegreesPropertiesFree(
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 
 /* *********************************************************************
@@ -6773,11 +6710,7 @@ EXTERNAL bool fiftyoneDegreesDateIsValid(const fiftyoneDegreesDate *date);
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 
 /**
@@ -6972,11 +6905,7 @@ EXTERNAL fiftyoneDegreesHeaderPtrs* fiftyoneDegreesComponentGetHeaders(
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 
 /**
@@ -7340,11 +7269,7 @@ EXTERNAL uint32_t fiftyoneDegreesPropertyGetValueCount(
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
@@ -7656,11 +7581,7 @@ EXTERNAL bool fiftyoneDegreesStoredBinaryValueToBoolOrDefault(
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
@@ -7753,11 +7674,7 @@ EXTERNAL bool fiftyoneDegreesStoredBinaryValueToBoolOrDefault(
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 
 /**
@@ -8925,11 +8842,7 @@ EXTERNAL void fiftyoneDegreesOverrideProfileIds(
 
 #include <stdint.h>
 #ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 5105) 
 #include <windows.h>
-#pragma warning (default: 5105) 
-#pragma warning (pop)
 #endif
 
 /**
@@ -9063,6 +8976,8 @@ EXTERNAL void fiftyoneDegreesJsonPropertySeparator(fiftyoneDegreesJson* json);
 
 #ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
 #endif
+
+#include <stdbool.h>
 
 /**
  * @ingroup FiftyOneDegreesCommon
@@ -9232,7 +9147,7 @@ FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE_DEFAULT
  * index.
  */
 #define FIFTYONE_DEGREES_DEVICE_DETECTION_CONFIG_DEFAULT_WITH_INDEX \
-	FIFTYONE_DEGREES_CONFIG_DEFAULT_WITH_INDEX, \
+	{ FIFTYONE_DEGREES_CONFIG_DEFAULT_WITH_INDEX }, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_MAX_LENGTH, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_UNMATCHED, \
@@ -9243,7 +9158,7 @@ FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE_DEFAULT
   * without index.
   */
 #define FIFTYONE_DEGREES_DEVICE_DETECTION_CONFIG_DEFAULT_NO_INDEX \
-	FIFTYONE_DEGREES_CONFIG_DEFAULT_NO_INDEX, \
+	{ FIFTYONE_DEGREES_CONFIG_DEFAULT_NO_INDEX }, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_UPDATE, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_MAX_LENGTH, \
 	FIFTYONE_DEGREES_CONFIG_DEVICE_DETECTION_DEFAULT_UNMATCHED, \
@@ -10049,7 +9964,10 @@ EXTERNAL fiftyoneDegreesResultsBase* fiftyoneDegreesResultsInit(
 
 /**
  * Marks a function defined in this header, so that it adds no name to the
- * libraries.
+ * libraries. Only functions that both Device Detection and IP Intelligence
+ * call are defined here, so that neither product has one it doesn't use when
+ * its sources and these headers are pasted into one file. The others are in
+ * results.c.
  */
 #if defined(_MSC_VER)
 #define FIFTYONE_DEGREES_RESULTS_INLINE static __inline
@@ -10130,26 +10048,9 @@ FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsEvaluate(
  * @param exception pointer to an exception data structure to be used if an
  * exception occurs. See exceptions.h.
  */
-FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsEvaluateAll(
+EXTERNAL void fiftyoneDegreesResultsEvaluateAll(
 	fiftyoneDegreesResultsBase *results,
-	fiftyoneDegreesException *exception) {
-	uint32_t word, bit;
-	for (word = 0; word < FIFTYONE_DEGREES_RESULTS_PENDING_WORDS; word++) {
-		while (results->pending[word] != 0) {
-			bit = 0;
-			while ((results->pending[word] & ((uint32_t)1 << bit)) == 0) {
-				bit++;
-			}
-			fiftyoneDegreesResultsEvaluate(
-				results,
-				(byte)(word * 32 + bit),
-				exception);
-			if (FIFTYONE_DEGREES_EXCEPTION_FAILED) {
-				return;
-			}
-		}
-	}
-}
+	fiftyoneDegreesException *exception);
 
 /**
  * Returns true if the results hold an override value for the property, so
@@ -10158,14 +10059,9 @@ FIFTYONE_DEGREES_RESULTS_INLINE void fiftyoneDegreesResultsEvaluateAll(
  * @param availableIndex index of the property in the available properties
  * @return true if there is an override value for the property
  */
-FIFTYONE_DEGREES_RESULTS_INLINE bool fiftyoneDegreesResultsHasOverrideValue(
+EXTERNAL bool fiftyoneDegreesResultsHasOverrideValue(
 	fiftyoneDegreesResultsBase *results,
-	uint32_t availableIndex) {
-	return results->overrides != NULL &&
-		fiftyoneDegreesOverrideHasValueForRequiredPropertyIndex(
-			results->overrides,
-			availableIndex);
-}
+	uint32_t availableIndex);
 
 /**
  * Adds the override values the results hold for the property to the list.
@@ -10177,16 +10073,10 @@ FIFTYONE_DEGREES_RESULTS_INLINE bool fiftyoneDegreesResultsHasOverrideValue(
  * @return the number of values added, which is zero if there is no override
  * value for the property
  */
-FIFTYONE_DEGREES_RESULTS_INLINE uint32_t fiftyoneDegreesResultsGetOverrideValues(
+EXTERNAL uint32_t fiftyoneDegreesResultsGetOverrideValues(
 	fiftyoneDegreesResultsBase *results,
 	uint32_t availableIndex,
-	fiftyoneDegreesList *values) {
-	return results->overrides == NULL ? 0 :
-		fiftyoneDegreesOverrideValuesAdd(
-			results->overrides,
-			availableIndex,
-			values);
-}
+	fiftyoneDegreesList *values);
 
 /**
  * @}
@@ -10409,10 +10299,7 @@ void fiftyoneDegreesResultsUserAgentFree(
 #include <stdint.h>
 #include <stdbool.h>
 #ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 5105)
 #include <windows.h>
-#pragma warning(pop)
 #endif
 
 /**
@@ -12649,8 +12536,10 @@ fiftyoneDegreesConvertWkbToWkt
 /**
  * Buffer length sufficient to hold any IP address.
  * Technically, 39 + 1(NUL), but with some trailing space just in case.
+ * A macro rather than a static variable, so that a source which doesn't use
+ * it has nothing unused, even with the headers pasted into one file.
  */
-static const uint8_t fiftyoneDegreesIpAddressStringMaxLength = 50;
+#define fiftyoneDegreesIpAddressStringMaxLength ((uint8_t)50)
 
 /**
  * The length for the buffer most WKT strings are expected to fit into.
@@ -12873,7 +12762,6 @@ MAP_TYPE(EvidencePrefix)
 MAP_TYPE(Headers)
 MAP_TYPE(ResourceHandle)
 MAP_TYPE(ResultsEvaluateMethod)
-MAP_TYPE(InterlockDoubleWidth)
 MAP_TYPE(Pool)
 MAP_TYPE(PoolResourceCreate)
 MAP_TYPE(PoolResourceFree)
@@ -13225,7 +13113,6 @@ MAP_TYPE(WeightedItemList)
 #define INTERLOCK_EXCHANGE FIFTYONE_DEGREES_INTERLOCK_EXCHANGE /**< Synonym for #FIFTYONE_DEGREES_INTERLOCK_EXCHANGE macro. */
 #define INTERLOCK_EXCHANGE_64 FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_64 /**< Synonym for #FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_64 macro. */
 #define INTERLOCK_EXCHANGE_PTR FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_PTR /**< Synonym for #FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_PTR macro. */
-#define INTERLOCK_EXCHANGE_PTR_DW FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_PTR_DW /**< Synonym for #FIFTYONE_DEGREES_INTERLOCK_EXCHANGE_PTR_DW macro. */
 #define FLOAT_TO_NATIVE FIFTYONE_DEGREES_FLOAT_TO_NATIVE /**< Synonym for #FIFTYONE_DEGREES_FLOAT_TO_NATIVE macro. */
 #define NATIVE_TO_FLOAT FIFTYONE_DEGREES_NATIVE_TO_FLOAT /**< Synonym for #FIFTYONE_DEGREES_NATIVE_TO_FLOAT macro. */
 #define FLOAT_IS_EQUAL FIFTYONE_DEGREES_FLOAT_IS_EQUAL /**< Synonym for #FIFTYONE_DEGREES_FLOAT_IS_EQUAL macro. */

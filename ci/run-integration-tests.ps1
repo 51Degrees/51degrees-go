@@ -50,11 +50,10 @@ if ($Products -contains 'pipeline') {
     Push-Location $examples
     try {
         Write-Host "Building the Pipeline examples"
-        go build ./...
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Building the Pipeline examples failed with exit code $LASTEXITCODE"
-            $failed = $LASTEXITCODE
-        }
+        Invoke-Go @('build', './...')
+    } catch {
+        Write-Host "Building the Pipeline examples failed: $_"
+        $failed = 1
     } finally {
         Pop-Location
     }

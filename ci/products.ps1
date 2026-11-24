@@ -128,8 +128,31 @@ function Get-ProductPath([string]$RepoPath, [string]$Product) {
 # more than 600 on a slow Ubuntu runner, so this is three times that.
 $GoTestTimeoutMinutes = 30
 
+# A line in which a compiler, linker or other tool reports a warning, such as
+# "file.c:3:5: warning: ..." or "ld: warning: ...". The go command prints such
+# lines and still succeeds, so CI fails on them here.
+$ToolWarningPattern = '(^|\s)warning:\s'
+
+# Runs the go command with the given arguments, showing what it prints. Throws
+# when it fails or prints a warning.
+function Invoke-Go([Parameter(Mandatory)][string[]]$Arguments) {
+    $warnings = [System.Collections.Generic.List[string]]::new()
+    go @Arguments 2>&1 | ForEach-Object {
+        $line = $_.ToString()
+        Write-Host $line
+        if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "go $Arguments failed with exit code $LASTEXITCODE"
+    }
+    if ($warnings.Count) {
+        throw "go $Arguments printed warnings:`n$($warnings -join "`n")"
+    }
+}
+
 # Runs go test with the given arguments in a module folder, writing JUnit
-# results. Returns the exit code.
+# results. Returns the exit code, which is not 0 when a test fails or the go
+# command or a test prints a warning.
 function Invoke-GoTests {
     param(
         [Parameter(Mandatory)][string]$ModulePath,
@@ -150,17 +173,26 @@ function Invoke-GoTests {
         # output, and go-junit-report reads a line starting '# ' there as a
         # package that failed to build, so those lines go to the log as well.
         # A package that does not build still fails, because go test reports
-        # it on standard output as FAIL.
+        # it on standard output as FAIL. A warning line from either stream
+        # fails the run, as the go command passes with it.
+        $warnings = [System.Collections.Generic.List[string]]::new()
         go test -v -timeout "$($GoTestTimeoutMinutes)m" @Packages 2>&1 |
         ForEach-Object {
+            $line = $_.ToString()
+            if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
             if ($_ -is [System.Management.Automation.ErrorRecord] -or
-                "$_".StartsWith('# ')) {
-                Write-Host $_.ToString()
+                $line.StartsWith('# ')) {
+                Write-Host $line
                 return
             }
             $_
         } | go-junit-report -set-exit-code -iocopy -out $JUnitPath | Out-Host
-        return $LASTEXITCODE
+        $code = $LASTEXITCODE
+        if ($warnings.Count) {
+            Write-Host "Warnings, which fail the tests:`n$($warnings -join "`n")"
+            if ($code -eq 0) { $code = 1 }
+        }
+        return $code
     } finally {
         Pop-Location
     }

@@ -84,25 +84,31 @@ func TestCgoFlagsTreatWarningsAsErrors(t *testing.T) {
 				"includes %s", want)
 		}
 	}
+	// -isystem makes the headers in a folder system headers, which hides
+	// their warnings.
 	for _, d := range directives {
 		for _, flag := range d.flags {
 			if flag == "-w" ||
 				strings.HasPrefix(flag, "-Wno-") ||
 				flag == "-fcommon" ||
-				flag == "-fpermissive" {
+				flag == "-fpermissive" ||
+				strings.HasPrefix(flag, "-isystem") {
 				t.Errorf("%s: the #cgo compiler flags include %s", d.file, flag)
 			}
 		}
 	}
 }
 
-// No C code the package compiles turns a GCC or Clang warning off, or turns it
-// back from an error into a warning. That covers the C and header files and the
-// C in the Go files' preambles.
+// No C code the package compiles turns a GCC or Clang warning off, turns it
+// back from an error into a warning, or marks itself a system header, which
+// hides every warning in it. That covers the C and header files and the C in
+// the Go files' preambles.
 func TestCSourcesKeepEveryWarning(t *testing.T) {
 	pragma := regexp.MustCompile(
-		`^\s*#\s*pragma\s+(GCC|clang)\s+diagnostic\s+(ignored|warning)\b|` +
-			`_Pragma\s*\(\s*"\s*(GCC|clang)\s+diagnostic\s+(ignored|warning)\b`)
+		`^\s*#\s*pragma\s+(GCC|clang)\s+` +
+			`(diagnostic\s+(ignored|warning)|system_header)\b|` +
+			`_Pragma\s*\(\s*"\s*(GCC|clang)\s+` +
+			`(diagnostic\s+(ignored|warning)|system_header)\b`)
 	var files []string
 	for _, pattern := range []string{"*.c", "*.h", "*.go"} {
 		matches, err := filepath.Glob(pattern)
