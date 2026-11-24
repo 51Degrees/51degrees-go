@@ -37,7 +37,7 @@ const productPrefix = "IPIV4"
 // data file of the data tier, which is the prefix followed by the tier. A
 // tier that already starts with the prefix, whatever its case, is the name as
 // it is. No tier, or a tier that is the prefix alone, gives no name.
-// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#product-names
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#product-names
 func distributorProduct(tier string) string {
 	tier = strings.TrimSpace(tier)
 	if tier == "" || strings.EqualFold(tier, productPrefix) {
