@@ -186,23 +186,19 @@ func withoutResourceKey(environment []string) []string {
 	return kept
 }
 
-// resourceKeyTiers are the variables that hold the Resource Keys the cloud
-// example is checked with, one for each data tier that includes IP
-// Intelligence properties.
-var resourceKeyTiers = []string{
-	"_51DEGREES_RESOURCE_KEY_FREE",
-	"_51DEGREES_RESOURCE_KEY_BASIC",
-	"_51DEGREES_RESOURCE_KEY_BESPOKE",
-}
+// bespokeKeyVariable holds the Resource Key the cloud example is checked
+// with, which includes every property. The tests of this example in the
+// other languages use the same key.
+const bespokeKeyVariable = "_51DEGREES_RESOURCE_KEY_BESPOKE"
 
 // withResourceKey returns the environment with the Resource Key the example
-// reads set to the value of the tier's variable, or false when that variable
+// reads set to the value of the named variable, or false when that variable
 // is unset or blank.
-func withResourceKey(environment []string, tier string) ([]string, bool) {
+func withResourceKey(environment []string, name string) ([]string, bool) {
 	key := ""
 	for _, variable := range environment {
 		parts := strings.SplitN(variable, "=", 2)
-		if len(parts) == 2 && strings.EqualFold(parts[0], tier) {
+		if len(parts) == 2 && strings.EqualFold(parts[0], name) {
 			key = strings.TrimSpace(parts[1])
 		}
 	}
@@ -213,26 +209,23 @@ func withResourceKey(environment []string, tier string) ([]string, bool) {
 		resourceKeyVariable+"="+key), true
 }
 
-// TestWithResourceKeyGivesTheExampleTheTiersKey checks the example is given
-// the key of the tier asked for and no other, and that a tier with no key is
-// reported.
-func TestWithResourceKeyGivesTheExampleTheTiersKey(t *testing.T) {
+// TestWithResourceKeyGivesTheExampleTheBespokeKey checks the example is
+// given the Bespoke key and no other, and that a blank key is reported.
+func TestWithResourceKeyGivesTheExampleTheBespokeKey(t *testing.T) {
 	environment := []string{
 		"PATH=kept",
 		resourceKeyVariable + "=mine",
-		resourceKeyTiers[0] + "=free",
-		resourceKeyTiers[1] + "= ",
+		bespokeKeyVariable + "=bespoke",
 	}
-	got, ok := withResourceKey(environment, resourceKeyTiers[0])
-	want := []string{"PATH=kept", resourceKeyTiers[0] + "=free",
-		resourceKeyTiers[1] + "= ", resourceKeyVariable + "=free"}
+	got, ok := withResourceKey(environment, bespokeKeyVariable)
+	want := []string{"PATH=kept", bespokeKeyVariable + "=bespoke",
+		resourceKeyVariable + "=bespoke"}
 	if !ok || strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("the environment is %q and %v, want %q", got, ok, want)
 	}
-	for _, tier := range resourceKeyTiers[1:] {
-		if got, ok := withResourceKey(environment, tier); ok {
-			t.Errorf("%s has no key, but the environment is %q", tier, got)
-		}
+	blank := []string{"PATH=kept", bespokeKeyVariable + "= "}
+	if got, ok := withResourceKey(blank, bespokeKeyVariable); ok {
+		t.Errorf("%s is blank, but the environment is %q", bespokeKeyVariable, got)
 	}
 }
 
@@ -241,39 +234,31 @@ func TestWithResourceKeyGivesTheExampleTheTiersKey(t *testing.T) {
 const knownAddress = "82.12.34.23"
 
 // knownValue is a value the cloud service gives for the known address: the
-// text printed for one of the properties must contain one of the values.
+// text printed for one of the properties must contain one of the values, or,
+// when exact is set, be one of them, with or without its weight.
 type knownValue struct {
 	properties []string
 	values     []string
+	exact      bool
 }
 
 // registeredName is the network the known address is registered to.
 var registeredName = knownValue{
-	[]string{"RegisteredName"}, []string{"VMCBBUK"}}
-
-// registeredCountry is the country the known address is registered in.
-var registeredCountry = knownValue{
-	[]string{"RegisteredCountry"}, []string{"United Kingdom", "GB"}}
+	[]string{"RegisteredName"}, []string{"VMCBBUK"}, false}
 
 // country is the country of the known address.
 var country = knownValue{
-	[]string{"Country", "CountryCode"}, []string{"United Kingdom", "GB"}}
+	[]string{"Country", "CountryCode"}, []string{"United Kingdom", "GB"}, false}
 
-// ipRange is the range the known address belongs to.
+// ipRange is the range the known address belongs to. An address is compared
+// whole, so a longer address does not count.
 var ipRange = knownValue{
 	[]string{"IpRangeStart", "IpRangeEnd"},
-	[]string{"82.12.34.0", "82.12.34.255"}}
+	[]string{"82.12.34.0", "82.12.34.255"}, true}
 
-// knownValues returns the values the tier's Resource Key gives for the known
-// address. The free and basic tiers give the registration properties, which
-// the free data tier has. The Bespoke key has every property, and gives the
-// values the .NET tests require.
-func knownValues(tier string) []knownValue {
-	if tier == "_51DEGREES_RESOURCE_KEY_BESPOKE" {
-		return []knownValue{registeredName, country, ipRange}
-	}
-	return []knownValue{registeredName, registeredCountry}
-}
+// knownValues are the values the Bespoke key gives for the known address,
+// which the tests of this example in the other languages require.
+var knownValues = []knownValue{registeredName, country, ipRange}
 
 // resultsFor returns what the cloud example printed for the address, from
 // its heading to the next one.
@@ -307,8 +292,11 @@ func printedValue(results, property string) string {
 func (k knownValue) in(results string) bool {
 	for _, property := range k.properties {
 		text := printedValue(results, property)
+		if k.exact {
+			text, _, _ = strings.Cut(text, " (")
+		}
 		for _, value := range k.values {
-			if strings.Contains(text, value) {
+			if text == value || (!k.exact && strings.Contains(text, value)) {
 				return true
 			}
 		}
@@ -340,13 +328,13 @@ func checkKnownAddress(t *testing.T, output string, want []knownValue) {
 // property's line or in another address's results.
 func TestKnownValuesAreFoundOnlyInTheirOwnResults(t *testing.T) {
 	output := "Results for 1.2.3.4:\n" +
-		"\tRegisteredCountry: GB\n" +
+		"\tCountryCode: GB\n" +
 		"Results for " + knownAddress + ":\r\n" +
 		"\tRegisteredName: VMCBBUK (1.00)\r\n" +
-		"\tRegisteredOwner: GB\r\n" +
+		"\tRegisteredCountry: GB\r\n" +
 		"\tCountry: This property is not in the results, so the Resource " +
 		"Key may not include it.\r\n" +
-		"\tIpRangeEnd: 82.12.34.255\r\n" +
+		"\tIpRangeEnd: 82.12.34.255 (1.00)\r\n" +
 		"Results for 1.2.3.5:\n" +
 		"\tCountryCode: GB\n"
 	results := resultsFor(output, knownAddress)
@@ -355,9 +343,13 @@ func TestKnownValuesAreFoundOnlyInTheirOwnResults(t *testing.T) {
 			t.Errorf("%s is not found in %q", k.properties, results)
 		}
 	}
-	for _, k := range []knownValue{registeredCountry, country} {
-		if k.in(results) {
-			t.Errorf("%s is found in %q", k.properties, results)
+	if k := country; k.in(results) {
+		t.Errorf("%s is found in %q", k.properties, results)
+	}
+	for _, longer := range []string{"82.12.34.023", "82.12.34.0x", "82.12.34.2550"} {
+		text := "\tIpRangeStart: " + longer + "\n"
+		if ipRange.in(text) {
+			t.Errorf("%s is found in %q", ipRange.properties, text)
 		}
 	}
 	if k := registeredName; k.in(resultsFor(output, "1.2.3.6")) {
@@ -365,10 +357,10 @@ func TestKnownValuesAreFoundOnlyInTheirOwnResults(t *testing.T) {
 	}
 }
 
-// The cloud example is always built, and is run once with the Resource Key
-// of each data tier, as a customer with that key would run it. Each run must
-// give the values that tier's key gives for the known address. A tier whose
-// key is not set is skipped.
+// The cloud example is always built, and is run with the Bespoke key, as a
+// customer with that key would run it. The run must give the values that key
+// gives for the known address. It is skipped when the key is not set, and
+// .github/workflows/cloud-ip-intelligence.yml fails when it is skipped.
 func TestGettingStartedCloud(t *testing.T) {
 	build := exec.Command("go", "build", "-o", os.DevNull, "./getting_started_cloud")
 	build.Stdout = os.Stdout
@@ -376,17 +368,19 @@ func TestGettingStartedCloud(t *testing.T) {
 	if err := build.Run(); err != nil {
 		t.Fatal(err)
 	}
-	for _, tier := range resourceKeyTiers {
-		t.Run(tier, func(t *testing.T) {
-			environment, ok := withResourceKey(os.Environ(), tier)
-			if !ok {
-				t.Skipf("%s is not set, so the cloud example is not run "+
-					"with it", tier)
-			}
-			output := run(t, "getting_started_cloud", environment)
-			checkKnownAddress(t, output, knownValues(tier))
-		})
-	}
+	t.Run(bespokeKeyVariable, func(t *testing.T) {
+		environment, ok := withResourceKey(os.Environ(), bespokeKeyVariable)
+		if !ok {
+			t.Skipf("%s is not set, so the cloud example is not run "+
+				"with it", bespokeKeyVariable)
+		}
+		output := run(t, "getting_started_cloud", environment)
+		if t.Failed() {
+			// The example's own error, which run reported, says why.
+			return
+		}
+		checkKnownAddress(t, output, knownValues)
+	})
 }
 
 // The mixed examples are a separate Go module; their integration test lives
