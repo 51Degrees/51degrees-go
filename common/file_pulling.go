@@ -561,7 +561,7 @@ func noProduct() string { return "" }
 // response, and the Location header is never followed. A request that names a product, which is a
 // configured product, is not repeated, so its 300 is the error of any other response. engine names
 // the engine in the messages logged.
-// See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#license-keys-with-several-products
+// See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrapper, timestamp *time.Time,
 	dataFile string, product func() string, engine string) (*FileResponse, string, error) {
 	removeStaleTempFiles(dataFile, logger)
@@ -691,30 +691,39 @@ func doProductDataFileRequest(ctx context.Context, url string, logger *LogWrappe
 // redirectLimit is the most redirects that one check for an update follows, over all its requests.
 const redirectLimit = 20
 
-// dataFileTransport makes the requests of each check for an update. When it is nil, which it is
-// unless a test sets it, http.DefaultTransport does.
+// dataFileTransport, when a test sets it, makes the requests of each check for an update in place
+// of the transport of http.DefaultClient.
 var dataFileTransport http.RoundTripper
 
-// newDataFileClient returns the HTTP client for one check for an update. It follows a 301, 302,
-// 303, 307 or 308 response up to redirectLimit times over all the requests of the check, and never
-// from an https address to an http address. A redirect it does not follow is returned as the
-// response, which is then the error of any other response. net/http never follows a 300 (Multiple
-// Choices) response, so its Location header is not requested.
+// newDataFileClient returns the HTTP client for one check for an update. It is a copy of
+// http.DefaultClient, so a program's own transport, timeout and cookie jar there still apply, with
+// its own redirect policy. It follows a 301, 302, 303, 307 or 308 response up to redirectLimit times
+// over all the requests of the check, and never from an https address to an http address. A
+// redirect it does not follow is returned as the response, which is then the error of any other
+// response. net/http never follows a 300 (Multiple Choices) response, so its Location header is not
+// requested.
 // See https://github.com/51Degrees/specifications/blob/1651a6449e746bc33260e43c2d15610710f15375/pipeline-specification/features/data-updates.md#license-keys-with-several-products
 func newDataFileClient() *http.Client {
-	followed := 0
-	return &http.Client{
-		Transport: dataFileTransport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			from := via[len(via)-1].URL
-			if followed >= redirectLimit || (from.Scheme == "https" && req.URL.Scheme == "http") {
-				return http.ErrUseLastResponse
-			}
-			followed++
-			return nil
-		},
+	client := *http.DefaultClient
+	if dataFileTransport != nil {
+		client.Transport = dataFileTransport
 	}
+	followed := 0
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		from := via[len(via)-1].URL
+		if followed >= redirectLimit || (from.Scheme == "https" && req.URL.Scheme == "http") {
+			return http.ErrUseLastResponse
+		}
+		followed++
+		return nil
+	}
+	return &client
 }
+
+// foundLicenseKeyMinimumCharacters is the shortest value found in an error that is masked as a
+// license key. Each one is masked wherever it appears in the message, so a shorter value, which is
+// no license key, would mask those characters in every word.
+const foundLicenseKeyMinimumCharacters = 5
 
 // getDataFile makes the GET request for a data file with client, with If-Modified-Since when timestamp
 // is given. The caller closes the body of the response.
@@ -731,6 +740,19 @@ func getDataFile(ctx context.Context, client *http.Client, url string, timestamp
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// The error names the URL of the request that failed, which after a redirect is the
+		// address it named, and may quote a Location header that could not be parsed, so the
+		// keys of every address its text names are masked too.
+		found := licenseKeysInText(err.Error())
+		var urlErr *neturl.Error
+		if errors.As(err, &urlErr) {
+			found = append(found, LicenseKeysInURL(urlErr.URL)...)
+		}
+		for _, key := range found {
+			if len(key) >= foundLicenseKeyMinimumCharacters {
+				keys = append(keys, key)
+			}
+		}
 		return nil, newPullError(pullConnect, MaskLicenseKeysInError(err, keys))
 	}
 	return resp, nil
@@ -872,11 +894,15 @@ func isProductPair(pair string) bool {
 	return strings.EqualFold(name, productParameter)
 }
 
-// queryValue returns the first value of the query parameter of u called name, whatever its case.
+// queryValue returns the value of the first parameter of u called name, whatever its case, in the
+// order the query is written. A pair whose escaping does not decode is passed over.
 func queryValue(u *neturl.URL, name string) string {
-	for key, values := range u.Query() {
-		if strings.EqualFold(key, name) && len(values) > 0 {
-			return values[0]
+	for _, pair := range queryPairs(u.RawQuery) {
+		key, value, _ := strings.Cut(pair, "=")
+		key, keyErr := neturl.QueryUnescape(key)
+		value, valueErr := neturl.QueryUnescape(value)
+		if keyErr == nil && valueErr == nil && strings.EqualFold(key, name) {
+			return value
 		}
 	}
 	return ""
