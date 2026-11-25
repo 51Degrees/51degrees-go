@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 611207678bf7b06ebd5803b4dd3277a8127d9de2 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx cc9104ac2fdad1975936f6eeffc988912bc33354 by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -10726,6 +10726,37 @@ EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesIpiGetPublishedFromFile(
 	fiftyoneDegreesDate *date);
 
 /**
+ * Gets the product name of an IP Intelligence data file from its header,
+ * reading the header and the name alone rather than loading the file, so that
+ * an update at start-up can ask the Distributor for the product of the file
+ * it has. The product name is "IPIV4" followed by the tier the header names,
+ * or the tier alone when it already starts with "IPIV4" in any case, as
+ * IPIV4Enterprise does. Nothing is allocated.
+ * @param fileName path to the data file
+ * @param buffer to write the product name and a terminating null to, or NULL
+ * when length is zero. It is set to an empty string when the name is not
+ * written and length is not zero.
+ * @param length of the buffer in bytes
+ * @param needed set, when not NULL, to the bytes the product name and its
+ * terminating null need when the status is
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS or
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_CAPACITY, otherwise to zero
+ * @return #FIFTYONE_DEGREES_STATUS_SUCCESS when the product name is written,
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_CAPACITY when it does not fit in the
+ * buffer, #FIFTYONE_DEGREES_STATUS_NULL_POINTER when the buffer is NULL and
+ * length is not zero, the status of opening the file when it cannot be
+ * opened, #FIFTYONE_DEGREES_STATUS_CORRUPT_DATA when the file ends before the
+ * name does or the tier is empty, and
+ * #FIFTYONE_DEGREES_STATUS_INCORRECT_VERSION when the file is not an IP
+ * Intelligence data file of the version this library reads
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesIpiGetProductFromFile(
+	const char *fileName,
+	char *buffer,
+	size_t length,
+	size_t *needed);
+
+/**
  * Gets the total size in bytes which will be allocated when intialising a
  * IP Intelligence resource and associated manager with the same parameters. If any of
  * the configuration options prevent the memory from being constant (i.e. more
@@ -13046,6 +13077,7 @@ MAP_TYPE(WeightedValuesCollection)
 #define IpiGetPublished fiftyoneDegreesIpiGetPublished /**< Synonym for #fiftyoneDegreesIpiGetPublished function. */
 #define IpiGetNextUpdate fiftyoneDegreesIpiGetNextUpdate /**< Synonym for #fiftyoneDegreesIpiGetNextUpdate function. */
 #define IpiGetPublishedFromFile fiftyoneDegreesIpiGetPublishedFromFile /**< Synonym for #fiftyoneDegreesIpiGetPublishedFromFile function. */
+#define IpiGetProductFromFile fiftyoneDegreesIpiGetProductFromFile /**< Synonym for #fiftyoneDegreesIpiGetProductFromFile function. */
 #define IpiReloadManagerFromOriginalFile fiftyoneDegreesIpiReloadManagerFromOriginalFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromOriginalFile function. */
 #define IpiReloadManagerFromFile fiftyoneDegreesIpiReloadManagerFromFile /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromFile function. */
 #define IpiReloadManagerFromMemory fiftyoneDegreesIpiReloadManagerFromMemory /**< Synonym for #fiftyoneDegreesIpiReloadManagerFromMemory function. */
