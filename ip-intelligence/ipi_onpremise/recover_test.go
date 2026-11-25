@@ -118,9 +118,12 @@ func TestPanicInAPulledReloadIsLoggedAndReloadingCarriesOn(t *testing.T) {
 		WithCustomLogger(logs))
 	answer := e.asnName(t)
 	marked := markedGoodFile(t, good, e.published())
+	// A file published a day later is loaded, so its reload logs the line
+	// that panics.
+	nextDay := datedGoodFile(t, good, e.published(), e.published().AddDate(0, 0, 1))
 	logs.armed.Store(true)
 
-	server.publish(good)
+	server.publish(nextDay)
 	waitFor(t, "the panic to be logged", func() bool {
 		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'IpiOnPremiseEngine'", recoverTestPanic)
 	})
@@ -152,9 +155,12 @@ func TestPanicInAWatchedReloadIsLoggedAndWatchingCarriesOn(t *testing.T) {
 		WithTempDataCopy(true),
 		WithCustomLogger(logs))
 	marked := markedGoodFile(t, good, e.published())
+	// A file published a day later is loaded, so its reload logs the line
+	// that panics.
+	nextDay := datedGoodFile(t, good, e.published(), e.published().AddDate(0, 0, 1))
 	logs.armed.Store(true)
 
-	replaceFile(t, data, good)
+	replaceFile(t, data, nextDay)
 	waitFor(t, "the panic to be logged", func() bool {
 		return logs.has("An unhandled error occurred while checking for automatic updates for engine 'IpiOnPremiseEngine'",
 			recoverTestPanic)

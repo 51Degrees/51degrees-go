@@ -46,8 +46,10 @@ const (
 	// published date.
 	reloadTestHeaderBytes = 512
 	// reloadTestMarkedYear is the published year given to the later good
-	// file, so a test can tell when the engine is using it.
-	reloadTestMarkedYear = 2001
+	// file, so a test can tell when the engine is using it. It is after the
+	// year of any data file, as a file is loaded only when it was published
+	// later, and a leap year, so the day of the data file is a valid date.
+	reloadTestMarkedYear = 2096
 	reloadTestGCRuns     = 3
 	reloadTestUserAgent  = "Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) " +
 		"AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 " +

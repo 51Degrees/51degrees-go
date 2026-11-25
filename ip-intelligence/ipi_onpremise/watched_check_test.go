@@ -123,9 +123,9 @@ func TestAWatchedFileThatIsNotNewerIsNotLoaded(t *testing.T) {
 	}
 	published := e.published()
 
-	// An older file put in place changes the time the watcher sees, and is
-	// not newer than the file loaded.
-	renameIn(t, data, markedGoodFile(t, good, published),
+	// A file published earlier put in place changes the time the watcher
+	// sees, and is not newer than the file loaded.
+	renameIn(t, data, datedGoodFile(t, good, published, published.AddDate(0, 0, -1)),
 		loaded.ModTime().Add(-time.Hour))
 	waitFor(t, "the check to be reported", func() bool {
 		return len(reports.statuses()) > 0

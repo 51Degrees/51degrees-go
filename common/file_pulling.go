@@ -134,7 +134,8 @@ func (e *FileUpdater) PullOnStart() (bool, error) {
 			return false, callbackErr
 		}
 	}
-	if err == nil || errors.Is(err, ErrFileNotModified) || e.HasLocalDataFile() {
+	if err == nil || errors.Is(err, ErrFileNotModified) || errors.Is(err, ErrDataNotNewer) ||
+		e.HasLocalDataFile() {
 		return downloaded, nil
 	}
 	return false, fmt.Errorf("the update on start-up failed and there is no local data file: %w", err)
@@ -355,6 +356,15 @@ func (e *FileUpdater) pullWith(ctx context.Context, reloadFileEvents chan struct
 
 	e.logger.Infof("Downloaded new data from '%s' for Engine '%s'", shown, e.engineLabel())
 
+	// The published date in the header decides whether the download is
+	// loaded, because a file's times do not say how old its data is.
+	if newer, known := e.PublishedAfterLoaded(fileResponse.path); known && !newer {
+		os.Remove(fileResponse.path)
+		e.logger.Infof("The data downloaded from '%s' for Engine '%s' was not published after the data "+
+			"loaded, so it is not loaded", shown, e.engineLabel())
+		return e.GetDataFilePullEveryMs(), false, ErrDataNotNewer
+	}
+
 	err = os.Rename(fileResponse.path, e.GetDataFile())
 	if err != nil {
 		os.Remove(fileResponse.path)
@@ -448,7 +458,7 @@ func (e *FileUpdater) pullErrorMessage(err error, url string) (string, bool) {
 // error for a failure the table has no row for.
 // See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#errors
 func pullUpdateStatus(err error) UpdateStatus {
-	if errors.Is(err, ErrFileNotModified) {
+	if errors.Is(err, ErrFileNotModified) || errors.Is(err, ErrDataNotNewer) {
 		return UpdateNotNeeded
 	}
 	if errors.Is(err, ErrNoDataFileProvided) {

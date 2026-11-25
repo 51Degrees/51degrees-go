@@ -49,8 +49,10 @@ const (
 	// published date.
 	reloadTestHeaderBytes = 512
 	// reloadTestMarkedYear is the published year given to the later good
-	// file, so a test can tell when the engine is using it.
-	reloadTestMarkedYear = 2001
+	// file, so a test can tell when the engine is using it. It is after the
+	// year of any data file, as a file is loaded only when it was published
+	// later, and a leap year, so the day of the data file is a valid date.
+	reloadTestMarkedYear = 2096
 	reloadTestAddress    = "1.1.1.1"
 )
 

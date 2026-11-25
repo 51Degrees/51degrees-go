@@ -28,5 +28,8 @@ var (
 	ErrNoDataFileProvided = errors.New("no data file provided")
 	ErrTooManyRetries     = errors.New("too many retries to pull data file")
 	ErrFileNotModified    = errors.New("data file not modified")
+	// ErrDataNotNewer is a downloaded data file whose header gives a published
+	// date that is not after that of the data loaded, so it is not loaded.
+	ErrDataNotNewer       = errors.New("data file not published after the data loaded")
 	ErrLicenseKeyRequired = errors.New("auto update set to true, no custom URL specified, license key is required, set it using WithLicenseKey")
 )
