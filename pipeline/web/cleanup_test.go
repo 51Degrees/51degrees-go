@@ -87,10 +87,17 @@ func TestTheMiddlewareCleansUpElementDataThatNeedsIt(t *testing.T) {
 
 	requests := append([]struct{ method, path string }{
 		{http.MethodGet, "/page"}}, clientSideEndpoints...)
-	for _, r := range requests {
+	seen := make([]*closingData, len(requests))
+	for i, r := range requests {
 		fetch(t, srv, r.method, r.path, "")
-		data := <-engine.seen
-		if n := data.closed.Load(); n != 1 {
+		seen[i] = <-engine.seen
+	}
+	// The middleware closes the Flow Data after the handler returns, which
+	// can be after the client has read the whole response. Close waits for
+	// every handler to return, so the counts are final after it.
+	srv.Close()
+	for i, r := range requests {
+		if n := seen[i].closed.Load(); n != 1 {
 			t.Errorf("after %s %s the Element Data was closed %d times, "+
 				"want once", r.method, r.path, n)
 		}
