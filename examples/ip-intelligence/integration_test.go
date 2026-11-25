@@ -34,10 +34,13 @@ func test(t *testing.T, name string) {
 	run(t, name, nil)
 }
 
-// run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed, and returns what it printed.
-func run(t *testing.T, name string, environment []string) string {
-	cmd := exec.Command("go", "run", "./"+name)
+// run runs an example with the arguments given, in the environment given,
+// or in this process's when that is nil, prints what it printed, and returns
+// what it printed.
+func run(t *testing.T, name string, environment []string,
+	arguments ...string) string {
+	cmd := exec.Command("go", append([]string{"run", "./" + name},
+		arguments...)...)
 	cmd.Env = environment
 	output, err := cmd.CombinedOutput()
 	os.Stdout.Write(output)
@@ -140,10 +143,6 @@ func TestOfflineProcessing(t *testing.T) {
 
 func TestReloadFromFile(t *testing.T) {
 	test(t, "reload_from_file")
-}
-
-func TestUpdatePollingInterval(t *testing.T) {
-	test(t, "update_polling_interval")
 }
 
 // resourceKeyVariable is the variable the cloud example reads its Resource

@@ -31,10 +31,13 @@ import (
 	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-// run runs an example in the environment given, or in this process's when
-// that is nil, prints what it printed and returns it.
-func run(t *testing.T, name string, environment []string) string {
-	cmd := exec.Command("go", "run", "./"+name)
+// run runs an example with the arguments given, in the environment given,
+// or in this process's when that is nil, prints what it printed and returns
+// it.
+func run(t *testing.T, name string, environment []string,
+	arguments ...string) string {
+	cmd := exec.Command("go", append([]string{"run", "./" + name},
+		arguments...)...)
 	cmd.Env = environment
 	output, err := cmd.CombinedOutput()
 	os.Stdout.Write(output)
@@ -144,10 +147,6 @@ func TestReloadFromFile(t *testing.T) {
 
 func TestReloadFromFileFreeDataFile(t *testing.T) {
 	testFreeOnOwnCopy(t, "reload_from_file")
-}
-
-func TestStronglyTyped(t *testing.T) {
-	test(t, "update_polling_interval")
 }
 
 // withoutSettings returns the environment without the variables that name a

@@ -126,7 +126,10 @@ func (e *Engine) acquire() bool {
 func (e *Engine) release() { e.useMu.RUnlock() }
 
 const (
-	defaultDataFileUrl = "" // TODO: set default file path url (when it will be available)
+	// defaultDataFileUrl is the Distributor's, for an IP Intelligence data
+	// file. The license key is added to it.
+	// See https://github.com/51Degrees/specifications/blob/9efca12ff613a23493a5e6bc7477c4d07cbebed7/pipeline-specification/features/data-updates.md?plain=1#L401
+	defaultDataFileUrl = "https://distributor.51degrees.com/api/v2/download?Type=IPIV41&Download=True"
 
 	// engineTypeName names the engine in the data update log messages.
 	engineTypeName = "IpiOnPremiseEngine"
