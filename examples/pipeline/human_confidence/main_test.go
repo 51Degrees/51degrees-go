@@ -250,10 +250,10 @@ func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 func TestRedeemPassesTheAnswerOn(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	cloud.redeemStatus = http.StatusConflict
-	cloud.redeemBody = `{"result":"replayed","extra":1}`
+	cloud.redeemBody = `{"humanConfidence":"Medium","status":"replayed","extra":1}`
 	example := startExample(t, cloud)
 	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"value": {"sealed-value"}})
+		url.Values{"sealedResult": {"sealed-value"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,9 +263,33 @@ func TestRedeemPassesTheAnswerOn(t *testing.T) {
 	}
 	cloud.mu.Lock()
 	defer cloud.mu.Unlock()
-	if cloud.redeemed.Get("value") != "sealed-value" ||
+	if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
 		cloud.redeemed.Get("license") != testLicense {
-		t.Error("the cloud was not sent the value and the License Key")
+		t.Error("the cloud was not sent the sealed result and the License Key")
+	}
+	if cloud.redeemed.Get("value") != "sealed-value" {
+		t.Error("the obsolete name was not sent, for a cloud that predates sealedResult")
+	}
+}
+
+func TestRedeemReadsValueFromAnOlderPage(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	cloud.redeemStatus = http.StatusConflict
+	cloud.redeemBody = `{"result":"replayed"}`
+	example := startExample(t, cloud)
+	response, err := http.PostForm(example.URL+"/redeem",
+		url.Values{"value": {"sealed-value"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := readBody(t, response); body != cloud.redeemBody {
+		t.Errorf("redeem gave %q", body)
+	}
+	cloud.mu.Lock()
+	defer cloud.mu.Unlock()
+	if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
+		cloud.redeemed.Get("value") != "sealed-value" {
+		t.Errorf("the cloud was sent %v", cloud.redeemed)
 	}
 }
 

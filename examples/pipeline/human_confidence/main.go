@@ -32,8 +32,8 @@
 //     completes, HumanConfidenceSource is Active and HumanConfidence holds
 //     a sealed value the browser can't read.
 //  3. Redeem. The page hands the sealed value to this server, which sends
-//     it with the License Key to hc/redeem and returns the cloud's answer
-//     as it is. The License Key stays on this server.
+//     it as sealedResult with the License Key to hc/redeem and returns the
+//     cloud's answer as it is. The License Key stays on this server.
 //
 // Environment variables
 //
@@ -267,8 +267,20 @@ func (e *example) passive(w http.ResponseWriter, r *http.Request) {
 
 // redeem sends the sealed value with the License Key to the cloud and
 // returns its answer unchanged.
+//
+// The sealed value is sent as sealedResult, and again as value, its obsolete
+// name, which a cloud that predates sealedResult reads. A current cloud reads
+// sealedResult, so the redeem works against both.
 func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
-	fields := url.Values{"value": {r.FormValue("value")}}
+	// The page sends sealedResult. A page that predates it sends value.
+	sealedResult := r.FormValue("sealedResult")
+	if sealedResult == "" {
+		sealedResult = r.FormValue("value")
+	}
+	fields := url.Values{
+		"sealedResult": {sealedResult},
+		"value":        {sealedResult},
+	}
 	if e.cfg.License != "" {
 		fields.Set("license", e.cfg.License)
 	}
