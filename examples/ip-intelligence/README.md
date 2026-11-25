@@ -81,3 +81,5 @@ _51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi go run ./getting_start
 _51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./offline_processing
 _51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./update_polling_interval
 ```
+
+The update example downloads with the License Key in `_51DEGREES_LICENSE_KEY`. When the key holds several products, the engine asks for the product of the data file it has loaded. To ask for another product, such as `IPIV4Enterprise`, give its name with `-product`. To download from another address that answers as the Distributor does, give it with `-url`.
