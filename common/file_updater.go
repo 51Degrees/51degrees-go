@@ -66,6 +66,9 @@ type fileUpdater struct {
 	// engine has loaded. They are nil when the engine offers neither.
 	publishedDate func() time.Time
 	nextUpdate    func() time.Time
+	// filePublishedDate reads the published date from the header of a data
+	// file without loading it. It is nil when the engine offers none.
+	filePublishedDate func(path string) (time.Time, error)
 	// product names the product of the data file the engine has loaded. It
 	// is nil when the engine names none.
 	product func() string
@@ -173,6 +176,35 @@ func (e *FileUpdater) SetEngineName(engineName string) {
 // not set or returns no date.
 func (e *FileUpdater) SetPublishedDateFunc(publishedDate func() time.Time) {
 	e.publishedDate = publishedDate
+}
+
+// SetFilePublishedDateFunc sets the function that reads the published date
+// from the header of the data file at a path, without loading the file. With
+// it and the function SetPublishedDateFunc sets, a downloaded data file is
+// loaded only when it was published after the data the engine has loaded.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
+func (e *FileUpdater) SetFilePublishedDateFunc(filePublishedDate func(path string) (time.Time, error)) {
+	e.filePublishedDate = filePublishedDate
+}
+
+// PublishedAfterLoaded says whether the data file at path was published after
+// the data the engine has loaded, from the date in its header. known is false
+// when that cannot be told, because the engine cannot give either date or one
+// of them is not a valid date. The caller then loads the file, so that a
+// failure to load it is reported.
+func (e *FileUpdater) PublishedAfterLoaded(path string) (newer, known bool) {
+	if e.filePublishedDate == nil || e.publishedDate == nil {
+		return false, false
+	}
+	loaded := e.publishedDate()
+	if !validDate(loaded) {
+		return false, false
+	}
+	published, err := e.filePublishedDate(path)
+	if err != nil || !validDate(published) {
+		return false, false
+	}
+	return published.After(loaded), true
 }
 
 // SetNextUpdateFunc sets the function that returns the date after which the

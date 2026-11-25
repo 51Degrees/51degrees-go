@@ -136,6 +136,7 @@ func New(opts ...EngineOptions) (*Engine, error) {
 
 	fileUpdater.SetEngineName(engineTypeName)
 	fileUpdater.SetPublishedDateFunc(engine.publishedDate)
+	fileUpdater.SetFilePublishedDateFunc(engine.PublishedDateFromFile)
 	fileUpdater.SetNextUpdateFunc(engine.nextUpdateDate)
 	fileUpdater.SetProductFunc(engine.dataFileProduct)
 
@@ -466,10 +467,16 @@ func (e *Engine) reportCheck(status common_go.UpdateStatus) {
 	}
 }
 
-// dataFileIsNewer says whether the data file was modified after the one last
-// loaded. A file that cannot be read counts as newer, so the load is tried
-// and its failure reported.
+// dataFileIsNewer says whether the data file was published after the data
+// loaded, from the published date in its header. When that cannot be told, it
+// says whether the file was modified after the one last loaded. A file that
+// cannot be read counts as newer, so the load is tried and its failure
+// reported.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
 func (e *Engine) dataFileIsNewer() bool {
+	if newer, known := e.PublishedAfterLoaded(e.GetDataFile()); known {
+		return newer
+	}
 	info, err := os.Stat(e.GetDataFile())
 	return err != nil || info.ModTime().UnixNano() > e.loadedFileTime.Load()
 }
@@ -662,6 +669,14 @@ func (e *Engine) publishedDate() time.Time {
 		return time.Time{}
 	}
 	return e.getPublishedDate()
+}
+
+// PublishedDateFromFile returns the date the Hash data file at path was
+// published, read from its header alone without loading the file. The data
+// update service uses it to load a watched or downloaded data file only when
+// it was published after the data the engine has loaded.
+func (e *Engine) PublishedDateFromFile(path string) (time.Time, error) {
+	return dd.GetPublishedDateFromFile(path)
 }
 
 // nextUpdateDate is the date the loaded data file expects an update after, or

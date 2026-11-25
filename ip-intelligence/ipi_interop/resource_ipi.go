@@ -169,6 +169,23 @@ func reloadError(s C.StatusCode, exp *Exception, fileName *C.char) error {
 	return nil
 }
 
+// GetPublishedDateFromFile returns the date the IP Intelligence data file at
+// path was published, read from its header alone without loading the file,
+// so that an update can tell whether a new data file is newer before loading
+// it. It returns the zero time and an error when the file cannot be opened,
+// is not an IP Intelligence data file of the version this library reads, or
+// holds no valid date. This matches the C API
+// fiftyoneDegreesIpiGetPublishedFromFile.
+func GetPublishedDateFromFile(path string) (time.Time, error) {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	var date C.fiftyoneDegreesDate
+	if s := C.fiftyoneDegreesIpiGetPublishedFromFile(cPath, &date); s != C.SUCCESS {
+		return time.Time{}, messageError(C.StatusGetMessage(s, cPath))
+	}
+	return time.Date(int(date.year), time.Month(date.month), int(date.day), 0, 0, 0, 0, time.UTC), nil
+}
+
 func GetPublishedDate(manager *ResourceManager) time.Time {
 	cDataSet := (*C.DataSetIpi)(unsafe.Pointer(C.DataSetGet(manager.CPtr)))
 	// Release the dataset

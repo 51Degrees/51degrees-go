@@ -62,6 +62,21 @@ type Refreshable interface {
 	RefreshFromBytes(data []byte) error
 }
 
+// PublishedDateReader is implemented by an Engine that can read the date a
+// data file was published from its header, without loading the file, as each
+// on-premise Engine can. With it and Config.PublishedDate, a watched or
+// downloaded data file is loaded only when it was published after the data
+// the Engine has loaded, and otherwise the check is reported as not needed.
+// Without them, or when a date cannot be read, a watched file is loaded when
+// its modification time is newer and a downloaded file is loaded. A download
+// held in memory, with no DataFilePath, is loaded as it was.
+// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/data-updates.md#newfileavailable-via-remote-or-file-watcher
+type PublishedDateReader interface {
+	// PublishedDateFromFile returns the published date in the header of the
+	// data file at path, or an error when it cannot be read.
+	PublishedDateFromFile(path string) (time.Time, error)
+}
+
 // URLFormatter customizes the data update URL, for example by appending query
 // parameters required by the 51Degrees Distributor.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/data-updates.md#update-polling
@@ -730,10 +745,34 @@ func (r *registration) refreshFromNewerFile() (loaded, waited bool, err error) {
 		r.refreshMu.Lock()
 	}
 	defer r.refreshMu.Unlock()
-	if modified, ok := r.currentDataTime(); ok && !modified.After(r.loadedFileTime) {
+	if newer, known := r.publishedAfterLoaded(r.cfg.DataFilePath); known {
+		if !newer {
+			return false, waited, nil
+		}
+	} else if modified, ok := r.currentDataTime(); ok && !modified.After(r.loadedFileTime) {
 		return false, waited, nil
 	}
 	return true, waited, r.loadDataFile()
+}
+
+// publishedAfterLoaded says whether the data file at path was published after
+// the data the Engine has loaded, from the date in its header. known is false
+// when that cannot be told, because the Engine is not a PublishedDateReader,
+// Config.PublishedDate is not set, or a date is not valid.
+func (r *registration) publishedAfterLoaded(path string) (newer, known bool) {
+	reader, ok := r.engine.(PublishedDateReader)
+	if !ok || r.cfg.PublishedDate == nil {
+		return false, false
+	}
+	loaded := r.cfg.PublishedDate()
+	if !validDate(loaded) {
+		return false, false
+	}
+	published, err := reader.PublishedDateFromFile(path)
+	if err != nil || !validDate(published) {
+		return false, false
+	}
+	return published.After(loaded), true
 }
 
 // loadDataFile makes the tries of a refresh from the data file. It records the
@@ -850,7 +889,19 @@ func (r *registration) httpUpdate() (Status, error) {
 	}
 
 	if r.cfg.DataFilePath != "" {
-		if status, err := r.writeDataFile(body); err != nil {
+		tmpName, status, err := r.writeTempFile(body)
+		if err != nil {
+			return status, err
+		}
+		// The published date in the header decides whether the download is
+		// loaded, because a file's times do not say how old its data is.
+		if newer, known := r.publishedAfterLoaded(tmpName); known && !newer {
+			os.Remove(tmpName)
+			r.svc.logger.Info(fmt.Sprintf("The data downloaded from '%s' for Engine '%s' was not "+
+				"published after the data loaded, so it is not loaded", url, r.engineName))
+			return StatusNotNeeded, nil
+		}
+		if status, err := r.replaceDataFile(tmpName); err != nil {
 			return status, err
 		}
 		if err := r.refreshFromFile(); err != nil {
@@ -901,27 +952,34 @@ func (r *registration) refreshFromBytes(body []byte) error {
 	return nil
 }
 
-// writeDataFile writes body to a temporary file and atomically renames it over
-// the operational data file, so the Engine never sees a partial file.
-func (r *registration) writeDataFile(body []byte) (Status, error) {
+// writeTempFile writes body to a temporary file, which replaceDataFile then
+// renames over the operational data file, so the Engine never sees a partial
+// file. It returns the temporary file's path.
+func (r *registration) writeTempFile(body []byte) (string, Status, error) {
 	dir := r.cfg.TempDir
 	if dir == "" {
 		dir = filepath.Dir(r.cfg.DataFilePath)
 	}
 	tmp, err := os.CreateTemp(dir, filepath.Base(r.cfg.DataFilePath)+".tmp-*")
 	if err != nil {
-		return StatusUnknownError, err
+		return "", StatusUnknownError, err
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(body); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
-		return StatusUnknownError, err
+		return "", StatusUnknownError, err
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
-		return StatusUnknownError, err
+		return "", StatusUnknownError, err
 	}
+	return tmpName, StatusSuccess, nil
+}
+
+// replaceDataFile renames the temporary file writeTempFile wrote over the
+// operational data file.
+func (r *registration) replaceDataFile(tmpName string) (Status, error) {
 	if err := os.Rename(tmpName, r.cfg.DataFilePath); err != nil {
 		os.Remove(tmpName)
 		return StatusCannotRename, &CheckError{fmt.Sprintf(
