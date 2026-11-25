@@ -50,19 +50,38 @@ func distributorProduct(tier string) string {
 	return productPrefix + tier
 }
 
-// dataFileProduct is the name the Distributor gives the product of the loaded
-// data file, which an update asks for when the license key holds several
-// products. It is an empty string before a data file is loaded and once the
-// engine has stopped.
+// dataFileProduct is the name the Distributor gives the product of the data
+// file, which an update asks for when the license key holds several products.
+// Once the engine has loaded a data file it is the product of that file.
+// Before then it is read from the header of the data file at the configured
+// location, without loading it, and is an empty string when that file is
+// missing or its header cannot be read. It is an empty string once the engine
+// has stopped.
+// See https://github.com/51Degrees/specifications/blob/a5699da253d13661478f5923964c22d1010c1df3/pipeline-specification/features/data-updates.md#product-names
 func (e *Engine) dataFileProduct() string {
 	if !e.acquire() {
 		return ""
 	}
 	defer e.release()
 	if e.manager == nil {
-		return ""
+		return e.productFromFile()
 	}
 	return distributorProduct(ipi_interop.GetDataSetName(e.manager))
+}
+
+// productFromFile is the name the Distributor gives the product of the data
+// file at the configured location, read from its header without loading the
+// file. It is an empty string when there is no file there or its header
+// cannot be read.
+func (e *Engine) productFromFile() string {
+	if e.FileUpdater == nil || e.GetDataFile() == "" {
+		return ""
+	}
+	product, err := ipi_interop.GetProductFromFile(e.GetDataFile())
+	if err != nil {
+		return ""
+	}
+	return distributorProduct(product)
 }
 
 // productParameter is the query parameter of a data file URL that names the
