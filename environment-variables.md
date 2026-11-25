@@ -19,11 +19,10 @@ The test `TestEveryVariableHasA51DegreesName` in [`common/variable_names_test.go
 
 ## Names the tests read
 
-The tests of the cloud examples run each example once for each of these keys that is set, with `_51DEGREES_RESOURCE_KEY` set to that key. A test whose keys are all unset is skipped.
+The test of the IP Intelligence cloud example runs it with `_51DEGREES_RESOURCE_KEY` set to `_51DEGREES_RESOURCE_KEY_BESPOKE`, and requires the values that key gives for a known address. It is skipped when the key is not set. `.github/workflows/cloud-ip-intelligence.yml` sets the key and fails when the test is skipped.
 
 | Name | Holds |
 | --- | --- |
-| `_51DEGREES_RESOURCE_KEY_FREE` | A Resource Key on the free data tier |
 | `_51DEGREES_RESOURCE_KEY_BASIC` | A Resource Key on the basic data tier |
 | `_51DEGREES_RESOURCE_KEY_BESPOKE` | A Resource Key that includes every property |
 
