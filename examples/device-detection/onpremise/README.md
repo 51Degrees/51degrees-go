@@ -12,6 +12,12 @@ To run the example, execute the following command from `examples/device-detectio
 _51DEGREES_LICENSE_KEY=my_license_key go run ./onpremise/update_polling_interval
 ```
 
+When the license key holds several products, the engine asks for the product of the data file it has loaded. To ask for another product, give its name with `-product`. To download from another address that answers as the Distributor does, give it with `-url`.
+
+```bash
+_51DEGREES_LICENSE_KEY=my_license_key go run ./onpremise/update_polling_interval -product V4TAC -url https://example.com/api/v2/download
+```
+
 # onpremise API Usage
 
 #### Create config

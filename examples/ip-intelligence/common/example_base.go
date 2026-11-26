@@ -45,7 +45,6 @@ const EvidenceFile = "evidence.yml"
 
 type ExampleParams struct {
 	LicenseKey     string
-	Product        string
 	DataFile       string
 	IterationCount int
 	EvidenceYaml   string
@@ -84,7 +83,6 @@ func runExample(free string, exampleFunc ExampleFunc, file string) {
 
 	params := &ExampleParams{
 		LicenseKey:   licenseKey,
-		Product:      os.Getenv("_51DEGREES_IPI_PRODUCT"),
 		DataFile:     GetDataFile(dataFile),
 		EvidenceYaml: evidenceYaml,
 	}

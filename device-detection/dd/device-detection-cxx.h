@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 98701d9ce93f9d376fa6e13df13f92f11939124a by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx d25b009e3c66a27e079b128f0e56c28cdeeecf3d by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -2087,6 +2087,74 @@ EXTERNAL_VAR void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFree)(void *__ptr)
  */
 EXTERNAL_VAR void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFreeAligned)(void* __ptr);
 
+/** Type of #fiftyoneDegreesMalloc. */
+typedef void *(FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesMallocFunction)(
+	size_t __size);
+
+/** Type of #fiftyoneDegreesMallocAligned. */
+typedef void *(FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesMallocAlignedFunction)(
+	int alignment,
+	size_t __size);
+
+/** Type of #fiftyoneDegreesFree and #fiftyoneDegreesFreeAligned. */
+typedef void (FIFTYONE_DEGREES_CALL_CONV *fiftyoneDegreesFreeFunction)(
+	void *__ptr);
+
+/**
+ * Reads one of the pointers above in a single atomic access with acquire
+ * order, as the memory tracker changes them while other threads call through
+ * them. On x64 this is the same plain load as an ordinary read. Visual Studio
+ * reads an aligned pointer sized volatile in one access, with acquire order
+ * on x86 and x64.
+ * @param p the pointer to read
+ * @param t the type of the pointer
+ */
+#if defined(FIFTYONE_DEGREES_NO_THREADING)
+#define FIFTYONE_DEGREES_ALLOCATOR_READ(p, t) (p)
+#elif defined(_MSC_VER)
+#define FIFTYONE_DEGREES_ALLOCATOR_READ(p, t) (*(t volatile*)&(p))
+#else
+#define FIFTYONE_DEGREES_ALLOCATOR_READ(p, t) \
+	__atomic_load_n(&(p), __ATOMIC_ACQUIRE)
+#endif
+
+/*
+ * A call such as fiftyoneDegreesMalloc(size) reads the pointer with
+ * FIFTYONE_DEGREES_ALLOCATOR_READ. Each macro takes the pointer's name, so
+ * only calls are changed, and the name used elsewhere is still the pointer.
+ * Within its own expansion the name is not expanded again, so it refers to
+ * the pointer there. Builds that rename the linked names take the new name.
+ */
+#define FIFTYONE_DEGREES_MALLOC_CALL(s) \
+	FIFTYONE_DEGREES_ALLOCATOR_READ( \
+		fiftyoneDegreesMalloc, \
+		fiftyoneDegreesMallocFunction)(s)
+#define FIFTYONE_DEGREES_MALLOC_ALIGNED_CALL(a, s) \
+	FIFTYONE_DEGREES_ALLOCATOR_READ( \
+		fiftyoneDegreesMallocAligned, \
+		fiftyoneDegreesMallocAlignedFunction)(a, s)
+#define FIFTYONE_DEGREES_FREE_CALL(p) \
+	FIFTYONE_DEGREES_ALLOCATOR_READ( \
+		fiftyoneDegreesFree, \
+		fiftyoneDegreesFreeFunction)(p)
+#define FIFTYONE_DEGREES_FREE_ALIGNED_CALL(p) \
+	FIFTYONE_DEGREES_ALLOCATOR_READ( \
+		fiftyoneDegreesFreeAligned, \
+		fiftyoneDegreesFreeFunction)(p)
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#define ipi_fiftyoneDegreesMalloc(s) FIFTYONE_DEGREES_MALLOC_CALL(s)
+#define ipi_fiftyoneDegreesMallocAligned(a, s) \
+	FIFTYONE_DEGREES_MALLOC_ALIGNED_CALL(a, s)
+#define ipi_fiftyoneDegreesFree(p) FIFTYONE_DEGREES_FREE_CALL(p)
+#define ipi_fiftyoneDegreesFreeAligned(p) FIFTYONE_DEGREES_FREE_ALIGNED_CALL(p)
+#else
+#define fiftyoneDegreesMalloc(s) FIFTYONE_DEGREES_MALLOC_CALL(s)
+#define fiftyoneDegreesMallocAligned(a, s) \
+	FIFTYONE_DEGREES_MALLOC_ALIGNED_CALL(a, s)
+#define fiftyoneDegreesFree(p) FIFTYONE_DEGREES_FREE_CALL(p)
+#define fiftyoneDegreesFreeAligned(p) FIFTYONE_DEGREES_FREE_ALIGNED_CALL(p)
+#endif
+
 /**
  * @}
  */
@@ -2277,7 +2345,11 @@ typedef struct fiftyone_degrees_pool_item_t {
  * counts every change to the head, so that a thread that read the head
  * before other threads changed it finds it changed. It is 32 bits, as a 16
  * bit count comes back to the same value after 65536 changes, which threads
- * using a pool at once can make while another thread is paused.
+ * using a pool at once can make while another thread is paused. A 32 bit
+ * count comes back after 4294967296 changes. A thread paused between reading
+ * the head and its compare exchange for that many changes could put an item
+ * in use back at the head, which needs a pause of over an hour at a million
+ * changes a second.
  */
 typedef union fiftyone_degrees_pool_head_t {
 	volatile int64_t exchange; /**< Number used in the compare exchange
@@ -5843,11 +5915,15 @@ EXTERNAL bool fiftyoneDegreesEvidenceIterateForHeaders(
  * ## Free
  *
  * A resource manager is freed, along with its resource, using the
- * #fiftyoneDegreesResourceManagerFree method. This prevents any new handles
- * from being acquired, and frees the resource being managed.
- * If the resource has active handles, then a free method does not block.
- * Instead it prevents new handles from being acquired and sets the manager
- * to free the resource once the last handle has been released.
+ * #fiftyoneDegreesResourceManagerFree method. This frees the resource being
+ * managed. If the resource has active handles, then a free method does not
+ * block. Instead the resource is freed when the last handle is released.
+ *
+ * No handle may be taken from the manager, and the resource may not be
+ * replaced, once the free has started. Handles taken before then can be
+ * released at any time, during or after the free, on any thread. A release
+ * reads only the handle, so the memory of the manager structure itself can
+ * be freed once #fiftyoneDegreesResourceManagerFree has returned.
  *
  *
  * ## Replace
@@ -5918,18 +5994,20 @@ typedef struct fiftyone_degrees_resource_handle_t
 /** @endcond */
 
 /**
- * The bit of a handle's counter that is set once a thread has claimed the
- * handle to free it. A claimed handle is never given to another user.
+ * The bit of a handle's counter that is set while the handle is the manager's
+ * active handle. It counts as a use held by the manager, so the counter only
+ * reaches zero at the last release of a handle that has been replaced. Only a
+ * handle with the bit set is given to a new user.
  */
-#define FIFTYONE_DEGREES_RESOURCE_CLAIMED 0x40000000L
+#define FIFTYONE_DEGREES_RESOURCE_ACTIVE 0x40000000L
 
 /**
  * The most users a handle can have at once. The count is held in the bits
- * below #FIFTYONE_DEGREES_RESOURCE_CLAIMED, so a thread that would go past it
+ * below #FIFTYONE_DEGREES_RESOURCE_ACTIVE, so a thread that would go past it
  * waits until another releases the handle.
  */
 #define FIFTYONE_DEGREES_RESOURCE_IN_USE_MAX \
-    (FIFTYONE_DEGREES_RESOURCE_CLAIMED - 1)
+    (FIFTYONE_DEGREES_RESOURCE_ACTIVE - 1)
 
 /**
  * Handle for a shared resource. The counter tracks the use of the resource,
@@ -5941,8 +6019,8 @@ typedef struct fiftyone_degrees_resource_handle_t {
     volatile
 #endif
     long counter; /**< The number of users of the handle, with
-                  #FIFTYONE_DEGREES_RESOURCE_CLAIMED set once a thread has
-                  claimed the handle to free it. */
+                  #FIFTYONE_DEGREES_RESOURCE_ACTIVE set while the handle is
+                  active. */
     const void* resource; /**< Pointer to the resource being managed. */
     const fiftyoneDegreesResourceManager* manager; /**< Pointer to the manager
                                                    the handle relates to. */
@@ -5984,8 +6062,11 @@ EXTERNAL void fiftyoneDegreesResourceManagerInit(
 	void(*freeResource)(void*));
 
 /**
- * Frees any data associated with the manager and releases the manager. All 
- * memory is released after this operation.
+ * Frees any data associated with the manager and releases the manager. The
+ * resource, and the memory of a handle still in use, are freed when the last
+ * use is released. It must not run at the same time as
+ * #fiftyoneDegreesResourceHandleIncUse or #fiftyoneDegreesResourceReplace
+ * for the same manager, and neither may be called after it.
  *
  * @param manager the resource manager to be freed
  */
@@ -6004,9 +6085,10 @@ EXTERNAL fiftyoneDegreesResourceHandle* fiftyoneDegreesResourceHandleIncUse(
 	fiftyoneDegreesResourceManager *manager);
 
 /**
- * Decrements the usage counter. If the count reaches zero then resource will
- * become eligible to be freed either when the manager replaces it or when the
- * manager is freed.
+ * Decrements the usage counter. If the handle has been replaced, or the
+ * manager freed, and this was the last use, the resource is freed. A release
+ * reads only the handle, not the manager, so it is safe during or after
+ * #fiftyoneDegreesResourceManagerFree.
  * @param handle to the resource which should be released by the manager
  */
 EXTERNAL void fiftyoneDegreesResourceHandleDecUse(
@@ -6014,8 +6096,8 @@ EXTERNAL void fiftyoneDegreesResourceHandleDecUse(
 
 /**
  * Return the current usage counter.
- * WARNING: This call is not thread-safe and is suitable for using in
- * testing only.
+ * WARNING: Other threads can change the count as soon as it is read, so this
+ * call is suitable for using in testing only.
  * @param handle to the resource which should be released by the manager
  * @return the current usage counter
  */
@@ -6717,11 +6799,14 @@ EXTERNAL bool fiftyoneDegreesDateIsValid(const fiftyoneDegreesDate *date);
  * Key value pair contained in each component. This can point to anything. For
  * example, in the Hash device detection API, the key is the unique id of an
  * HTTP header, and the value is the index of the set of root nodes to use.
+ * The pairs follow the packed component structure, so they are packed too.
  */
+#pragma pack(push, 1)
 typedef struct fiftyoneDegrees_component_keyvaluepair_t {
 	uint32_t key; /**< Integer key */
 	uint32_t value; /**< Integer value */
 } fiftyoneDegreesComponentKeyValuePair;
+#pragma pack(pop)
 
 /**
  * A component of a data set. For example a hardware component contains
@@ -6777,7 +6862,7 @@ EXTERNAL const fiftyoneDegreesString* fiftyoneDegreesComponentGetName(
  * exception occurs. See exceptions.h
  * @return pointer to a key value pair
  */
-const fiftyoneDegreesComponentKeyValuePair* 
+EXTERNAL const fiftyoneDegreesComponentKeyValuePair*
 fiftyoneDegreesComponentGetKeyValuePair(
 	fiftyoneDegreesComponent *component,
 	uint16_t index,
@@ -7788,9 +7873,10 @@ typedef struct fiftyoneDegrees_profile_t {
  * Structure containing the unique id of the profile, and the offset needed to
  * retrieve the actual profile structure from a profiles collection. This takes
  * up less space than the full profile and are of a fixed size, so can be
- * passed around and iterated over more easily.
+ * passed around and iterated over more easily. The profile offsets collection
+ * holds them packed, so one can start at any byte.
  */
-#pragma pack(push, 4)
+#pragma pack(push, 1)
 typedef struct fiftyoneDegrees_profile_offset_t {
 #ifndef FIFTYONE_DEGREES_REDUCED_FILE
 	const uint32_t profileId; /**< The unique Id of the profile */
@@ -7813,7 +7899,7 @@ typedef uint32_t (*fiftyoneDegreesProfileOffsetValueExtractor)(const void *rawPr
  * @param rawProfileOffset a "raw" ProfileOffset retrieved from `profileOffsets`
  * @return Offset to the profile in the profiles structure
  */
-uint32_t fiftyoneDegreesProfileOffsetToPureOffset(const void *rawProfileOffset);
+EXTERNAL uint32_t fiftyoneDegreesProfileOffsetToPureOffset(const void *rawProfileOffset);
 
 /**
  * Function that extracts "pure" profile offset
@@ -7822,7 +7908,7 @@ uint32_t fiftyoneDegreesProfileOffsetToPureOffset(const void *rawProfileOffset);
  * @param rawProfileOffset a "raw" value retrieved from `profileOffsets`
  * @return Offset to the profile in the profiles structure
  */
-uint32_t fiftyoneDegreesProfileOffsetAsPureOffset(const void *rawProfileOffset);
+EXTERNAL uint32_t fiftyoneDegreesProfileOffsetAsPureOffset(const void *rawProfileOffset);
 
 /**
  * Definition of a callback function which is passed an item of a type 
@@ -8127,8 +8213,11 @@ EXTERNAL uint32_t fiftyoneDegreesProfileIterateValueIndexes(
 #define FIFTYONE_DEGREES_VALUE_IS_MASKED(v) \
 	((((uint32_t)((v)->urlOffsetOrWeight)) & 0xFFFF0000u) == 0xFF000000u)
 
-/** Value structure containing meta data relating to the value. */
-#pragma pack(push, 2)
+/**
+ * Value structure containing meta data relating to the value. The values
+ * collection holds them packed, so a value can start at any byte.
+ */
+#pragma pack(push, 1)
 typedef struct fiftyoneDegrees_value_t {
 	const int16_t propertyIndex; /**< Index of the property the value relates to */
 	const int32_t nameOffset; /**< The offset in the strings structure to the 
@@ -10317,8 +10406,11 @@ void fiftyoneDegreesResultsUserAgentFree(
  * A substring which hashes to zero therefore cannot be matched in a hash table
  * node. The ordered list and single record layouts do not use markers, so a
  * hash code of zero is a genuine value in those.
+ *
+ * The records follow a packed node, so they are packed too, and their members
+ * can be read at any address.
  */
-#pragma pack(push, 4)
+#pragma pack(push, 1)
 typedef struct fiftyoneDegrees_graph_node_hash_t {
 	uint32_t hashCode; /**< Hash code to compare. */
 	int32_t nodeOffset; /**< Offset of the node to use if this hash code is a
@@ -10715,14 +10807,17 @@ typedef struct fiftyone_degrees_config_hash_t {
 
 /**
  * Data structure containing the root nodes for the combination of an evidence
- * item and a component.
+ * item and a component. It is packed as the data file holds it, so its
+ * members can be read at any address.
  */
+#pragma pack(push, 1)
 typedef struct fiftyone_degrees_hash_rootnodes_t {
 	uint32_t performanceNodeOffset; /**< Offset in the nodes collection of the
                                     root node for the performance graph. */
 	uint32_t predictiveNodeOffset; /**< Offset in the nodes collection of the
                                    root node for the predictive graph. */
 } fiftyoneDegreesHashRootNodes;
+#pragma pack(pop)
 
 /**
  * Index from each value of the properties named when the data set is
@@ -11707,6 +11802,37 @@ EXTERNAL bool fiftyoneDegreesHashGetNextUpdate(
 EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesHashGetPublishedFromFile(
 	const char *fileName,
 	fiftyoneDegreesDate *date);
+
+/**
+ * Gets the product name of a Hash data file from its header, reading the
+ * header and the name alone rather than loading the file, so that an update
+ * at start-up can ask the Distributor for the product of the file it has.
+ * The product name is "V4" followed by the tier the header names, for example
+ * V4TAC, or the tier alone when it already starts with "V4" in any case.
+ * Nothing is allocated.
+ * @param fileName path to the data file
+ * @param buffer to write the product name and a terminating null to, or NULL
+ * when length is zero. It is set to an empty string when the name is not
+ * written and length is not zero.
+ * @param length of the buffer in bytes
+ * @param needed set, when not NULL, to the bytes the product name and its
+ * terminating null need when the status is
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS or
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_CAPACITY, otherwise to zero
+ * @return #FIFTYONE_DEGREES_STATUS_SUCCESS when the product name is written,
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_CAPACITY when it does not fit in the
+ * buffer, #FIFTYONE_DEGREES_STATUS_NULL_POINTER when the buffer is NULL and
+ * length is not zero, the status of opening the file when it cannot be
+ * opened, #FIFTYONE_DEGREES_STATUS_CORRUPT_DATA when the file ends before the
+ * name does or the tier is empty, and
+ * #FIFTYONE_DEGREES_STATUS_INCORRECT_VERSION when the file is not a Hash data
+ * file of the version this library reads
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesHashGetProductFromFile(
+	const char *fileName,
+	char *buffer,
+	size_t length,
+	size_t *needed);
 
 
 /**
@@ -12708,6 +12834,137 @@ EXTERNAL void fiftyoneDegreesWeightedItemListAdd(
  */
 
 #endif
+/* *********************************************************************
+ * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
+ * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
+ * Forbury Square, Reading, Berkshire, United Kingdom RG1 3EU.
+ *
+ * This Original Work is licensed under the European Union Public Licence
+ * (EUPL) v.1.2 and is subject to its terms as set out below.
+ *
+ * If a copy of the EUPL was not distributed with this file, You can obtain
+ * one at https://opensource.org/licenses/EUPL-1.2.
+ *
+ * The 'Compatible Licences' set out in the Appendix to the EUPL (as may be
+ * amended by the European Commission) shall be deemed incompatible for
+ * the purposes of the Work and the provisions of the compatibility
+ * clause in Article 5 of the EUPL shall not apply.
+ *
+ * If using the Work as, or as part of, a network application, by
+ * including the attribution notice(s) required under Article 5 of the EUPL
+ * in the end user terms of the application under an appropriate heading,
+ * such notice(s) shall fulfill the requirements of that article.
+ * ********************************************************************* */
+
+#ifndef FIFTYONE_DEGREES_UNALIGNED_H_INCLUDED
+#define FIFTYONE_DEGREES_UNALIGNED_H_INCLUDED
+
+#ifdef FIFTYONE_DEGREES_IPI_SYMBOLS
+#endif
+
+/**
+ * @ingroup FiftyOneDegreesCommon
+ * @defgroup FiftyOneDegreesUnaligned Unaligned
+ *
+ * Read and write numbers that can start at any byte.
+ *
+ * The data file holds its records packed, so a number within it can start at
+ * any byte. Reading one through a pointer to its type is undefined when the
+ * address is not aligned to the type, and with vector instructions it can
+ * fault. Each function here copies the bytes of one number between the
+ * address given and a local of the number's type. The copy has a fixed size,
+ * so compilers make it a single load or store where the processor allows one.
+ *
+ * @{
+ */
+
+#include <stdint.h>
+#include <string.h>
+
+#if defined(_MSC_VER)
+#define FIFTYONE_DEGREES_UNALIGNED_INLINE static __inline
+#elif defined(__GNUC__) || defined(__clang__)
+#define FIFTYONE_DEGREES_UNALIGNED_INLINE static __inline__
+#else
+#define FIFTYONE_DEGREES_UNALIGNED_INLINE static inline
+#endif
+
+/**
+ * Reads a signed 16 bit integer that starts at any byte.
+ * @param source address of the integer's first byte
+ * @return the integer
+ */
+FIFTYONE_DEGREES_UNALIGNED_INLINE int16_t fiftyoneDegreesUnalignedReadInt16(
+	const void * const source) {
+	int16_t value;
+	memcpy(&value, source, sizeof(value));
+	return value;
+}
+
+/**
+ * Reads an unsigned 16 bit integer that starts at any byte.
+ * @param source address of the integer's first byte
+ * @return the integer
+ */
+FIFTYONE_DEGREES_UNALIGNED_INLINE uint16_t fiftyoneDegreesUnalignedReadUint16(
+	const void * const source) {
+	uint16_t value;
+	memcpy(&value, source, sizeof(value));
+	return value;
+}
+
+/**
+ * Reads a signed 32 bit integer that starts at any byte.
+ * @param source address of the integer's first byte
+ * @return the integer
+ */
+FIFTYONE_DEGREES_UNALIGNED_INLINE int32_t fiftyoneDegreesUnalignedReadInt32(
+	const void * const source) {
+	int32_t value;
+	memcpy(&value, source, sizeof(value));
+	return value;
+}
+
+/**
+ * Reads an unsigned 32 bit integer that starts at any byte.
+ * @param source address of the integer's first byte
+ * @return the integer
+ */
+FIFTYONE_DEGREES_UNALIGNED_INLINE uint32_t fiftyoneDegreesUnalignedReadUint32(
+	const void * const source) {
+	uint32_t value;
+	memcpy(&value, source, sizeof(value));
+	return value;
+}
+
+/**
+ * Reads a double precision floating point number that starts at any byte.
+ * @param source address of the number's first byte
+ * @return the number
+ */
+FIFTYONE_DEGREES_UNALIGNED_INLINE double fiftyoneDegreesUnalignedReadDouble(
+	const void * const source) {
+	double value;
+	memcpy(&value, source, sizeof(value));
+	return value;
+}
+
+/**
+ * Writes an unsigned 32 bit integer to any byte.
+ * @param destination address for the integer's first byte
+ * @param value the integer
+ */
+FIFTYONE_DEGREES_UNALIGNED_INLINE void fiftyoneDegreesUnalignedWriteUint32(
+	void * const destination,
+	const uint32_t value) {
+	memcpy(destination, &value, sizeof(value));
+}
+
+/**
+ * @}
+ */
+
+#endif
 
 /**
  * Macro used to support synonym implementation. Creates a typedef which 
@@ -12952,6 +13209,12 @@ MAP_TYPE(WeightedItemList)
 #define PropertiesGetRequiredPropertyIndexFromName fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName /**< Synonym for #fiftyoneDegreesPropertiesGetRequiredPropertyIndexFromName function. */
 #define PropertiesGetNameFromRequiredIndex fiftyoneDegreesPropertiesGetNameFromRequiredIndex /**< Synonym for #fiftyoneDegreesPropertiesGetNameFromRequiredIndex function. */
 #define PropertiesGetRequiredPropertyCount fiftyoneDegreesPropertiesGetRequiredPropertyCount /**< Synonym for #fiftyoneDegreesPropertiesGetRequiredPropertyCount function. */
+#define UnalignedReadInt16 fiftyoneDegreesUnalignedReadInt16 /**< Synonym for #fiftyoneDegreesUnalignedReadInt16 function. */
+#define UnalignedReadUint16 fiftyoneDegreesUnalignedReadUint16 /**< Synonym for #fiftyoneDegreesUnalignedReadUint16 function. */
+#define UnalignedReadInt32 fiftyoneDegreesUnalignedReadInt32 /**< Synonym for #fiftyoneDegreesUnalignedReadInt32 function. */
+#define UnalignedReadUint32 fiftyoneDegreesUnalignedReadUint32 /**< Synonym for #fiftyoneDegreesUnalignedReadUint32 function. */
+#define UnalignedReadDouble fiftyoneDegreesUnalignedReadDouble /**< Synonym for #fiftyoneDegreesUnalignedReadDouble function. */
+#define UnalignedWriteUint32 fiftyoneDegreesUnalignedWriteUint32 /**< Synonym for #fiftyoneDegreesUnalignedWriteUint32 function. */
 #define PropertiesGetAvailableIndex fiftyoneDegreesPropertiesGetAvailableIndex /**< Synonym for #fiftyoneDegreesPropertiesGetAvailableIndex function. */
 #define PropertiesGetAvailableIndexFromName fiftyoneDegreesPropertiesGetAvailableIndexFromName /**< Synonym for #fiftyoneDegreesPropertiesGetAvailableIndexFromName function. */
 #define PropertiesGetPropertyIndexFromAvailableIndex fiftyoneDegreesPropertiesGetPropertyIndexFromAvailableIndex /**< Synonym for #fiftyoneDegreesPropertiesGetPropertyIndexFromAvailableIndex function. */
@@ -13661,6 +13924,7 @@ MAP_TYPE(HashValueProfiles)
 #define HashGetPublished fiftyoneDegreesHashGetPublished /**< Synonym for #fiftyoneDegreesHashGetPublished function. */
 #define HashGetNextUpdate fiftyoneDegreesHashGetNextUpdate /**< Synonym for #fiftyoneDegreesHashGetNextUpdate function. */
 #define HashGetPublishedFromFile fiftyoneDegreesHashGetPublishedFromFile /**< Synonym for #fiftyoneDegreesHashGetPublishedFromFile function. */
+#define HashGetProductFromFile fiftyoneDegreesHashGetProductFromFile /**< Synonym for #fiftyoneDegreesHashGetProductFromFile function. */
 #define HashSizeManagerFromFile fiftyoneDegreesHashSizeManagerFromFile /**< Synonym for #fiftyoneDegreesHashSizeManagerFromFile function. */
 #define HashSizeManagerFromMemory fiftyoneDegreesHashSizeManagerFromMemory /**< Synonym for #fiftyoneDegreesHashSizeManagerFromMemory function. */
 #define HashInitManagerFromFile fiftyoneDegreesHashInitManagerFromFile /**< Synonym for #fiftyoneDegreesHashInitManagerFromFile function. */

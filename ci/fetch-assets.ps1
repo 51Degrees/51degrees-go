@@ -84,4 +84,8 @@ if ($Products -contains 'device-detection') {
                 -Path (Join-Path $folder $asset) | Out-Null
         }
     }
+    # The tests that read the product from the header of the TAC data file
+    # look for it there too.
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/TAC-HashV41.hash" `
+        -Path (Join-Path (Get-ProductPath $RepoPath 'device-detection') "TAC-HashV41.hash") | Out-Null
 }

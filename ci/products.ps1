@@ -134,12 +134,18 @@ $GoTestTimeoutMinutes = 30
 $ToolWarningPattern = '(^|\s)warning:\s'
 
 # Runs the go command with the given arguments, showing what it prints. Throws
-# when it fails or prints a warning.
-function Invoke-Go([Parameter(Mandatory)][string[]]$Arguments) {
+# when it fails or prints a warning. With -PassThru it also returns the lines
+# it printed, for a caller that reads them.
+function Invoke-Go(
+    [Parameter(Mandatory)][string[]]$Arguments,
+    [switch]$PassThru
+) {
+    $lines = [System.Collections.Generic.List[string]]::new()
     $warnings = [System.Collections.Generic.List[string]]::new()
     go @Arguments 2>&1 | ForEach-Object {
         $line = $_.ToString()
         Write-Host $line
+        $lines.Add($line)
         if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
     }
     if ($LASTEXITCODE -ne 0) {
@@ -148,6 +154,7 @@ function Invoke-Go([Parameter(Mandatory)][string[]]$Arguments) {
     if ($warnings.Count) {
         throw "go $Arguments printed warnings:`n$($warnings -join "`n")"
     }
+    if ($PassThru) { return $lines.ToArray() }
 }
 
 # Runs go test with the given arguments in a module folder, writing JUnit

@@ -110,8 +110,9 @@ func TestUpdateNamesTheProductsOffered(t *testing.T) {
 	}
 }
 
-// No product name is known before a data file is loaded or once the engine
-// has stopped. While the free data file is loaded, its name is V4Lite.
+// No product name is known for an engine with no data file or once the
+// engine has stopped. While the free data file is loaded, its name is
+// V4Lite.
 // See https://github.com/51Degrees/specifications/blob/5f4a2ee6c435bd78c3ae283756400317864e42f9/pipeline-specification/features/data-updates.md#product-names
 func TestNoProductWithoutALoadedDataFile(t *testing.T) {
 	if product := (&Engine{}).dataFileProduct(); product != "" {

@@ -53,7 +53,9 @@ jobs:
       # go test -run exits 0 when its pattern matches nothing, and a skipped
       # test does not fail, so each test is named here and its PASS line is
       # required. -count=1 calls the cloud on every run rather than replaying
-      # a cached result.
+      # a cached result. The go command passes when the compiler or linker prints
+      # a warning, so a warning line fails the step, as it does in
+      # ci/products.ps1.
       - name: Live tests against the staging cloud
         working-directory: examples/pipeline
         shell: bash
@@ -79,6 +81,10 @@ jobs:
           status=$?
           set -e
           echo "$output"
+          if grep -E -- '(^|[[:space:]])warning:[[:space:]]' <<< "$output"; then
+            echo "::error::go test printed the warning lines above, which fail the step."
+            status=1
+          fi
           for name in $names; do
             if ! grep -q -- "--- PASS: $name" <<< "$output"; then
               echo "::error::$name did not pass, so it failed, was skipped or did not run."

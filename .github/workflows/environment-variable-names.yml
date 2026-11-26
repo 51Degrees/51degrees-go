@@ -33,7 +33,9 @@ jobs:
 
       # go test -run exits 0 when its pattern matches nothing, so a test
       # renamed out of the pattern would leave this job green whilst checking
-      # nothing. Each test is named here and its PASS line is required.
+      # nothing. Each test is named here and its PASS line is required. The go
+      # command passes when the compiler or linker prints a warning, so a warning
+      # line fails the step, as it does in ci/products.ps1.
       - name: Check the names
         working-directory: common
         shell: bash
@@ -49,6 +51,10 @@ jobs:
           status=$?
           set -e
           echo "$output"
+          if grep -E -- '(^|[[:space:]])warning:[[:space:]]' <<< "$output"; then
+            echo "::error::go test printed the warning lines above, which fail the step."
+            status=1
+          fi
           for name in $names; do
             if ! printf '%s' "$output" | grep -q -- "--- PASS: $name"; then
               echo "::error::$name did not run, so the names were not checked"

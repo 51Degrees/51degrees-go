@@ -38,11 +38,12 @@ type cgoDirective struct {
 }
 
 // cgoCompilerDirectives gives every #cgo CFLAGS and CPPFLAGS line in the
-// package's Go files, with the build constraint each one has, if any.
+// package's Go files, with the build constraint each one has, if any. A
+// preamble written as // comments has each #cgo line after the //.
 func cgoCompilerDirectives(t *testing.T) []cgoDirective {
 	t.Helper()
 	directive := regexp.MustCompile(
-		`^\s*#cgo\s+(.*?)\s*\b(CFLAGS|CPPFLAGS):(.*)$`)
+		`^\s*(?://\s*)?#cgo\s+(.*?)\s*\b(CFLAGS|CPPFLAGS):(.*)$`)
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)

@@ -118,6 +118,26 @@ Describe 'Invoke-Go' {
         $script:GoExit = 1
         { Invoke-Go @('vet', './...') } | Should -Throw '*exit code 1*'
     }
+
+    It 'returns what go printed with -PassThru' {
+        $script:GoOutput = @('goos: linux', 'BenchmarkA-4  10  5.0 ns/op')
+        $script:GoExit = 0
+        (Invoke-Go -PassThru @('test', '-bench', 'A')) -join '|' |
+            Should -Be 'goos: linux|BenchmarkA-4  10  5.0 ns/op'
+    }
+
+    It 'returns nothing without -PassThru' {
+        $script:GoOutput = @('go: downloading example.com/a v1.0.0')
+        $script:GoExit = 0
+        Invoke-Go @('build', './...') | Should -BeNullOrEmpty
+    }
+
+    It 'fails on a warning with -PassThru' {
+        $script:GoOutput = @('ld: warning: ignoring duplicate libraries: ''-lm''')
+        $script:GoExit = 0
+        { Invoke-Go -PassThru @('test', '-bench', 'A') } |
+            Should -Throw '*printed warnings*'
+    }
 }
 
 Describe 'Invoke-GoTests' {
