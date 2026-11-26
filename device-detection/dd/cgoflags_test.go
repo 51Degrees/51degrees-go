@@ -67,11 +67,12 @@ func cgoCompilerDirectives(t *testing.T) []cgoDirective {
 	return directives
 }
 
-// The C sources build with the warnings of -Wall -Wextra on every system, and
-// any warning stops the build.
-func TestCgoFlagsTreatWarningsAsErrors(t *testing.T) {
+// The C sources build with the warnings of -Wall -Wextra on every system. No
+// #cgo line makes a warning an error, as that would stop a customer's own
+// build. 51Degrees' builds add -Werror through CGO_CFLAGS instead.
+func TestCgoFlagsShowEveryWarning(t *testing.T) {
 	directives := cgoCompilerDirectives(t)
-	for _, want := range []string{"-Wall", "-Wextra", "-Werror"} {
+	for _, want := range []string{"-Wall", "-Wextra"} {
 		found := false
 		for _, d := range directives {
 			for _, flag := range d.flags {
@@ -90,6 +91,8 @@ func TestCgoFlagsTreatWarningsAsErrors(t *testing.T) {
 	for _, d := range directives {
 		for _, flag := range d.flags {
 			if flag == "-w" ||
+				flag == "-Werror" ||
+				strings.HasPrefix(flag, "-Werror=") ||
 				strings.HasPrefix(flag, "-Wno-") ||
 				flag == "-fcommon" ||
 				flag == "-fpermissive" ||
@@ -130,4 +133,22 @@ func TestCSourcesKeepEveryWarning(t *testing.T) {
 			}
 		}
 	}
+}
+
+// When _51DEGREES_WARNINGS_AS_ERRORS is true, in any case, as in 51Degrees'
+// own builds, the CI scripts add -Werror to CGO_CFLAGS, and the go command
+// that built this test passed its environment on to it. A CGO_CFLAGS without
+// -Werror here means the switch did not reach the C compiler.
+func TestWarningsAreErrorsWhenTheSwitchIsOn(t *testing.T) {
+	if !strings.EqualFold(os.Getenv("_51DEGREES_WARNINGS_AS_ERRORS"), "true") {
+		t.Skip("_51DEGREES_WARNINGS_AS_ERRORS is not true, so warnings stay warnings")
+	}
+	flags := os.Getenv("CGO_CFLAGS")
+	for _, flag := range strings.Fields(flags) {
+		if flag == "-Werror" {
+			return
+		}
+	}
+	t.Errorf("_51DEGREES_WARNINGS_AS_ERRORS is true, but CGO_CFLAGS is %q, "+
+		"with no -Werror", flags)
 }

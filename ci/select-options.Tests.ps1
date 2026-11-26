@@ -1,8 +1,9 @@
 # Tests for the build selection of a pull request, with Pester 5: the modules
-# ci/products.ps1 builds, how it fails on a warning from the go command, and the
-# ci/options.json entries ci/select-options.ps1 chooses. The last tests run
-# common-ci's steps/select-options.ps1, so they need a checkout of common-ci
-# beside this repository.
+# ci/products.ps1 builds, how it fails on a warning from the go command, when
+# it makes C compiler warnings errors, and the ci/options.json entries
+# ci/select-options.ps1 chooses. The last tests run common-ci's
+# steps/select-options.ps1, so they need a checkout of common-ci beside this
+# repository.
 #
 #   Invoke-Pester ci/select-options.Tests.ps1
 
@@ -175,6 +176,76 @@ Describe 'Invoke-GoTests' {
         function go-junit-report { $null = @($input); $global:LASTEXITCODE = 0 }
         Invoke-GoTests -ModulePath $TestDrive -Packages './...' `
             -JUnitPath (Join-Path $TestDrive 'a.xml') | Should -Be 0
+    }
+}
+
+# The go stand-in keeps the CGO_CFLAGS it was run with in $script:GoCFlags.
+Describe 'The go helpers with _51DEGREES_WARNINGS_AS_ERRORS' {
+    BeforeAll {
+        $script:SavedSwitch = $env:_51DEGREES_WARNINGS_AS_ERRORS
+        $script:SavedCFlags = $env:CGO_CFLAGS
+        function go {
+            $script:GoCFlags = $env:CGO_CFLAGS
+            $global:LASTEXITCODE = $script:GoExit
+        }
+        function go-junit-report { $null = @($input); $global:LASTEXITCODE = 0 }
+        function Invoke-Helper([string]$Helper) {
+            if ($Helper -eq 'Invoke-Go') {
+                Invoke-Go @('build', './...')
+            } else {
+                $null = Invoke-GoTests -ModulePath $TestDrive -Packages './...' `
+                    -JUnitPath (Join-Path $TestDrive 'a.xml')
+            }
+        }
+    }
+
+    AfterAll {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = $script:SavedSwitch
+        $env:CGO_CFLAGS = $script:SavedCFlags
+    }
+
+    BeforeEach {
+        $script:GoCFlags = 'not run'
+        $script:GoExit = 0
+    }
+
+    It '<Helper> adds -Werror to <Before> when the switch is <Switch>' -TestCases @(
+        @{ Helper = 'Invoke-Go'; Switch = 'true'; Before = $null; Want = '-g -O2 -Werror' }
+        @{ Helper = 'Invoke-Go'; Switch = 'TRUE'; Before = '-O1 -g'; Want = '-O1 -g -Werror' }
+        @{ Helper = 'Invoke-Go'; Switch = 'True'; Before = '-g -O2'; Want = '-g -O2 -Werror' }
+        @{ Helper = 'Invoke-GoTests'; Switch = 'true'; Before = $null; Want = '-g -O2 -Werror' }
+        @{ Helper = 'Invoke-GoTests'; Switch = 'TRUE'; Before = '-O1 -g'; Want = '-O1 -g -Werror' }
+    ) {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = $Switch
+        $env:CGO_CFLAGS = $Before
+        Invoke-Helper $Helper
+        $script:GoCFlags | Should -BeExactly $Want
+        $env:CGO_CFLAGS | Should -Be $Before
+    }
+
+    It '<Helper> leaves CGO_CFLAGS of <Before> alone when the switch is <Switch>' -TestCases @(
+        @{ Helper = 'Invoke-Go'; Switch = $null; Before = $null }
+        @{ Helper = 'Invoke-Go'; Switch = 'false'; Before = '-O1 -g' }
+        @{ Helper = 'Invoke-Go'; Switch = '1'; Before = $null }
+        @{ Helper = 'Invoke-Go'; Switch = 'yes'; Before = '-g -O2' }
+        @{ Helper = 'Invoke-GoTests'; Switch = $null; Before = '-O1 -g' }
+        @{ Helper = 'Invoke-GoTests'; Switch = 'false'; Before = $null }
+        @{ Helper = 'Invoke-GoTests'; Switch = '1'; Before = '-O1 -g' }
+    ) {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = $Switch
+        $env:CGO_CFLAGS = $Before
+        Invoke-Helper $Helper
+        $script:GoCFlags | Should -Be $Before
+        $env:CGO_CFLAGS | Should -Be $Before
+    }
+
+    It 'gives CGO_CFLAGS back when go fails' {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = 'true'
+        $env:CGO_CFLAGS = '-O1 -g'
+        $script:GoExit = 1
+        { Invoke-Go @('build', './...') } | Should -Throw '*exit code 1*'
+        $script:GoCFlags | Should -BeExactly '-O1 -g -Werror'
+        $env:CGO_CFLAGS | Should -BeExactly '-O1 -g'
     }
 }
 

@@ -133,6 +133,28 @@ $GoTestTimeoutMinutes = 30
 # lines and still succeeds, so CI fails on them here.
 $ToolWarningPattern = '(^|\s)warning:\s'
 
+# Here until the shared CI sets _51DEGREES_WARNINGS_AS_ERRORS in every job.
+# Every CI script that builds, vets or tests dot-sources this file, so each of
+# them makes C compiler warnings errors. A value already set is kept. This
+# folder is in no Go module, so a customer's own go build never reads it.
+if (!$env:_51DEGREES_WARNINGS_AS_ERRORS) {
+    $env:_51DEGREES_WARNINGS_AS_ERRORS = 'true'
+}
+
+# Returns the C compiler flags the go command is run with. When
+# _51DEGREES_WARNINGS_AS_ERRORS is true, in any case, that is CGO_CFLAGS with
+# -Werror added, so every C compiler warning stops the build. The packages'
+# #cgo lines leave -Werror out, as a customer's own build shows a warning and
+# goes on. Setting CGO_CFLAGS replaces the go command's default of -g -O2, so
+# that default is kept when CGO_CFLAGS is not set or empty. Otherwise
+# CGO_CFLAGS is returned as it is.
+function Get-CgoCFlags {
+    if ($env:_51DEGREES_WARNINGS_AS_ERRORS -ne 'true') { return $env:CGO_CFLAGS }
+    $flags = $env:CGO_CFLAGS
+    if (!$flags) { $flags = '-g -O2' }
+    return "$flags -Werror"
+}
+
 # Runs the go command with the given arguments, showing what it prints. Throws
 # when it fails or prints a warning. With -PassThru it also returns the lines
 # it printed, for a caller that reads them.
@@ -142,11 +164,17 @@ function Invoke-Go(
 ) {
     $lines = [System.Collections.Generic.List[string]]::new()
     $warnings = [System.Collections.Generic.List[string]]::new()
-    go @Arguments 2>&1 | ForEach-Object {
-        $line = $_.ToString()
-        Write-Host $line
-        $lines.Add($line)
-        if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
+    $savedCFlags = $env:CGO_CFLAGS
+    $env:CGO_CFLAGS = Get-CgoCFlags
+    try {
+        go @Arguments 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Write-Host $line
+            $lines.Add($line)
+            if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
+        }
+    } finally {
+        $env:CGO_CFLAGS = $savedCFlags
     }
     if ($LASTEXITCODE -ne 0) {
         throw "go $Arguments failed with exit code $LASTEXITCODE"
@@ -169,6 +197,8 @@ function Invoke-GoTests {
     # Absolute, because the tests run from the module folder.
     $JUnitPath = [System.IO.Path]::GetFullPath($JUnitPath)
     New-Item -ItemType Directory -Force -Path (Split-Path $JUnitPath) | Out-Null
+    $savedCFlags = $env:CGO_CFLAGS
+    $env:CGO_CFLAGS = Get-CgoCFlags
     Push-Location $ModulePath
     try {
         Write-Host "Testing $Packages in '$ModulePath'"
@@ -202,6 +232,7 @@ function Invoke-GoTests {
         return $code
     } finally {
         Pop-Location
+        $env:CGO_CFLAGS = $savedCFlags
     }
 }
 

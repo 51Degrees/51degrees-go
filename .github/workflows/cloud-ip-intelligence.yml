@@ -50,14 +50,22 @@ jobs:
       # test does not fail, so the subtest's PASS line is required. -count=1
       # calls the cloud on every run rather than replaying a cached result. The go
       # command passes when the compiler or linker prints a warning, so a warning
-      # line fails the step, as it does in ci/products.ps1.
+      # line fails the step, as it does in ci/products.ps1. The test builds the
+      # IP Intelligence C code, and with _51DEGREES_WARNINGS_AS_ERRORS true a
+      # C compiler warning is an error, through -Werror in CGO_CFLAGS, as
+      # ci/products.ps1 adds it.
       - name: Example test against the cloud
         working-directory: examples/ip-intelligence
         shell: bash
         env:
           _51DEGREES_CLOUD_ENDPOINT: ${{ vars._51DEGREES_CLOUD_ENDPOINT }}
           _51DEGREES_RESOURCE_KEY_BESPOKE: ${{ secrets._51DEGREES_RESOURCE_KEY_BESPOKE }}
+          # Set here, as this workflow does not run through the shared CI.
+          _51DEGREES_WARNINGS_AS_ERRORS: true
         run: |
+          if [ "${_51DEGREES_WARNINGS_AS_ERRORS,,}" = true ]; then
+            export CGO_CFLAGS="${CGO_CFLAGS:--g -O2} -Werror"
+          fi
           missing=0
           for name in _51DEGREES_CLOUD_ENDPOINT _51DEGREES_RESOURCE_KEY_BESPOKE; do
             if [ -z "${!name}" ]; then

@@ -34,22 +34,17 @@ package ipi_interop
 * The C math library is part of the system library on macOS, which every
 * program links, so -lm is given only on the other systems.
 *
-* The C code builds with the warnings of -Wall -Wextra, each one an error, and
-* no pragma in it turns a warning off. A warning in the amalgamated sources is
-* fixed in 51degrees-cxx, and the amalgamation made again.
-*
-* -Werror applies to every build: CI, the tests, the examples and every program
-* that imports this package. If a newer compiler adds a warning, a program can
-* build with CGO_CFLAGS="-g -O2 -Wno-error=<warning>" until a release fixes it.
-* Setting CGO_CFLAGS replaces the go command's default of "-g -O2", so keep
-* those two. The go command puts CGO_CFLAGS before these flags, and
-* -Wno-error=<warning> holds against a later -Werror, so the warning is still
-* printed.
+* The C code builds with the warnings of -Wall -Wextra, and no pragma in it
+* turns a warning off. Every build shows the warnings, and a program that
+* imports this package builds on with them. 51Degrees' own builds turn them
+* into errors by setting _51DEGREES_WARNINGS_AS_ERRORS to true, which makes the
+* CI scripts add -Werror through CGO_CFLAGS. A warning in the amalgamated
+* sources is fixed in 51degrees-cxx, and the amalgamation made again.
  */
 
 /*
 #cgo CFLAGS: -DFIFTYONE_DEGREES_LARGE_DATA_FILE_SUPPORT=1 -D_FILE_OFFSET_BITS=64 -DFIFTYONE_DEGREES_REDUCED_FILE -DFIFTYONE_DEGREES_IPI_SYMBOLS
-#cgo CFLAGS: -Wall -Wextra -Werror
+#cgo CFLAGS: -Wall -Wextra
 #cgo !darwin LDFLAGS: -lm -latomic
 */
 import "C"
