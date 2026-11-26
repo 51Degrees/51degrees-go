@@ -1,3 +1,5 @@
 .idea
 assets
 51Degrees-LiteV4.1.hash
+# Linked in by ci/fetch-assets.ps1 for the product tests
+TAC-HashV41.hash

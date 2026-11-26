@@ -1,4 +1,4 @@
-/* Generated from 51degrees-cxx 611207678bf7b06ebd5803b4dd3277a8127d9de2 by ci/update-amalgamation.ps1. Do not edit by hand. */
+/* Generated from 51degrees-cxx d25b009e3c66a27e079b128f0e56c28cdeeecf3d by ci/update-amalgamation.ps1. Do not edit by hand. */
 /* *********************************************************************
  * This Original Work is copyright of 51 Degrees Mobile Experts Limited.
  * Copyright 2026 51 Degrees Mobile Experts Limited, Davidson House,
@@ -11803,6 +11803,37 @@ EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesHashGetPublishedFromFile(
 	const char *fileName,
 	fiftyoneDegreesDate *date);
 
+/**
+ * Gets the product name of a Hash data file from its header, reading the
+ * header and the name alone rather than loading the file, so that an update
+ * at start-up can ask the Distributor for the product of the file it has.
+ * The product name is "V4" followed by the tier the header names, for example
+ * V4TAC, or the tier alone when it already starts with "V4" in any case.
+ * Nothing is allocated.
+ * @param fileName path to the data file
+ * @param buffer to write the product name and a terminating null to, or NULL
+ * when length is zero. It is set to an empty string when the name is not
+ * written and length is not zero.
+ * @param length of the buffer in bytes
+ * @param needed set, when not NULL, to the bytes the product name and its
+ * terminating null need when the status is
+ * #FIFTYONE_DEGREES_STATUS_SUCCESS or
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_CAPACITY, otherwise to zero
+ * @return #FIFTYONE_DEGREES_STATUS_SUCCESS when the product name is written,
+ * #FIFTYONE_DEGREES_STATUS_INSUFFICIENT_CAPACITY when it does not fit in the
+ * buffer, #FIFTYONE_DEGREES_STATUS_NULL_POINTER when the buffer is NULL and
+ * length is not zero, the status of opening the file when it cannot be
+ * opened, #FIFTYONE_DEGREES_STATUS_CORRUPT_DATA when the file ends before the
+ * name does or the tier is empty, and
+ * #FIFTYONE_DEGREES_STATUS_INCORRECT_VERSION when the file is not a Hash data
+ * file of the version this library reads
+ */
+EXTERNAL fiftyoneDegreesStatusCode fiftyoneDegreesHashGetProductFromFile(
+	const char *fileName,
+	char *buffer,
+	size_t length,
+	size_t *needed);
+
 
 /**
  * Iterates over the profiles in the data set calling the callback method for
@@ -13893,6 +13924,7 @@ MAP_TYPE(HashValueProfiles)
 #define HashGetPublished fiftyoneDegreesHashGetPublished /**< Synonym for #fiftyoneDegreesHashGetPublished function. */
 #define HashGetNextUpdate fiftyoneDegreesHashGetNextUpdate /**< Synonym for #fiftyoneDegreesHashGetNextUpdate function. */
 #define HashGetPublishedFromFile fiftyoneDegreesHashGetPublishedFromFile /**< Synonym for #fiftyoneDegreesHashGetPublishedFromFile function. */
+#define HashGetProductFromFile fiftyoneDegreesHashGetProductFromFile /**< Synonym for #fiftyoneDegreesHashGetProductFromFile function. */
 #define HashSizeManagerFromFile fiftyoneDegreesHashSizeManagerFromFile /**< Synonym for #fiftyoneDegreesHashSizeManagerFromFile function. */
 #define HashSizeManagerFromMemory fiftyoneDegreesHashSizeManagerFromMemory /**< Synonym for #fiftyoneDegreesHashSizeManagerFromMemory function. */
 #define HashInitManagerFromFile fiftyoneDegreesHashInitManagerFromFile /**< Synonym for #fiftyoneDegreesHashInitManagerFromFile function. */
