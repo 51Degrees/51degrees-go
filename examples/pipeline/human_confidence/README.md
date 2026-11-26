@@ -20,7 +20,7 @@ The page shows three rows, one for each step.
 3. **Redeem.** The page hands the sealed value to the server, which sends
    it to the cloud's `hc/redeem` as `sealedResult` with the account's
    License Key and returns the cloud's answer as it is. The page reads
-   `status` from the answer, and the level only when `status` is `success`.
+   `status` from the answer, and the Value only when `status` is `success`.
    A sealed value redeems once, within ten seconds. The page then offers to
    redeem the same value again, which answers `replayed`.
 
