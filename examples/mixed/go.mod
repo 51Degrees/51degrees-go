@@ -11,4 +11,9 @@ require (
 	github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.6.2
 )
 
-require github.com/51Degrees/51degrees-go/common/v4 v4.6.2 // indirect
+require (
+	github.com/51Degrees/51degrees-go/common/v4 v4.6.2 // indirect
+	github.com/51Degrees/51degrees-go/pipeline/v4 v4.6.2 // indirect
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+)
