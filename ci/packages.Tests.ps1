@@ -194,6 +194,38 @@ Describe 'Get-ModuleReleasePlan' {
             "requires $script:ModulePrefix/pipeline/v4 v$Pipeline, which has no " +
             "tag pipeline/v$Pipeline, and this publish $Planned.")
     }
+
+    # A release tagged by hand at a version the plan does not give, such as
+    # 4.6.2 after 4.5.180, is built from the workspace before its tags exist.
+    It 'builds a module that requires a later version of one the plan releases' {
+        $script:Repo = New-Repo
+        Set-GoMods $script:Repo '4.6.2' '4.6.2'
+        $null = Add-Commit $script:Repo @('common/errors.go',
+            'pipeline/core/util.go')
+        @(Get-ModuleReleasePlan $script:Repo -Build | ForEach-Object {
+            "$($_.Name) $($_.Version)"
+        }) | Should -Be @('common 4.5.181', 'pipeline 4.5.181',
+            'device-detection 4.5.181', 'ip-intelligence 4.5.181')
+        # Which requirement is reported first is not fixed.
+        { Get-Planned $script:Repo } | Should -Throw ("*/go.mod requires " +
+            "$script:ModulePrefix/*/v4 v4.6.2, which has no tag */v4.6.2, and " +
+            "this publish releases * 4.5.181.")
+    }
+
+    It 'stops a build when a module requires a version with no tag that <What>' -ForEach @(
+        @{ What = 'the plan does not release'; Pipeline = '4.6.2'
+            Files = @(); Planned = 'does not release pipeline' }
+        @{ What = 'is before the one planned'; Pipeline = '4.5.179'
+            Files = @('pipeline/core/util.go'); Planned = 'releases pipeline 4.5.181' }
+    ) {
+        $script:Repo = New-Repo
+        Set-GoMods $script:Repo '4.5.180' $Pipeline
+        $null = Add-Commit $script:Repo $Files
+        { Get-ModuleReleasePlan $script:Repo -Build } | Should -Throw (
+            "device-detection/go.mod requires $script:ModulePrefix/pipeline/v4 " +
+            "v$Pipeline, which has no tag pipeline/v$Pipeline, and this publish " +
+            "$Planned.")
+    }
 }
 
 Describe 'The latest release of each module' {
