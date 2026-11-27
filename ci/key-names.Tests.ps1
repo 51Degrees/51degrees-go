@@ -17,7 +17,7 @@ BeforeDiscovery {
 BeforeAll {
     # The names that Go, Git, GitHub, PowerShell and the operating system
     # define, which are read and set as each requires.
-    $script:Platform = '^(CI|PATH|GOWORK|GOPRIVATE|CGO_ENABLED|CGO_LDFLAGS|' +
+    $script:Platform = '^(CI|PATH|GOWORK|GOPRIVATE|CGO_ENABLED|CGO_CFLAGS|' +
         'PSModulePath|ProgramFiles|GITHUB_\w+|GIT_CONFIG_\w+)$'
 
     function Get-ScriptAst([string]$Name) {

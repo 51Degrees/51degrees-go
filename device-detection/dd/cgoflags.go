@@ -25,11 +25,20 @@ package dd
 /*
 * Cgo concatenate all C linker and compiler directives so create this file to
 * centralize the specifications of these flags.
+*
+* The C math library is part of the system library on macOS, which every
+* program links, so -lm is given only on the other systems.
+*
+* The C code builds with the warnings of -Wall -Wextra, and no pragma in it
+* turns a warning off. Every build shows the warnings, and a program that
+* imports this package builds on with them. 51Degrees' own builds turn them
+* into errors by setting _51DEGREES_WARNINGS_AS_ERRORS to true, which makes the
+* CI scripts add -Werror through CGO_CFLAGS. A warning in the amalgamated
+* sources is fixed in 51degrees-cxx, and the amalgamation made again.
  */
 
 /*
-#cgo CFLAGS: -fcommon
-#cgo LDFLAGS: -lm
-#cgo !darwin LDFLAGS: -latomic
+#cgo CFLAGS: -Wall -Wextra
+#cgo !darwin LDFLAGS: -lm -latomic
 */
 import "C"

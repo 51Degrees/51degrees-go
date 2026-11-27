@@ -18,12 +18,13 @@ $PSNativeCommandUseErrorActionPreference = $true
 # repository at the version the next release publishes is not published yet,
 # so it is taken from that module's folder, through a copy of go.mod.
 $repoRoot = (Resolve-Path $RepoName).Path
-foreach ($product in Get-AffectedProducts $RepoName $Branch) {
+$products = @(Get-AffectedProducts $RepoName $Branch)
+foreach ($product in $products) {
     $replaces = @(Get-UnreleasedRequirementReplaces $repoRoot $product)
     Push-Location (Get-ProductPath $RepoName $product)
     try {
         Write-Host "Building $product"
-        go build ./...
+        Invoke-Go @('build', './...')
         Write-Host "Building $product without the workspace"
         $env:GOWORK = 'off'
         if ($replaces) {
@@ -31,15 +32,35 @@ foreach ($product in Get-AffectedProducts $RepoName $Branch) {
             Copy-Item go.mod go.unreleased.mod
             Copy-Item go.sum go.unreleased.sum -ErrorAction SilentlyContinue
             go mod edit @replaces go.unreleased.mod
-            # Quoted, because PowerShell splits an unquoted -name=value argument
-            # at its first dot.
-            go build "-modfile=go.unreleased.mod" ./...
+            Invoke-Go @('build', '-modfile=go.unreleased.mod', './...')
         } else {
-            go build ./...
+            Invoke-Go @('build', './...')
         }
     } finally {
         Remove-Item Env:GOWORK -ErrorAction SilentlyContinue
         Remove-Item go.unreleased.mod, go.unreleased.sum -ErrorAction SilentlyContinue
         Pop-Location
     }
+}
+
+# go vet checks each module and its examples, tests included, and any finding
+# or warning fails the build. go test runs only some of its checks. Each module
+# is checked before the build fails, so one run shows every finding.
+$vetFailed = @()
+$modules = @($products) + @($products | ForEach-Object { $ProductExamples[$_] }) |
+    Select-Object -Unique
+foreach ($module in $modules) {
+    Push-Location (Join-Path $RepoName $module)
+    try {
+        Write-Host "Vetting $module"
+        Invoke-Go @('vet', './...')
+    } catch {
+        Write-Host $_
+        $vetFailed += $module
+    } finally {
+        Pop-Location
+    }
+}
+if ($vetFailed) {
+    throw "go vet reported findings in $($vetFailed -join ', ')"
 }

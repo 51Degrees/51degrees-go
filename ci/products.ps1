@@ -12,6 +12,15 @@ $ProductPaths = @{
     'pipeline' = @('pipeline/', 'examples/pipeline/')
 }
 
+# The example modules of each product. The mixed examples use both engines, so
+# they belong to each.
+$ProductExamples = @{
+    'common' = @()
+    'device-detection' = @('examples/device-detection', 'examples/mixed')
+    'ip-intelligence' = @('examples/ip-intelligence', 'examples/mixed')
+    'pipeline' = @('examples/pipeline')
+}
+
 # The modules each module requires, from packages.json. The workspace builds a
 # module against the folders of the modules it requires, so a change to one of
 # those has to build and test it too.
@@ -119,8 +128,66 @@ function Get-ProductPath([string]$RepoPath, [string]$Product) {
 # more than 600 on a slow Ubuntu runner, so this is three times that.
 $GoTestTimeoutMinutes = 30
 
+# A line in which a compiler, linker or other tool reports a warning, such as
+# "file.c:3:5: warning: ..." or "ld: warning: ...". The go command prints such
+# lines and still succeeds, so CI fails on them here.
+$ToolWarningPattern = '(^|\s)warning:\s'
+
+# Here until the shared CI sets _51DEGREES_WARNINGS_AS_ERRORS in every job.
+# Every CI script that builds, vets or tests dot-sources this file, so each of
+# them makes C compiler warnings errors. A value already set is kept. This
+# folder is in no Go module, so a customer's own go build never reads it.
+if (!$env:_51DEGREES_WARNINGS_AS_ERRORS) {
+    $env:_51DEGREES_WARNINGS_AS_ERRORS = 'true'
+}
+
+# Returns the C compiler flags the go command is run with. When
+# _51DEGREES_WARNINGS_AS_ERRORS is true, in any case, that is CGO_CFLAGS with
+# -Werror added, so every C compiler warning stops the build. The packages'
+# #cgo lines leave -Werror out, as a customer's own build shows a warning and
+# goes on. Setting CGO_CFLAGS replaces the go command's default of -g -O2, so
+# that default is kept when CGO_CFLAGS is not set or empty. Otherwise
+# CGO_CFLAGS is returned as it is.
+function Get-CgoCFlags {
+    if ($env:_51DEGREES_WARNINGS_AS_ERRORS -ne 'true') { return $env:CGO_CFLAGS }
+    $flags = $env:CGO_CFLAGS
+    if (!$flags) { $flags = '-g -O2' }
+    return "$flags -Werror"
+}
+
+# Runs the go command with the given arguments, showing what it prints. Throws
+# when it fails or prints a warning. With -PassThru it also returns the lines
+# it printed, for a caller that reads them.
+function Invoke-Go(
+    [Parameter(Mandatory)][string[]]$Arguments,
+    [switch]$PassThru
+) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $warnings = [System.Collections.Generic.List[string]]::new()
+    $savedCFlags = $env:CGO_CFLAGS
+    $env:CGO_CFLAGS = Get-CgoCFlags
+    try {
+        go @Arguments 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            Write-Host $line
+            $lines.Add($line)
+            if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
+        }
+    } finally {
+        $env:CGO_CFLAGS = $savedCFlags
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "go $Arguments failed with exit code $LASTEXITCODE"
+    }
+    if ($warnings.Count) {
+        throw "go $Arguments printed warnings:`n$($warnings -join "`n")"
+    }
+    if ($PassThru) { return $lines.ToArray() }
+}
+
 # Runs go test with the given arguments in a module folder, writing JUnit
-# results. Returns the exit code.
+# results. Returns the exit code, which is not 0 when a test fails or the go
+# command or a test prints a warning.
 function Invoke-GoTests {
     param(
         [Parameter(Mandatory)][string]$ModulePath,
@@ -130,10 +197,8 @@ function Invoke-GoTests {
     # Absolute, because the tests run from the module folder.
     $JUnitPath = [System.IO.Path]::GetFullPath($JUnitPath)
     New-Item -ItemType Directory -Force -Path (Split-Path $JUnitPath) | Out-Null
-    if ($IsMacOS) {
-        # The linker warns that -lm is given more than once, which is harmless.
-        $env:CGO_LDFLAGS = '-Wl,-no_warn_duplicate_libraries'
-    }
+    $savedCFlags = $env:CGO_CFLAGS
+    $env:CGO_CFLAGS = Get-CgoCFlags
     Push-Location $ModulePath
     try {
         Write-Host "Testing $Packages in '$ModulePath'"
@@ -145,19 +210,29 @@ function Invoke-GoTests {
         # output, and go-junit-report reads a line starting '# ' there as a
         # package that failed to build, so those lines go to the log as well.
         # A package that does not build still fails, because go test reports
-        # it on standard output as FAIL.
+        # it on standard output as FAIL. A warning line from either stream
+        # fails the run, as the go command passes with it.
+        $warnings = [System.Collections.Generic.List[string]]::new()
         go test -v -timeout "$($GoTestTimeoutMinutes)m" @Packages 2>&1 |
         ForEach-Object {
+            $line = $_.ToString()
+            if ($line -cmatch $ToolWarningPattern) { $warnings.Add($line) }
             if ($_ -is [System.Management.Automation.ErrorRecord] -or
-                "$_".StartsWith('# ')) {
-                Write-Host $_.ToString()
+                $line.StartsWith('# ')) {
+                Write-Host $line
                 return
             }
             $_
         } | go-junit-report -set-exit-code -iocopy -out $JUnitPath | Out-Host
-        return $LASTEXITCODE
+        $code = $LASTEXITCODE
+        if ($warnings.Count) {
+            Write-Host "Warnings, which fail the tests:`n$($warnings -join "`n")"
+            if ($code -eq 0) { $code = 1 }
+        }
+        return $code
     } finally {
         Pop-Location
+        $env:CGO_CFLAGS = $savedCFlags
     }
 }
 

@@ -15,6 +15,14 @@ The test `TestEveryVariableHasA51DegreesName` in [`common/variable_names_test.go
 | `_51DEGREES_EVIDENCE_YAML` | The path of a YAML evidence file, in place of the free evidence file | The on-premise examples and their tests |
 | `_51DEGREES_CLOUD_ENDPOINT` | The address of the cloud service, in place of the public one | The Cloud Request Engine, when `SetEndpoint` is not used, and the Human Confidence example |
 
+## Names that change how the C code builds
+
+The Device Detection and IP Intelligence modules compile their C code with `-Wall -Wextra` on every `go build`, so a compiler warning is shown. A warning stops the build only when the name below asks for it. 51Degrees' own builds set it to `true`. Customers normally leave it unset, so that a newer compiler cannot stop an install.
+
+| Name | Holds | Read by |
+| --- | --- | --- |
+| `_51DEGREES_WARNINGS_AS_ERRORS` | `true`, in any case, to make every C compiler warning an error. Unset, or any other value, leaves warnings as warnings | The CI scripts, through `ci/products.ps1`, which add `-Werror` to `CGO_CFLAGS` for the go commands they run, keeping the go command's default of `-g -O2` when `CGO_CFLAGS` is not set. The tests of the two C packages, which fail when it is `true` and `CGO_CFLAGS` has no `-Werror` |
+
 ## Names the tests read
 
 The test of the IP Intelligence cloud example runs it with `_51DEGREES_RESOURCE_KEY` set to `_51DEGREES_RESOURCE_KEY_BESPOKE`, and requires the values that key gives for a known address. It is skipped when the key is not set. `.github/workflows/cloud-ip-intelligence.yml` sets the key and fails when the test is skipped.

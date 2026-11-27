@@ -26,9 +26,9 @@ if ($Products -contains 'device-detection') {
     Push-Location (Join-Path $RepoName 'examples/device-detection')
     try {
         Write-Host "Running the Device Detection performance example..."
-        go run ./dd/performance -json-output $output `
-            -data-file "$rootDir/assets/51Degrees-LiteV4.1.hash" `
-            -evidence-file "$rootDir/assets/20000 Evidence Records.yml"
+        Invoke-Go @('run', './dd/performance', '-json-output', $output,
+            '-data-file', "$rootDir/assets/51Degrees-LiteV4.1.hash",
+            '-evidence-file', "$rootDir/assets/20000 Evidence Records.yml")
     } finally {
         Pop-Location
     }
@@ -44,7 +44,7 @@ if ($Products -contains 'ip-intelligence') {
     Push-Location (Join-Path $RepoName 'examples/ip-intelligence')
     try {
         Write-Host "Running the IP Intelligence performance example..."
-        go run ./performance -json-output $output
+        Invoke-Go @('run', './performance', '-json-output', $output)
     } finally {
         Pop-Location
     }
@@ -62,8 +62,9 @@ if ($Products -contains 'pipeline') {
     Push-Location (Join-Path $RepoName 'pipeline')
     try {
         Write-Host "Running the JavaScript Builder performance tests..."
-        $bench = go test -run '^$' -bench JavaScriptBuilder -benchtime 2s ./elements/javascriptbuilder/
-        $bench | Write-Host
+        $bench = Invoke-Go -PassThru @('test', '-run', '^$',
+            '-bench', 'JavaScriptBuilder', '-benchtime', '2s',
+            './elements/javascriptbuilder/')
     } finally {
         Pop-Location
     }

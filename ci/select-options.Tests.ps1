@@ -1,7 +1,9 @@
 # Tests for the build selection of a pull request, with Pester 5: the modules
-# ci/products.ps1 builds and the ci/options.json entries ci/select-options.ps1
-# chooses. The last tests run common-ci's steps/select-options.ps1, so they need
-# a checkout of common-ci beside this repository.
+# ci/products.ps1 builds, how it fails on a warning from the go command, when
+# it makes C compiler warnings errors, and the ci/options.json entries
+# ci/select-options.ps1 chooses. The last tests run common-ci's
+# steps/select-options.ps1, so they need a checkout of common-ci beside this
+# repository.
 #
 #   Invoke-Pester ci/select-options.Tests.ps1
 
@@ -71,6 +73,179 @@ Describe 'Resolve-AffectedProducts' {
     ) {
         (Resolve-AffectedProducts @($File) | Sort-Object) -join ',' |
             Should -Be ($AllProducts -join ',')
+    }
+}
+
+Describe 'ProductExamples' {
+    It 'with the products, names every module in go.work, which go vet checks' {
+        $work = Get-Content -Raw (Join-Path $PSScriptRoot '..' 'go.work')
+        $null = $work -match '(?s)use \((.*?)\)'
+        $inWork = @($Matches[1] -split '\s+' | Where-Object { $_ } |
+            ForEach-Object { $_ -replace '^\./', '' }) | Sort-Object
+        $vetted = @($AllProducts) + @($AllProducts | ForEach-Object { $ProductExamples[$_] }) |
+            Select-Object -Unique | Sort-Object
+        $vetted -join ',' | Should -Be ($inWork -join ',')
+    }
+}
+
+# A function named go stands in for the go command, printing the lines in
+# $script:GoOutput and exiting with $script:GoExit. They are script variables
+# so that no variable of the function under test hides them.
+Describe 'Invoke-Go' {
+    BeforeAll {
+        function go { $script:GoOutput; $global:LASTEXITCODE = $script:GoExit }
+    }
+
+    It 'passes when go succeeds and prints no warning' {
+        $script:GoOutput = @('go: downloading example.com/a v1.0.0')
+        $script:GoExit = 0
+        { Invoke-Go @('build', './...') } | Should -Not -Throw
+    }
+
+    It 'fails on <Line>' -TestCases @(
+        @{ Line = 'resource.c:12:5: warning: unused variable ''n'' [-Wunused-variable]' }
+        @{ Line = 'ld: warning: ignoring duplicate libraries: ''-lm''' }
+        @{ Line = '/usr/bin/ld: warning: -z bogus ignored' }
+        @{ Line = 'warning: "./..." matched no packages' }
+    ) {
+        $script:GoOutput = @('# example.com/a', $Line)
+        $script:GoExit = 0
+        $expected = "*$([WildcardPattern]::Escape($Line))*"
+        { Invoke-Go @('build', './...') } | Should -Throw $expected
+    }
+
+    It 'fails when go fails' {
+        $script:GoOutput = @('vet: a.go:3:2: unreachable code')
+        $script:GoExit = 1
+        { Invoke-Go @('vet', './...') } | Should -Throw '*exit code 1*'
+    }
+
+    It 'returns what go printed with -PassThru' {
+        $script:GoOutput = @('goos: linux', 'BenchmarkA-4  10  5.0 ns/op')
+        $script:GoExit = 0
+        (Invoke-Go -PassThru @('test', '-bench', 'A')) -join '|' |
+            Should -Be 'goos: linux|BenchmarkA-4  10  5.0 ns/op'
+    }
+
+    It 'returns nothing without -PassThru' {
+        $script:GoOutput = @('go: downloading example.com/a v1.0.0')
+        $script:GoExit = 0
+        Invoke-Go @('build', './...') | Should -BeNullOrEmpty
+    }
+
+    It 'fails on a warning with -PassThru' {
+        $script:GoOutput = @('ld: warning: ignoring duplicate libraries: ''-lm''')
+        $script:GoExit = 0
+        { Invoke-Go -PassThru @('test', '-bench', 'A') } |
+            Should -Throw '*printed warnings*'
+    }
+}
+
+Describe 'Invoke-GoTests' {
+    BeforeAll {
+        $script:Passing = @('=== RUN   TestA', '--- PASS: TestA (0.00s)', 'PASS',
+            "ok  `texample.com/a`t0.01s")
+    }
+
+    It 'passes tests that pass and print no warning' {
+        function go { $script:Passing; $global:LASTEXITCODE = 0 }
+        function go-junit-report { $null = @($input); $global:LASTEXITCODE = 0 }
+        Invoke-GoTests -ModulePath $TestDrive -Packages './...' `
+            -JUnitPath (Join-Path $TestDrive 'a.xml') | Should -Be 0
+    }
+
+    It 'fails tests that pass when the linker prints a warning' {
+        function go {
+            '# example.com/a.test'
+            '/usr/bin/ld: warning: -z bogus ignored'
+            $script:Passing
+            $global:LASTEXITCODE = 0
+        }
+        function go-junit-report { $null = @($input); $global:LASTEXITCODE = 0 }
+        Invoke-GoTests -ModulePath $TestDrive -Packages './...' `
+            -JUnitPath (Join-Path $TestDrive 'a.xml') | Should -Not -Be 0
+    }
+
+    It 'passes test output that names a warning in other words' {
+        function go {
+            'level=WARN msg="cloud service warning" warning="no property"'
+            '{"warnings":["a"]}'
+            $script:Passing
+            $global:LASTEXITCODE = 0
+        }
+        function go-junit-report { $null = @($input); $global:LASTEXITCODE = 0 }
+        Invoke-GoTests -ModulePath $TestDrive -Packages './...' `
+            -JUnitPath (Join-Path $TestDrive 'a.xml') | Should -Be 0
+    }
+}
+
+# The go stand-in keeps the CGO_CFLAGS it was run with in $script:GoCFlags.
+Describe 'The go helpers with _51DEGREES_WARNINGS_AS_ERRORS' {
+    BeforeAll {
+        $script:SavedSwitch = $env:_51DEGREES_WARNINGS_AS_ERRORS
+        $script:SavedCFlags = $env:CGO_CFLAGS
+        function go {
+            $script:GoCFlags = $env:CGO_CFLAGS
+            $global:LASTEXITCODE = $script:GoExit
+        }
+        function go-junit-report { $null = @($input); $global:LASTEXITCODE = 0 }
+        function Invoke-Helper([string]$Helper) {
+            if ($Helper -eq 'Invoke-Go') {
+                Invoke-Go @('build', './...')
+            } else {
+                $null = Invoke-GoTests -ModulePath $TestDrive -Packages './...' `
+                    -JUnitPath (Join-Path $TestDrive 'a.xml')
+            }
+        }
+    }
+
+    AfterAll {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = $script:SavedSwitch
+        $env:CGO_CFLAGS = $script:SavedCFlags
+    }
+
+    BeforeEach {
+        $script:GoCFlags = 'not run'
+        $script:GoExit = 0
+    }
+
+    It '<Helper> adds -Werror to <Before> when the switch is <Switch>' -TestCases @(
+        @{ Helper = 'Invoke-Go'; Switch = 'true'; Before = $null; Want = '-g -O2 -Werror' }
+        @{ Helper = 'Invoke-Go'; Switch = 'TRUE'; Before = '-O1 -g'; Want = '-O1 -g -Werror' }
+        @{ Helper = 'Invoke-Go'; Switch = 'True'; Before = '-g -O2'; Want = '-g -O2 -Werror' }
+        @{ Helper = 'Invoke-GoTests'; Switch = 'true'; Before = $null; Want = '-g -O2 -Werror' }
+        @{ Helper = 'Invoke-GoTests'; Switch = 'TRUE'; Before = '-O1 -g'; Want = '-O1 -g -Werror' }
+    ) {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = $Switch
+        $env:CGO_CFLAGS = $Before
+        Invoke-Helper $Helper
+        $script:GoCFlags | Should -BeExactly $Want
+        $env:CGO_CFLAGS | Should -Be $Before
+    }
+
+    It '<Helper> leaves CGO_CFLAGS of <Before> alone when the switch is <Switch>' -TestCases @(
+        @{ Helper = 'Invoke-Go'; Switch = $null; Before = $null }
+        @{ Helper = 'Invoke-Go'; Switch = 'false'; Before = '-O1 -g' }
+        @{ Helper = 'Invoke-Go'; Switch = '1'; Before = $null }
+        @{ Helper = 'Invoke-Go'; Switch = 'yes'; Before = '-g -O2' }
+        @{ Helper = 'Invoke-GoTests'; Switch = $null; Before = '-O1 -g' }
+        @{ Helper = 'Invoke-GoTests'; Switch = 'false'; Before = $null }
+        @{ Helper = 'Invoke-GoTests'; Switch = '1'; Before = '-O1 -g' }
+    ) {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = $Switch
+        $env:CGO_CFLAGS = $Before
+        Invoke-Helper $Helper
+        $script:GoCFlags | Should -Be $Before
+        $env:CGO_CFLAGS | Should -Be $Before
+    }
+
+    It 'gives CGO_CFLAGS back when go fails' {
+        $env:_51DEGREES_WARNINGS_AS_ERRORS = 'true'
+        $env:CGO_CFLAGS = '-O1 -g'
+        $script:GoExit = 1
+        { Invoke-Go @('build', './...') } | Should -Throw '*exit code 1*'
+        $script:GoCFlags | Should -BeExactly '-O1 -g -Werror'
+        $env:CGO_CFLAGS | Should -BeExactly '-O1 -g'
     }
 }
 

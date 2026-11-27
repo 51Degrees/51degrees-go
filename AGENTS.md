@@ -222,8 +222,6 @@ placeholder key `example-resource-key`.
 - **cgo turned off or no C compiler.** The engines are C code built through
   cgo, so Go needs `CGO_ENABLED=1` and a C compiler on the `PATH`, as the
   READMEs say.
-- **A linker warning on macOS.** The linker warns that `-lm` is given more
-  than once. The warning is harmless (`ci/products.ps1`).
 - **Memory.** The IP Intelligence example loads the whole data file into
   memory (`ipi_interop.InMemory`), so it needs about 0.5 GB free.
 - **What CI runs.** CI runs the IP Intelligence examples with the paid data

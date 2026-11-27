@@ -76,7 +76,7 @@ var (
 // system define, which are read and set as each requires.
 var platform = map[string]bool{
 	"CI": true, "PATH": true, "GOWORK": true, "GOPRIVATE": true,
-	"CGO_ENABLED": true, "CGO_LDFLAGS": true, "GIT_CONFIG_COUNT": true,
+	"CGO_ENABLED": true, "CGO_CFLAGS": true, "GIT_CONFIG_COUNT": true,
 	"PSModulePath": true, "ProgramFiles": true,
 }
 
