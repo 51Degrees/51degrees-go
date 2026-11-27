@@ -58,7 +58,7 @@ if ($status) {
 # earlier release, because the nightly package update moves the examples on rc
 # and main has the move only after its next release, so such a requirement is
 # moved first. Nothing is committed.
-$plan = @(Get-ModuleReleasePlan $repo)
+$plan = @(Get-ModuleReleasePlan $repo -Build)
 if ($plan.Count -gt 0) {
     Write-Host "$($plan.Name -join ', ') would be released, so the examples use the modules in this repository"
 } else {

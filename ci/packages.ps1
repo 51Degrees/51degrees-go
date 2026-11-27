@@ -147,13 +147,14 @@ function Remove-PlanTags([string]$RepoPath, $Packages) {
 }
 
 # What a publish of HEAD releases, from common-ci's Get-ReleasePlan: one entry
-# per module, in the order to tag them, each with its version and why.
-function Get-ModuleReleasePlan([string]$RepoPath) {
+# per module, in the order to tag them, each with its version and why. -Build
+# is for a build of HEAD rather than a publish (see Assert-RequiredVersions).
+function Get-ModuleReleasePlan([string]$RepoPath, [switch]$Build) {
     $packages = Get-Packages $RepoPath
     Assert-ModuleRequirements $RepoPath $packages
     Sync-PlanTags $RepoPath $packages
     $plan = @(Get-ReleasePlan $RepoPath $packages)
-    Assert-RequiredVersions $RepoPath $packages $plan
+    Assert-RequiredVersions $RepoPath $packages $plan -Build:$Build
     return $plan
 }
 
@@ -162,7 +163,13 @@ function Get-ModuleReleasePlan([string]$RepoPath) {
 # module that needs a change to another in the same release requires the
 # version the plan releases of it (see Get-UnreleasedRequirementReplaces in
 # products.ps1), and the publish tags it on a commit with go.sum to match.
-function Assert-RequiredVersions([string]$RepoPath, $Packages, $Plan) {
+#
+# A build also accepts a later version of a module the plan releases, because
+# the workspace builds that module from HEAD. That is a release tagged by hand
+# at a version the plan does not give, such as a move of the minor place, and
+# the publish still stops until those tags exist.
+function Assert-RequiredVersions([string]$RepoPath, $Packages, $Plan,
+        [switch]$Build) {
     $planned = @{}
     foreach ($release in $Plan) {
         $planned[$release.Name] = "$($release.Version)"
@@ -175,6 +182,14 @@ function Assert-RequiredVersions([string]$RepoPath, $Packages, $Plan) {
         $name = $requirement.Dependency.Name
         if ($planned[$name] -eq $requirement.Version) {
             continue
+        }
+        if ($Build -and $planned.ContainsKey($name) -eq $true) {
+            $required = ConvertTo-VersionParts $requirement.Version
+            $next = ConvertTo-VersionParts $planned[$name]
+            if ($null -ne $required -and $null -ne $next -and
+                    $required -gt $next) {
+                continue
+            }
         }
         $releases = "does not release $name"
         if ($planned.ContainsKey($name) -eq $true) {
