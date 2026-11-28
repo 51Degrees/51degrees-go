@@ -283,15 +283,15 @@ func TestPassiveWithoutTheSourceShowsTheReason(t *testing.T) {
 }
 
 // The Evidence keys are asked for when the Pipeline is built, and again by
-// the next request after a failure, which fails in turn while the cloud
-// still fails.
+// the next request after a failure. While the cloud still fails, the two
+// Properties have no value, and the page shows the reason the Pipeline gives.
 func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	cloud.keysFailures = 2
 	example := startExample(t, cloud)
 	first := passiveAnswer(t, example)
-	if !strings.Contains(first.HumanConfidence.Text, "503") || first.HumanConfidence.Tone != "fail" {
-		t.Errorf("the first answer is %+v, want a failure with 503", first)
+	if !strings.Contains(first.HumanConfidence.Text, "cloud request failed") {
+		t.Errorf("the first answer is %+v, want the reason a failed request gives", first)
 	}
 	second := passiveAnswer(t, example)
 	if second.Source.Text != "Passive" || second.HumanConfidence.Text != "Medium" {
@@ -355,7 +355,9 @@ func TestRedeemTwiceGivesMedium(t *testing.T) {
 
 // The example never redeems a sealed result itself. It hands it to the
 // Pipeline as Evidence, which sends it in the JSON call with the License
-// Key, and nothing calls hc/redeem.
+// Key, and nothing calls hc/redeem. The page loads the cloud's script
+// itself, so the Pipeline keeps no transaction for it, and the sealed
+// result, made with none, goes with none.
 func TestRedeemIsThePipelines(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	example := startExample(t, cloud)
@@ -369,6 +371,9 @@ func TestRedeemIsThePipelines(t *testing.T) {
 		cloud.evidence.Get("license") != testLicense {
 		t.Errorf("the JSON call did not carry the sealed result and the License Key, %v",
 			cloud.evidence)
+	}
+	if cloud.evidence.Has("transaction") {
+		t.Errorf("the JSON call carried transaction %q", cloud.evidence.Get("transaction"))
 	}
 }
 

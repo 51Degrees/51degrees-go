@@ -30,6 +30,11 @@ Pipeline gives where one has no value.
    `HumanConfidence` is `Medium`. The page then offers to send the same
    value again, which gives `Medium`, because it has been redeemed.
 
+The Pipeline binds a page's sealed value to a transaction it keeps for the
+page, when the page's requests go through the Pipeline with a session id.
+This page loads the cloud's script itself, so its sealed value is made with
+no transaction, and the Pipeline redeems it with none.
+
 The client script reports complete only after the browser tests have run
 and one more request has answered, so the second row fills a few seconds
 after the first. A page can read the first answer's Properties sooner
