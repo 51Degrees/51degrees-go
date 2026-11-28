@@ -418,7 +418,10 @@ func (e *Element) sessionInfo(fd core.FlowData) (string, int) {
 // "query." prefix removed) for relaying in client-side callbacks. The session id
 // and sequence are excluded (the template adds them explicitly) and both keys
 // and values are URL-encoded so the client can append them to the callback URL
-// directly.
+// directly. A sealed Human Confidence result and the page id sent with it are
+// left out too, because the sealed result must never be in this output, and
+// the page id only names the page the sealed result came from.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-package-never-exposes
 func (e *Element) queryParameters(fd core.FlowData) string {
 	params := map[string]string{}
 	for key, val := range fd.Evidence().AsMap() {
@@ -426,7 +429,8 @@ func (e *Element) queryParameters(fd core.FlowData) string {
 		if prefix != core.PrefixQuery {
 			continue
 		}
-		if field == sequence.SessionIDProperty || field == sequence.SequenceProperty {
+		if field == sequence.SessionIDProperty || field == sequence.SequenceProperty ||
+			humanConfidenceFields[strings.ToLower(field)] {
 			continue
 		}
 		params[url.QueryEscape(field)] = url.QueryEscape(anyToString(val))
@@ -437,6 +441,10 @@ func (e *Element) queryParameters(fd core.FlowData) string {
 	}
 	return string(encoded)
 }
+
+// humanConfidenceFields are the query parameters a page sends a sealed Human
+// Confidence result and its page id under.
+var humanConfidenceFields = map[string]bool{"humanconfidence": true, "humanconfidencepage": true}
 
 // cookiesEnabled reports whether the script retains results in cookies. The
 // query.fod-js-enable-cookies Evidence value decides when it is true or

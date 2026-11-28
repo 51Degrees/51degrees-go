@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!-- Human Confidence demo page.
-     Served by the small server beside this file, which puts in the
-     Resource Key and the cloud address, and holds the License Key server
-     side. -->
+     Served by the small server beside this file, which puts in the client
+     script address and the page id its Pipeline issued for this page, and
+     holds the License Key and the page's transaction server side. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -22,9 +22,11 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
 <div class="c-eg-page">
   <h2 class="c-eg-page__title">Human Confidence demo</h2>
   <p class="c-eg-page__lead">This page shows how likely it is that a
-  person is looking at it. The server asks the cloud from the request
-  alone first. Then your browser runs the 51Degrees browser tests, and the
-  server redeems the sealed result. The License Key stays on the server.</p>
+  person is looking at it. The server reads HumanConfidenceSource and
+  HumanConfidence for the request alone first. Then your browser runs the
+  51Degrees browser tests and gets a sealed result, which it sends back to
+  the server. The server reads the two Properties again, and its Pipeline
+  redeems the sealed result. The License Key stays on the server.</p>
 
   __NOTICE__
 
@@ -38,7 +40,7 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
     </thead>
     <tbody>
       <tr class="c-eg-table__row">
-        <td class="c-eg-table__cell c-eg-table__cell--key">1. Passive, asked by the server</td>
+        <td class="c-eg-table__cell c-eg-table__cell--key">1. Passive, read by the server</td>
         <td class="c-eg-table__cell"><span id="passive-source"
           class="c-eg-status c-eg-status--none">waiting&#8230;</span></td>
         <td class="c-eg-table__cell"><span id="passive-level"
@@ -52,8 +54,8 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
           class="c-eg-status c-eg-status--none">waiting&#8230;</span></td>
       </tr>
       <tr class="c-eg-table__row">
-        <td class="c-eg-table__cell c-eg-table__cell--key">3. Redeemed by the server</td>
-        <td class="c-eg-table__cell"><span id="redeem-detail"
+        <td class="c-eg-table__cell c-eg-table__cell--key">3. Read by the server with the sealed result</td>
+        <td class="c-eg-table__cell"><span id="redeem-source"
           class="c-eg-status c-eg-status--none">waiting&#8230;</span></td>
         <td class="c-eg-table__cell"><span id="redeem-level"
           class="c-eg-status c-eg-status--none">waiting&#8230;</span></td>
@@ -63,7 +65,7 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
 
   <p class="c-eg-page__lead">
     <button type="button" id="again" class="b-btn b-btn--secondary"
-      style="display: none">Redeem the same value again</button>
+      style="display: none">Send the same sealed result again</button>
     <span id="again-result"></span>
   </p>
 
@@ -73,9 +75,10 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
 <script>
 (function () {
   "use strict";
-  var RESOURCE = "__RESOURCE__";
-  // The cloud API base ending in /api/v4/, as the server read it.
-  var API = "__API__";
+  // The client script address and the page id the Pipeline issued for this
+  // page. The address carries the page's transaction.
+  var SCRIPT = "__SCRIPT__";
+  var PAGE = "__PAGE__";
 
   var PASS = "c-eg-status c-eg-status--pass";
   var FAIL = "c-eg-status c-eg-status--fail";
@@ -98,45 +101,39 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
     return ((Date.now() - started) / 1000).toFixed(1) + " s";
   }
 
-  // Step 1. The server asks the cloud from the request alone.
-  fetch("passive").then(function (r) { return r.json(); })
-    .then(function (answer) {
-      if (answer.error) {
-        show("passive-source", "failed", FAIL);
-        show("passive-level", answer.error, NONE);
-        return;
-      }
-      show("passive-source", answer.source || "not returned", NONE);
-      show("passive-level", answer.humanConfidence || "not returned",
-        levelClass(answer.humanConfidence));
-    })
-    .catch(function (error) { show("passive-level", String(error), FAIL); });
+  // The server decides what each cell shows for the two Properties
+  // (shownProperty in main.go, where the tests cover it): the value, or the
+  // reason there is none. The page only displays it.
+  var TONES = { pass: PASS, fail: FAIL, part: PART, none: NONE };
 
-  // Step 3. The server redeems the sealed value with its License Key.
-  function redeem(value) {
-    var body = new URLSearchParams();
-    body.set("value", value);
-    return fetch("redeem", { method: "POST", body: body })
-      .then(function (r) { return r.json(); });
+  function showReading(row, reading) {
+    show(row + "-source", reading.source.text, TONES[reading.source.tone]);
+    show(row + "-level", reading.humanConfidence.text,
+      TONES[reading.humanConfidence.tone]);
   }
 
-  function showRedeemed(answer) {
-    if (answer.humanConfidence) {
-      show("redeem-detail", "redeemed " + answer.secondsSinceVerified
-        + " s after the check", PASS);
-      show("redeem-level", answer.humanConfidence,
-        levelClass(answer.humanConfidence));
-    } else {
-      show("redeem-detail", answer.result || answer.error || "no answer", FAIL);
-      show("redeem-level", "no level", NONE);
-    }
+  // Step 1. The server reads the two Properties for the request alone.
+  fetch("passive").then(function (r) { return r.json(); })
+    .then(function (reading) { showReading("passive", reading); })
+    .catch(function (error) { show("passive-level", String(error), FAIL); });
+
+  // Step 3. The page sends the sealed result back as humanconfidence, with
+  // its page id, and the server reads the two Properties for that request.
+  // Its Pipeline redeems the sealed result with the License Key and the
+  // page's transaction.
+  function redeem(value) {
+    var body = new URLSearchParams();
+    body.set("humanconfidence", value);
+    body.set("humanconfidencepage", PAGE);
+    return fetch("redeem", { method: "POST", body: body })
+      .then(function (r) { return r.json(); });
   }
 
   // Step 2. The client script runs the browser tests, sends the answers,
   // and calls back through its complete function with the final result.
   var script = document.createElement("script");
   script.async = true;
-  script.src = API + RESOURCE + ".js";
+  script.src = SCRIPT;
   script.onerror = function () {
     show("active-source", "the 51Degrees script didn't load", FAIL);
   };
@@ -153,7 +150,7 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
         show("active-source", (source || "not returned") + " after "
           + seconds(), NONE);
         show("active-value", value || "not returned", levelClass(value));
-        show("redeem-detail", "nothing to redeem", NONE);
+        show("redeem-source", "nothing to redeem", NONE);
         show("redeem-level", "", NONE);
         document.getElementById("note").textContent = "The browser tests "
           + "didn't run, so the result stays passive. The cloud may not "
@@ -164,19 +161,19 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
       show("active-source", "Active after " + seconds(), PASS);
       show("active-value", "sealed value, " + String(value).length
         + " characters, unreadable here", NONE);
-      redeem(value).then(function (answer) {
-        showRedeemed(answer);
+      redeem(value).then(function (reading) {
+        showReading("redeem", reading);
         var again = document.getElementById("again");
         again.style.display = "";
         again.onclick = function () {
           redeem(value).then(function (second) {
             document.getElementById("again-result").textContent =
-              " Second redeem: " + (second.result || second.humanConfidence
-                || second.error);
+              " The second time: " + second.source.text + ", "
+              + second.humanConfidence.text;
           });
         };
       }).catch(function (error) {
-        show("redeem-detail", String(error), FAIL);
+        show("redeem-source", String(error), FAIL);
       });
     });
   };

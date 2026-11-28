@@ -306,9 +306,10 @@ func (b *Builder) Build() *Element {
 const prefixSession = "session"
 
 // neverShared lists the keys that are never shared, matched as the whole key
-// or after a ".".
+// or after a ".". A sealed Human Confidence result redeems once, so it and the
+// page id sent with it never leave the server but in the call that redeems.
 var neverShared = []string{"id.email", "id.salt", "request-query",
-	"request-path", "header.cookie"}
+	"request-path", "header.cookie", "humanconfidence", "humanconfidencepage"}
 
 // isNeverShared reports whether key is one of the neverShared keys.
 func isNeverShared(key string) bool {

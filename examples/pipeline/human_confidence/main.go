@@ -20,20 +20,25 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
-// Human Confidence demo server, using only the Go standard library.
+// Human Confidence demo server, using the Pipeline API.
 //
 // Human Confidence says how likely it is that a person is looking at the
-// page. The page shows it three ways.
+// page. The page shows it three ways, each time from the two Properties the
+// Pipeline gives, HumanConfidenceSource and HumanConfidence.
 //
-//  1. Passive. This server asks the cloud, passing on the visitor's request
-//     headers and IP address, and reads HumanConfidenceSource and
-//     HumanConfidence from the answer.
-//  2. Active. The page loads the 51Degrees client script. When the script
-//     completes, HumanConfidenceSource is Active and HumanConfidence holds
-//     a sealed value the browser can't read.
-//  3. Redeem. The page hands the sealed value to this server, which sends
-//     it with the License Key to hc/redeem and returns the cloud's answer
-//     as it is. The License Key stays on this server.
+//  1. Passive. This server processes the visitor's request headers and IP
+//     address, and reads the two Properties.
+//  2. Active. The page loads the 51Degrees client script from the address
+//     the Pipeline issued for this page, which binds the page's sealed value
+//     to a transaction kept on this server. When the script completes,
+//     HumanConfidenceSource is Active and HumanConfidence holds a sealed
+//     value the browser can't read.
+//  3. Redeemed. The page sends the sealed value back to this server as
+//     humanconfidence, with its page id as humanconfidencepage. The server
+//     processes that request and reads the two Properties again. The
+//     Pipeline redeems the sealed value with the License Key and the page's
+//     transaction, so this server never redeems anything itself, and the
+//     License Key stays on it.
 //
 // Environment variables
 //
@@ -59,11 +64,15 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/humanconfidence"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/cloud/requestengine"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 // contactUs is where to ask for a Resource Key with HumanConfidence.
@@ -106,23 +115,41 @@ func listenPort(getenv func(string) string) string {
 
 // example serves the page and the two calls the page makes.
 type example struct {
-	cfg    config
-	client *http.Client
-	notice string
-
-	mu      sync.Mutex
-	headers map[string]bool
+	http.Handler
+	cfg      config
+	pipeline core.Pipeline
+	cre      *requestengine.CloudRequestEngine
+	notice   string
 }
 
-// newExample checks that the Resource Key has HumanConfidence, writing to
-// console when it doesn't, and returns the handler.
-func newExample(cfg config, client *http.Client, console io.Writer) http.Handler {
-	e := &example{cfg: cfg, client: client}
-	has, err := e.hasHumanConfidence()
+// newExample builds the Pipeline, being a Cloud Request Engine followed by
+// the Human Confidence Engine, checks that the Resource Key has
+// HumanConfidence, writing to console when it doesn't, and returns the
+// example. Close it to close the Pipeline.
+func newExample(cfg config, client *http.Client, console io.Writer) (*example, error) {
+	cre, err := requestengine.NewBuilder().
+		SetEndpoint(cfg.API).
+		SetResourceKey(cfg.Resource).
+		SetLicenseKey(cfg.License).
+		SetHTTPClient(client).
+		Build()
+	if err != nil {
+		return nil, err
+	}
+	pipeline, err := core.NewPipelineBuilder().
+		AddFlowElement(cre).
+		AddFlowElement(humanconfidence.New(nil)).
+		Build()
+	if err != nil {
+		cre.Close()
+		return nil, err
+	}
+	e := &example{cfg: cfg, pipeline: pipeline, cre: cre}
+	products, err := cre.PublicProperties()
 	switch {
 	case err != nil:
 		fmt.Fprintf(console, "Could not check the Resource Key's properties. %v\n", err)
-	case !has:
+	case !hasHumanConfidence(products):
 		fmt.Fprintf(console, "The Resource Key does not include HumanConfidence. "+
 			"Contact us for a key that does, at %s\n", contactUs)
 		e.notice = `<p class="notice">The Resource Key does not include ` +
@@ -133,43 +160,18 @@ func newExample(cfg config, client *http.Client, console io.Writer) http.Handler
 	mux.HandleFunc("GET /{$}", e.servePage)
 	mux.HandleFunc("GET /passive", e.passive)
 	mux.HandleFunc("POST /redeem", e.redeem)
-	return mux
+	e.Handler = mux
+	return e, nil
 }
 
-// hasHumanConfidence asks the cloud which properties the Resource Key has.
-func (e *example) hasHumanConfidence() (bool, error) {
-	response, err := e.client.Get(e.cfg.API + "accessibleproperties?resource=" +
-		url.QueryEscape(e.cfg.Resource))
-	if err != nil {
-		return false, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("HTTP %d", response.StatusCode)
-	}
-	var answer any
-	if err := json.NewDecoder(response.Body).Decode(&answer); err != nil {
-		return false, err
-	}
-	return hasName(answer, "HumanConfidence"), nil
-}
+// Close closes the Pipeline.
+func (e *example) Close() error { return e.pipeline.Close() }
 
-// hasName says whether any object in value has a Name equal to name.
-func hasName(value any, name string) bool {
-	switch v := value.(type) {
-	case map[string]any:
-		for key, item := range v {
-			if s, ok := item.(string); ok && strings.EqualFold(key, "name") &&
-				strings.EqualFold(s, name) {
-				return true
-			}
-			if hasName(item, name) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range v {
-			if hasName(item, name) {
+// hasHumanConfidence says whether any product holds HumanConfidence.
+func hasHumanConfidence(products map[string]requestengine.ProductMeta) bool {
+	for _, product := range products {
+		for _, property := range product.Properties {
+			if strings.EqualFold(property.Name, humanconfidence.HumanConfidence) {
 				return true
 			}
 		}
@@ -177,135 +179,127 @@ func hasName(value any, name string) bool {
 	return false
 }
 
-// cloudHeaders gives the request headers in the cloud's evidence keys, in
-// lower case. Only these are passed on, so headers such as Authorization
-// stay on this server. A good answer is kept. After any other answer the
-// next call asks the cloud again.
-func (e *example) cloudHeaders() (map[string]bool, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.headers != nil {
-		return e.headers, nil
-	}
-	response, err := e.client.Get(e.cfg.API + "evidencekeys")
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", response.StatusCode)
-	}
-	var keys []string
-	if err := json.NewDecoder(response.Body).Decode(&keys); err != nil {
-		return nil, err
-	}
-	headers := make(map[string]bool)
-	for _, key := range keys {
-		if strings.HasPrefix(strings.ToLower(key), "header.") {
-			headers[strings.ToLower(key[len("header."):])] = true
-		}
-	}
-	e.headers = headers
-	return headers, nil
-}
-
-// servePage serves the page with the Resource Key and the API base. The
-// page must never come from a cache, as each load runs the tests.
+// servePage serves the page with a new HumanConfidencePage from the Cloud
+// Request Engine: the client script address, which binds the page's sealed
+// value to the page's transaction, and the page id the page sends back. The
+// page must never come from a cache, as each load is a new page.
 func (e *example) servePage(w http.ResponseWriter, r *http.Request) {
+	issued := e.cre.IssueHumanConfidencePage()
 	body := strings.NewReplacer(
-		"__RESOURCE__", e.cfg.Resource,
-		"__API__", e.cfg.API,
+		"__SCRIPT__", issued.ScriptURL(e.cfg.API, e.cfg.Resource),
+		"__PAGE__", issued.ID,
 		"__NOTICE__", e.notice).Replace(page)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.WriteString(w, body)
 }
 
-// passive passes the visitor's headers and IP address to the cloud and
-// returns the source and level from the answer.
+// passive reads the two Properties for the visitor's request alone.
 func (e *example) passive(w http.ResponseWriter, r *http.Request) {
-	names, err := e.cloudHeaders()
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]string{"error": err.Error()})
-		return
-	}
-	evidence := url.Values{}
+	writeJSON(w, e.read(r, "", ""))
+}
+
+// redeem reads the two Properties for a request that carries the sealed
+// value the page sent as humanconfidence, and its page id. The Pipeline
+// redeems it.
+func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, e.read(r, r.FormValue("humanconfidence"), r.FormValue("humanconfidencepage")))
+}
+
+// read processes the visitor's request and gives what the page shows for
+// the two Properties. Only the request headers the cloud lists in its
+// Evidence keys are passed on, so headers such as Authorization stay on this
+// server. A sealed value and its page id go in as the Evidence
+// query.humanconfidence and query.humanconfidencepage, which is what the web
+// integration makes of the page's humanconfidence and humanconfidencepage
+// parameters.
+func (e *example) read(r *http.Request, sealed, pageID string) reading {
+	fd := e.pipeline.CreateFlowData()
+	filter := e.pipeline.EvidenceKeyFilter()
 	for name, values := range r.Header {
-		if lower := strings.ToLower(name); names[lower] {
-			evidence.Set(lower, strings.Join(values, ", "))
+		if key := "header." + strings.ToLower(name); filter.Include(key) {
+			fd.AddEvidence(key, strings.Join(values, ", "))
 		}
 	}
 	// Behind a load balancer or CDN, use the visitor's address it passes
-	// on. Set last, so no header can replace it.
+	// on.
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		evidence.Set("client-ip", host)
+		fd.AddEvidence("server.client-ip", host)
 	}
-	response, err := e.client.PostForm(e.cfg.API+e.cfg.Resource+".json", evidence)
+	if sealed != "" {
+		fd.AddEvidence(requestengine.HumanConfidenceEvidence, sealed)
+		fd.AddEvidence(requestengine.HumanConfidencePageEvidence, pageID)
+	}
+	// A failed request to the cloud is an error here. The two Properties
+	// are read all the same, as the Pipeline gives them where it can.
+	failure := ""
+	if err := fd.Process(); err != nil {
+		failure = err.Error()
+	}
+	data, err := core.Get[*derivedproperty.Data](fd)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]string{"error": err.Error()})
-		return
+		data = derivedproperty.NewData()
 	}
-	defer response.Body.Close()
-	body, _ := io.ReadAll(response.Body)
-	if response.StatusCode != http.StatusOK {
-		writeJSON(w, http.StatusOK, map[string]string{"error": fmt.Sprintf(
-			"HTTP %d: %s", response.StatusCode, trim(string(body)))})
-		return
+	return reading{
+		Source:          shownProperty(data, humanconfidence.HumanConfidenceSource, failure),
+		HumanConfidence: shownProperty(data, humanconfidence.HumanConfidence, failure),
 	}
-	var answer struct {
-		Derived map[string]any `json:"derived"`
-	}
-	if err := json.Unmarshal(body, &answer); err != nil {
-		writeJSON(w, http.StatusOK, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"source":          stringOrNil(answer.Derived["humanconfidencesource"]),
-		"humanConfidence": stringOrNil(answer.Derived["humanconfidence"]),
-	})
 }
 
-// redeem sends the sealed value with the License Key to the cloud and
-// returns its answer unchanged.
-func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
-	fields := url.Values{"value": {r.FormValue("value")}}
-	if e.cfg.License != "" {
-		fields.Set("license", e.cfg.License)
-	}
-	response, err := e.client.PostForm(e.cfg.API+"hc/redeem", fields)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusNotFound {
-		writeJSON(w, http.StatusOK, map[string]string{"error": fmt.Sprintf(
-			"The service at %s doesn't redeem Human Confidence.", e.cfg.API)})
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	io.Copy(w, response.Body)
+// cell is the text of one cell of the page's table, and its tone, being
+// pass, fail, part or none, which the page turns into a color.
+type cell struct {
+	Text string `json:"text"`
+	Tone string `json:"tone"`
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
+// reading is what the page shows for one read of the two Properties.
+type reading struct {
+	Source          cell `json:"source"`
+	HumanConfidence cell `json:"humanConfidence"`
+}
+
+// shownProperty decides what the page shows for a Property: its value, or,
+// where it has none, the reason the Pipeline gives, as for any other
+// Property with no value. A Property the Pipeline didn't give shows the
+// failure, where there was one.
+func shownProperty(data *derivedproperty.Data, name, failure string) cell {
+	value, err := derivedproperty.GetAs[engines.AspectPropertyValue[string]](data, name)
+	if err != nil {
+		if failure != "" {
+			return cell{failure, "fail"}
+		}
+		return cell{"not returned", "none"}
+	}
+	text, err := value.Value()
+	if err != nil {
+		return cell{value.NoValueMessage(), "none"}
+	}
+	if name == humanconfidence.HumanConfidenceSource {
+		if text == humanconfidence.Active {
+			return cell{text, "pass"}
+		}
+		return cell{text, "none"}
+	}
+	return cell{text, levelTone(text)}
+}
+
+// levelTone gives the tone for a Human Confidence Value.
+func levelTone(level string) string {
+	switch level {
+	case "High":
+		return "pass"
+	case "Low":
+		return "fail"
+	case "Medium":
+		return "part"
+	}
+	return "none"
+}
+
+func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(value)
-}
-
-func stringOrNil(value any) any {
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return nil
-}
-
-func trim(text string) string {
-	if len(text) > 200 {
-		return text[:200]
-	}
-	return text
 }
 
 func main() {
@@ -315,12 +309,17 @@ func main() {
 	}
 	if cfg.License == "" {
 		fmt.Println("No _51DEGREES_LICENSE_KEY set. The page still shows " +
-			"Passive and Active, but redeeming needs a License Key.")
+			"Passive and Active, but redeeming needs a License Key, so the " +
+			"third row shows Medium.")
 	}
 	// A short limit, so a slow cloud can't hang the demo.
 	client := &http.Client{Timeout: 10 * time.Second}
-	handler := newExample(cfg, client, os.Stdout)
+	e, err := newExample(cfg, client, os.Stdout)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer e.Close()
 	port := listenPort(os.Getenv)
 	fmt.Printf("Human Confidence demo on http://localhost:%s/, using %s\n", port, cfg.API)
-	log.Fatal(http.ListenAndServe("localhost:"+port, handler))
+	log.Fatal(http.ListenAndServe("localhost:"+port, e))
 }

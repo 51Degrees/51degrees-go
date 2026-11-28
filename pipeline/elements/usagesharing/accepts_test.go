@@ -55,6 +55,29 @@ func newSharingPipeline(t *testing.T, b *Builder) (core.Pipeline, *Element) {
 	return p, e
 }
 
+// A sealed Human Confidence result and its page id are never shared, even
+// where an element in the Pipeline accepts them, as the Human Confidence
+// Engine does. The sealed result redeems once, so it leaves the server only
+// in the call that redeems it.
+func TestUsageSharingNeverSharesASealedHumanConfidence(t *testing.T) {
+	for _, b := range []*Builder{NewBuilder(), NewBuilder().SetShareAllEvidence(true)} {
+		e := b.SetSharePercentage(0).SetShareUsageURL("http://127.0.0.1:1/").Build()
+		engine := &userAgentEngine{BaseElement: core.NewBaseElement("derived",
+			core.NewWhitelistFilter("query.humanconfidence", "query.humanconfidencepage"), nil)}
+		p, err := core.NewPipelineBuilder().AddFlowElement(engine).AddFlowElement(e).Build()
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		for _, key := range []string{"query.humanconfidence", "query.humanconfidencepage",
+			"query.HumanConfidence", "cookie.humanconfidence", "header.humanconfidence"} {
+			if e.isShared(key) {
+				t.Errorf("isShared(%q) = true, want false", key)
+			}
+		}
+		p.Close()
+	}
+}
+
 // The usage sharing element accepts no Evidence, so a Pipeline holding it
 // accepts only what its other elements accept, and If-None-Match or any
 // other header no element uses stays out of cache keys and the ETag.

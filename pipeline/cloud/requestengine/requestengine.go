@@ -75,6 +75,9 @@ const (
 type CloudRequestData struct {
 	*engines.BaseAspectData
 	failed bool
+	// redeems is set where the request sent a sealed Human Confidence result
+	// with the transaction kept for its page, so the answer redeems it.
+	redeems bool
 	// task is the request, nil where the engine failed before starting one.
 	task *requestTask
 	// fd is the Flow Data the data is held in, so that the first reader to
@@ -146,6 +149,14 @@ func (d *CloudRequestData) Failed() bool {
 	_, err := d.Response()
 	return err != nil
 }
+
+// RedeemsHumanConfidence reports whether the request sent the sealed Human
+// Confidence result its Flow Data carries, with the transaction the engine
+// kept for its page, so that the answer's derived.humanconfidence is the
+// redeemed Value. It is false where no sealed result was sent, being where
+// the engine holds no transaction for the page or has no License Key.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#where-the-sealed-result-is-not-redeemed
+func (d *CloudRequestData) RedeemsHumanConfidence() bool { return d.redeems }
 
 // JSONResponse returns the raw JSON response body, waiting for the request,
 // or an empty string where the request failed.
@@ -243,6 +254,10 @@ type CloudRequestEngine struct {
 	// notReturnedReported is set once the first answer to a request that
 	// asked for Properties has been compared with the request.
 	notReturnedReported atomic.Bool
+
+	// pages holds the transaction kept for each page issued a
+	// HumanConfidencePage.
+	pages pages
 
 	dataEndpoint         string
 	propertiesEndpoint   string
@@ -342,12 +357,14 @@ func (e *CloudRequestEngine) Process(fd core.FlowData) error {
 		return err
 	}
 
-	task, err := e.startRequest(e.buildForm(fd))
+	form, redeems := e.buildForm(fd)
+	task, err := e.startRequest(form)
 	if err != nil {
 		return err
 	}
 	data := newCloudRequestData()
 	data.task = task
+	data.redeems = redeems
 	fd.GetOrAdd(e.DataKey(), func(core.FlowData) core.ElementData { return data })
 	return nil
 }
@@ -366,16 +383,18 @@ func (e *CloudRequestEngine) startRequest(form url.Values) (*requestTask, error)
 		return nil, errEngineClosed
 	}
 	t := &requestTask{engine: e, done: make(chan struct{})}
+	secrets := e.secretsIn(form)
 	e.tasks.Add(1)
 	go func() {
 		defer e.tasks.Done()
 		defer close(t.done)
-		// Deferred last, so it runs before done is closed.
+		// Deferred last, so it runs before done is closed. The panic's value
+		// can hold anything the request held, so the secrets are hidden in it.
 		defer func() {
 			if r := recover(); r != nil {
 				t.body = ""
-				t.err = fmt.Errorf("panic processing element '%s': %v",
-					e.DataKey(), r)
+				t.err = errors.New(hide(fmt.Sprintf("panic processing element '%s': %v",
+					e.DataKey(), r), secrets))
 			}
 		}()
 		body, err := e.makeDataRequest(form)
@@ -427,7 +446,10 @@ func (e *CloudRequestEngine) makeDataRequest(form url.Values) (string, error) {
 
 // postEndpoint posts form to endpoint as URL-encoded form data, so the
 // credentials it holds stay out of the URL, and returns the checked answer.
+// No message it builds holds the License Key, or the sealed result or the
+// transaction the form carries.
 func (e *CloudRequestEngine) postEndpoint(endpoint string, form url.Values) ([]byte, *http.Response, error) {
+	secrets := e.secretsIn(form)
 	req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, nil, err
@@ -438,13 +460,13 @@ func (e *CloudRequestEngine) postEndpoint(endpoint string, form url.Values) ([]b
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
 		return nil, nil, NewCloudRequestError(fmt.Sprintf("error contacting cloud service at '%s'", endpoint),
-			core.MaskLicenseKeysInError(redactResourceKey(err), e.licenseKeys()))
+			hideInError(redactResourceKey(err), secrets))
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	e.logWarnings(raw)
+	e.logWarnings(raw, secrets)
 
-	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw); err != nil {
+	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw, secrets); err != nil {
 		return nil, nil, err
 	}
 	return raw, resp, nil
@@ -474,9 +496,89 @@ func (e *CloudRequestEngine) licenseKeys() []string {
 	return []string{e.licenseKey}
 }
 
-// maskLicenseKey returns text with the License Key masked.
-func (e *CloudRequestEngine) maskLicenseKey(text string) string {
-	return core.MaskLicenseKeysIn(text, e.licenseKeys())
+// secretsIn gives the values no message may hold, in whole or in part,
+// being the License Key, and the sealed result and the transaction form
+// carries.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-package-never-exposes
+func (e *CloudRequestEngine) secretsIn(form url.Values) []string {
+	secrets := e.licenseKeys()
+	for _, field := range []string{"humanconfidence", "transaction"} {
+		if value := form.Get(field); value != "" {
+			secrets = append(secrets, value)
+		}
+	}
+	return secrets
+}
+
+// hidden is what every message the engine builds shows in place of its
+// License Key, a sealed result or a transaction. It is the same for every
+// value, so it gives away neither the value nor its length. It is the
+// engine's own, so the masking of data file license keys in pipeline/core,
+// which keeps their last four characters, is not changed by it.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-package-never-exposes
+const hidden = "(hidden)"
+
+// hide returns text with each of secrets replaced by hidden, so no part of
+// it is shown, nor its length. Each is found as it is written, URL-encoded,
+// and as a JSON string may escape it, since an answer the cloud service
+// writes can hold it in any of these forms.
+func hide(text string, secrets []string) string {
+	sorted := slices.Clone(secrets)
+	slices.SortFunc(sorted, func(a, b string) int { return len(b) - len(a) })
+	for _, secret := range sorted {
+		if secret == "" {
+			continue
+		}
+		for _, f := range writtenForms(secret) {
+			text = strings.ReplaceAll(text, f, hidden)
+		}
+	}
+	return text
+}
+
+// writtenForms gives the ways secret can be written: as it is, URL-encoded,
+// and JSON-escaped, with "/" as "\/" or with every character other than a
+// letter, a digit, "-", "_", "." or "~" as a \u escape in either case.
+func writtenForms(secret string) []string {
+	forms := []string{secret}
+	add := func(f string) {
+		if !slices.Contains(forms, f) {
+			forms = append(forms, f)
+		}
+	}
+	add(url.QueryEscape(secret))
+	if quoted, err := json.Marshal(secret); err == nil {
+		add(string(quoted[1 : len(quoted)-1]))
+	}
+	add(strings.ReplaceAll(secret, "/", `\/`))
+	var upper, lower strings.Builder
+	for _, r := range secret {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == '~':
+			upper.WriteRune(r)
+			lower.WriteRune(r)
+		default:
+			fmt.Fprintf(&upper, `\u%04X`, r)
+			fmt.Fprintf(&lower, `\u%04x`, r)
+		}
+	}
+	add(upper.String())
+	add(lower.String())
+	return forms
+}
+
+// hideInError returns err with none of secrets in its message, keeping its
+// type where the message holds none.
+func hideInError(err error, secrets []string) error {
+	if err == nil || len(secrets) == 0 {
+		return err
+	}
+	text := err.Error()
+	if masked := hide(text, secrets); masked != text {
+		return errors.New(masked)
+	}
+	return err
 }
 
 // reportPropertiesNotReturned compares the Properties a request asked for
@@ -538,30 +640,146 @@ func lowerKeys(raw []byte) (map[string]json.RawMessage, bool) {
 var engineFields = map[string]bool{
 	"resource": true, "license": true, "licence": true, "values": true}
 
+// transactionFields are left out of a request that carries a sealed Human
+// Confidence result, under any prefix and in any letter case, because the
+// only transaction that call may hold is one the package kept, never one
+// taken from the request. challenge is the older name for the same value.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#redeeming-through-the-json-call
+var transactionFields = map[string]bool{"transaction": true, "challenge": true}
+
+// HumanConfidenceEvidence is the Evidence that carries a sealed Human
+// Confidence result, which the page sends to the publisher's server as the
+// parameter humanconfidence.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#when-humanconfidence-arrives-sealed
+const HumanConfidenceEvidence = "query.humanconfidence"
+
+// humanConfidenceProperty is the Property a request that carries a sealed
+// result must name, so that the answer redeems it.
+const humanConfidenceProperty = "derived.HumanConfidence"
+
+// CarriesSealedResult reports whether fd's Evidence holds a sealed Human
+// Confidence result, being HumanConfidenceEvidence with a value that is not
+// empty.
+func CarriesSealedResult(fd core.FlowData) bool {
+	value, ok := fd.Evidence().Get(HumanConfidenceEvidence)
+	return ok && valueToString(value) != ""
+}
+
+// humanConfidenceField and humanConfidencePageField are the names the sealed
+// result and the page id have once the prefix is removed.
+const (
+	humanConfidenceField     = "humanconfidence"
+	humanConfidencePageField = "humanconfidencepage"
+)
+
+// carriesHumanConfidenceElsewhere reports whether fd's Evidence holds a value
+// that is not empty under a key other than HumanConfidenceEvidence whose name
+// is humanconfidence, in any letter case: under a header, a cookie, server.,
+// or no prefix. Only HumanConfidenceEvidence is a sealed result, so such a
+// value is never sent, nor is a transaction or challenge from the request,
+// which the cloud service could otherwise redeem it with.
+func carriesHumanConfidenceElsewhere(fd core.FlowData) bool {
+	for key, raw := range fd.Evidence().AsMap() {
+		if strings.EqualFold(key, HumanConfidenceEvidence) {
+			continue
+		}
+		if strings.EqualFold(evidenceField(key), humanConfidenceField) && valueToString(raw) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// evidenceField gives the name of an Evidence key with its prefix removed,
+// being the whole key where it has no prefix.
+func evidenceField(key string) string {
+	if _, field := core.SplitEvidenceKey(key); field != "" {
+		return field
+	}
+	return key
+}
+
+// String names the engine and nothing it holds, so printing the engine, as
+// with %v or %+v, never shows its License Key or a transaction it keeps.
+func (e *CloudRequestEngine) String() string { return "CloudRequestEngine(" + e.DataKey() + ")" }
+
+// GoString gives the same as String, for %#v.
+func (e *CloudRequestEngine) GoString() string { return e.String() }
+
+// HasLicenseKey reports whether the engine was given a License Key, which a
+// sealed Human Confidence result needs to be redeemed.
+func (e *CloudRequestEngine) HasLicenseKey() bool { return e.licenseKey != "" }
+
 // buildForm constructs the URL-encoded form, being the credentials, the
 // Requested Properties as values, comma separated, and the Evidence, as
-// resolveEvidence gives it.
+// resolveEvidence gives it. It reports whether the form redeems a sealed
+// Human Confidence result.
+//
+// A request that carries a sealed result takes the transaction kept for its
+// page, so the transaction is used once, and leaves out any transaction or
+// challenge in its Evidence. With a kept transaction and a License Key it
+// sends the sealed result with that transaction, and names
+// derived.HumanConfidence where the configured list is not empty and lacks
+// it, even where the configured list is empty, because the cloud service
+// needs a call with a License Key to name its Properties. The name is added
+// to the form only, so the report of Properties not returned is still made
+// for the configured list alone. With no kept transaction, or no License
+// Key, the sealed result is not sent and is not redeemed. A value named
+// humanconfidence under any other key is never sent, and a request that has
+// one, but no sealed result, leaves out its transaction and challenge too.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
-func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
+// and https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#redeeming-through-the-json-call
+func (e *CloudRequestEngine) buildForm(fd core.FlowData) (url.Values, bool) {
 	form := e.credentials()
-	if len(e.requestedProperties) > 0 {
-		form.Set("values", strings.Join(e.requestedProperties, ","))
+	sealed := CarriesSealedResult(fd)
+	transaction, redeems := "", false
+	if sealed {
+		transaction, redeems = e.pages.take(evidenceText(fd, HumanConfidencePageEvidence), e.now())
+		redeems = redeems && e.HasLicenseKey()
 	}
-	for field, value := range e.resolveEvidence(fd) {
+	values := e.requestedProperties
+	if redeems && !slices.ContainsFunc(values, func(name string) bool {
+		return strings.EqualFold(name, humanConfidenceProperty)
+	}) {
+		values = append(slices.Clip(values), humanConfidenceProperty)
+	}
+	if len(values) > 0 {
+		form.Set("values", strings.Join(values, ","))
+	}
+	stray := !sealed && carriesHumanConfidenceElsewhere(fd)
+	for field, value := range e.resolveEvidence(fd, sealed || stray, sealed || stray, redeems) {
 		form.Set(field, value)
 	}
-	return form
+	if redeems {
+		form.Set("transaction", transaction)
+	}
+	return form, redeems
+}
+
+// evidenceText gives the Evidence under key as text, or empty where there is
+// none.
+func evidenceText(fd core.FlowData, key string) string {
+	if raw, ok := fd.Evidence().Get(key); ok && raw != nil {
+		return valueToString(raw)
+	}
+	return ""
 }
 
 // resolveEvidence returns every Evidence value with its prefix removed,
-// leaving out the web request, which is not a value to send, and any that
-// strips to a field the engine writes itself. The keys the cloud service
+// leaving out the web request, which is not a value to send, the page id
+// under any prefix, which is only a handle for this server, any that strips
+// to a field the engine writes itself, and any that strips to transaction or
+// challenge where dropTransactions is true. Where dropHumanConfidence is
+// true, every value named humanconfidence is left out too, under any prefix
+// and in any letter case, but for the sealed result itself where
+// keepSealed is true.
+// The keys the cloud service
 // accepts do not limit it, as what the service uses changes and the other
 // Evidence helps it improve. Conflicts between prefixes are resolved using
 // the defined precedence, so a key with no prefix ranks as a key whose
 // prefix is the whole key, giving query the precedence of query Evidence
 // and anything else the lowest precedence.
-func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
+func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData, dropTransactions, dropHumanConfidence, keepSealed bool) map[string]string {
 	type choice struct {
 		prefix string
 		value  string
@@ -575,7 +793,11 @@ func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string
 		if prefix == "" {
 			prefix = key
 		}
-		if engineFields[strings.ToLower(field)] {
+		name := strings.ToLower(field)
+		if engineFields[name] || name == humanConfidencePageField ||
+			(dropTransactions && transactionFields[name]) ||
+			(dropHumanConfidence && name == humanConfidenceField &&
+				!(keepSealed && strings.EqualFold(key, HumanConfidenceEvidence))) {
 			continue
 		}
 		val := valueToString(raw)
@@ -610,10 +832,10 @@ const maxLoggedContentBytes = 512
 // The License Key is masked in each message, as the cloud service may write
 // it in its answer.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#http-requests
-func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte) error {
+func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.Header, raw []byte, secrets []string) error {
 	if msgs := extractMessages(raw, "errors"); len(msgs) > 0 {
 		for i, msg := range msgs {
-			msgs[i] = e.maskLicenseKey(msg)
+			msgs[i] = hide(msg, secrets)
 		}
 		return NewCloudResponseErrors(msgs, status, headers)
 	}
@@ -621,12 +843,20 @@ func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.
 		return NewCloudResponseError(fmt.Sprintf("No data in response from cloud service at '%s'", url), status, headers)
 	}
 	if status != http.StatusOK {
+		// A call that carried a sealed result or a transaction could be
+		// answered with a part of either, which can't be found to hide, so
+		// the content of its answer is left out.
+		if len(secrets) > len(e.licenseKeys()) {
+			return NewCloudResponseError(fmt.Sprintf("Cloud service at '%s' returned "+
+				"status code '%d'. Its content is left out, as the call carried a "+
+				"sealed result or a transaction.", url, status), status, headers)
+		}
 		// The content is masked before it is cut, so a License Key across
 		// the cut is still found.
-		content := truncate(e.maskLicenseKey(string(raw)), maxLoggedContentBytes)
-		return NewCloudResponseError(e.maskLicenseKey(
+		content := truncate(hide(string(raw), secrets), maxLoggedContentBytes)
+		return NewCloudResponseError(hide(
 			fmt.Sprintf("Cloud service at '%s' returned status code '%d' with content %s",
-				url, status, content)), status, headers)
+				url, status, content), secrets), status, headers)
 	}
 	return nil
 }
@@ -634,9 +864,9 @@ func (e *CloudRequestEngine) checkResponse(url string, status int, headers http.
 // logWarnings logs each entry of an answer's warnings array as a warning. It
 // runs on every answer the engine reads, from discovery and data requests
 // alike, with the License Key masked.
-func (e *CloudRequestEngine) logWarnings(raw []byte) {
+func (e *CloudRequestEngine) logWarnings(raw []byte, secrets []string) {
 	for _, w := range extractMessages(raw, "warnings") {
-		e.Logger().Warn("cloud service warning", "warning", e.maskLicenseKey(w))
+		e.Logger().Warn("cloud service warning", "warning", hide(w, secrets))
 	}
 }
 
@@ -867,8 +1097,8 @@ func (e *CloudRequestEngine) getEndpoint(endpoint string, appendResource bool) (
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	e.logWarnings(raw)
-	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw); err != nil {
+	e.logWarnings(raw, e.licenseKeys())
+	if err := e.checkResponse(endpoint, resp.StatusCode, resp.Header, raw, e.licenseKeys()); err != nil {
 		return nil, err
 	}
 	return raw, nil
