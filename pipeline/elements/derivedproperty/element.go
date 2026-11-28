@@ -58,6 +58,11 @@ type Data struct {
 
 func newData() *Data { return &Data{values: typedmap.NewMap()} }
 
+// NewData returns empty Element Data of the Derived Property Elements, for
+// another Flow Element that writes Properties under DataKey, as the Human
+// Confidence Engine does, to add when no Derived Property Element has.
+func NewData() *Data { return newData() }
+
 // Get returns a derived Property value by name.
 func (d *Data) Get(name string) (any, error) {
 	v, ok := d.values.GetString(name)

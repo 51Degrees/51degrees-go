@@ -434,13 +434,13 @@ func TestDiscoveryWithEachCredential(t *testing.T) {
 	}
 }
 
-// The License Key never appears in full in an error or a log entry, even
-// when the cloud service writes it in its answer. It appears masked, with
-// only its last four characters showing.
-// See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/features/logging.md#license-keys
+// The License Key never appears in an error or a log entry, in whole or in
+// part, even when the cloud service writes it in its answer. Every one of its
+// characters is masked, which replaces the rule that showed the last four.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-package-never-exposes
 func TestLicenseKeyIsMasked(t *testing.T) {
 	echo := `{"errors":["The license key ` + testLicenseKey + ` is not valid"]}`
-	masked := core.MaskLicenseKey(testLicenseKey)
+	masked := strings.Repeat("*", len(testLicenseKey))
 	check := func(t *testing.T, what, text string) {
 		t.Helper()
 		if strings.Contains(text, testLicenseKey) {
