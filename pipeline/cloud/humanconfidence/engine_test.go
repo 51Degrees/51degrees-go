@@ -62,14 +62,17 @@ const (
 // and any other sealed result is unreadable. Every answer to a call that
 // holds a sealed result is 200, with HumanConfidence Medium on any status but
 // success and HumanConfidenceSource Active. status and body, where set,
-// replace the answer.
+// replace the answer. With stall set, the call answers nothing until the
+// client gives up on it, or until the test releases it.
 type fakeCloud struct {
 	server   *httptest.Server
 	requests atomic.Int64
 	status   int
 	body     string
 	passive  string
-	delay    time.Duration
+	stall    bool
+	stop     chan struct{}
+	release  func()
 
 	mu       sync.Mutex
 	redeemed map[string]bool
@@ -84,20 +87,45 @@ func newFakeCloud(t *testing.T) *fakeCloud {
 		redeemed: map[string]bool{},
 		madeWith: map[string]string{},
 		passive:  `{"derived":{"humanconfidence":"High","humanconfidencesource":"Passive"}}`,
+		stop:     make(chan struct{}),
 	}
+	var once sync.Once
+	c.release = func() { once.Do(func() { close(c.stop) }) }
 	c.server = httptest.NewServer(http.HandlerFunc(c.json))
 	t.Cleanup(c.server.Close)
+	// Cleanups run last first, so a stalled call is released before the
+	// server waits for it to end.
+	t.Cleanup(c.release)
 	return c
 }
 
 func (c *fakeCloud) json(w http.ResponseWriter, r *http.Request) {
+	// Discovery is answered as the service does, unless the test sets the
+	// answer to every call.
+	answered := c.status != 0 || c.body != ""
+	switch {
+	case answered:
+	case strings.HasSuffix(r.URL.Path, "/accessibleproperties"):
+		io.WriteString(w, `{"Products":{"device":{"DataTier":"CloudV4",`+
+			`"Properties":[{"Name":"ismobile","Type":"Bool","Category":"Device"}]}}}`)
+		return
+	case strings.HasSuffix(r.URL.Path, "/evidencekeys"):
+		io.WriteString(w, `["header.user-agent","`+requestengine.HumanConfidenceEvidence+`"]`)
+		return
+	}
 	c.requests.Add(1)
 	r.ParseForm()
 	c.mu.Lock()
 	c.forms = append(c.forms, r.PostForm)
 	c.mu.Unlock()
-	if c.delay > 0 {
-		time.Sleep(c.delay)
+	if c.stall {
+		select {
+		case <-r.Context().Done():
+			// The client gave up, so there is no one to answer.
+			return
+		case <-c.stop:
+			// Released by the test, so answer as the service would.
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if c.status != 0 || c.body != "" {
@@ -296,13 +324,61 @@ func TestEachCaseNotRedeemedGivesMediumAndActive(t *testing.T) {
 		})
 	}
 
+	// The call never answers before the client gives up, and the only limit
+	// on the client is the engine's TimeoutSeconds, so the request can only
+	// end where that setting applies. It is longer than the engine's default,
+	// and a timer never fires early, so ending sooner means the setting was
+	// not used.
 	t.Run("the request did not complete in time", func(t *testing.T) {
+		const timeoutSeconds = 3
+		if requestengine.DefaultTimeout >= timeoutSeconds*time.Second {
+			t.Fatalf("the test's timeout must be longer than the default %v", requestengine.DefaultTimeout)
+		}
 		c := newFakeCloud(t)
-		c.delay = 300 * time.Millisecond
-		p, engine := build(t, c, io.Discard, func(b *requestengine.Builder) {
-			b.SetHTTPClient(&http.Client{Timeout: 50 * time.Millisecond})
-		})
-		want(t, process(t, p, sealedHigh), engine, "Medium", humanconfidence.Active)
+		c.stall = true
+		quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+		element, err := requestengine.Factory(map[string]any{
+			"ResourceKey":    testResource,
+			"LicenseKey":     testLicense,
+			"EndPoint":       c.server.URL + "/",
+			"TimeoutSeconds": timeoutSeconds,
+		}, quiet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cre := element.(*requestengine.CloudRequestEngine)
+		engine := humanconfidence.New(quiet)
+		p, err := core.NewPipelineBuilder().SetLogger(quiet).SetSuppressProcessExceptions(true).
+			AddFlowElement(cre).AddFlowElement(engine).Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { p.Close() })
+		fd := p.CreateFlowData()
+		fd.AddEvidence("query.humanconfidence", sealedHigh)
+		fd.AddEvidence(requestengine.HumanConfidencePageEvidence, cre.IssueHumanConfidencePage().ID)
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() { done <- fd.Process() }()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+			if took := time.Since(start); took < timeoutSeconds*time.Second {
+				t.Errorf("the request ended after %v, before TimeoutSeconds of %d", took, timeoutSeconds)
+			}
+		case <-time.After(30 * time.Second):
+			// The client did not give up, so TimeoutSeconds did not apply.
+			// Let the call answer, as a late answer would, and read what
+			// the engine gives.
+			c.release()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			t.Errorf("the request was not ended by TimeoutSeconds of %d", timeoutSeconds)
+		}
+		want(t, fd, engine, "Medium", humanconfidence.Active)
 	})
 
 	t.Run("the service could not be reached", func(t *testing.T) {
