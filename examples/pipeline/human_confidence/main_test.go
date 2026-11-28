@@ -254,14 +254,35 @@ func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 var rcAnswers = []struct {
 	status int
 	body   string
+	shown  shown
 }{
 	{http.StatusOK, `{"humanConfidence":"High","status":"success",` +
-		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":2}`},
+		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":2}`,
+		shown{"success", cell{"redeemed 2 s after the check", "pass"}, cell{"High", "pass"}}},
 	{http.StatusOK, `{"humanConfidence":"Medium","status":"expired",` +
-		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":11}`},
-	{http.StatusOK, `{"humanConfidence":"Medium","status":"replayed"}`},
-	{http.StatusOK, `{"humanConfidence":"Medium","status":"unreadable"}`},
-	{http.StatusServiceUnavailable, `{"humanConfidence":"Medium","status":"unconfirmed"}`},
+		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":11}`,
+		shown{"expired", cell{"expired", "fail"}, cell{"no level", "none"}}},
+	{http.StatusOK, `{"humanConfidence":"Medium","status":"replayed"}`,
+		shown{"replayed", cell{"replayed", "fail"}, cell{"no level", "none"}}},
+	{http.StatusOK, `{"humanConfidence":"Medium","status":"unreadable"}`,
+		shown{"unreadable", cell{"unreadable", "fail"}, cell{"no level", "none"}}},
+	{http.StatusServiceUnavailable, `{"humanConfidence":"Medium","status":"unconfirmed"}`,
+		shown{"unconfirmed", cell{"unconfirmed", "fail"}, cell{"no level", "none"}}},
+}
+
+// redeemAnswer posts a sealed result to /redeem and decodes what comes back.
+func redeemAnswer(t *testing.T, example *httptest.Server) (int, shown) {
+	t.Helper()
+	response, err := http.PostForm(example.URL+"/redeem",
+		url.Values{"sealedResult": {"sealed-value"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got shown
+	if err := json.Unmarshal([]byte(readBody(t, response)), &got); err != nil {
+		t.Fatal(err)
+	}
+	return response.StatusCode, got
 }
 
 func TestRedeemPassesTheAnswerOn(t *testing.T) {
@@ -270,15 +291,10 @@ func TestRedeemPassesTheAnswerOn(t *testing.T) {
 		cloud.redeemStatus = rc.status
 		cloud.redeemBody = rc.body
 		example := startExample(t, cloud)
-		response, err := http.PostForm(example.URL+"/redeem",
-			url.Values{"sealedResult": {"sealed-value"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		body := readBody(t, response)
-		if response.StatusCode != rc.status || body != rc.body {
-			t.Errorf("redeem gave %d %q, want %d %q",
-				response.StatusCode, body, rc.status, rc.body)
+		code, got := redeemAnswer(t, example)
+		if code != rc.status || got != rc.shown {
+			t.Errorf("redeem of %s gave %d %+v, want %d %+v",
+				rc.body, code, got, rc.status, rc.shown)
 		}
 		cloud.mu.Lock()
 		if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
@@ -286,6 +302,47 @@ func TestRedeemPassesTheAnswerOn(t *testing.T) {
 			t.Error("the cloud was not sent the sealed result and the License Key")
 		}
 		cloud.mu.Unlock()
+	}
+}
+
+// Success is decided from status alone. A success that gives a reason in
+// place of a level shows the reason, not a failure.
+func TestRedeemSuccessWithNoLevelShowsTheReason(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	cloud.redeemBody = `{"status":"success","secondsSinceVerified":1,` +
+		`"humanConfidenceNullReason":"Not in this key."}`
+	example := startExample(t, cloud)
+	_, got := redeemAnswer(t, example)
+	want := shown{"success", cell{"redeemed 1 s after the check", "pass"},
+		cell{"Not in this key.", "none"}}
+	if got != want {
+		t.Errorf("the page is told %+v, want %+v", got, want)
+	}
+}
+
+func TestRedeemShown(t *testing.T) {
+	for _, test := range []struct {
+		answer string
+		want   shown
+	}{
+		{`{"status":"success","humanConfidence":"Low"}`,
+			shown{"success", cell{"redeemed", "pass"}, cell{"Low", "fail"}}},
+		{`{"status":"success","humanConfidence":"Medium","secondsSinceVerified":3}`,
+			shown{"success", cell{"redeemed 3 s after the check", "pass"}, cell{"Medium", "part"}}},
+		{`{"status":"success"}`,
+			shown{"success", cell{"redeemed", "pass"}, cell{"no level and no reason given", "none"}}},
+		{`{"humanConfidence":"High"}`,
+			shown{"no answer", cell{"no answer", "fail"}, cell{"no level", "none"}}},
+		{`{"error":"broken"}`,
+			shown{"broken", cell{"broken", "fail"}, cell{"no level", "none"}}},
+	} {
+		var answer map[string]any
+		if err := json.Unmarshal([]byte(test.answer), &answer); err != nil {
+			t.Fatal(err)
+		}
+		if got := redeemShown(answer); got != test.want {
+			t.Errorf("%s shows %+v, want %+v", test.answer, got, test.want)
+		}
 	}
 }
 
@@ -319,12 +376,12 @@ func TestRedeemNotFoundSaysServiceDoesNotRedeem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var answer map[string]string
+	var answer shown
 	if err := json.Unmarshal([]byte(readBody(t, response)), &answer); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(answer["error"], "doesn't redeem Human Confidence") {
-		t.Errorf("the error is %q", answer["error"])
+	if !strings.Contains(answer.Detail.Text, "doesn't redeem Human Confidence") {
+		t.Errorf("the error is %q", answer.Detail.Text)
 	}
 }
 

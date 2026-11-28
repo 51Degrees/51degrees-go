@@ -120,24 +120,13 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
       .then(function (r) { return r.json(); });
   }
 
-  // What happened at redemption. hc/redeem answers with status on every
-  // redeem, and with a Value on every redeem too: the redeemed Value on
-  // success, and Medium on any other status.
-  function outcome(answer) {
-    return answer.status || "";
-  }
+  // The server decides what the redeem row shows (redeemShown in main.go,
+  // where the tests cover it), and the page only displays it.
+  var TONES = { pass: PASS, fail: FAIL, part: PART, none: NONE };
 
   function showRedeemed(answer) {
-    if (outcome(answer) === "success" && answer.humanConfidence) {
-      show("redeem-detail", "redeemed " + answer.secondsSinceVerified
-        + " s after the check", PASS);
-      show("redeem-level", answer.humanConfidence,
-        levelClass(answer.humanConfidence));
-    } else {
-      show("redeem-detail", outcome(answer) || answer.error || "no answer",
-        FAIL);
-      show("redeem-level", "no level", NONE);
-    }
+    show("redeem-detail", answer.detail.text, TONES[answer.detail.tone]);
+    show("redeem-level", answer.level.text, TONES[answer.level.tone]);
   }
 
   // Step 2. The client script runs the browser tests, sends the answers,
@@ -179,7 +168,7 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
         again.onclick = function () {
           redeem(value).then(function (second) {
             document.getElementById("again-result").textContent =
-              " Second redeem: " + (outcome(second) || second.error);
+              " Second redeem: " + second.outcome;
           });
         };
       }).catch(function (error) {

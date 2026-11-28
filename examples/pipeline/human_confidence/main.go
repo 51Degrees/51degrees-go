@@ -266,8 +266,9 @@ func (e *example) passive(w http.ResponseWriter, r *http.Request) {
 }
 
 // redeem sends the sealed value with the License Key to the cloud and
-// returns its answer unchanged. hc/redeem reads the sealed value from
-// sealedResult only, so no other name is sent.
+// returns what the page shows for the cloud's answer, with the cloud's
+// status code. hc/redeem reads the sealed value from sealedResult only, so
+// no other name is sent.
 func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
 	fields := url.Values{"sealedResult": {r.FormValue("sealedResult")}}
 	if e.cfg.License != "" {
@@ -275,18 +276,88 @@ func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
 	}
 	response, err := e.client.PostForm(e.cfg.API+"hc/redeem", fields)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadGateway, shownError(err.Error()))
 		return
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
-		writeJSON(w, http.StatusOK, map[string]string{"error": fmt.Sprintf(
-			"The service at %s doesn't redeem Human Confidence.", e.cfg.API)})
+		writeJSON(w, http.StatusOK, shownError(fmt.Sprintf(
+			"The service at %s doesn't redeem Human Confidence.", e.cfg.API)))
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-	io.Copy(w, response.Body)
+	var answer map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&answer); err != nil {
+		writeJSON(w, http.StatusBadGateway, shownError(err.Error()))
+		return
+	}
+	writeJSON(w, response.StatusCode, redeemShown(answer))
+}
+
+// cell is the text of one cell of the page's table, and its tone, being
+// pass, fail, part or none, which the page turns into a color.
+type cell struct {
+	Text string `json:"text"`
+	Tone string `json:"tone"`
+}
+
+// shown is what the page shows in the redeem row. Outcome is the status the
+// cloud gave, or the error when there is none, for the second redeem.
+type shown struct {
+	Outcome string `json:"outcome"`
+	Detail  cell   `json:"detail"`
+	Level   cell   `json:"level"`
+}
+
+// levelTone gives the tone for a Human Confidence Value.
+func levelTone(level string) string {
+	switch level {
+	case "High":
+		return "pass"
+	case "Low":
+		return "fail"
+	case "Medium":
+		return "part"
+	}
+	return "none"
+}
+
+// redeemShown decides what the page shows for an answer from hc/redeem.
+// Whether the redeem succeeded comes from status alone. On success the row
+// shows the Value, or the reason there is none where the answer gives
+// humanConfidenceNullReason in its place. On any other status it shows the
+// status and no level, because the Medium the cloud gives then is a stand-in
+// for a Value that couldn't be worked out, not a measurement.
+func redeemShown(answer map[string]any) shown {
+	status, _ := answer["status"].(string)
+	if status != "success" {
+		if status == "" {
+			message, _ := answer["error"].(string)
+			if message == "" {
+				message = "no answer"
+			}
+			return shownError(message)
+		}
+		return shown{Outcome: status, Detail: cell{status, "fail"},
+			Level: cell{"no level", "none"}}
+	}
+	detail := cell{"redeemed", "pass"}
+	if seconds, ok := answer["secondsSinceVerified"].(float64); ok {
+		detail.Text = fmt.Sprintf("redeemed %v s after the check", seconds)
+	}
+	if level, ok := answer["humanConfidence"].(string); ok && level != "" {
+		return shown{Outcome: status, Detail: detail, Level: cell{level, levelTone(level)}}
+	}
+	reason, _ := answer["humanConfidenceNullReason"].(string)
+	if reason == "" {
+		reason = "no level and no reason given"
+	}
+	return shown{Outcome: status, Detail: detail, Level: cell{reason, "none"}}
+}
+
+// shownError is what the page shows when there is no answer to read.
+func shownError(message string) shown {
+	return shown{Outcome: message, Detail: cell{message, "fail"},
+		Level: cell{"no level", "none"}}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
