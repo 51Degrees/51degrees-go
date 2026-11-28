@@ -4,24 +4,45 @@ Human Confidence says how likely it is that a person is looking at a web
 page. The program in this folder is a small web server and one page that
 show it working, the way a publisher's website would use it. It's a web
 demo rather than a console program, because the browser tests only run in a
-browser. It uses only the Go standard library.
+browser. It uses the Pipeline API's Cloud Request Engine and Human Confidence
+Engine.
 
 ## The flow
 
-The page shows three rows, one for each step.
+The page shows three rows, one for each step. Each row shows the two
+Properties `HumanConfidenceSource` and `HumanConfidence`, or the reason the
+Pipeline gives where one has no value.
 
-1. **Passive.** The server asks the cloud, passing on the visitor's request
-   headers (only those the cloud lists in its `evidencekeys`) and IP
-   address. It shows `HumanConfidenceSource` and `HumanConfidence` from the
-   answer.
+1. **Passive.** The server processes the visitor's request headers (only
+   those the cloud lists in its `evidencekeys`) and IP address through its
+   Pipeline, and reads the two Properties.
 2. **Active.** The page loads the 51Degrees client script. When the script
    completes, `HumanConfidenceSource` is `Active` and `HumanConfidence`
    holds a sealed value. The browser can't read it or change it.
-3. **Redeem.** The page hands the sealed value to the server, which sends
-   it to the cloud's `hc/redeem` with the account's License Key and returns
-   the cloud's answer as it is. A sealed value redeems once, within ten
-   seconds. The page then offers to redeem the same value again, which
-   answers `replayed`.
+3. **Read with the sealed result.** The page sends the sealed value back to
+   the server as `humanconfidence`, which the server adds as the Evidence
+   `query.humanconfidence`, and the server reads the two Properties again.
+   Its Pipeline redeems the sealed value through the Cloud Request Engine's
+   request, with the account's License Key, so the server never redeems
+   anything itself. `HumanConfidenceSource` is `Active`, and
+   `HumanConfidence` is the redeemed Value. A sealed value redeems once,
+   within ten seconds. Where it can't be redeemed, for any reason,
+   `HumanConfidence` is `Medium`. The page then offers to send the same
+   value again, which gives `Medium`, because it has been redeemed.
+
+The client script reports complete only after the browser tests have run
+and one more request has answered, so the second row fills a few seconds
+after the first. A page can read the first answer's Properties sooner
+through the client script's change handlers.
+
+Where a page sets a Content Security Policy, it must allow these for the
+browser tests to run. Otherwise `HumanConfidenceSource` stays `Passive`.
+
+| Directive | Must allow |
+| --- | --- |
+| `script-src` | The cloud's host, and `'unsafe-eval'` |
+| `connect-src` | The cloud's host |
+| `worker-src` | `blob:` |
 
 ## What you need
 
@@ -32,7 +53,7 @@ The page shows three rows, one for each step.
 - **Leave the Resource Key's domain list empty,** or include `localhost`
   and the server's own address. The server calls the cloud with the same
   key, and a call from a server has no `Origin` header.
-- **A License Key** of the same account. The server uses it to redeem. It
+- **A License Key** of the same account. The server's Pipeline uses it to redeem. It
   never goes in the page.
 
 ## Environment variables
@@ -87,11 +108,12 @@ browser that has run the tests, so these tests don't check it.
 
 1. The first row shows `Passive` and a level.
 2. After a few seconds, the second row shows `Active` and a sealed value.
-3. The third row shows the level the server redeemed.
-4. **Redeem the same value again** shows `replayed`.
+3. The third row shows `Active` and the redeemed Value.
+4. **Send the same sealed result again** shows `Active, Medium`.
 
-Results vary by browser and device. A sealed value redeemed more than ten
-seconds after the tests answers `expired`.
+Results vary by browser and device. A sealed value sent more than ten
+seconds after the tests gives `Medium`. Without a License Key, the third row
+shows `Medium`.
 
 If the second row stays `Passive`, the browser tests didn't run. The cloud
 you're using may not have the tests yet, or the Resource Key may not
@@ -101,7 +123,7 @@ include `HumanConfidenceSource`.
 
 Every call to the cloud is one use against the subscription behind the
 keys. A page load makes several, being the server's passive call, the
-client script's calls, and the redeem.
+client script's calls, and the server's call with the sealed result.
 
 ## Find out more
 
