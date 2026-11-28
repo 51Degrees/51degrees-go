@@ -61,7 +61,7 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 		properties:   properties,
 		passiveBody:  `{"derived":{"humanconfidencesource":"Passive","humanconfidence":"Medium"}}`,
 		redeemStatus: http.StatusOK,
-		redeemBody:   `{"humanConfidence":"High","secondsSinceVerified":2}`,
+		redeemBody:   rcAnswers[0].body,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v4/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
@@ -247,25 +247,45 @@ func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 	}
 }
 
+// rcAnswers are the answers hc/redeem gives, one for each status. Every one
+// is 200 but unconfirmed, which is 503 to invite a retry. humanConfidence is
+// in every answer, and is Medium unless the status is success. The times
+// come with success and expired only.
+var rcAnswers = []struct {
+	status int
+	body   string
+}{
+	{http.StatusOK, `{"humanConfidence":"High","status":"success",` +
+		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":2}`},
+	{http.StatusOK, `{"humanConfidence":"Medium","status":"expired",` +
+		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":11}`},
+	{http.StatusOK, `{"humanConfidence":"Medium","status":"replayed"}`},
+	{http.StatusOK, `{"humanConfidence":"Medium","status":"unreadable"}`},
+	{http.StatusServiceUnavailable, `{"humanConfidence":"Medium","status":"unconfirmed"}`},
+}
+
 func TestRedeemPassesTheAnswerOn(t *testing.T) {
-	cloud := newFakeCloud(t, "HumanConfidence")
-	cloud.redeemStatus = http.StatusConflict
-	cloud.redeemBody = `{"humanConfidence":"Medium","status":"replayed","extra":1}`
-	example := startExample(t, cloud)
-	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"sealedResult": {"sealed-value"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := readBody(t, response)
-	if response.StatusCode != http.StatusConflict || body != cloud.redeemBody {
-		t.Errorf("redeem gave %d %q", response.StatusCode, body)
-	}
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
-		cloud.redeemed.Get("license") != testLicense {
-		t.Error("the cloud was not sent the sealed result and the License Key")
+	for _, rc := range rcAnswers {
+		cloud := newFakeCloud(t, "HumanConfidence")
+		cloud.redeemStatus = rc.status
+		cloud.redeemBody = rc.body
+		example := startExample(t, cloud)
+		response, err := http.PostForm(example.URL+"/redeem",
+			url.Values{"sealedResult": {"sealed-value"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := readBody(t, response)
+		if response.StatusCode != rc.status || body != rc.body {
+			t.Errorf("redeem gave %d %q, want %d %q",
+				response.StatusCode, body, rc.status, rc.body)
+		}
+		cloud.mu.Lock()
+		if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
+			cloud.redeemed.Get("license") != testLicense {
+			t.Error("the cloud was not sent the sealed result and the License Key")
+		}
+		cloud.mu.Unlock()
 	}
 }
 
