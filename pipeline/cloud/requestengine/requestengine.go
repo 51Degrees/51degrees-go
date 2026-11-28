@@ -538,16 +538,57 @@ func lowerKeys(raw []byte) (map[string]json.RawMessage, bool) {
 var engineFields = map[string]bool{
 	"resource": true, "license": true, "licence": true, "values": true}
 
+// transactionFields are left out of a request that carries a sealed Human
+// Confidence result, under any prefix and in any letter case, because the
+// only transaction that call may hold is one the package kept, never one
+// taken from the request. challenge is the older name for the same value.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#redeeming-through-the-json-call
+var transactionFields = map[string]bool{"transaction": true, "challenge": true}
+
+// HumanConfidenceEvidence is the Evidence that carries a sealed Human
+// Confidence result, which the page sends to the publisher's server as the
+// parameter humanconfidence.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#when-humanconfidence-arrives-sealed
+const HumanConfidenceEvidence = "query.humanconfidence"
+
+// humanConfidenceProperty is the Property a request that carries a sealed
+// result must name, so that the answer redeems it.
+const humanConfidenceProperty = "derived.HumanConfidence"
+
+// CarriesSealedResult reports whether fd's Evidence holds a sealed Human
+// Confidence result, being HumanConfidenceEvidence with a value that is not
+// empty.
+func CarriesSealedResult(fd core.FlowData) bool {
+	value, ok := fd.Evidence().Get(HumanConfidenceEvidence)
+	return ok && valueToString(value) != ""
+}
+
+// HasLicenseKey reports whether the engine was given a License Key, which a
+// sealed Human Confidence result needs to be redeemed.
+func (e *CloudRequestEngine) HasLicenseKey() bool { return e.licenseKey != "" }
+
 // buildForm constructs the URL-encoded form, being the credentials, the
 // Requested Properties as values, comma separated, and the Evidence, as
-// resolveEvidence gives it.
+// resolveEvidence gives it. A request that carries a sealed Human Confidence
+// result also names derived.HumanConfidence where the configured list is not
+// empty and lacks it, so the answer redeems it. The name is added to the form
+// only, so the report of Properties not returned is still made for the
+// configured list alone. An empty list asks for every Property already.
 // See https://github.com/51Degrees/specifications/blob/e89679e/pipeline-specification/pipeline-elements/cloud-request-engine.md#processing
+// and https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#redeeming-through-the-json-call
 func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 	form := e.credentials()
+	sealed := CarriesSealedResult(fd)
 	if len(e.requestedProperties) > 0 {
-		form.Set("values", strings.Join(e.requestedProperties, ","))
+		values := e.requestedProperties
+		if sealed && !slices.ContainsFunc(values, func(name string) bool {
+			return strings.EqualFold(name, humanConfidenceProperty)
+		}) {
+			values = append(slices.Clip(values), humanConfidenceProperty)
+		}
+		form.Set("values", strings.Join(values, ","))
 	}
-	for field, value := range e.resolveEvidence(fd) {
+	for field, value := range e.resolveEvidence(fd, sealed) {
 		form.Set(field, value)
 	}
 	return form
@@ -555,13 +596,14 @@ func (e *CloudRequestEngine) buildForm(fd core.FlowData) url.Values {
 
 // resolveEvidence returns every Evidence value with its prefix removed,
 // leaving out the web request, which is not a value to send, and any that
-// strips to a field the engine writes itself. The keys the cloud service
+// strips to a field the engine writes itself, or, where sealed is true, to a
+// transaction. The keys the cloud service
 // accepts do not limit it, as what the service uses changes and the other
 // Evidence helps it improve. Conflicts between prefixes are resolved using
 // the defined precedence, so a key with no prefix ranks as a key whose
 // prefix is the whole key, giving query the precedence of query Evidence
 // and anything else the lowest precedence.
-func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string {
+func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData, sealed bool) map[string]string {
 	type choice struct {
 		prefix string
 		value  string
@@ -575,7 +617,8 @@ func (e *CloudRequestEngine) resolveEvidence(fd core.FlowData) map[string]string
 		if prefix == "" {
 			prefix = key
 		}
-		if engineFields[strings.ToLower(field)] {
+		if engineFields[strings.ToLower(field)] ||
+			(sealed && transactionFields[strings.ToLower(field)]) {
 			continue
 		}
 		val := valueToString(raw)
