@@ -24,10 +24,6 @@ The page shows three rows, one for each step.
    A sealed value redeems once, within ten seconds. The page then offers to
    redeem the same value again, which answers `replayed`.
 
-The server sends the sealed value as `value` too, its obsolete name, so the
-example also works against a cloud that predates `sealedResult`. That cloud
-answers with `result` in place of `status`, and the page reads either.
-
 ## What you need
 
 - **A Resource Key** with the properties `HumanConfidence` and

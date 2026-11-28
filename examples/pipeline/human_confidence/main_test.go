@@ -267,29 +267,25 @@ func TestRedeemPassesTheAnswerOn(t *testing.T) {
 		cloud.redeemed.Get("license") != testLicense {
 		t.Error("the cloud was not sent the sealed result and the License Key")
 	}
-	if cloud.redeemed.Get("value") != "sealed-value" {
-		t.Error("the obsolete name was not sent, for a cloud that predates sealedResult")
-	}
 }
 
-func TestRedeemReadsValueFromAnOlderPage(t *testing.T) {
+// hc/redeem reads the sealed result from sealedResult and from no other
+// field, so the redeem sends only that and the License Key.
+func TestRedeemSendsOnlySealedResult(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
-	cloud.redeemStatus = http.StatusConflict
-	cloud.redeemBody = `{"result":"replayed"}`
 	example := startExample(t, cloud)
 	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"value": {"sealed-value"}})
+		url.Values{"sealedResult": {"sealed-value"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := readBody(t, response); body != cloud.redeemBody {
-		t.Errorf("redeem gave %q", body)
-	}
+	readBody(t, response)
 	cloud.mu.Lock()
 	defer cloud.mu.Unlock()
-	if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
-		cloud.redeemed.Get("value") != "sealed-value" {
-		t.Errorf("the cloud was sent %v", cloud.redeemed)
+	for name := range cloud.redeemed {
+		if name != "sealedResult" && name != "license" {
+			t.Errorf("the cloud was sent %s, which hc/redeem doesn't read", name)
+		}
 	}
 }
 
@@ -299,7 +295,7 @@ func TestRedeemNotFoundSaysServiceDoesNotRedeem(t *testing.T) {
 	cloud.redeemBody = "not found"
 	example := startExample(t, cloud)
 	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"value": {"sealed-value"}})
+		url.Values{"sealedResult": {"sealed-value"}})
 	if err != nil {
 		t.Fatal(err)
 	}

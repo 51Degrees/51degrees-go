@@ -266,21 +266,10 @@ func (e *example) passive(w http.ResponseWriter, r *http.Request) {
 }
 
 // redeem sends the sealed value with the License Key to the cloud and
-// returns its answer unchanged.
-//
-// The sealed value is sent as sealedResult, and again as value, its obsolete
-// name, which a cloud that predates sealedResult reads. A current cloud reads
-// sealedResult, so the redeem works against both.
+// returns its answer unchanged. hc/redeem reads the sealed value from
+// sealedResult only, so no other name is sent.
 func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
-	// The page sends sealedResult. A page that predates it sends value.
-	sealedResult := r.FormValue("sealedResult")
-	if sealedResult == "" {
-		sealedResult = r.FormValue("value")
-	}
-	fields := url.Values{
-		"sealedResult": {sealedResult},
-		"value":        {sealedResult},
-	}
+	fields := url.Values{"sealedResult": {r.FormValue("sealedResult")}}
 	if e.cfg.License != "" {
 		fields.Set("license", e.cfg.License)
 	}
