@@ -53,6 +53,7 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/missingproperty"
 )
 
 // The names of the two Properties, in the derived Element Data.
@@ -158,11 +159,14 @@ func holds(el core.FlowElement, e *Engine) bool {
 // redeemed Value, or Medium where the result was not redeemed, in place of
 // any value another element gave. On any other request it gives each of the
 // two that the answer's derived member holds, with the reason where it is
-// null, unless a Derived Property Element has given it already. It returns
-// no error of its own where a sealed result was not redeemed, so a read of
-// either Property never fails for that reason. A failed request is still
-// recorded once as the Cloud Request Engine's error.
+// null, unless a Derived Property Element has given it already. Where the
+// answer leaves one out, or the request failed, it gives no value with the
+// reason Missing Properties gives. It returns no error of its own where a
+// sealed result was not redeemed, so a read of either Property never fails
+// for that reason. A failed request is still recorded once as the Cloud
+// Request Engine's error.
 // See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#when-humanconfidence-arrives-sealed
+// and https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-consumer-reads
 func (e *Engine) Process(fd core.FlowData) error {
 	if requestengine.CarriesSealedResult(fd) {
 		return set(fd, map[string]engines.AspectPropertyValue[string]{
@@ -170,15 +174,27 @@ func (e *Engine) Process(fd core.FlowData) error {
 			HumanConfidenceSource: engines.NewAspectPropertyValue(Active),
 		}, true)
 	}
-	derived, ok := answerDerived(fd)
+	data, err := fd.Get(requestengine.DataKey)
+	if err != nil {
+		return nil
+	}
+	crd, ok := data.(*requestengine.CloudRequestData)
 	if !ok {
 		return nil
 	}
 	values := map[string]engines.AspectPropertyValue[string]{}
+	derived, answered := answerDerived(fd)
 	for _, name := range []string{HumanConfidence, HumanConfidenceSource} {
 		if value, given := propertyValue(derived, strings.ToLower(name)); given {
 			values[name] = value
+			continue
 		}
+		reason := missingproperty.ForPropertyNotInResourceKey(name,
+			derivedproperty.DataKey, derivedproperty.DataKey, nil)
+		if !answered && crd.Failed() {
+			reason = missingproperty.ForCloudRequestFailed(name, derivedproperty.DataKey)
+		}
+		values[name] = engines.NoValue[string](reason.Error())
 	}
 	return set(fd, values, false)
 }
@@ -264,7 +280,7 @@ func answerDerived(fd core.FlowData) (map[string]json.RawMessage, bool) {
 
 // propertyValue gives the Property name of derived, being its text, or no
 // value with the reason the answer gives where it is null. It is false where
-// derived does not hold the Property, which then stays missing.
+// derived does not hold the Property.
 func propertyValue(derived map[string]json.RawMessage, name string) (engines.AspectPropertyValue[string], bool) {
 	raw, ok := derived[name]
 	if !ok {

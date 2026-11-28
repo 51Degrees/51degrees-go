@@ -45,6 +45,7 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/missingproperty"
 )
 
 const (
@@ -475,18 +476,35 @@ func TestWithNoSealedResultThePropertiesAreTheAnswers(t *testing.T) {
 	}
 }
 
-// A Property the answer leaves out is not given, so it reads as missing.
-func TestAPropertyTheAnswerLeavesOutIsNotGiven(t *testing.T) {
+// A Property the answer leaves out, as for a credential that does not carry
+// it, reads as no value with the reason Missing Properties gives, and so does
+// one whose request failed.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-consumer-reads
+func TestAPropertyTheAnswerLeavesOutGivesTheMissingReason(t *testing.T) {
 	c := newFakeCloud(t)
-	c.passive = `{"derived":{"humanconfidence":"Medium"}}`
+	c.passive = `{"derived":{"humanconfidence":"Medium"},"device":{}}`
 	p, _ := build(t, c, io.Discard)
-	fd := process(t, p, "")
-	data, err := core.Get[*derivedproperty.Data](fd)
-	if err != nil {
-		t.Fatal(err)
+	value := read(t, process(t, p, ""), humanconfidence.HumanConfidenceSource)
+	reason := missingproperty.ForPropertyNotInResourceKey("HumanConfidenceSource",
+		"derived", "derived", nil).Error()
+	if value.HasValue() || value.NoValueMessage() != reason {
+		t.Errorf("a Property left out gives %v, %q, want no value and %q",
+			value.HasValue(), value.NoValueMessage(), reason)
 	}
-	if _, err := data.Get(humanconfidence.HumanConfidenceSource); err == nil {
-		t.Error("HumanConfidenceSource was given though the answer left it out")
+
+	c.passive = `{"device":{}}`
+	value = read(t, process(t, p, ""), humanconfidence.HumanConfidence)
+	reason = missingproperty.ForPropertyNotInResourceKey("HumanConfidence",
+		"derived", "derived", nil).Error()
+	if value.HasValue() || value.NoValueMessage() != reason {
+		t.Errorf("an answer with no derived member gives %q, want %q", value.NoValueMessage(), reason)
+	}
+
+	c.status, c.body = http.StatusInternalServerError, `{"error":"broken"}`
+	value = read(t, process(t, p, ""), humanconfidence.HumanConfidence)
+	reason = missingproperty.ForCloudRequestFailed("HumanConfidence", "derived").Error()
+	if value.HasValue() || value.NoValueMessage() != reason {
+		t.Errorf("a failed request gives %q, want %q", value.NoValueMessage(), reason)
 	}
 }
 
