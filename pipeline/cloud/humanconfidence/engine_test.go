@@ -72,11 +72,16 @@ type fakeCloud struct {
 	mu       sync.Mutex
 	redeemed map[string]bool
 	forms    []url.Values
+	// madeWith is the transaction each sealed result was made with. A
+	// sealed result redeems only with that transaction, and one that isn't
+	// listed only with none, as the cloud service does.
+	madeWith map[string]string
 }
 
 func newFakeCloud(t *testing.T) *fakeCloud {
 	c := &fakeCloud{
 		redeemed: map[string]bool{},
+		madeWith: map[string]string{},
 		passive:  `{"derived":{"humanconfidence":"High","humanconfidencesource":"Passive"}}`,
 	}
 	c.server = httptest.NewServer(http.HandlerFunc(c.json))
@@ -106,16 +111,17 @@ func (c *fakeCloud) json(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, c.passive)
 		return
 	}
-	io.WriteString(w, `{"derived":{"humanconfidence":"`+c.redeem(sealed)+
+	io.WriteString(w, `{"derived":{"humanconfidence":"`+c.redeem(sealed, r.PostForm.Get("transaction"))+
 		`","humanconfidencesource":"Active"}}`)
 }
 
-// redeem gives the Value the service gives for sealed.
-func (c *fakeCloud) redeem(sealed string) string {
+// redeem gives the Value the service gives for sealed, sent with
+// transaction.
+func (c *fakeCloud) redeem(sealed, transaction string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	parts := strings.SplitN(sealed, "-", 3)
-	if len(parts) < 3 || parts[0] != "sealed" {
+	if len(parts) < 3 || parts[0] != "sealed" || c.madeWith[sealed] != transaction {
 		return "Medium" // unreadable
 	}
 	switch parts[1] {
@@ -506,5 +512,94 @@ func TestTheEngineMustFollowTheCloudRequestEngine(t *testing.T) {
 func TestTheEngineNamesTheSealedResultEvidence(t *testing.T) {
 	if !humanconfidence.New(nil).EvidenceKeyFilter().Include("query.humanconfidence") {
 		t.Error("the filter leaves out query.humanconfidence")
+	}
+}
+
+// openPage processes a request from a page with the session id session, as
+// the client script makes, and gives the transaction the call carried.
+func openPage(t *testing.T, c *fakeCloud, p core.Pipeline, session string) string {
+	t.Helper()
+	process(t, p, "", "query.session-id", session)
+	transaction := c.lastForm().Get("transaction")
+	if transaction == "" {
+		t.Fatal("the page's request carried no transaction")
+	}
+	return transaction
+}
+
+// A sealed result made with its page's transaction redeems with it, once,
+// and the call holds that transaction alone, whatever transaction or
+// challenge the request holds.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#the-transaction
+func TestASealedResultRedeemsWithItsPagesTransaction(t *testing.T) {
+	c := newFakeCloud(t)
+	p, engine := build(t, c, io.Discard)
+	transaction := openPage(t, c, p, "page-a")
+	c.madeWith["sealed-High-a"] = transaction
+	fd := process(t, p, "sealed-High-a", "query.session-id", "page-a",
+		"query.transaction", "from-the-page", "cookie.Challenge", "from-a-cookie")
+	want(t, fd, engine, "High", humanconfidence.Active)
+	form := c.lastForm()
+	if got := form["transaction"]; len(got) != 1 || got[0] != transaction {
+		t.Errorf("the call held transaction %v, want only the kept %q", got, transaction)
+	}
+	for field := range form {
+		if strings.EqualFold(field, "challenge") {
+			t.Errorf("the call held %s", field)
+		}
+	}
+}
+
+// The transaction redeems once, so the page's next sealed result made with
+// it is not redeemed, and another page's transaction never redeems it.
+func TestATransactionRedeemsForItsOwnPageOnce(t *testing.T) {
+	c := newFakeCloud(t)
+	p, engine := build(t, c, io.Discard)
+	transaction := openPage(t, c, p, "page-a")
+	openPage(t, c, p, "page-b")
+	c.madeWith["sealed-High-a"] = transaction
+	c.madeWith["sealed-Low-a"] = transaction
+	want(t, process(t, p, "sealed-High-a", "query.session-id", "page-b"),
+		engine, "Medium", humanconfidence.Active)
+	want(t, process(t, p, "sealed-Low-a", "query.session-id", "page-a"),
+		engine, "Low", humanconfidence.Active)
+	c.madeWith["sealed-Medium-a"] = transaction
+	want(t, process(t, p, "sealed-Medium-a", "query.session-id", "page-a"),
+		engine, "Medium", humanconfidence.Active)
+	if c.lastForm().Has("transaction") {
+		t.Error("a used transaction was sent again")
+	}
+}
+
+// A sealed result made with no transaction, as on a page that loads the
+// cloud service's script itself, redeems with none.
+func TestASealedResultMadeWithNoTransactionRedeems(t *testing.T) {
+	c := newFakeCloud(t)
+	p, engine := build(t, c, io.Discard)
+	fd := process(t, p, "sealed-Low-n")
+	want(t, fd, engine, "Low", humanconfidence.Active)
+	if c.lastForm().Has("transaction") {
+		t.Error("a request with no session id sent a transaction")
+	}
+}
+
+// No log entry and no error message holds the transaction, in whole or in
+// part, where the cloud service writes it in a failed answer.
+func TestNoLogOrErrorHoldsTheTransaction(t *testing.T) {
+	c := newFakeCloud(t)
+	var log bytes.Buffer
+	p, _ := build(t, c, &log)
+	transaction := openPage(t, c, p, "page-a")
+	c.status, c.body = http.StatusInternalServerError, `{"echo":"`+transaction+` `+sealedHigh+`"}`
+	fd := process(t, p, sealedHigh, "query.session-id", "page-a")
+	read(t, fd, humanconfidence.HumanConfidence)
+	text := log.String()
+	for _, fe := range fd.Errors() {
+		text += fe.Err.Error()
+	}
+	for _, secret := range []string{transaction, transaction[len(transaction)-6:], sealedHigh, "AAAABBBB"} {
+		if strings.Contains(text, secret) {
+			t.Errorf("a log entry or error holds %q:\n%s", secret, text)
+		}
 	}
 }

@@ -32,9 +32,12 @@
 // there, so redeeming makes no request of its own and uses no other
 // endpoint. A consumer never redeems a sealed result itself.
 //
-// The package issues no transaction for a page yet, so the request carries
-// none. The cloud service redeems a sealed result made with no transaction
-// without one.
+// The engine has the Cloud Request Engine issue a transaction for each page,
+// keyed by the page's session id from the Sequence Element, and send it on the
+// page's requests, so the cloud service binds the sealed result to it. The
+// sealed result is redeemed with the same transaction, once. A request with
+// no session id, or from a page whose transaction was used or has expired,
+// gives Medium.
 //
 // See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md
 package humanconfidence
@@ -97,13 +100,17 @@ func Factory(_ map[string]any, logger *slog.Logger) (core.FlowElement, error) {
 }
 
 // OnPipelineAdded refuses a Pipeline whose Cloud Request Engine runs after
-// this engine, because the engine reads that engine's answer. A Pipeline with
-// no Cloud Request Engine is allowed, and gives Medium for every sealed
-// result.
+// this engine, because the engine reads that engine's answer. Otherwise it
+// has the Cloud Request Engine keep a transaction for each page, which a
+// sealed result needs to be redeemed. A Pipeline with no Cloud Request Engine
+// is allowed, and gives Medium for every sealed result.
 func (e *Engine) OnPipelineAdded(p core.Pipeline) error {
 	if requestEngineAfter(p.FlowElements(), e) {
 		return core.NewConfigurationError("the Human Confidence Engine needs "+
 			"the Cloud Request Engine added to the Pipeline before it", nil)
+	}
+	if cre, ok := p.GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine); ok {
+		cre.KeepHumanConfidenceTransactions()
 	}
 	return e.BaseElement.OnPipelineAdded(p)
 }
@@ -202,12 +209,19 @@ func set(fd core.FlowData, values map[string]engines.AspectPropertyValue[string]
 
 // redeemed gives the Value the answer redeemed the sealed result to, or
 // Medium where there is no such Value: with no Cloud Request Engine or no
-// License Key, with no answer, as in a recovery period or after a failed
-// request, or with an answer whose derived member gives anything other than
-// High, Medium or Low.
+// License Key, with no transaction kept for the page, with no answer, as in a
+// recovery period or after a failed request, or with an answer whose derived
+// member gives anything other than High, Medium or Low.
 func redeemed(fd core.FlowData) string {
 	cre, ok := fd.Pipeline().GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
 	if !ok || !cre.HasLicenseKey() {
+		return NotRedeemed
+	}
+	data, err := fd.Get(requestengine.DataKey)
+	if err != nil {
+		return NotRedeemed
+	}
+	if crd, ok := data.(*requestengine.CloudRequestData); !ok || !crd.RedeemsHumanConfidence() {
 		return NotRedeemed
 	}
 	derived, ok := answerDerived(fd)

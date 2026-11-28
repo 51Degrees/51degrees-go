@@ -176,10 +176,25 @@ browser tests to run. Otherwise HumanConfidenceSource stays `Passive`.
 | `connect-src` | The cloud service's host |
 | `worker-src` | `blob:` |
 
+Each sealed result is bound to the page that asked for it by a transaction.
+The Cloud Request Engine issues one for each page, keeps it on your server,
+and sends it on every request the page makes, so the cloud service binds the
+page's sealed result to it. It sends it once more to redeem that sealed
+result, and then forgets it. A page is known by its session id, which the
+Sequence Element gives it (`web.AssemblePipeline` adds that element) and the
+client script sends with every request. A transaction is kept for 30 minutes,
+and your code never sees it. Where no transaction is kept for a request, as
+for a page that loads the cloud service's script itself, the sealed result
+is sent with none, and the cloud service redeems one made with none.
+
+No error or log entry the Cloud Request Engine writes holds the License Key,
+a sealed result or a transaction, in whole or in part.
+
 The engine follows the
 [Human Confidence](https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md)
-specification, apart from the transaction, which the package doesn't issue
-yet, so a sealed result redeems without one.
+specification's draft, except that the draft gives `Medium` where no
+transaction is kept, and the engine sends the sealed result with none, as the
+cloud service allows. `requestengine.RedeemWithoutTransaction` decides that.
 
 ## Thread safety
 
