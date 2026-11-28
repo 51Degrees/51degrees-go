@@ -1,9 +1,3 @@
-github.com/51Degrees/51degrees-go/common/v4 v4.5.173 h1:E7rKJzVEsdCVXdNyDn4wxBQNop+c653wVNBNUmQY4oc=
-github.com/51Degrees/51degrees-go/common/v4 v4.5.173/go.mod h1:mikU9Ph3A/nNGHUBoPWJbE983WJsm51lPVlIMNANqVc=
-github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.173 h1:qVvcnaWP3dMbScuXa94H+Efa2JBr8EjN+w0NkssU8nQ=
-github.com/51Degrees/51degrees-go/ip-intelligence/v4 v4.5.173/go.mod h1:FHA5UQBNYwwbPoNQ3ygVcuALI8Tr8GJtZ+Tc8ax6ai8=
-github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173 h1:qOwnCggePNj1wzzeC1k6i07jFlu0Zl7a5apaP9EZbgk=
-github.com/51Degrees/51degrees-go/pipeline/v4 v4.5.173/go.mod h1:jQ3iSnvK0bfTL8Imyuwbsv1+sgRT55fRjbnUAy9wyYw=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
