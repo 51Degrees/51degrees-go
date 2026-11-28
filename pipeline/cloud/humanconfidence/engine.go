@@ -157,8 +157,9 @@ func holds(el core.FlowElement, e *Engine) bool {
 // any value another element gave. On any other request it gives each of the
 // two that the answer's derived member holds, with the reason where it is
 // null, unless a Derived Property Element has given it already. Where the
-// answer leaves one out, or the request failed, it gives no value with the
-// reason Missing Properties gives. It returns no error of its own where a
+// answer leaves one out, gives HumanConfidence as anything but High, Medium,
+// Low or Unknown, or the request failed, it gives no value with the reason
+// Missing Properties gives. It returns no error of its own where a
 // sealed result was not redeemed, so a read of either Property never fails
 // for that reason. A failed request is still recorded once as the Cloud
 // Request Engine's error.
@@ -184,7 +185,13 @@ func (e *Engine) Process(fd core.FlowData) error {
 	values := map[string]engines.AspectPropertyValue[string]{}
 	derived, answered := answerDerived(fd)
 	for _, name := range []string{HumanConfidence, HumanConfidenceSource} {
-		if value, given := propertyValue(derived, strings.ToLower(name)); given {
+		value, given := propertyValue(derived, strings.ToLower(name))
+		if given && name == HumanConfidence && !isLevel(derived[strings.ToLower(name)]) {
+			// Text that is not one of the Property's values, such as a sealed
+			// result, is not a level, so the Property is missing.
+			given = false
+		}
+		if given {
 			values[name] = value
 			continue
 		}
@@ -316,6 +323,28 @@ func propertyValue(derived map[string]json.RawMessage, name string) (engines.Asp
 		reason = given
 	}
 	return engines.NoValue[string](reason), true
+}
+
+// levels are the values HumanConfidence can have: High, Medium, Low or
+// Unknown.
+var levels = []string{"High", "Medium", "Low", "Unknown"}
+
+// isLevel reports whether raw, the answer's humanconfidence, is null or one of
+// the values of HumanConfidence, exactly.
+func isLevel(raw json.RawMessage) bool {
+	if string(raw) == "null" {
+		return true
+	}
+	var value string
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	for _, level := range levels {
+		if value == level {
+			return true
+		}
+	}
+	return false
 }
 
 // lowerKeys parses raw as a JSON object, with its keys in lower case.

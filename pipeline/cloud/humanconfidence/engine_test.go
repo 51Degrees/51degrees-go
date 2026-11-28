@@ -283,6 +283,8 @@ func TestEachCaseNotRedeemedGivesMediumAndActive(t *testing.T) {
 		"humanconfidence is Unknown":         {http.StatusOK, `{"derived":{"humanconfidence":"Unknown"}}`},
 		"humanconfidence is another word":    {http.StatusOK, `{"derived":{"humanconfidence":"high"}}`},
 		"humanconfidence is not text":        {http.StatusOK, `{"derived":{"humanconfidence":3}}`},
+		"humanconfidence is empty":           {http.StatusOK, `{"derived":{"humanconfidence":""}}`},
+		"humanconfidence is a sealed result": {http.StatusOK, `{"derived":{"humanconfidence":"` + sealedHigh + `"}}`},
 		"the answer is not JSON":             {http.StatusOK, `High`},
 	}
 	for name, answer := range answers {
@@ -643,6 +645,47 @@ func TestAPropertyTheAnswerLeavesOutGivesTheMissingReason(t *testing.T) {
 	reason = missingproperty.ForCloudRequestFailed("HumanConfidence", "derived").Error()
 	if value.HasValue() || value.NoValueMessage() != reason {
 		t.Errorf("a failed request gives %q, want %q", value.NoValueMessage(), reason)
+	}
+}
+
+// Without a sealed result, HumanConfidence is the answer's only where it is
+// one of the Property's values, High, Medium, Low or Unknown, as given. Any
+// other text, a sealed result included, gives no value with the reason Missing
+// Properties gives, and no error.
+func TestWithNoSealedResultOnlyAValueOfThePropertyIsGiven(t *testing.T) {
+	missing := missingproperty.ForPropertyNotInResourceKey("HumanConfidence",
+		"derived", "derived", nil).Error()
+	for name, raw := range map[string]string{
+		"a sealed result": `"` + sealedHigh + `"`,
+		"lower case":      `"high"`,
+		"empty":           `""`,
+		"a number":        `3`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newFakeCloud(t)
+			c.passive = `{"derived":{"humanconfidence":` + raw + `,"humanconfidencesource":"Passive"}}`
+			p, engine := build(t, c, io.Discard)
+			fd := process(t, p, "")
+			value := read(t, fd, humanconfidence.HumanConfidence)
+			if value.HasValue() || value.NoValueMessage() != missing {
+				got, _ := value.Value()
+				t.Errorf("HumanConfidence is %q, has a value %v, reason %q, want no value and %q",
+					got, value.HasValue(), value.NoValueMessage(), missing)
+			}
+			for _, fe := range fd.Errors() {
+				if fe.Element == engine {
+					t.Errorf("the engine added an error: %v", fe.Err)
+				}
+			}
+		})
+	}
+	for _, level := range []string{"High", "Medium", "Low", "Unknown"} {
+		t.Run(level, func(t *testing.T) {
+			c := newFakeCloud(t)
+			c.passive = `{"derived":{"humanconfidence":"` + level + `","humanconfidencesource":"Passive"}}`
+			p, engine := build(t, c, io.Discard)
+			want(t, process(t, p, ""), engine, level, "Passive")
+		})
 	}
 }
 
