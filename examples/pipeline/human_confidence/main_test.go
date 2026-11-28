@@ -33,6 +33,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 )
 
 const (
@@ -40,28 +43,35 @@ const (
 	testLicense  = "test-license-key"
 )
 
-// fakeCloud stands in for the cloud. It answers the four calls the example
-// makes and keeps what it was sent.
+// fakeCloud stands in for the cloud. It answers the calls the Cloud Request
+// Engine makes and keeps what it was sent. Its JSON call answers a sealed
+// result as the cloud does: 200 for every status, with HumanConfidenceSource
+// Active, and HumanConfidence the sealed Value on success and Medium on any
+// other status. A sealed result named sealed-<Value> redeems once and is
+// replayed after that. sealed-expired and sealed-unconfirmed give those
+// statuses, and anything else is unreadable.
 type fakeCloud struct {
-	server       *httptest.Server
-	properties   []string
-	passiveBody  string
-	redeemStatus int
-	redeemBody   string
+	server      *httptest.Server
+	properties  []string
+	passiveBody string
+	// jsonStatus and jsonBody, where set, replace the JSON call's answer.
+	jsonStatus int
+	jsonBody   string
 
 	mu       sync.Mutex
 	evidence url.Values
-	redeemed url.Values
+	redeemed map[string]bool
+	// hcRedeemCalls counts calls to hc/redeem, which the example never makes.
+	hcRedeemCalls int
 	// keysFailures is how many more times evidencekeys answers 503.
 	keysFailures int
 }
 
 func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 	cloud := &fakeCloud{
-		properties:   properties,
-		passiveBody:  `{"derived":{"humanconfidencesource":"Passive","humanconfidence":"Medium"}}`,
-		redeemStatus: http.StatusOK,
-		redeemBody:   rcAnswers[0].body,
+		properties:  properties,
+		passiveBody: `{"derived":{"humanconfidencesource":"Passive","humanconfidence":"Medium"}}`,
+		redeemed:    map[string]bool{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v4/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +91,7 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 			"header.user-agent", "header.Sec-CH-UA", "query.fod", "cookie.x"})
 	})
 	mux.HandleFunc("/api/v4/accessibleproperties", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("resource") != testResource {
+		if r.FormValue("resource") != testResource {
 			http.Error(w, "unknown key", http.StatusBadRequest)
 			return
 		}
@@ -92,25 +102,55 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 		json.NewEncoder(w).Encode(map[string]any{"Products": map[string]any{
 			"device": map[string]any{"Properties": list}}})
 	})
-	mux.HandleFunc("/api/v4/"+testResource+".json", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v4/json", func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		cloud.mu.Lock()
 		cloud.evidence = r.PostForm
-		cloud.mu.Unlock()
-		io.WriteString(w, cloud.passiveBody)
-	})
-	mux.HandleFunc("/api/v4/hc/redeem", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		cloud.mu.Lock()
-		cloud.redeemed = r.PostForm
+		status, body := cloud.jsonStatus, cloud.jsonBody
 		cloud.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(cloud.redeemStatus)
-		io.WriteString(w, cloud.redeemBody)
+		if status != 0 {
+			w.WriteHeader(status)
+			io.WriteString(w, body)
+			return
+		}
+		sealed := r.PostForm.Get("humanconfidence")
+		if sealed == "" {
+			io.WriteString(w, cloud.passiveBody)
+			return
+		}
+		io.WriteString(w, `{"derived":{"humanconfidencesource":"Active",`+
+			`"humanconfidence":"`+cloud.redeem(sealed, r.PostForm.Get("license"))+`"}}`)
+	})
+	mux.HandleFunc("/api/v4/hc/redeem", func(w http.ResponseWriter, r *http.Request) {
+		cloud.mu.Lock()
+		cloud.hcRedeemCalls++
+		cloud.mu.Unlock()
+		http.Error(w, "not expected", http.StatusTeapot)
 	})
 	cloud.server = httptest.NewServer(mux)
 	t.Cleanup(cloud.server.Close)
 	return cloud
+}
+
+// redeem gives the Value the cloud gives for sealed, which needs the
+// License Key.
+func (c *fakeCloud) redeem(sealed, license string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	level, ok := strings.CutPrefix(sealed, "sealed-")
+	if !ok || license != testLicense {
+		return "Medium" // unreadable
+	}
+	switch level {
+	case "High", "Medium", "Low":
+		if c.redeemed[sealed] {
+			return "Medium" // replayed
+		}
+		c.redeemed[sealed] = true
+		return level
+	}
+	return "Medium" // expired, unconfirmed
 }
 
 func (c *fakeCloud) config() config {
@@ -121,11 +161,20 @@ func (c *fakeCloud) config() config {
 	}
 }
 
-// startExample starts the example's handler against the fake cloud.
+// startExample starts the example against the fake cloud.
 func startExample(t *testing.T, cloud *fakeCloud) *httptest.Server {
 	t.Helper()
-	handler := newExample(cloud.config(), cloud.server.Client(), io.Discard)
-	server := httptest.NewServer(handler)
+	return startExampleWith(t, cloud, cloud.config())
+}
+
+func startExampleWith(t *testing.T, cloud *fakeCloud, cfg config) *httptest.Server {
+	t.Helper()
+	e, err := newExample(cfg, cloud.server.Client(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { e.Close() })
+	server := httptest.NewServer(e)
 	t.Cleanup(server.Close)
 	return server
 }
@@ -166,6 +215,20 @@ func TestPageHasKeysAndNoStore(t *testing.T) {
 	}
 }
 
+// passiveAnswer calls /passive and returns the decoded answer.
+func passiveAnswer(t *testing.T, example *httptest.Server) reading {
+	t.Helper()
+	response, err := http.Get(example.URL + "/passive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answer reading
+	if err := json.Unmarshal([]byte(readBody(t, response)), &answer); err != nil {
+		t.Fatal(err)
+	}
+	return answer
+}
+
 func TestPassiveSendsOnlyCloudHeaders(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	example := startExample(t, cloud)
@@ -178,12 +241,12 @@ func TestPassiveSendsOnlyCloudHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var answer map[string]any
+	var answer reading
 	if err := json.Unmarshal([]byte(readBody(t, response)), &answer); err != nil {
 		t.Fatal(err)
 	}
-	if answer["source"] != "Passive" || answer["humanConfidence"] != "Medium" {
-		t.Errorf("the passive answer is %v", answer)
+	if answer.Source.Text != "Passive" || answer.HumanConfidence != (cell{"Medium", "part"}) {
+		t.Errorf("the passive answer is %+v", answer)
 	}
 	cloud.mu.Lock()
 	defer cloud.mu.Unlock()
@@ -192,7 +255,9 @@ func TestPassiveSendsOnlyCloudHeaders(t *testing.T) {
 		t.Errorf("the cloud's headers were not passed on, got %v", cloud.evidence)
 	}
 	for name := range cloud.evidence {
-		if name != "user-agent" && name != "sec-ch-ua" && name != "client-ip" {
+		switch name {
+		case "user-agent", "sec-ch-ua", "client-ip", "resource", "license":
+		default:
 			t.Errorf("%s was passed on but is not in the cloud's list", name)
 		}
 	}
@@ -201,195 +266,166 @@ func TestPassiveSendsOnlyCloudHeaders(t *testing.T) {
 	}
 }
 
-// passiveAnswer calls /passive and returns the decoded answer.
-func passiveAnswer(t *testing.T, example *httptest.Server) map[string]any {
-	t.Helper()
-	response, err := http.Get(example.URL + "/passive")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var answer map[string]any
-	if err := json.Unmarshal([]byte(readBody(t, response)), &answer); err != nil {
-		t.Fatal(err)
-	}
-	return answer
-}
-
 // The answer for a key without the properties has a null source and a null
-// level, and the example reports neither rather than making one up.
-func TestPassiveWithoutTheSourceReportsNone(t *testing.T) {
+// level, each with a reason, and the page is given the reasons, as for any
+// other Property with no value, rather than a value made up.
+func TestPassiveWithoutTheSourceShowsTheReason(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	cloud.passiveBody = `{"derived":{` +
 		`"humanconfidence":null,"humanconfidencenullreason":"Not in this key.",` +
 		`"humanconfidencesource":null,` +
-		`"humanconfidencesourcenullreason":"Not in this key."}}`
+		`"humanconfidencesourcenullreason":"Nor this."}}`
 	example := startExample(t, cloud)
-	answer := passiveAnswer(t, example)
-	if _, failed := answer["error"]; failed {
-		t.Fatalf("the passive answer is an error, %v", answer)
-	}
-	if answer["source"] != nil || answer["humanConfidence"] != nil {
-		t.Errorf("the passive answer is %v, want no source and no level", answer)
+	want := reading{cell{"Nor this.", "none"}, cell{"Not in this key.", "none"}}
+	if answer := passiveAnswer(t, example); answer != want {
+		t.Errorf("the passive answer is %+v, want %+v", answer, want)
 	}
 }
 
+// The Evidence keys are asked for when the Pipeline is built, and again by
+// the next request after a failure, which fails in turn while the cloud
+// still fails.
 func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
-	cloud.keysFailures = 1
+	cloud.keysFailures = 2
 	example := startExample(t, cloud)
 	first := passiveAnswer(t, example)
-	if message, _ := first["error"].(string); !strings.Contains(message, "HTTP 503") {
-		t.Errorf("the first answer is %v, want an error with HTTP 503", first)
+	if !strings.Contains(first.HumanConfidence.Text, "503") || first.HumanConfidence.Tone != "fail" {
+		t.Errorf("the first answer is %+v, want a failure with 503", first)
 	}
 	second := passiveAnswer(t, example)
-	if second["source"] != "Passive" || second["humanConfidence"] != "Medium" {
-		t.Errorf("the second answer is %v", second)
+	if second.Source.Text != "Passive" || second.HumanConfidence.Text != "Medium" {
+		t.Errorf("the second answer is %+v", second)
 	}
 }
 
-// rcAnswers are the answers hc/redeem gives, one for each status. Every one
-// is 200 but unconfirmed, which is 503 to invite a retry. humanConfidence is
-// in every answer, and is Medium unless the status is success. The times
-// come with success and expired only.
-var rcAnswers = []struct {
-	status int
-	body   string
-	shown  shown
-}{
-	{http.StatusOK, `{"humanConfidence":"High","status":"success",` +
-		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":2}`,
-		shown{"success", cell{"redeemed 2 s after the check", "pass"}, cell{"High", "pass"}}},
-	{http.StatusOK, `{"humanConfidence":"Medium","status":"expired",` +
-		`"verifiedAt":"2026-11-28T09:00:00Z","secondsSinceVerified":11}`,
-		shown{"expired", cell{"expired", "fail"}, cell{"no level", "none"}}},
-	{http.StatusOK, `{"humanConfidence":"Medium","status":"replayed"}`,
-		shown{"replayed", cell{"replayed", "fail"}, cell{"no level", "none"}}},
-	{http.StatusOK, `{"humanConfidence":"Medium","status":"unreadable"}`,
-		shown{"unreadable", cell{"unreadable", "fail"}, cell{"no level", "none"}}},
-	{http.StatusServiceUnavailable, `{"humanConfidence":"Medium","status":"unconfirmed"}`,
-		shown{"unconfirmed", cell{"unconfirmed", "fail"}, cell{"no level", "none"}}},
-}
-
-// redeemAnswer posts a sealed result to /redeem and decodes what comes back.
-func redeemAnswer(t *testing.T, example *httptest.Server) (int, shown) {
+// redeemAnswer posts a sealed result to /redeem as the page does, and
+// decodes what comes back.
+func redeemAnswer(t *testing.T, example *httptest.Server, sealed string) reading {
 	t.Helper()
 	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"sealedResult": {"sealed-value"}})
+		url.Values{"humanconfidence": {sealed}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got shown
+	var got reading
 	if err := json.Unmarshal([]byte(readBody(t, response)), &got); err != nil {
 		t.Fatal(err)
 	}
-	return response.StatusCode, got
+	return got
 }
 
-func TestRedeemPassesTheAnswerOn(t *testing.T) {
-	for _, rc := range rcAnswers {
-		cloud := newFakeCloud(t, "HumanConfidence")
-		cloud.redeemStatus = rc.status
-		cloud.redeemBody = rc.body
-		example := startExample(t, cloud)
-		code, got := redeemAnswer(t, example)
-		if code != rc.status || got != rc.shown {
-			t.Errorf("redeem of %s gave %d %+v, want %d %+v",
-				rc.body, code, got, rc.status, rc.shown)
-		}
-		cloud.mu.Lock()
-		if cloud.redeemed.Get("sealedResult") != "sealed-value" ||
-			cloud.redeemed.Get("license") != testLicense {
-			t.Error("the cloud was not sent the sealed result and the License Key")
-		}
-		cloud.mu.Unlock()
-	}
-}
+var active = cell{"Active", "pass"}
 
-// Success is decided from status alone. A success that gives a reason in
-// place of a level shows the reason, not a failure.
-func TestRedeemSuccessWithNoLevelShowsTheReason(t *testing.T) {
-	cloud := newFakeCloud(t, "HumanConfidence")
-	cloud.redeemBody = `{"status":"success","secondsSinceVerified":1,` +
-		`"humanConfidenceNullReason":"Not in this key."}`
-	example := startExample(t, cloud)
-	_, got := redeemAnswer(t, example)
-	want := shown{"success", cell{"redeemed 1 s after the check", "pass"},
-		cell{"Not in this key.", "none"}}
-	if got != want {
-		t.Errorf("the page is told %+v, want %+v", got, want)
-	}
-}
-
-func TestRedeemShown(t *testing.T) {
+// The cloud answers every status with 200 through the JSON call, and with
+// Medium for every one but success. The page is shown the two Properties.
+func TestRedeemShowsTheTwoProperties(t *testing.T) {
 	for _, test := range []struct {
-		answer string
-		want   shown
+		sealed string
+		want   cell
 	}{
-		{`{"status":"success","humanConfidence":"Low"}`,
-			shown{"success", cell{"redeemed", "pass"}, cell{"Low", "fail"}}},
-		{`{"status":"success","humanConfidence":"Medium","secondsSinceVerified":3}`,
-			shown{"success", cell{"redeemed 3 s after the check", "pass"}, cell{"Medium", "part"}}},
-		{`{"status":"success"}`,
-			shown{"success", cell{"redeemed", "pass"}, cell{"no level and no reason given", "none"}}},
-		{`{"humanConfidence":"High"}`,
-			shown{"no answer", cell{"no answer", "fail"}, cell{"no level", "none"}}},
-		{`{"error":"broken"}`,
-			shown{"broken", cell{"broken", "fail"}, cell{"no level", "none"}}},
+		{"sealed-High", cell{"High", "pass"}},
+		{"sealed-Low", cell{"Low", "fail"}},
+		{"sealed-Medium", cell{"Medium", "part"}},
+		{"sealed-expired", cell{"Medium", "part"}},
+		{"sealed-unconfirmed", cell{"Medium", "part"}},
+		{"not a sealed result", cell{"Medium", "part"}},
 	} {
-		var answer map[string]any
-		if err := json.Unmarshal([]byte(test.answer), &answer); err != nil {
-			t.Fatal(err)
-		}
-		if got := redeemShown(answer); got != test.want {
-			t.Errorf("%s shows %+v, want %+v", test.answer, got, test.want)
+		cloud := newFakeCloud(t, "HumanConfidence")
+		example := startExample(t, cloud)
+		want := reading{active, test.want}
+		if got := redeemAnswer(t, example, test.sealed); got != want {
+			t.Errorf("%s shows %+v, want %+v", test.sealed, got, want)
 		}
 	}
 }
 
-// hc/redeem reads the sealed result from sealedResult and from no other
-// field, so the redeem sends only that and the License Key.
-func TestRedeemSendsOnlySealedResult(t *testing.T) {
+// The second time a sealed result is sent it is replayed, so the Pipeline
+// gives Medium.
+func TestRedeemTwiceGivesMedium(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	example := startExample(t, cloud)
-	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"sealedResult": {"sealed-value"}})
-	if err != nil {
-		t.Fatal(err)
+	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"High", "pass"}}) {
+		t.Errorf("the first time shows %+v", got)
 	}
-	readBody(t, response)
+	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
+		t.Errorf("the second time shows %+v", got)
+	}
+}
+
+// The example never redeems a sealed result itself. It hands it to the
+// Pipeline as Evidence, which sends it in the JSON call with the License
+// Key, and nothing calls hc/redeem.
+func TestRedeemIsThePipelines(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	example := startExample(t, cloud)
+	redeemAnswer(t, example, "sealed-High")
 	cloud.mu.Lock()
 	defer cloud.mu.Unlock()
-	for name := range cloud.redeemed {
-		if name != "sealedResult" && name != "license" {
-			t.Errorf("the cloud was sent %s, which hc/redeem doesn't read", name)
-		}
+	if cloud.hcRedeemCalls != 0 {
+		t.Errorf("hc/redeem was called %d times", cloud.hcRedeemCalls)
+	}
+	if cloud.evidence.Get("humanconfidence") != "sealed-High" ||
+		cloud.evidence.Get("license") != testLicense {
+		t.Errorf("the JSON call did not carry the sealed result and the License Key, %v",
+			cloud.evidence)
 	}
 }
 
-func TestRedeemNotFoundSaysServiceDoesNotRedeem(t *testing.T) {
+func TestRedeemWithoutALicenseKeyGivesMedium(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
-	cloud.redeemStatus = http.StatusNotFound
-	cloud.redeemBody = "not found"
+	cfg := cloud.config()
+	cfg.License = ""
+	example := startExampleWith(t, cloud, cfg)
+	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
+		t.Errorf("redeeming with no License Key shows %+v", got)
+	}
+}
+
+// A JSON call that fails still gives Medium and Active, as the Pipeline does
+// for any sealed result it couldn't redeem.
+func TestRedeemWhenTheCloudFailsGivesMedium(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	cloud.jsonStatus, cloud.jsonBody = http.StatusInternalServerError, `{"error":"broken"}`
 	example := startExample(t, cloud)
-	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"sealedResult": {"sealed-value"}})
-	if err != nil {
-		t.Fatal(err)
+	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
+		t.Errorf("a failed call shows %+v", got)
 	}
-	var answer shown
-	if err := json.Unmarshal([]byte(readBody(t, response)), &answer); err != nil {
-		t.Fatal(err)
+}
+
+// Each cell shows the Property's value, or the reason it has none.
+func TestShownProperty(t *testing.T) {
+	data := derivedproperty.NewData()
+	data.Set("HumanConfidence", engines.NewAspectPropertyValue("Low"))
+	data.Set("HumanConfidenceSource", engines.NoValue[string]("Not in this key."))
+	if got := shownProperty(data, "HumanConfidence", ""); got != (cell{"Low", "fail"}) {
+		t.Errorf("a value shows %+v", got)
 	}
-	if !strings.Contains(answer.Detail.Text, "doesn't redeem Human Confidence") {
-		t.Errorf("the error is %q", answer.Detail.Text)
+	if got := shownProperty(data, "HumanConfidenceSource", ""); got != (cell{"Not in this key.", "none"}) {
+		t.Errorf("no value shows %+v", got)
+	}
+	empty := derivedproperty.NewData()
+	if got := shownProperty(empty, "HumanConfidence", ""); got != (cell{"not returned", "none"}) {
+		t.Errorf("a missing Property shows %+v", got)
+	}
+	if got := shownProperty(empty, "HumanConfidence", "HTTP 500"); got != (cell{"HTTP 500", "fail"}) {
+		t.Errorf("a missing Property after a failure shows %+v", got)
+	}
+	data.Set("HumanConfidenceSource", engines.NewAspectPropertyValue("Passive"))
+	if got := shownProperty(data, "HumanConfidenceSource", ""); got != (cell{"Passive", "none"}) {
+		t.Errorf("Passive shows %+v", got)
 	}
 }
 
 func TestMissingPropertyLinksToContactUs(t *testing.T) {
 	cloud := newFakeCloud(t, "BrowserName")
 	var console strings.Builder
-	handler := newExample(cloud.config(), cloud.server.Client(), &console)
-	example := httptest.NewServer(handler)
+	e, err := newExample(cloud.config(), cloud.server.Client(), &console)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	example := httptest.NewServer(e)
 	defer example.Close()
 	response, err := http.Get(example.URL + "/")
 	if err != nil {
