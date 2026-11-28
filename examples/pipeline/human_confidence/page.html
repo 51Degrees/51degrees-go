@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!-- Human Confidence demo page.
-     Served by the small server beside this file, which puts in the
-     Resource Key and the cloud address, and holds the License Key server
-     side. -->
+     Served by the small server beside this file, which puts in the client
+     script address and the page id its Pipeline issued for this page, and
+     holds the License Key and the page's transaction server side. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -75,9 +75,10 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
 <script>
 (function () {
   "use strict";
-  var RESOURCE = "__RESOURCE__";
-  // The cloud API base ending in /api/v4/, as the server read it.
-  var API = "__API__";
+  // The client script address and the page id the Pipeline issued for this
+  // page. The address carries the page's transaction.
+  var SCRIPT = "__SCRIPT__";
+  var PAGE = "__PAGE__";
 
   var PASS = "c-eg-status c-eg-status--pass";
   var FAIL = "c-eg-status c-eg-status--fail";
@@ -116,12 +117,14 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
     .then(function (reading) { showReading("passive", reading); })
     .catch(function (error) { show("passive-level", String(error), FAIL); });
 
-  // Step 3. The page sends the sealed result back as humanconfidence, and
-  // the server reads the two Properties for that request. Its Pipeline
-  // redeems the sealed result with the License Key.
+  // Step 3. The page sends the sealed result back as humanconfidence, with
+  // its page id, and the server reads the two Properties for that request.
+  // Its Pipeline redeems the sealed result with the License Key and the
+  // page's transaction.
   function redeem(value) {
     var body = new URLSearchParams();
     body.set("humanconfidence", value);
+    body.set("humanconfidencepage", PAGE);
     return fetch("redeem", { method: "POST", body: body })
       .then(function (r) { return r.json(); });
   }
@@ -130,7 +133,7 @@ body { font-family: sans-serif; margin: 2rem; color: #222; }
   // and calls back through its complete function with the final result.
   var script = document.createElement("script");
   script.async = true;
-  script.src = API + RESOURCE + ".js";
+  script.src = SCRIPT;
   script.onerror = function () {
     show("active-source", "the 51Degrees script didn't load", FAIL);
   };

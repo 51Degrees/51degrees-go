@@ -16,19 +16,25 @@ Pipeline gives where one has no value.
 1. **Passive.** The server processes the visitor's request headers (only
    those the cloud lists in its `evidencekeys`) and IP address through its
    Pipeline, and reads the two Properties.
-2. **Active.** The page loads the 51Degrees client script. When the script
-   completes, `HumanConfidenceSource` is `Active` and `HumanConfidence`
-   holds a sealed value. The browser can't read it or change it.
+2. **Active.** For each page it serves, the server asks its Cloud Request
+   Engine for a new page (`IssueHumanConfidencePage`). The page loads the
+   51Degrees client script from that page's address, which carries a
+   transaction the Pipeline keeps on the server, so the sealed value the
+   page gets is bound to it. When the script completes,
+   `HumanConfidenceSource` is `Active` and `HumanConfidence` holds a sealed
+   value. The browser can't read it or change it.
 3. **Read with the sealed result.** The page sends the sealed value back to
-   the server as `humanconfidence`, which the server adds as the Evidence
-   `query.humanconfidence`, and the server reads the two Properties again.
-   Its Pipeline redeems the sealed value through the Cloud Request Engine's
-   request, with the account's License Key, so the server never redeems
-   anything itself. `HumanConfidenceSource` is `Active`, and
-   `HumanConfidence` is the redeemed Value. A sealed value redeems once,
-   within ten seconds. Where it can't be redeemed, for any reason,
-   `HumanConfidence` is `Medium`. The page then offers to send the same
-   value again, which gives `Medium`, because it has been redeemed.
+   the server as `humanconfidence`, with its page id as
+   `humanconfidencepage`, which the server adds as the Evidence
+   `query.humanconfidence` and `query.humanconfidencepage`, and the server
+   reads the two Properties again. Its Pipeline redeems the sealed value
+   through the Cloud Request Engine's request, with the account's License
+   Key and the page's transaction, so the server never redeems anything
+   itself. `HumanConfidenceSource` is `Active`, and `HumanConfidence` is the
+   redeemed Value. A sealed value redeems once, within ten seconds. Where it
+   can't be redeemed, for any reason, `HumanConfidence` is `Medium`. The
+   page then offers to send the same value again, which gives `Medium`,
+   because the page's transaction has been used.
 
 The client script reports complete only after the browser tests have run
 and one more request has answered, so the second row fills a few seconds

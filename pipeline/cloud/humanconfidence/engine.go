@@ -32,9 +32,12 @@
 // there, so redeeming makes no request of its own and uses no other
 // endpoint. A consumer never redeems a sealed result itself.
 //
-// The package issues no transaction for a page yet, so the request carries
-// none. The cloud service redeems a sealed result made with no transaction
-// without one.
+// The sealed result is bound to its page by a transaction. A server gives
+// each page a requestengine.HumanConfidencePage, whose script address
+// carries the page's transaction and whose ID the page sends back as
+// humanconfidencepage. The Cloud Request Engine redeems the sealed result
+// with the transaction it kept for that page, once. A request from a page
+// with no kept transaction gives Medium.
 //
 // See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md
 package humanconfidence
@@ -50,6 +53,7 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/missingproperty"
 )
 
 // The names of the two Properties, in the derived Element Data.
@@ -79,7 +83,8 @@ type Engine struct {
 // New creates the engine. A nil logger leaves the default.
 func New(logger *slog.Logger) *Engine {
 	e := &Engine{BaseElement: core.NewBaseElement(derivedproperty.DataKey,
-		core.NewWhitelistFilter(requestengine.HumanConfidenceEvidence), logger)}
+		core.NewWhitelistFilter(requestengine.HumanConfidenceEvidence,
+			requestengine.HumanConfidencePageEvidence), logger)}
 	text := reflect.TypeOf(engines.AspectPropertyValue[string]{})
 	e.SetProperties([]core.PropertyMetadata{
 		{Name: HumanConfidence, Element: e, Type: text, Available: true,
@@ -151,11 +156,14 @@ func holds(el core.FlowElement, e *Engine) bool {
 // redeemed Value, or Medium where the result was not redeemed, in place of
 // any value another element gave. On any other request it gives each of the
 // two that the answer's derived member holds, with the reason where it is
-// null, unless a Derived Property Element has given it already. It returns
-// no error of its own where a sealed result was not redeemed, so a read of
-// either Property never fails for that reason. A failed request is still
-// recorded once as the Cloud Request Engine's error.
+// null, unless a Derived Property Element has given it already. Where the
+// answer leaves one out, or the request failed, it gives no value with the
+// reason Missing Properties gives. It returns no error of its own where a
+// sealed result was not redeemed, so a read of either Property never fails
+// for that reason. A failed request is still recorded once as the Cloud
+// Request Engine's error.
 // See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#when-humanconfidence-arrives-sealed
+// and https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-consumer-reads
 func (e *Engine) Process(fd core.FlowData) error {
 	if requestengine.CarriesSealedResult(fd) {
 		return set(fd, map[string]engines.AspectPropertyValue[string]{
@@ -163,17 +171,52 @@ func (e *Engine) Process(fd core.FlowData) error {
 			HumanConfidenceSource: engines.NewAspectPropertyValue(Active),
 		}, true)
 	}
-	derived, ok := answerDerived(fd)
+	data, err := fd.Get(requestengine.DataKey)
+	if err != nil {
+		// With no Cloud Request Engine, or one that made no request, there is
+		// no answer, so each Property has no value, with the reason.
+		return set(fd, noAnswer(fd), false)
+	}
+	crd, ok := data.(*requestengine.CloudRequestData)
 	if !ok {
-		return nil
+		return set(fd, noAnswer(fd), false)
 	}
 	values := map[string]engines.AspectPropertyValue[string]{}
+	derived, answered := answerDerived(fd)
 	for _, name := range []string{HumanConfidence, HumanConfidenceSource} {
 		if value, given := propertyValue(derived, strings.ToLower(name)); given {
 			values[name] = value
+			continue
 		}
+		reason := missingproperty.ForPropertyNotInResourceKey(name,
+			derivedproperty.DataKey, derivedproperty.DataKey, nil)
+		if !answered && crd.Failed() {
+			reason = missingproperty.ForCloudRequestFailed(name, derivedproperty.DataKey)
+		}
+		values[name] = engines.NoValue[string](reason.Error())
 	}
 	return set(fd, values, false)
+}
+
+// NoCloudRequestEngine is the reason a Property has no value on a request
+// with no sealed result, where the Pipeline has no Cloud Request Engine.
+const NoCloudRequestEngine = "This property needs a Cloud Request Engine before the Human " +
+	"Confidence Engine in the Pipeline, and there is none."
+
+// noAnswer gives each of the two Properties no value, with the reason there
+// is no answer: no Cloud Request Engine in the Pipeline, or one that made no
+// request for fd, as in a recovery period.
+func noAnswer(fd core.FlowData) map[string]engines.AspectPropertyValue[string] {
+	values := map[string]engines.AspectPropertyValue[string]{}
+	_, hasEngine := fd.Pipeline().GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
+	for _, name := range []string{HumanConfidence, HumanConfidenceSource} {
+		reason := NoCloudRequestEngine
+		if hasEngine {
+			reason = missingproperty.ForCloudRequestFailed(name, derivedproperty.DataKey).Error()
+		}
+		values[name] = engines.NoValue[string](reason)
+	}
+	return values
 }
 
 // set writes values into the derived Element Data, adding it where no
@@ -202,12 +245,19 @@ func set(fd core.FlowData, values map[string]engines.AspectPropertyValue[string]
 
 // redeemed gives the Value the answer redeemed the sealed result to, or
 // Medium where there is no such Value: with no Cloud Request Engine or no
-// License Key, with no answer, as in a recovery period or after a failed
-// request, or with an answer whose derived member gives anything other than
-// High, Medium or Low.
+// License Key, with no transaction kept for the page, with no answer, as in a
+// recovery period or after a failed request, or with an answer whose derived
+// member gives anything other than High, Medium or Low.
 func redeemed(fd core.FlowData) string {
 	cre, ok := fd.Pipeline().GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
 	if !ok || !cre.HasLicenseKey() {
+		return NotRedeemed
+	}
+	data, err := fd.Get(requestengine.DataKey)
+	if err != nil {
+		return NotRedeemed
+	}
+	if crd, ok := data.(*requestengine.CloudRequestData); !ok || !crd.RedeemsHumanConfidence() {
 		return NotRedeemed
 	}
 	derived, ok := answerDerived(fd)
@@ -250,7 +300,7 @@ func answerDerived(fd core.FlowData) (map[string]json.RawMessage, bool) {
 
 // propertyValue gives the Property name of derived, being its text, or no
 // value with the reason the answer gives where it is null. It is false where
-// derived does not hold the Property, which then stays missing.
+// derived does not hold the Property.
 func propertyValue(derived map[string]json.RawMessage, name string) (engines.AspectPropertyValue[string], bool) {
 	raw, ok := derived[name]
 	if !ok {

@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
@@ -49,7 +50,9 @@ const (
 // Active, and HumanConfidence the sealed Value on success and Medium on any
 // other status. A sealed result named sealed-<Value> redeems once and is
 // replayed after that. sealed-expired and sealed-unconfirmed give those
-// statuses, and anything else is unreadable.
+// statuses, and anything else is unreadable. A sealed result redeems only
+// with the transaction it was made with, which is the one in the address the
+// page loaded the client script from.
 type fakeCloud struct {
 	server      *httptest.Server
 	properties  []string
@@ -61,6 +64,11 @@ type fakeCloud struct {
 	mu       sync.Mutex
 	evidence url.Values
 	redeemed map[string]bool
+	// madeWith is the transaction each sealed result was made with.
+	madeWith map[string]string
+	// jsonCalls counts the JSON calls, and sealedSends those that held a
+	// sealed result.
+	jsonCalls, sealedSends int
 	// hcRedeemCalls counts calls to hc/redeem, which the example never makes.
 	hcRedeemCalls int
 	// keysFailures is how many more times evidencekeys answers 503.
@@ -72,6 +80,7 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 		properties:  properties,
 		passiveBody: `{"derived":{"humanconfidencesource":"Passive","humanconfidence":"Medium"}}`,
 		redeemed:    map[string]bool{},
+		madeWith:    map[string]string{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v4/evidencekeys", func(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +115,10 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 		r.ParseForm()
 		cloud.mu.Lock()
 		cloud.evidence = r.PostForm
+		cloud.jsonCalls++
+		if r.PostForm.Has("humanconfidence") {
+			cloud.sealedSends++
+		}
 		status, body := cloud.jsonStatus, cloud.jsonBody
 		cloud.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
@@ -120,7 +133,8 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 			return
 		}
 		io.WriteString(w, `{"derived":{"humanconfidencesource":"Active",`+
-			`"humanconfidence":"`+cloud.redeem(sealed, r.PostForm.Get("license"))+`"}}`)
+			`"humanconfidence":"`+cloud.redeem(sealed, r.PostForm.Get("license"),
+			r.PostForm.Get("transaction"))+`"}}`)
 	})
 	mux.HandleFunc("/api/v4/hc/redeem", func(w http.ResponseWriter, r *http.Request) {
 		cloud.mu.Lock()
@@ -134,12 +148,12 @@ func newFakeCloud(t *testing.T, properties ...string) *fakeCloud {
 }
 
 // redeem gives the Value the cloud gives for sealed, which needs the
-// License Key.
-func (c *fakeCloud) redeem(sealed, license string) string {
+// License Key and the transaction the sealed result was made with.
+func (c *fakeCloud) redeem(sealed, license, transaction string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	level, ok := strings.CutPrefix(sealed, "sealed-")
-	if !ok || license != testLicense {
+	if !ok || license != testLicense || transaction != c.madeWith[sealed] {
 		return "Medium" // unreadable
 	}
 	switch level {
@@ -200,11 +214,14 @@ func TestPageHasKeysAndNoStore(t *testing.T) {
 	if response.Header.Get("Cache-Control") != "no-store" {
 		t.Errorf("Cache-Control is %q", response.Header.Get("Cache-Control"))
 	}
-	if !strings.Contains(body, `"`+testResource+`"`) ||
-		!strings.Contains(body, `"`+cloud.config().API+`"`) {
-		t.Error("the page lacks the Resource Key or the API base")
+	script, page := pageValues(t, body)
+	if !strings.HasPrefix(script, cloud.config().API+testResource+".js?transaction=") {
+		t.Errorf("the client script address is %q", script)
 	}
-	if strings.Contains(body, "__RESOURCE__") || strings.Contains(body, "__API__") {
+	if page == "" || strings.Contains(script, page) {
+		t.Errorf("the page id is %q, or the script address holds it", page)
+	}
+	if strings.Contains(body, "__SCRIPT__") || strings.Contains(body, "__PAGE__") {
 		t.Error("the page still has a placeholder")
 	}
 	if strings.Contains(body, testLicense) {
@@ -283,15 +300,15 @@ func TestPassiveWithoutTheSourceShowsTheReason(t *testing.T) {
 }
 
 // The Evidence keys are asked for when the Pipeline is built, and again by
-// the next request after a failure, which fails in turn while the cloud
-// still fails.
+// the next request after a failure. While the cloud still fails, the two
+// Properties have no value, and the page shows the reason the Pipeline gives.
 func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	cloud.keysFailures = 2
 	example := startExample(t, cloud)
 	first := passiveAnswer(t, example)
-	if !strings.Contains(first.HumanConfidence.Text, "503") || first.HumanConfidence.Tone != "fail" {
-		t.Errorf("the first answer is %+v, want a failure with 503", first)
+	if !strings.Contains(first.HumanConfidence.Text, "cloud request failed") {
+		t.Errorf("the first answer is %+v, want the reason a failed request gives", first)
 	}
 	second := passiveAnswer(t, example)
 	if second.Source.Text != "Passive" || second.HumanConfidence.Text != "Medium" {
@@ -299,12 +316,54 @@ func TestPassiveAsksForTheHeadersAgainAfterAFailure(t *testing.T) {
 	}
 }
 
-// redeemAnswer posts a sealed result to /redeem as the page does, and
-// decodes what comes back.
-func redeemAnswer(t *testing.T, example *httptest.Server, sealed string) reading {
+var (
+	scriptPattern = regexp.MustCompile(`var SCRIPT = "([^"]*)";`)
+	pagePattern   = regexp.MustCompile(`var PAGE = "([^"]*)";`)
+)
+
+// pageValues gives the client script address and the page id a page holds.
+func pageValues(t *testing.T, body string) (string, string) {
+	t.Helper()
+	script, page := scriptPattern.FindStringSubmatch(body), pagePattern.FindStringSubmatch(body)
+	if script == nil || page == nil {
+		t.Fatal("the page holds no client script address or page id")
+	}
+	return script[1], page[1]
+}
+
+// loadPage loads the page, and gives its page id and the transaction its
+// client script address carries.
+func loadPage(t *testing.T, example *httptest.Server) (string, string) {
+	t.Helper()
+	response, err := http.Get(example.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, page := pageValues(t, readBody(t, response))
+	u, err := url.Parse(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page, u.Query().Get("transaction")
+}
+
+// redeemAnswer loads a page, has the cloud make sealed for it as the client
+// script does, and posts it to /redeem as the page does.
+func redeemAnswer(t *testing.T, cloud *fakeCloud, example *httptest.Server, sealed string) reading {
+	t.Helper()
+	page, transaction := loadPage(t, example)
+	cloud.mu.Lock()
+	cloud.madeWith[sealed] = transaction
+	cloud.mu.Unlock()
+	return redeemOnPage(t, example, sealed, page)
+}
+
+// redeemOnPage posts sealed to /redeem with the page id page, and decodes
+// what comes back.
+func redeemOnPage(t *testing.T, example *httptest.Server, sealed, page string) reading {
 	t.Helper()
 	response, err := http.PostForm(example.URL+"/redeem",
-		url.Values{"humanconfidence": {sealed}})
+		url.Values{"humanconfidence": {sealed}, "humanconfidencepage": {page}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +393,7 @@ func TestRedeemShowsTheTwoProperties(t *testing.T) {
 		cloud := newFakeCloud(t, "HumanConfidence")
 		example := startExample(t, cloud)
 		want := reading{active, test.want}
-		if got := redeemAnswer(t, example, test.sealed); got != want {
+		if got := redeemAnswer(t, cloud, example, test.sealed); got != want {
 			t.Errorf("%s shows %+v, want %+v", test.sealed, got, want)
 		}
 	}
@@ -345,30 +404,78 @@ func TestRedeemShowsTheTwoProperties(t *testing.T) {
 func TestRedeemTwiceGivesMedium(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	example := startExample(t, cloud)
-	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"High", "pass"}}) {
+	if got := redeemAnswer(t, cloud, example, "sealed-High"); got != (reading{active, cell{"High", "pass"}}) {
 		t.Errorf("the first time shows %+v", got)
 	}
-	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
+	if got := redeemAnswer(t, cloud, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
 		t.Errorf("the second time shows %+v", got)
 	}
 }
 
-// The example never redeems a sealed result itself. It hands it to the
-// Pipeline as Evidence, which sends it in the JSON call with the License
-// Key, and nothing calls hc/redeem.
+// The example never redeems a sealed result itself. It hands it and the page
+// id to the Pipeline as Evidence, which sends the sealed result in the JSON
+// call with the License Key and the transaction it kept for the page, and
+// nothing calls hc/redeem. The page id stays on the server.
 func TestRedeemIsThePipelines(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	example := startExample(t, cloud)
-	redeemAnswer(t, example, "sealed-High")
+	page, transaction := loadPage(t, example)
+	redeemOnPage(t, example, "sealed-High", page)
 	cloud.mu.Lock()
 	defer cloud.mu.Unlock()
 	if cloud.hcRedeemCalls != 0 {
 		t.Errorf("hc/redeem was called %d times", cloud.hcRedeemCalls)
 	}
 	if cloud.evidence.Get("humanconfidence") != "sealed-High" ||
-		cloud.evidence.Get("license") != testLicense {
-		t.Errorf("the JSON call did not carry the sealed result and the License Key, %v",
+		cloud.evidence.Get("license") != testLicense ||
+		cloud.evidence.Get("transaction") != transaction {
+		t.Errorf("the JSON call did not carry the sealed result, the License Key and the page's transaction, %v",
 			cloud.evidence)
+	}
+	if cloud.evidence.Has("humanconfidencepage") {
+		t.Error("the JSON call carried the page id")
+	}
+}
+
+// Each page load is a new page, with a page id and a transaction of its own.
+func TestEachPageLoadIsANewPage(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	example := startExample(t, cloud)
+	firstPage, firstTransaction := loadPage(t, example)
+	secondPage, secondTransaction := loadPage(t, example)
+	if firstPage == secondPage || firstTransaction == secondTransaction || firstTransaction == "" {
+		t.Error("two page loads share a page id or a transaction")
+	}
+}
+
+// A sealed result sent again from the same page, or with no page id, has no
+// transaction kept for it, so it is not sent and the page shows Medium.
+func TestRedeemWithNoKeptTransactionGivesMedium(t *testing.T) {
+	cloud := newFakeCloud(t, "HumanConfidence")
+	example := startExample(t, cloud)
+	page, transaction := loadPage(t, example)
+	cloud.madeWith["sealed-High"] = transaction
+	if got := redeemOnPage(t, example, "sealed-High", page); got != (reading{active, cell{"High", "pass"}}) {
+		t.Errorf("the first send shows %+v", got)
+	}
+	for name, id := range map[string]string{"the same page again": page, "no page id": ""} {
+		if got := redeemOnPage(t, example, "sealed-High", id); got != (reading{active, cell{"Medium", "part"}}) {
+			t.Errorf("%s shows %+v", name, got)
+		}
+	}
+	// The JSON calls run on their own, so wait for all three to arrive.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		cloud.mu.Lock()
+		calls, sends := cloud.jsonCalls, cloud.sealedSends
+		cloud.mu.Unlock()
+		if calls >= 3 || time.Now().After(deadline) {
+			if calls != 3 || sends != 1 {
+				t.Errorf("%d calls held the sealed result out of %d, want 1 of 3", sends, calls)
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -377,7 +484,7 @@ func TestRedeemWithoutALicenseKeyGivesMedium(t *testing.T) {
 	cfg := cloud.config()
 	cfg.License = ""
 	example := startExampleWith(t, cloud, cfg)
-	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
+	if got := redeemAnswer(t, cloud, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
 		t.Errorf("redeeming with no License Key shows %+v", got)
 	}
 }
@@ -388,7 +495,7 @@ func TestRedeemWhenTheCloudFailsGivesMedium(t *testing.T) {
 	cloud := newFakeCloud(t, "HumanConfidence")
 	cloud.jsonStatus, cloud.jsonBody = http.StatusInternalServerError, `{"error":"broken"}`
 	example := startExample(t, cloud)
-	if got := redeemAnswer(t, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
+	if got := redeemAnswer(t, cloud, example, "sealed-High"); got != (reading{active, cell{"Medium", "part"}}) {
 		t.Errorf("a failed call shows %+v", got)
 	}
 }

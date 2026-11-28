@@ -298,6 +298,25 @@ func TestParametersExcludeSessionAndSequence(t *testing.T) {
 	}
 }
 
+// A sealed Human Confidence result is never in the script, and nor is the
+// page id sent with it, in any letter case.
+func TestParametersLeaveOutTheSealedHumanConfidence(t *testing.T) {
+	js := renderWith(t, map[string]string{
+		"header.host":               "example.com",
+		"query.humanconfidence":     "made-up-sealed-value",
+		"query.HumanConfidencePage": "made-up-page-id",
+		"query.myparam":             "myvalue",
+	})
+	if !strings.Contains(grepLine(js, "var renderedParameters ="), "myparam") {
+		t.Fatal("parameters should include myparam")
+	}
+	for _, value := range []string{"made-up-sealed-value", "made-up-page-id"} {
+		if strings.Contains(js, value) {
+			t.Errorf("the script holds %q", value)
+		}
+	}
+}
+
 // TestMustacheMissingKeyInSection verifies a variable with no context value
 // renders as empty inside a section rather than erroring.
 func TestMustacheMissingKeyInSection(t *testing.T) {

@@ -28,13 +28,16 @@
 //
 //  1. Passive. This server processes the visitor's request headers and IP
 //     address, and reads the two Properties.
-//  2. Active. The page loads the 51Degrees client script. When the script
-//     completes, HumanConfidenceSource is Active and HumanConfidence holds
-//     a sealed value the browser can't read.
+//  2. Active. The page loads the 51Degrees client script from the address
+//     the Pipeline issued for this page, which binds the page's sealed value
+//     to a transaction kept on this server. When the script completes,
+//     HumanConfidenceSource is Active and HumanConfidence holds a sealed
+//     value the browser can't read.
 //  3. Redeemed. The page sends the sealed value back to this server as
-//     humanconfidence. The server processes that request and reads the two
-//     Properties again. The Pipeline redeems the sealed value with the
-//     License Key, so this server never redeems anything itself, and the
+//     humanconfidence, with its page id as humanconfidencepage. The server
+//     processes that request and reads the two Properties again. The
+//     Pipeline redeems the sealed value with the License Key and the page's
+//     transaction, so this server never redeems anything itself, and the
 //     License Key stays on it.
 //
 // Environment variables
@@ -115,6 +118,7 @@ type example struct {
 	http.Handler
 	cfg      config
 	pipeline core.Pipeline
+	cre      *requestengine.CloudRequestEngine
 	notice   string
 }
 
@@ -140,7 +144,7 @@ func newExample(cfg config, client *http.Client, console io.Writer) (*example, e
 		cre.Close()
 		return nil, err
 	}
-	e := &example{cfg: cfg, pipeline: pipeline}
+	e := &example{cfg: cfg, pipeline: pipeline, cre: cre}
 	products, err := cre.PublicProperties()
 	switch {
 	case err != nil:
@@ -175,12 +179,15 @@ func hasHumanConfidence(products map[string]requestengine.ProductMeta) bool {
 	return false
 }
 
-// servePage serves the page with the Resource Key and the API base. The
-// page must never come from a cache, as each load runs the tests.
+// servePage serves the page with a new HumanConfidencePage from the Cloud
+// Request Engine: the client script address, which binds the page's sealed
+// value to the page's transaction, and the page id the page sends back. The
+// page must never come from a cache, as each load is a new page.
 func (e *example) servePage(w http.ResponseWriter, r *http.Request) {
+	issued := e.cre.IssueHumanConfidencePage()
 	body := strings.NewReplacer(
-		"__RESOURCE__", e.cfg.Resource,
-		"__API__", e.cfg.API,
+		"__SCRIPT__", issued.ScriptURL(e.cfg.API, e.cfg.Resource),
+		"__PAGE__", issued.ID,
 		"__NOTICE__", e.notice).Replace(page)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -189,22 +196,24 @@ func (e *example) servePage(w http.ResponseWriter, r *http.Request) {
 
 // passive reads the two Properties for the visitor's request alone.
 func (e *example) passive(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, e.read(r, ""))
+	writeJSON(w, e.read(r, "", ""))
 }
 
 // redeem reads the two Properties for a request that carries the sealed
-// value the page sent as humanconfidence. The Pipeline redeems it.
+// value the page sent as humanconfidence, and its page id. The Pipeline
+// redeems it.
 func (e *example) redeem(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, e.read(r, r.FormValue("humanconfidence")))
+	writeJSON(w, e.read(r, r.FormValue("humanconfidence"), r.FormValue("humanconfidencepage")))
 }
 
 // read processes the visitor's request and gives what the page shows for
 // the two Properties. Only the request headers the cloud lists in its
 // Evidence keys are passed on, so headers such as Authorization stay on this
-// server. A sealed value goes in as the Evidence query.humanconfidence,
-// which is what the web integration makes of the page's humanconfidence
-// parameter.
-func (e *example) read(r *http.Request, sealed string) reading {
+// server. A sealed value and its page id go in as the Evidence
+// query.humanconfidence and query.humanconfidencepage, which is what the web
+// integration makes of the page's humanconfidence and humanconfidencepage
+// parameters.
+func (e *example) read(r *http.Request, sealed, pageID string) reading {
 	fd := e.pipeline.CreateFlowData()
 	filter := e.pipeline.EvidenceKeyFilter()
 	for name, values := range r.Header {
@@ -219,6 +228,7 @@ func (e *example) read(r *http.Request, sealed string) reading {
 	}
 	if sealed != "" {
 		fd.AddEvidence(requestengine.HumanConfidenceEvidence, sealed)
+		fd.AddEvidence(requestengine.HumanConfidencePageEvidence, pageID)
 	}
 	// A failed request to the cloud is an error here. The two Properties
 	// are read all the same, as the Pipeline gives them where it can.

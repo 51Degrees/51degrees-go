@@ -28,6 +28,8 @@ package requestengine
 // See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#redeeming-through-the-json-call
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -63,6 +65,11 @@ func sealedRequest(t *testing.T, cs *cloudServer, requested []string,
 	for key, value := range evidence {
 		fd.AddEvidence(key, value)
 	}
+	// A sealed result comes from a page the engine issued, unless the test
+	// names the page itself.
+	if _, named := evidence[HumanConfidencePageEvidence]; !named && evidence[HumanConfidenceEvidence] != "" {
+		fd.AddEvidence(HumanConfidencePageEvidence, e.IssueHumanConfidencePage().ID)
+	}
 	if err := processAndRead(fd); err != nil {
 		t.Fatalf("process: %v", err)
 	}
@@ -91,13 +98,20 @@ func TestASealedRequestDoesNotNameHumanConfidenceTwice(t *testing.T) {
 	}
 }
 
-// With no list, the request asks for every Property, so nothing is added
-// that would narrow it to one.
-func TestASealedRequestWithNoListAsksForEverything(t *testing.T) {
+// With no configured list, a call that redeems still names
+// derived.HumanConfidence, as the specification says, because the cloud
+// service needs a call with a License Key to name its Properties.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#redeeming-through-the-json-call
+func TestASealedRequestWithNoListNamesHumanConfidence(t *testing.T) {
 	cs := &cloudServer{jsonBody: `{"device":{"ismobile":true}}`}
 	sealedRequest(t, cs, nil, map[string]string{HumanConfidenceEvidence: "sealed"})
+	if got := cs.lastForm.Get("values"); got != "derived.HumanConfidence" {
+		t.Errorf("values is %q, want derived.HumanConfidence", got)
+	}
+	cs = &cloudServer{jsonBody: `{"device":{"ismobile":true}}`}
+	sealedRequest(t, cs, nil, map[string]string{"header.user-agent": "ua"})
 	if cs.lastForm.Has("values") {
-		t.Errorf("values is %q, want none", cs.lastForm.Get("values"))
+		t.Errorf("a call that redeems nothing named values %q", cs.lastForm.Get("values"))
 	}
 }
 
@@ -121,29 +135,53 @@ func TestARequestWithNoSealedResultIsUnchanged(t *testing.T) {
 // The added name is left out of the report of Properties not returned, so
 // the report is made for the configured list alone.
 func TestTheAddedNameIsNotReported(t *testing.T) {
+	// The answer leaves out derived, so a report that counted the added name
+	// would name it.
 	cs := &cloudServer{jsonBody: `{"device":{"ismobile":true}}`}
-	e := sealedRequest(t, cs, []string{"device.IsMobile"},
-		map[string]string{HumanConfidenceEvidence: "sealed"})
-	if len(e.requestedProperties) != 1 || e.requestedProperties[0] != "device.IsMobile" {
-		t.Errorf("the configured list became %v", e.requestedProperties)
+	var log bytes.Buffer
+	pe := newPageEngine(t, cs, "test-license", func(b *Builder) {
+		b.SetRequestedProperties("device.IsMobile").
+			SetLogger(slog.New(slog.NewTextHandler(&log, nil)))
+	})
+	page := pe.e.IssueHumanConfidencePage()
+	pe.request(HumanConfidenceEvidence, "sealed", HumanConfidencePageEvidence, page.ID)
+	if got := cs.lastForm.Get("values"); got != "device.IsMobile,derived.HumanConfidence" {
+		t.Fatalf("values is %q", got)
+	}
+	if strings.Contains(strings.ToLower(log.String()), "derived.humanconfidence") {
+		t.Errorf("the report names the added Property: %s", log.String())
+	}
+	if len(pe.e.requestedProperties) != 1 || pe.e.requestedProperties[0] != "device.IsMobile" {
+		t.Errorf("the configured list became %v", pe.e.requestedProperties)
 	}
 }
 
 // A transaction or challenge in the request, under any prefix and in any
-// letter case, is left out of a call that redeems, because only a
+// letter case, is left out of a call that redeems, because only the
 // transaction the package kept may go in it.
 func TestASealedRequestCarriesNoTransactionFromTheRequest(t *testing.T) {
 	cs := &cloudServer{jsonBody: `{"device":{"ismobile":true}}`}
-	sealedRequest(t, cs, nil, map[string]string{
+	fromRequest := map[string]string{
 		HumanConfidenceEvidence: "sealed",
 		"query.transaction":     "from-the-page",
 		"header.Transaction":    "from-a-header",
 		"cookie.CHALLENGE":      "from-a-cookie",
 		"challenge":             "with-no-prefix",
-	})
-	for field := range cs.lastForm {
-		if lower := strings.ToLower(field); lower == "transaction" || lower == "challenge" {
-			t.Errorf("the call holds %s = %q", field, cs.lastForm.Get(field))
+	}
+	sealedRequest(t, cs, nil, fromRequest)
+	for field, values := range cs.lastForm {
+		switch lower := strings.ToLower(field); {
+		case lower == "challenge":
+			t.Errorf("the call holds %s = %q", field, values)
+		case lower == "transaction":
+			if field != "transaction" || len(values) != 1 {
+				t.Errorf("the call holds %s = %q, want one transaction", field, values)
+			}
+			for _, from := range fromRequest {
+				if values[0] == from {
+					t.Errorf("the call's transaction %q came from the request", from)
+				}
+			}
 		}
 	}
 }

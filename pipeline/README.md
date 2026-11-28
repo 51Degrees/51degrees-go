@@ -149,18 +149,45 @@ how it was worked out: `Passive` from the request alone, or `Active` where the
 browser also ran the 51Degrees browser tests. Both are in the `derived`
 Element Data.
 
+Each sealed result is bound to the page that asked for it by a transaction.
+When your server serves a page that asks for Human Confidence, it calls the
+Cloud Request Engine's `IssueHumanConfidencePage`. The page loads the
+51Degrees client script from the page's `ScriptURL`, which carries the
+page's transaction, and keeps the page's `ID`. The engine keeps the
+transaction on your server for 10 minutes, for at most 10,000 pages at once.
+Your code gets the transaction only inside the script address, to write into
+the page, and has no other way to read it.
+
+The transactions are kept in the memory of the process that issued them. A
+site run as several processes or servers needs the request that sends a
+sealed result back to reach the process that served its page, as with
+sticky sessions. Otherwise, and after a restart, that sealed result gives
+`Medium`.
+
 After the browser tests run, the page gets HumanConfidence sealed, so the
 browser can't read or change it. The page sends it back to your server as the
-`humanconfidence` parameter, which the web integration adds as the Evidence
-`query.humanconfidence`. Add the Human Confidence Engine
+`humanconfidence` parameter, with its page ID as `humanconfidencepage`, which
+the web integration adds as the Evidence `query.humanconfidence` and
+`query.humanconfidencepage`. Add the Human Confidence Engine
 (`cloud/humanconfidence`) after the Cloud Request Engine, and after any
 Derived Property Element. On a request that carries a sealed result, the
-Cloud Request Engine sends it in its one request, and the engine gives
-HumanConfidenceSource `Active` and HumanConfidence the redeemed Value. Your
-code only reads the two Properties and never redeems anything itself. A
-sealed result redeems once, within 10 seconds, and needs the License Key of
-the same account set on the Cloud Request Engine. Where it isn't redeemed,
-for any reason, HumanConfidence is `Medium`.
+Cloud Request Engine sends it in its one request with the transaction it
+kept for the page, and the engine gives HumanConfidenceSource `Active` and
+HumanConfidence the redeemed Value. Your code only reads the two Properties
+and never redeems anything itself. A sealed result redeems once, within 10
+seconds, and needs the License Key of the same account set on the Cloud
+Request Engine. Where it isn't redeemed, for any reason, HumanConfidence is
+`Medium`. That includes a page with no transaction kept for it, as when the
+page wasn't issued one, its transaction was used, or it expired. Its sealed
+result is then not sent at all.
+
+No error or log entry the Cloud Request Engine writes holds the License Key,
+a sealed result or a transaction, in whole or in part, and each is shown as
+`(hidden)`. The JavaScript Builder, the JSON Builder and usage sharing never
+pass on a sealed result or a page ID. Only `query.humanconfidence` is a
+sealed result. A value named `humanconfidence` anywhere else, as in a header
+or a cookie, is never sent to the cloud service, and nor is any transaction
+or challenge from that request.
 
 A page whose request names HumanConfidence also gets the browser tests, so the
 client script's complete handlers run later than they otherwise would, by the
@@ -178,8 +205,7 @@ browser tests to run. Otherwise HumanConfidenceSource stays `Passive`.
 
 The engine follows the
 [Human Confidence](https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md)
-specification, apart from the transaction, which the package doesn't issue
-yet, so a sealed result redeems without one.
+specification.
 
 ## Thread safety
 

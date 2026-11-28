@@ -45,6 +45,8 @@ import (
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/elements/derivedproperty"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/cache"
+	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/missingproperty"
 )
 
 const (
@@ -72,11 +74,15 @@ type fakeCloud struct {
 	mu       sync.Mutex
 	redeemed map[string]bool
 	forms    []url.Values
+	// madeWith is the transaction a sealed result was made with, where a
+	// test names one. Such a sealed result redeems only with it.
+	madeWith map[string]string
 }
 
 func newFakeCloud(t *testing.T) *fakeCloud {
 	c := &fakeCloud{
 		redeemed: map[string]bool{},
+		madeWith: map[string]string{},
 		passive:  `{"derived":{"humanconfidence":"High","humanconfidencesource":"Passive"}}`,
 	}
 	c.server = httptest.NewServer(http.HandlerFunc(c.json))
@@ -106,16 +112,18 @@ func (c *fakeCloud) json(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, c.passive)
 		return
 	}
-	io.WriteString(w, `{"derived":{"humanconfidence":"`+c.redeem(sealed)+
+	io.WriteString(w, `{"derived":{"humanconfidence":"`+c.redeem(sealed, r.PostForm.Get("transaction"))+
 		`","humanconfidencesource":"Active"}}`)
 }
 
-// redeem gives the Value the service gives for sealed.
-func (c *fakeCloud) redeem(sealed string) string {
+// redeem gives the Value the service gives for sealed, sent with
+// transaction.
+func (c *fakeCloud) redeem(sealed, transaction string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	parts := strings.SplitN(sealed, "-", 3)
-	if len(parts) < 3 || parts[0] != "sealed" {
+	if want, named := c.madeWith[sealed]; len(parts) < 3 || parts[0] != "sealed" ||
+		(named && want != transaction) {
 		return "Medium" // unreadable
 	}
 	switch parts[1] {
@@ -175,12 +183,17 @@ func build(t *testing.T, c *fakeCloud, log io.Writer, setups ...setup) (core.Pip
 	return p, engine
 }
 
-// process processes a request carrying sealed, where it is not empty.
+// process processes a request carrying sealed, where it is not empty. A
+// sealed result comes from a page the Pipeline's Cloud Request Engine
+// issued, unless evidence names the page.
 func process(t *testing.T, p core.Pipeline, sealed string, evidence ...string) core.FlowData {
 	t.Helper()
 	fd := p.CreateFlowData()
 	if sealed != "" {
 		fd.AddEvidence("query.humanconfidence", sealed)
+		if cre, ok := p.GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine); ok {
+			fd.AddEvidence(requestengine.HumanConfidencePageEvidence, cre.IssueHumanConfidencePage().ID)
+		}
 	}
 	for i := 0; i+1 < len(evidence); i += 2 {
 		fd.AddEvidence(evidence[i], evidence[i+1])
@@ -263,7 +276,7 @@ func TestEachCaseNotRedeemedGivesMediumAndActive(t *testing.T) {
 		body   string
 	}{
 		"the request failed":                 {http.StatusInternalServerError, `{"error":"broken"}`},
-		"the service said HC is not covered": {http.StatusOK, `{"errors":["HumanConfidence is not covered by the License Key"]}`},
+		"the service said HC is not covered": {http.StatusOK, `{"errors":["HumanConfidence is not covered by the License Key"],"derived":{"humanconfidence":"High","humanconfidencesource":"Active"}}`},
 		"no derived member":                  {http.StatusOK, `{"device":{"ismobile":true}}`},
 		"derived holds no humanconfidence":   {http.StatusOK, `{"derived":{"humanconfidencesource":"Active"}}`},
 		"humanconfidence is null":            {http.StatusOK, `{"derived":{"humanconfidence":null}}`},
@@ -311,6 +324,19 @@ func TestEachCaseNotRedeemedGivesMediumAndActive(t *testing.T) {
 			t.Fatal("a request was made in the recovery period")
 		}
 		want(t, fd, engine, "Medium", humanconfidence.Active)
+	})
+
+	t.Run("no request was made, as discovery failed", func(t *testing.T) {
+		c := newFakeCloud(t)
+		c.status, c.body = http.StatusServiceUnavailable, `{"error":"down"}`
+		p, engine := build(t, c, io.Discard, func(b *requestengine.Builder) {
+			b.SetDiscoveryState(nil).SetEndpoint(c.server.URL + "/")
+		})
+		fd := process(t, p, sealedHigh)
+		want(t, fd, engine, "Medium", humanconfidence.Active)
+		if len(fd.Errors()) == 0 {
+			t.Error("the failure was not recorded as the Cloud Request Engine's error")
+		}
 	})
 
 	t.Run("the Cloud Request Engine has no License Key", func(t *testing.T) {
@@ -386,28 +412,143 @@ func TestTwoReadsMakeOneRequest(t *testing.T) {
 	}
 }
 
-// Two requests with the same sealed result each go to the service, so the
-// second is not served the first one's Value from a cache.
+// Two requests with the same Evidence, sealed result and page id included,
+// each go to the service, even with a cache set on the Cloud Request Engine,
+// so the second is not served the first one's redeemed Value. The page's
+// transaction was used by the first, so the second gives Medium.
 func TestASealedRequestIsNotCached(t *testing.T) {
 	c := newFakeCloud(t)
 	p, engine := build(t, c, io.Discard)
-	want(t, process(t, p, sealedHigh), engine, "High", humanconfidence.Active)
-	want(t, process(t, p, sealedHigh), engine, "Medium", humanconfidence.Active)
-	if n := c.requests.Load(); n != 2 {
-		t.Errorf("%d requests were made, want 2", n)
+	cre := p.GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
+	cre.SetCache(cache.NewLRUCache(100, 1))
+	id, transaction := issuePage(t, p)
+	c.madeWith[sealedHigh] = transaction
+	for i, level := range []string{"High", "Medium"} {
+		fd := process(t, p, sealedHigh, "query.humanconfidencepage", id, "header.user-agent", "the same")
+		want(t, fd, engine, level, humanconfidence.Active)
+		if data, err := fd.Get(requestengine.DataKey); err == nil {
+			data.(*requestengine.CloudRequestData).Response()
+		}
+		if n := c.requests.Load(); n != int64(i+1) {
+			t.Errorf("%d requests were made, want %d", n, i+1)
+		}
 	}
 }
 
-// The package keeps no transaction yet, so the call holds none, and none
-// from the request.
-func TestTheCallHoldsNoTransactionFromTheRequest(t *testing.T) {
+// issuePage issues a page from the Pipeline's Cloud Request Engine, and gives
+// its id and the transaction its script address carries.
+func issuePage(t *testing.T, p core.Pipeline) (string, string) {
+	t.Helper()
+	cre := p.GetElement(requestengine.DataKey).(*requestengine.CloudRequestEngine)
+	page := cre.IssueHumanConfidencePage()
+	u, err := url.Parse(page.ScriptURL("https://cloud.example.com/api/v4/", testResource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page.ID, u.Query().Get("transaction")
+}
+
+// The call holds one transaction, the one the package kept for the page,
+// where the request's Evidence also holds a transaction and a challenge, and
+// the sealed result made with it redeems.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#required-tests
+func TestTheCallHoldsOnlyTheKeptTransaction(t *testing.T) {
 	c := newFakeCloud(t)
-	p, _ := build(t, c, io.Discard)
-	process(t, p, sealedHigh, "query.transaction", "from-the-page",
-		"cookie.Challenge", "from-a-cookie")
-	for field := range c.lastForm() {
-		if lower := strings.ToLower(field); lower == "transaction" || lower == "challenge" {
-			t.Errorf("the call holds %s", field)
+	p, engine := build(t, c, io.Discard)
+	id, transaction := issuePage(t, p)
+	c.madeWith["sealed-High-a"] = transaction
+	fd := process(t, p, "sealed-High-a", "query.humanconfidencepage", id,
+		"query.transaction", "from-the-page", "cookie.Challenge", "from-a-cookie")
+	want(t, fd, engine, "High", humanconfidence.Active)
+	form := c.lastForm()
+	if got := form["transaction"]; len(got) != 1 || got[0] != transaction {
+		t.Errorf("the call held transaction %v, want only the kept %q", got, transaction)
+	}
+	for field := range form {
+		if strings.EqualFold(field, "challenge") || strings.EqualFold(field, "humanconfidencepage") {
+			t.Errorf("the call held %s", field)
+		}
+	}
+}
+
+// Each page redeems with its own transaction, so two pages open at once both
+// redeem, and a sealed result never redeems for another page.
+func TestTwoPagesEachRedeem(t *testing.T) {
+	c := newFakeCloud(t)
+	p, engine := build(t, c, io.Discard)
+	first, firstTransaction := issuePage(t, p)
+	second, secondTransaction := issuePage(t, p)
+	c.madeWith["sealed-High-1"] = firstTransaction
+	c.madeWith["sealed-Low-2"] = secondTransaction
+	c.madeWith["sealed-Low-x"] = firstTransaction
+	want(t, process(t, p, "sealed-Low-2", "query.humanconfidencepage", second),
+		engine, "Low", humanconfidence.Active)
+	want(t, process(t, p, "sealed-High-1", "query.humanconfidencepage", first),
+		engine, "High", humanconfidence.Active)
+	third, _ := issuePage(t, p)
+	want(t, process(t, p, "sealed-Low-x", "query.humanconfidencepage", third),
+		engine, "Medium", humanconfidence.Active)
+}
+
+// With no transaction kept for the page, the sealed result gives Medium and
+// Active, and is not sent: with no page id, a page never issued, or a page
+// whose transaction was used.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#where-the-sealed-result-is-not-redeemed
+func TestNoKeptTransactionGivesMediumAndSendsNothing(t *testing.T) {
+	c := newFakeCloud(t)
+	p, engine := build(t, c, io.Discard)
+	id, transaction := issuePage(t, p)
+	c.madeWith["sealed-High-u"] = transaction
+	c.madeWith["sealed-Low-u"] = transaction
+	want(t, process(t, p, "sealed-High-u", "query.humanconfidencepage", id),
+		engine, "High", humanconfidence.Active)
+	for name, evidence := range map[string][]string{
+		"the transaction was used": {"query.humanconfidencepage", id},
+		"a page never issued":      {"query.humanconfidencepage", "never-issued"},
+		"no page id":               {"query.humanconfidencepage", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fd := p.CreateFlowData()
+			fd.AddEvidence("query.humanconfidence", "sealed-Low-u")
+			fd.AddEvidence(evidence[0], evidence[1])
+			if err := fd.Process(); err != nil {
+				t.Fatal(err)
+			}
+			want(t, fd, engine, "Medium", humanconfidence.Active)
+			// The request runs on its own, so wait for it before looking at
+			// what it sent.
+			if data, err := fd.Get(requestengine.DataKey); err == nil {
+				data.(*requestengine.CloudRequestData).Response()
+			}
+			if form := c.lastForm(); form.Has("humanconfidence") || form.Has("transaction") {
+				t.Errorf("the call held the sealed result or a transaction, %v", form)
+			}
+		})
+	}
+}
+
+// No log entry and no error message holds the transaction, in whole or in
+// part, where the cloud service writes it in a failed answer.
+func TestNoLogOrErrorHoldsTheTransaction(t *testing.T) {
+	c := newFakeCloud(t)
+	var log bytes.Buffer
+	p, _ := build(t, c, &log)
+	id, transaction := issuePage(t, p)
+	c.status, c.body = http.StatusInternalServerError, `{"echo":"`+transaction+` `+sealedHigh+`"}`
+	fd := p.CreateFlowData()
+	fd.AddEvidence("query.humanconfidence", sealedHigh)
+	fd.AddEvidence("query.humanconfidencepage", id)
+	if err := fd.Process(); err != nil {
+		t.Fatal(err)
+	}
+	read(t, fd, humanconfidence.HumanConfidence)
+	text := log.String()
+	for _, fe := range fd.Errors() {
+		text += fe.Err.Error()
+	}
+	for _, secret := range []string{transaction, transaction[len(transaction)-6:], sealedHigh, "AAAABBBB"} {
+		if strings.Contains(text, secret) {
+			t.Errorf("a log entry or error holds %q:\n%s", secret, text)
 		}
 	}
 }
@@ -416,9 +557,13 @@ func TestTheCallHoldsNoTransactionFromTheRequest(t *testing.T) {
 // Key, whether the request works or fails.
 func TestNoLogOrErrorHoldsTheSealedResultOrTheLicenseKey(t *testing.T) {
 	for name, fail := range map[string]func(*fakeCloud){
-		"redeemed":    func(*fakeCloud) {},
-		"status 500":  func(c *fakeCloud) { c.status, c.body = 500, `{"error":"broken"}` },
-		"errors list": func(c *fakeCloud) { c.body = `{"errors":["refused"]}` },
+		"redeemed": func(*fakeCloud) {},
+		"status 500": func(c *fakeCloud) {
+			c.status, c.body = 500, `{"error":"broken `+sealedHigh+` `+testLicense+`"}`
+		},
+		"errors list": func(c *fakeCloud) {
+			c.body = `{"errors":["refused ` + sealedHigh + ` for ` + testLicense + `"],"warnings":["` + testLicense + `"]}`
+		},
 		"unreachable": func(c *fakeCloud) { c.server.Close() },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -469,18 +614,35 @@ func TestWithNoSealedResultThePropertiesAreTheAnswers(t *testing.T) {
 	}
 }
 
-// A Property the answer leaves out is not given, so it reads as missing.
-func TestAPropertyTheAnswerLeavesOutIsNotGiven(t *testing.T) {
+// A Property the answer leaves out, as for a credential that does not carry
+// it, reads as no value with the reason Missing Properties gives, and so does
+// one whose request failed.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-consumer-reads
+func TestAPropertyTheAnswerLeavesOutGivesTheMissingReason(t *testing.T) {
 	c := newFakeCloud(t)
-	c.passive = `{"derived":{"humanconfidence":"Medium"}}`
+	c.passive = `{"derived":{"humanconfidence":"Medium"},"device":{}}`
 	p, _ := build(t, c, io.Discard)
-	fd := process(t, p, "")
-	data, err := core.Get[*derivedproperty.Data](fd)
-	if err != nil {
-		t.Fatal(err)
+	value := read(t, process(t, p, ""), humanconfidence.HumanConfidenceSource)
+	reason := missingproperty.ForPropertyNotInResourceKey("HumanConfidenceSource",
+		"derived", "derived", nil).Error()
+	if value.HasValue() || value.NoValueMessage() != reason {
+		t.Errorf("a Property left out gives %v, %q, want no value and %q",
+			value.HasValue(), value.NoValueMessage(), reason)
 	}
-	if _, err := data.Get(humanconfidence.HumanConfidenceSource); err == nil {
-		t.Error("HumanConfidenceSource was given though the answer left it out")
+
+	c.passive = `{"device":{}}`
+	value = read(t, process(t, p, ""), humanconfidence.HumanConfidence)
+	reason = missingproperty.ForPropertyNotInResourceKey("HumanConfidence",
+		"derived", "derived", nil).Error()
+	if value.HasValue() || value.NoValueMessage() != reason {
+		t.Errorf("an answer with no derived member gives %q, want %q", value.NoValueMessage(), reason)
+	}
+
+	c.status, c.body = http.StatusInternalServerError, `{"error":"broken"}`
+	value = read(t, process(t, p, ""), humanconfidence.HumanConfidence)
+	reason = missingproperty.ForCloudRequestFailed("HumanConfidence", "derived").Error()
+	if value.HasValue() || value.NoValueMessage() != reason {
+		t.Errorf("a failed request gives %q, want %q", value.NoValueMessage(), reason)
 	}
 }
 
@@ -504,7 +666,55 @@ func TestTheEngineMustFollowTheCloudRequestEngine(t *testing.T) {
 // The engine names the Evidence it reads, so a cache key or an ETag made from
 // the Pipeline's filter changes with the sealed result.
 func TestTheEngineNamesTheSealedResultEvidence(t *testing.T) {
-	if !humanconfidence.New(nil).EvidenceKeyFilter().Include("query.humanconfidence") {
-		t.Error("the filter leaves out query.humanconfidence")
+	filter := humanconfidence.New(nil).EvidenceKeyFilter()
+	for _, key := range []string{"query.humanconfidence", "query.humanconfidencepage"} {
+		if !filter.Include(key) {
+			t.Errorf("the filter leaves out %s, so a Pipeline that filters Evidence loses it", key)
+		}
+	}
+}
+
+// A value named humanconfidence anywhere but query.humanconfidence is not a
+// sealed result. It isn't sent, so it can't come back redeemed, and the two
+// Properties are those of a request with no sealed result.
+func TestAHumanConfidenceValueUnderAnotherKeyIsNotRedeemed(t *testing.T) {
+	for _, key := range []string{"cookie.humanconfidence", "header.HumanConfidence", "humanconfidence"} {
+		c := newFakeCloud(t)
+		p, engine := build(t, c, io.Discard)
+		fd := process(t, p, "", key, sealedHigh, "query.transaction", "from-the-page")
+		want(t, fd, engine, "High", "Passive")
+		if form := c.lastForm(); form.Has("humanconfidence") || form.Has("transaction") {
+			t.Errorf("%s: the call held %v", key, form)
+		}
+	}
+}
+
+// A Pipeline with no Cloud Request Engine builds. A request that carries a
+// sealed result reads Medium and Active, with no error and no request, and
+// any other request reads no value for either Property, with a reason.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#where-the-sealed-result-is-not-redeemed
+func TestWithNoCloudRequestEngine(t *testing.T) {
+	engine := humanconfidence.New(nil)
+	p, err := core.NewPipelineBuilder().AddFlowElement(engine).Build()
+	if err != nil {
+		t.Fatalf("a Pipeline with no Cloud Request Engine did not build: %v", err)
+	}
+	defer p.Close()
+
+	fd := process(t, p, "made-up-sealed-value")
+	want(t, fd, engine, "Medium", humanconfidence.Active)
+	if len(fd.Errors()) != 0 {
+		t.Errorf("a sealed request gave errors %v", fd.Errors())
+	}
+
+	fd = process(t, p, "")
+	if len(fd.Errors()) != 0 {
+		t.Errorf("a request with no sealed result gave errors %v", fd.Errors())
+	}
+	for _, name := range []string{humanconfidence.HumanConfidence, humanconfidence.HumanConfidenceSource} {
+		value := read(t, fd, name)
+		if value.HasValue() || value.NoValueMessage() == "" {
+			t.Errorf("%s has a value %v, or no reason, want no value and a reason", name, value.HasValue())
+		}
 	}
 }

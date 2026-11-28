@@ -25,6 +25,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -222,13 +224,13 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 			_ = r.Body.Close()
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			if err := r.ParseForm(); err != nil {
-				m.logger().Warn("could not parse request form", "error", err)
+				m.logger().Warn("could not parse request form", "error", parseFailure(err))
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 		}
 	} else if err := r.ParseForm(); err != nil {
 		// No form body: ParseForm only parses the URL query and reads nothing.
-		m.logger().Warn("could not parse request query", "error", err)
+		m.logger().Warn("could not parse request query", "error", parseFailure(err))
 	}
 	for name, values := range r.Form {
 		if len(values) > 0 {
@@ -323,6 +325,27 @@ func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
 // response rather than a 304 that keeps the faulty one.
 const failedCacheControl = "private, no-cache"
 
+// sealedCacheControl is the Cache-Control of a response to a request that
+// carries a sealed Human Confidence result. A sealed result redeems once, so
+// its answer is for that request alone and is never kept or served again.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/caching.md
+const sealedCacheControl = "no-store"
+
+// sealedResultEvidence is the Evidence that carries a sealed Human
+// Confidence result.
+const sealedResultEvidence = "query.humanconfidence"
+
+// carriesSealedResult reports whether fd's Evidence holds a sealed Human
+// Confidence result that is not empty.
+func carriesSealedResult(fd core.FlowData) bool {
+	raw, ok := fd.Evidence().Get(sealedResultEvidence)
+	if !ok || raw == nil {
+		return false
+	}
+	text, isText := raw.(string)
+	return !isText || text != ""
+}
+
 // serveCacheable answers a request to an intercepted endpoint. The ETag
 // depends on the Evidence the request supplies alone, so it is compared with
 // If-None-Match before the Pipeline runs, and a request that matches is not
@@ -338,8 +361,11 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request,
 	contentType string, content func(core.FlowData) []byte) {
 	fd := m.newFlowData(r)
 	defer fd.Close()
+	// A request that carries a sealed result is never answered from what a
+	// browser kept, and its answer is never kept.
+	sealed := carriesSealedResult(fd)
 	etag := m.etag(fd)
-	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
+	matched := !sealed && ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
 	// endpoints is permitted, and can read a 304 or 412. The literal "null"
 	// origin is not reflected.
@@ -358,7 +384,9 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request,
 
 	failed := m.run(fd)
 	body := content(fd)
-	if failed {
+	if sealed {
+		w.Header().Set("Cache-Control", sealedCacheControl)
+	} else if failed {
 		w.Header().Set("Cache-Control", failedCacheControl)
 		if vary := m.varyHeader(); vary != "" {
 			w.Header().Set("Vary", vary)
@@ -595,4 +623,16 @@ func (m *Middleware) requestProtocol(r *http.Request) string {
 		}
 	}
 	return "http"
+}
+
+// parseFailure gives err as it is logged. A percent escape that is not valid
+// is named without the characters it holds, which can be part of a sealed
+// Human Confidence result the page sent.
+// See https://github.com/51Degrees/specifications/blob/81c1e4df5c7eb923d88ec3b1926d562b0a754ad3/pipeline-specification/features/human-confidence.md#what-a-package-never-exposes
+func parseFailure(err error) string {
+	var escape url.EscapeError
+	if errors.As(err, &escape) {
+		return "a percent escape that is not valid"
+	}
+	return err.Error()
 }
