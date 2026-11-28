@@ -1,6 +1,9 @@
 param (
     [Parameter(Mandatory)][string]$RepoName,
-    [Parameter(Mandatory)][string]$Name
+    [Parameter(Mandatory)][string]$Name,
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
@@ -8,7 +11,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 . $PSScriptRoot/products.ps1
 
 $rootDir = $PWD
-$Products = Get-AffectedProducts $RepoName
+$Products = Get-AffectedProducts $RepoName $Branch
 
 # Every engine's figures go into one results file for this options entry,
 # which is what the performance comparison reads. The metric names differ
@@ -23,9 +26,9 @@ if ($Products -contains 'device-detection') {
     Push-Location (Join-Path $RepoName 'examples/device-detection')
     try {
         Write-Host "Running the Device Detection performance example..."
-        go run ./dd/performance -json-output $output `
-            -data-file "$rootDir/assets/51Degrees-LiteV4.1.hash" `
-            -evidence-file "$rootDir/assets/20000 Evidence Records.yml"
+        Invoke-Go @('run', './dd/performance', '-json-output', $output,
+            '-data-file', "$rootDir/assets/51Degrees-LiteV4.1.hash",
+            '-evidence-file', "$rootDir/assets/20000 Evidence Records.yml")
     } finally {
         Pop-Location
     }
@@ -41,13 +44,37 @@ if ($Products -contains 'ip-intelligence') {
     Push-Location (Join-Path $RepoName 'examples/ip-intelligence')
     try {
         Write-Host "Running the IP Intelligence performance example..."
-        go run ./performance -json-output $output
+        Invoke-Go @('run', './performance', '-json-output', $output)
     } finally {
         Pop-Location
     }
     $results = Get-Content $output | ConvertFrom-Json -AsHashtable
     $higher.LookupsPerSecond = $results.HigherIsBetter.DetectionsPerSecond
     $lower.AvgMillisecsPerLookup = $results.LowerIsBetter.AvgMillisecsPerDetection
+}
+
+if ($Products -contains 'pipeline') {
+    # The JavaScript Builder's performance tests, which show the impact its
+    # minification has. Each figure is given as the average time to make one
+    # script, or to minify one, in milliseconds, and as how many a second,
+    # which is the form the performance comparison checks.
+    # See https://github.com/51Degrees/specifications/blob/dbaf099c712e2bd3a2a80bfb4eaf284b079f05eb/pipeline-specification/pipeline-elements/javascript-builder.md?plain=1#L109-L114
+    Push-Location (Join-Path $RepoName 'pipeline')
+    try {
+        Write-Host "Running the JavaScript Builder performance tests..."
+        $bench = Invoke-Go -PassThru @('test', '-run', '^$',
+            '-bench', 'JavaScriptBuilder', '-benchtime', '2s',
+            './elements/javascriptbuilder/')
+    } finally {
+        Pop-Location
+    }
+    $builder = Get-JavaScriptBuilderFigures $bench
+    foreach ($figure in $builder.LowerIsBetter.Keys) {
+        $lower[$figure] = $builder.LowerIsBetter[$figure]
+    }
+    foreach ($figure in $builder.HigherIsBetter.Keys) {
+        $higher[$figure] = $builder.HigherIsBetter[$figure]
+    }
 }
 
 if (!$higher.Count -and !$lower.Count) {

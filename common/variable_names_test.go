@@ -33,200 +33,341 @@ import (
 	"testing"
 )
 
-// oldName finds an old variable name where a variable is named, which is
-// after a quote, a backtick, an equals sign, a dollar sign, env: or env., or
-// at the start of a line past any spaces, tabs and a list dash. The last of
-// those is how a workflow declares one, as a key in an env: block, and how a
-// readme lists one, neither of which puts any of the other characters in
-// front of the name.
-//
-// Two families are matched. A name that starts FIFTYONE_, because the
-// 51Degrees environment variables start _51DEGREES_, which is shorter, and the
-// names the examples, the CI scripts and the cloud request engine read before
-// each variable took one _51DEGREES_ name. The names of the C library all
-// start FIFTYONE_DEGREES_ and are left out.
-//
-// Every name in this pattern is preceded by a bracket or a bar rather than by
-// one of the characters above, so this file does not match itself.
-var oldName = regexp.MustCompile("(?:[\"'`=$]|\\$\\{|env[:.]|^[\t -]*)" +
-	"(FIFTYONE_[A-Z0-9_]+|DD_DATA_FILE|DATA_FILE|EVIDENCE_YAML" +
-	"|LICENSE_KEY|IPI_KEY|IPI_DATA_FILE_URL|DEVICE_DETECTION_KEY" +
-	"|FOD_CLOUD_API_URL)")
+// The list of the environment variables this repository reads and sets, from
+// the top of the repository.
+const listFile = "environment-variables.md"
 
-// stillRead holds, for a file, the old names the file may carry, because its
-// code still reads those variables as the deprecated names of newer ones.
-var stillRead = map[string][]string{
-	"pipeline/cloud/requestengine/builder.go": {cloudURL},
-	"examples/device-detection/onpremise/common/environment.go": {
-		licence, deviceKey, dataFile, evidenceYAML},
-	"examples/ip-intelligence/common/environment.go": {
-		licence, ipiKey, dataFile, evidenceYAML, "IPI_" + dataFile + "_URL"},
-	"examples/mixed/common/environment.go": {dataFile, "DD_" + dataFile},
+// The start of every name 51Degrees defines.
+const prefix = "_51DEGREES_"
+
+// A variable's name.
+const variableName = "([A-Za-z_][A-Za-z0-9_]*)"
+
+// readByName finds a name where Go or PowerShell reads or sets a variable by name,
+// which is in a call to one of the functions of the os package or of .NET's
+// Environment class, and after the env drive.
+var readByName = regexp.MustCompile("(?:(?:Getenv|LookupEnv|Setenv|Unsetenv)\\([\"`]" +
+	"|EnvironmentVariable\\([\"']" +
+	"|\\b[Ee][Nn][Vv]:)" + variableName)
+
+// assigned finds a name given a value, as a command line, a readme and an
+// environment handed to a command write it. That is a name in capitals then
+// an equals sign, after a quote or at the start of a line.
+var assigned = regexp.MustCompile("(?:[\"'`]|^[\t >$]*(?:export +|set +)?)" +
+	"([A-Z_][A-Z0-9_]+)=")
+
+// held finds a name a Go constant or variable holds to read later, where the
+// constant says so by having Env or Variable in its own name.
+var held = regexp.MustCompile(
+	"\\b[A-Za-z0-9]*(?:Env|Variable)[A-Za-z0-9]*\\s*=\\s*\"" + variableName)
+
+// inContext finds a name a workflow reads from the env, secrets or vars
+// contexts.
+var inContext = regexp.MustCompile("\\b(?:env|secrets|vars)\\." + variableName)
+
+// envBlock finds the line that opens a workflow's env block, and envKey a
+// name that block sets.
+var (
+	envBlock = regexp.MustCompile("^([ -]*)env:\\s*(?:#.*)?$")
+	envKey   = regexp.MustCompile("^( +)" + variableName + ":")
+)
+
+// platform holds the names that Go, Git, GitHub, PowerShell and the operating
+// system define, which are read and set as each requires.
+var platform = map[string]bool{
+	"CI": true, "PATH": true, "GOWORK": true, "GOPRIVATE": true,
+	"CGO_ENABLED": true, "CGO_CFLAGS": true, "GIT_CONFIG_COUNT": true,
+	"PSModulePath": true, "ProgramFiles": true,
 }
 
-// No tracked file names one of those variables, other than a file that still
-// reads it as a deprecated name. The cxx submodule is not read. Outside a git
-// checkout, such as the module cache, there are no tracked files to read.
-func TestNoFileNamesAnOldVariable(t *testing.T) {
+// platformPrefixes start the names GitHub defines, and the numbered names
+// Git reads its settings from.
+var platformPrefixes = []string{"GITHUB_", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"}
+
+// ciOnly holds the names only CI uses. No customer sets them, so they have
+// no _51DEGREES_ prefix, and each name says what it holds. The list holds
+// them too, under its heading for names only CI uses.
+var ciOnly = map[string]bool{
+	"CLOUD_STAGING_ENDPOINT": true, "RESOURCE_KEY_BESPOKE_STAGING": true,
+}
+
+// use is a variable named on a line of a file.
+type use struct {
+	line int
+	name string
+}
+
+// variablesIn returns each variable the text of the file reads or sets, with
+// its line.
+func variablesIn(file string, text []byte) []use {
+	source := strings.HasSuffix(file, ".go")
+	workflow := strings.HasSuffix(file, ".yml") || strings.HasSuffix(file, ".yaml")
+	var uses []use
+	block := -1
+	for number, line := range bytes.Split(text, []byte("\n")) {
+		line = bytes.TrimRight(line, "\r")
+		patterns := []*regexp.Regexp{readByName, assigned}
+		if source {
+			patterns = append(patterns, held)
+		}
+		if workflow {
+			patterns = append(patterns, inContext)
+			indent := len(line) - len(bytes.TrimLeft(line, " "))
+			if opened := envBlock.FindSubmatch(line); opened != nil {
+				block = len(opened[1])
+			} else if len(bytes.TrimSpace(line)) > 0 && indent <= block {
+				block = -1
+			} else if block >= 0 {
+				patterns = append(patterns, envKey)
+			}
+		}
+		for _, pattern := range patterns {
+			for _, match := range pattern.FindAllSubmatch(line, -1) {
+				uses = append(uses,
+					use{number + 1, string(match[len(match)-1])})
+			}
+		}
+	}
+	return uses
+}
+
+// allowed reports whether a variable may be read or set, which is when
+// 51Degrees defines it and the list holds it, only CI uses it, or the
+// platform defines it.
+func allowed(name string, listed map[string]bool) bool {
+	if strings.HasPrefix(name, prefix) {
+		return listed[name]
+	}
+	if ciOnly[name] || platform[name] {
+		return true
+	}
+	for _, start := range platformPrefixes {
+		if strings.HasPrefix(name, start) {
+			return true
+		}
+	}
+	return false
+}
+
+// listedName finds a name in the first column of the list's tables.
+var listedName = regexp.MustCompile("(?m)^\\| `(" + prefix + "[A-Z0-9_]+)` \\|")
+
+// namesListed returns the names the list holds.
+func namesListed(text []byte) map[string]bool {
+	listed := map[string]bool{}
+	for _, match := range listedName.FindAllSubmatch(text, -1) {
+		listed[string(match[1])] = true
+	}
+	return listed
+}
+
+// trackedFiles returns the root of the checkout and the files git tracks in
+// it. Outside a git checkout, such as the module cache, there are none to
+// read, and the test is skipped.
+func trackedFiles(t *testing.T) (string, []string) {
 	top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		t.Skipf("not in a git checkout: %v", err)
 	}
 	root := strings.TrimSpace(string(top))
-	listed, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
 	if err != nil {
 		t.Fatalf("git ls-files: %v", err)
 	}
-	files := strings.Split(strings.TrimRight(string(listed), "\x00"), "\x00")
+	files := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	if len(files) == 0 || files[0] == "" {
 		t.Fatal("git ls-files listed no files")
 	}
+	return root, files
+}
+
+// scripts are the kinds of file that read or set a variable: Go, PowerShell,
+// shell, workflows and other YAML, JSON settings, and the Markdown that
+// shows a reader how.
+var scripts = map[string]bool{
+	".go": true, ".ps1": true, ".sh": true, ".yml": true, ".yaml": true,
+	".json": true, ".md": true,
+}
+
+// readTracked returns the text of a tracked file, or nil for a submodule,
+// a file that is not text or anything else that is not a regular file.
+func readTracked(t *testing.T, root, file string) []byte {
+	path := filepath.Join(root, filepath.FromSlash(file))
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", file, err)
+	}
+	if bytes.IndexByte(text, 0) >= 0 {
+		return nil
+	}
+	return text
+}
+
+// Every environment variable a tracked file reads or sets starts _51DEGREES_
+// and is in the list, or is one the platform defines. The submodules and the
+// copies of the C library are not read.
+func TestEveryVariableHasA51DegreesName(t *testing.T) {
+	root, files := trackedFiles(t)
+	list, err := os.ReadFile(filepath.Join(root, listFile))
+	if err != nil {
+		t.Fatalf("reading the list of names: %v", err)
+	}
+	listed := namesListed(list)
+	if len(listed) == 0 {
+		t.Fatalf("%s lists no names", listFile)
+	}
+	for name := range ciOnly {
+		if !bytes.Contains(list, []byte("| `"+name+"` |")) {
+			t.Errorf("%s does not list %s, which only CI uses", listFile, name)
+		}
+	}
 	var found []string
 	for _, file := range files {
-		if strings.HasPrefix(file, "cxx/") || file == "cxx" {
+		if !scripts[strings.ToLower(filepath.Ext(file))] {
 			continue
 		}
-		path := filepath.Join(root, filepath.FromSlash(file))
-		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		text, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("reading %s: %v", file, err)
-		}
-		for number, line := range bytes.Split(text, []byte("\n")) {
-			for _, name := range oldVariablesIn(file, line) {
+		for _, used := range variablesIn(file, readTracked(t, root, file)) {
+			if !allowed(used.name, listed) {
 				found = append(found,
-					file+":"+strconv.Itoa(number+1)+" "+name)
+					file+":"+strconv.Itoa(used.line)+" "+used.name)
 			}
 		}
 	}
 	if len(found) > 0 {
-		t.Errorf("give these variables their one _51DEGREES_ name:\n%s",
-			strings.Join(found, "\n"))
+		t.Errorf("give each of these variables a %s name that %s lists:\n%s",
+			prefix, listFile, strings.Join(found, "\n"))
 	}
 }
 
-// oldVariables returns the old names in the line, leaving out the C library's.
-func oldVariables(line []byte) []string {
-	var names []string
-	for _, match := range oldName.FindAllSubmatch(line, -1) {
-		if name := match[1]; !bytes.HasPrefix(name, []byte("FIFTYONE_DEGREES_")) {
-			names = append(names, string(name))
-		}
-	}
-	return names
-}
-
-// oldVariablesIn returns the old names in a line of the file, leaving out the
-// names the file still reads as deprecated.
-func oldVariablesIn(file string, line []byte) []string {
-	var names []string
-	for _, name := range oldVariables(line) {
-		allowed := false
-		for _, read := range stillRead[file] {
-			allowed = allowed || read == name
-		}
-		if !allowed {
-			names = append(names, name)
-		}
-	}
-	return names
-}
-
-// Each name below is written in two parts so that this file does not name a
-// variable itself.
+// Each name below is written in parts, so that this file reads no variable
+// itself.
 const (
-	fiftyOne     = "FIFTY" + "ONE_"
-	dataFile     = "DATA" + "_FILE"
-	licence      = "LICENSE" + "_KEY"
-	ipiKey       = "IPI" + "_KEY"
-	deviceKey    = "DEVICE" + "_DETECTION_KEY"
-	cloudURL     = "FOD" + "_CLOUD_API_URL"
-	evidenceYAML = "EVIDENCE" + "_YAML"
+	other  = "EXAMPLE" + "_SETTING"
+	ours   = prefix + "DD_PATH"
+	github = "GITHUB" + "_JOB"
 )
 
-// A name counts only where a variable is named, after a quote, a backtick, an
-// equals sign, a dollar sign, env: or env., so a constant, a type or a GitHub
-// secret of the same name is left alone, as is a longer name that only ends in
-// one of these words.
-func TestOldVariablesAreOnlyVariables(t *testing.T) {
-	const name = fiftyOne + "DATA"
-	for line, want := range map[string]string{
-		`os.Getenv("` + name + `")`:              name,
-		"$env:" + name + " = 1":                  name,
-		"${" + name + ":-x}":                     name,
-		"${{ env." + name + " }}":                name,
-		"cmd.Env = append(env, `" + name + "=1`)": name,
-		"const " + fiftyOne + "LIMIT = 4":        "",
-		"type " + fiftyOne + "THING struct{}":    "",
-		`"` + fiftyOne + `DEGREES_STRING"`:       "",
+// A name is found wherever a file reads or sets a variable, and nowhere
+// else.
+func TestVariablesAreFoundWhereTheyAreNamed(t *testing.T) {
+	for _, c := range []struct{ file, line, want string }{
+		{"a.go", `os.Getenv("` + other + `")`, other},
+		{"a.go", `value, ok := os.LookupEnv("` + other + `")`, other},
+		{"a_test.go", `t.Setenv("` + other + `", "1")`, other},
+		{"a.go", "os.Unsetenv(`" + other + "`)", other},
+		{"a.go", "cmd.Env = append(env, `" + other + "=1`)", other},
+		{"a.go", `const settingEnv = "` + other + `"`, other},
+		{"a.go", `const settingVariable = "` + other + `"`, other},
+		{"a.go", `const EnvSetting = "` + other + `"`, other},
+		{"a.ps1", "$env" + ":" + other + " = $path", other},
+		{"a.ps1", "${env" + ":" + other + "}", other},
+		{"a.ps1", "Remove-Item Env" + ":" + other, other},
+		{"a.ps1", "[Environment]::GetEnvironmentVariable('" + other + "')", other},
+		{"a.yml", "run: echo ${{ env" + "." + other + " }}", other},
+		{"a.yml", "key: ${{ secrets" + "." + other + " }}", other},
+		{"a.yml", "key: ${{ vars" + "." + other + " }}", other},
+		{"README.md", other + "=/data/file go run ./x", other},
+		{"README.md", "    export " + other + "=/data/file", other},
+		{"README.md", "$ " + other + "=1 go test ./...", other},
 
-		`os.Getenv("` + dataFile + `")`:         dataFile,
-		"$env:DD_" + dataFile + " = $path":      "DD_" + dataFile,
-		`os.Getenv("` + licence + `")`:          licence,
-		`os.Getenv("` + ipiKey + `")`:           ipiKey,
-		`os.Getenv("IPI_` + dataFile + `_URL")`: "IPI_" + dataFile + "_URL",
-		`os.Getenv("` + deviceKey + `")`:        deviceKey,
-		`os.Getenv("` + cloudURL + `")`:         cloudURL,
-
-		// A workflow declares a variable as a key in an env: block, and a
-		// readme lists one, so a name at the start of a line counts.
-		"  " + licence + ": ${{ secrets.DEVICE" + "_DETECTION_KEY }}": licence,
-		"- " + dataFile + " names the data file": dataFile,
-		dataFile + "=/data/file.ipi go run ./x":  dataFile,
-
-		// The one name each of those variables now carries.
-		`os.Getenv("_51DEGREES_DD_PATH")`:         "",
-		`os.Getenv("_51DEGREES_` + licence + `")`: "",
-		`os.Getenv("_51DEGREES_CLOUD_ENDPOINT")`:  "",
-		// A longer name that ends in one of these words.
-		`os.Getenv("_51DEGREES_TEST_` + licence + `")`: "",
-		// A GitHub secret is not an environment variable, and it is read
-		// through secrets. rather than env., so a workflow line whose key is
-		// not an old name is left alone whatever the secret is called.
-		"  DeviceDetection: ${{ secrets." + deviceKey + " }}": "",
+		// A constant, a type and a word in a sentence are not variables.
+		{"a.go", "const " + other + " = 4", ""},
+		{"a.go", `const name = "` + other + `"`, ""},
+		{"a.go", "type " + other + " struct{}", ""},
+		{"README.md", "The " + other + " setting is not read.", ""},
+		// The env, secrets and vars contexts are a workflow's.
+		{"a.go", "return env" + "." + other, ""},
 	} {
-		got := strings.Join(oldVariables([]byte(line)), ",")
-		if got != want {
-			t.Errorf("%s gave %q, want %q", line, got, want)
+		var got []string
+		for _, used := range variablesIn(c.file, []byte(c.line)) {
+			got = append(got, used.name)
+		}
+		if strings.Join(got, ",") != c.want {
+			t.Errorf("%s in %s gave %q, want %q", c.line, c.file, got, c.want)
 		}
 	}
 }
 
-// A deprecated name is allowed in the file that still reads it and in no
-// other file, and that file is allowed no old name it does not read.
-func TestADeprecatedVariableIsNamedOnlyWhereItIsRead(t *testing.T) {
-	const (
-		builder = "pipeline/cloud/requestengine/builder.go"
-		device  = "examples/device-detection/onpremise/common/environment.go"
-		ip      = "examples/ip-intelligence/common/environment.go"
-		mixed   = "examples/mixed/common/environment.go"
-	)
-	for _, c := range []struct{ file, line, want string }{
-		{builder, `const EnvCloudAPIURL = "` + cloudURL + `"`, ""},
-		{builder, `os.Getenv("` + licence + `")`, licence},
-		{device, `{"` + licence + `", "` + deviceKey + `"},`, ""},
-		{device, `{"` + dataFile + `"}, {"` + evidenceYAML + `"},`, ""},
-		{device, `{"` + ipiKey + `"},`, ipiKey},
-		{ip, `{"` + licence + `", "` + ipiKey + `"},`, ""},
-		{ip, `{"` + dataFile + `"}, {"` + evidenceYAML + `"},`, ""},
-		{ip, `{"IPI_` + dataFile + `_URL"},`, ""},
-		{ip, `{"` + deviceKey + `"},`, deviceKey},
-		{mixed, `{"DD_` + dataFile + `"}, {"` + dataFile + `"},`, ""},
-		{mixed, `{"` + licence + `"},`, licence},
-		{"examples/mixed/getting_started_web/main.go",
-			`os.Getenv("` + dataFile + `")`, dataFile},
-		{"examples/ip-intelligence/common/example_base.go",
-			`os.Getenv("` + licence + `")`, licence},
-		{"pipeline/cloud/requestengine/requestengine.go",
-			`os.Getenv("` + cloudURL + `")`, cloudURL},
-		{"pipeline/README.md", "- " + cloudURL + " names the endpoint",
-			cloudURL},
-	} {
-		got := strings.Join(oldVariablesIn(c.file, []byte(c.line)), ",")
-		if got != c.want {
-			t.Errorf("%s in %s gave %q, want %q", c.line, c.file, got, c.want)
+// A workflow sets a variable as a key of an env block, at any level, and the
+// keys of other blocks are not variables.
+func TestAWorkflowEnvBlockSetsItsKeys(t *testing.T) {
+	workflow := strings.Join([]string{
+		"jobs:",
+		"  build:",
+		"    env:",
+		"      " + other + ": 1",
+		"",
+		"      " + ours + ": 2",
+		"    steps:",
+		"      - name: Build",
+		"        with:",
+		"          " + github + ": 3",
+		"      - env:",
+		"          " + github + ": 4",
+		"        run: go build ./...",
+	}, "\n")
+	want := []use{{4, other}, {6, ours}, {12, github}}
+	got := variablesIn(".github/workflows/a.yml", []byte(workflow))
+	if len(got) != len(want) {
+		t.Fatalf("found %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("found %v, want %v", got[i], want[i])
 		}
+	}
+}
+
+// A 51Degrees name is allowed when the list holds it, a name only CI uses
+// and a platform name are allowed as they are, and no other name is, not
+// even one that looks like a name only CI uses.
+func TestOnlyListedAndPlatformNamesAreAllowed(t *testing.T) {
+	listed := namesListed([]byte("| Name | Holds |\n| --- | --- |\n" +
+		"| `" + ours + "` | The path of a data file |\n"))
+	staging := "CLOUD_STAGING" + "_ENDPOINT"
+	for name, want := range map[string]bool{
+		ours:                                   true,
+		prefix + "NOT_LISTED":                  false,
+		other:                                  false,
+		github:                                 true,
+		"CI":                                   true,
+		"PATH":                                 true,
+		"GIT_CONFIG" + "_KEY_0":                true,
+		"51DEGREES_DD_PATH":                    false,
+		"":                                     false,
+		staging:                                true,
+		"RESOURCE_KEY_BESPOKE" + "_STAGING":    true,
+		prefix + staging:                       false,
+		staging + "_2":                         false,
+		strings.ToLower(staging):               false,
+		"RESOURCE_KEY" + "_BESPOKE":            false,
+		"RESOURCE_KEY_BESPOKE" + "_PRODUCTION": false,
+	} {
+		if got := allowed(name, listed); got != want {
+			t.Errorf("allowed(%q) is %v, want %v", name, got, want)
+		}
+	}
+}
+
+// Evidence is YAML, so no tracked file names a file of comma separated
+// values. The extension is written in two parts so that this file names none.
+func TestEvidenceIsYAML(t *testing.T) {
+	extension := []byte(".c" + "sv")
+	root, files := trackedFiles(t)
+	var found []string
+	for _, file := range files {
+		text := bytes.ToLower(readTracked(t, root, file))
+		for number, line := range bytes.Split(text, []byte("\n")) {
+			if bytes.Contains(line, extension) {
+				found = append(found, file+":"+strconv.Itoa(number+1))
+			}
+		}
+	}
+	if len(found) > 0 {
+		t.Errorf("read the evidence from a YAML file here:\n%s",
+			strings.Join(found, "\n"))
 	}
 }

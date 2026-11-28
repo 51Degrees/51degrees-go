@@ -6,14 +6,19 @@
 
 Demonstrates how to set up periodic data file updates by either polling the 51degrees [distributor](https://51degrees.com/documentation/_services__distributor.html?utm_source=github&utm_medium=readme&utm_campaign=51degrees-go&utm_content=examples-onpremise-readme.md&utm_term=update_polling_interval) server or a custom URL. 
 
-To run the example, execute the following command:
+To run the example, execute the following command from `examples/device-detection`:
 
 ```bash
-_51DEGREES_LICENSE_KEY=my_license_key go run onpremise/update_polling_interval.go
+_51DEGREES_LICENSE_KEY=my_license_key go run ./onpremise/update_polling_interval
+```
+
+When the license key holds several products, the engine asks for the product of the data file it has loaded. To ask for another product, give its name with `-product`. To download from another address that answers as the Distributor does, give it with `-url`.
+
+```bash
+_51DEGREES_LICENSE_KEY=my_license_key go run ./onpremise/update_polling_interval -product V4TAC -url https://example.com/api/v2/download
 ```
 
 # onpremise API Usage
-```bash
 
 #### Create config
 ```go
@@ -114,7 +119,7 @@ default is Balanced profile
 ```
 
 #### WithProduct sets the product to use when pulling the data file
-this option can only be used when using the default data file url from 51Degrees, it will be appended as a query parameter
+The product is named as the Distributor spells it, such as `V4TAC`, and every request asks for it. It is added as the `Product` query parameter to the default data file url, and to a url that `WithDataUpdateUrl` gives unless that url names a product already. When no product is set, the first request names none, and when the license key holds several products the engine asks for the product of the data file it has loaded. A 300 (Multiple Choices) answer to a request that names a product is an error.
 ```go
     WithProduct(product string) EngineOptions
 ```
@@ -141,6 +146,19 @@ options like WithDataUpdateUrl, WithLicenseKey will be ignored since auto update
 
 ```go
     WithAutoUpdate(enabled bool) EngineOptions
+```
+
+#### WithUpdateCallback registers a callback that each check for an update reports to
+* fn - called once each check ends, with the data file's path and a status
+  named as the .NET data update service names it, such as
+  `AUTO_UPDATE_SUCCESS`, `AUTO_UPDATE_NOT_NEEDED` or
+  `AUTO_UPDATE_REFRESH_FAILED`
+* the update on start-up, each pull and each change the file watcher sees
+  are reported. A callback that panics is logged, apart from the update on
+  start-up, where New returns the panic as an error
+
+```go
+    WithUpdateCallback(fn func(common_go.UpdateComplete)) EngineOptions
 ```
 
 #### WithTempDataCopy enables or disables creating a temp copy of the data file

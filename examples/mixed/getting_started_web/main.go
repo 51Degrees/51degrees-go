@@ -23,7 +23,7 @@
 // Package main demonstrates using 51Degrees Device Detection and IP Intelligence
 // engines together inside an HTTP handler.
 //
-// The server listens on port 8080 and responds to every request with a JSON
+// The server listens on port 5151 and responds to every request with a JSON
 // document containing:
 //   - clientIp           — the detected client IP address
 //   - deviceDetection    — device properties detected from the request headers
@@ -47,7 +47,7 @@
 //
 // Then in another terminal:
 //
-//	curl http://localhost:8080/
+//	curl http://localhost:5151/
 package main
 
 import (
@@ -69,6 +69,19 @@ import (
 // contactUs is where to ask for a copy of the Enterprise data files, which
 // have the properties the free data files leave out.
 const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-mixed-getting_started_web-main.go&utm_term=enterprise-data-file"
+
+// findOutMore lists the pages to follow up and this repository, which every
+// response gives, from the section the console examples end with.
+var findOutMore = func() []string {
+	section := common.FindOutMore("examples-mixed-getting_started_web-main.go")
+	links := make([]string, 0)
+	for _, line := range strings.Split(section, "\n") {
+		if line = strings.TrimSpace(line); line != "" && line != "Find out more" {
+			links = append(links, line)
+		}
+	}
+	return links
+}()
 
 // ddResponseProperties lists device detection properties included in the JSON
 // response. The free data file has the platform and browser ones, and the
@@ -101,6 +114,8 @@ type MixedResponse struct {
 	DeviceDetection    map[string]string `json:"deviceDetection"`
 	IpIntelligence     map[string]string `json:"ipIntelligence"`
 	EnterpriseDataFile string            `json:"enterpriseDataFile,omitempty"`
+	// FindOutMore lists the pages to follow up and this repository.
+	FindOutMore []string `json:"findOutMore"`
 }
 
 // mixedHandler holds references to both engines and implements http.Handler.
@@ -135,6 +150,9 @@ func (h *mixedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		wg            sync.WaitGroup
 	)
 
+	// Each request makes its own results, because a results instance is not
+	// safe to use from several goroutines at once. The handler reads
+	// ddResults only after wg.Wait, once the goroutine that made it is done.
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -241,6 +259,7 @@ func buildResponse(
 		ClientIP:        clientIP,
 		DeviceDetection: ddMap,
 		IpIntelligence:  ipiMap,
+		FindOutMore:     findOutMore,
 	}
 	if missing {
 		resp.EnterpriseDataFile = contactUs
@@ -296,7 +315,7 @@ func main() {
 
 	http.Handle("/", newMixedHandler(ddEngine, ipiEngine))
 
-	const addr = ":8080"
+	const addr = ":5151"
 	log.Printf("Mixed Getting Started Web Example — listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }

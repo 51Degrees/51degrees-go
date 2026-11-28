@@ -50,7 +50,7 @@ Each repository is brought in with its full history, so commit SHAs match the or
 | `javascript-templates` | The [javascript-templates](https://github.com/51Degrees/javascript-templates) submodule, which the JavaScript Builder Element's template is copied from |
 | `ci` | The scripts the shared 51Degrees CI workflows call |
 
-A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`, so it is installed with, for example:
+Each module has its own version and is released only when it changes, or when a module it requires is released. A module in a folder of this repository is released with a tag named after the folder, such as `device-detection/v4.5.166`, so it is installed with, for example:
 
 ```sh
 go get github.com/51Degrees/51degrees-go/device-detection/v4
@@ -74,17 +74,19 @@ sh cxx/data/get-data-files.sh
 
 In PowerShell, run `./cxx/data/get-data-files.ps1` instead.
 
-Each module requires the others at a published version, as your own code would. To build and test them against each other instead, create a Go workspace:
+Each module requires the others at a published version, as your own code would. The `go.work` at the root makes them build and test against each other in a clone, so the examples run with no settings. After changing a requirement between the modules, run this script and commit `go.work`, because CI fails when the committed `go.work` is out of date.
 
 ```sh
 pwsh ci/create-workspace.ps1
 ```
 
-`go.work` isn't committed. CI uses the workspace only when a published module has changed since the latest release, so the next release is tested with the examples. Otherwise the examples are tested against the published modules, and nothing is released.
+CI tests with the workspace when a published module has changed since its last release, so the next release is tested with the examples. Otherwise the examples are tested against each module's latest release, as published, and nothing is released.
 
 The engines compile C sources made from the `cxx` submodule. After moving the submodule to another 51degrees-cxx release, run `pwsh ci/update-amalgamation.ps1` and commit the result. The build fails when they don't match.
 
 The JavaScript Builder Element embeds a copy of the `javascript-templates` submodule's `.mustache` files from `pipeline/elements/javascriptbuilder/javascript-templates`. After moving the submodule, copy its `.mustache` files there and commit them. The JavaScript templates check (`pwsh ci/check-javascript-templates.ps1`) fails when the copy doesn't match.
+
+The examples, tests, and CI scripts read their settings from environment variables whose names start `_51DEGREES_`, apart from two names that only CI uses. The [list of environment variable names](environment-variables.md) gives each one and what it holds.
 
 ## Find out more
 

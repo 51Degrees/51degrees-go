@@ -27,19 +27,52 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	dd_example "github.com/51Degrees/51degrees-go/examples/device-detection/dd"
 )
 
-func test(t *testing.T, name string) {
-	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+// run runs an example with the arguments given, in the environment given,
+// or in this process's when that is nil, prints what it printed and returns
+// it.
+func run(t *testing.T, name string, environment []string,
+	arguments ...string) string {
+	cmd := exec.Command("go", append([]string{"run", "./" + name},
+		arguments...)...)
+	cmd.Env = environment
+	output, err := cmd.CombinedOutput()
+	os.Stdout.Write(output)
+	if err != nil {
 		t.Error(err)
+	}
+	return string(output)
+}
+
+func test(t *testing.T, name string) {
+	run(t, name, nil)
+}
+
+// testEnterprise runs an example and checks that it shows the properties only
+// the Enterprise data file has, with the link to ask for a copy when the data
+// file in use lacks them.
+func testEnterprise(t *testing.T, name string) {
+	checkEnterprise(t, name, run(t, name, nil))
+}
+
+// testFree runs an example as a fresh clone would, without the settings CI
+// gives the other tests, so that it uses the free data files and evidence,
+// and checks it shows the properties only the Enterprise data file has.
+func testFree(t *testing.T, name string) {
+	checkEnterprise(t, name, run(t, name, withoutSettings(os.Environ())))
+}
+
+func checkEnterprise(t *testing.T, name, output string) {
+	if err := dd_example.CheckEnterprise(output); err != nil {
+		t.Errorf("%s: %v", name, err)
 	}
 }
 
 func TestGettingStarted(t *testing.T) {
-	test(t, "getting_started")
+	testEnterprise(t, "getting_started")
 }
 
 func TestGettingStartedFreeDataFile(t *testing.T) {
@@ -51,53 +84,79 @@ func TestUpdatePollingIntervalFreeDataFile(t *testing.T) {
 }
 
 func TestMatchDeviceId(t *testing.T) {
-	test(t, "match_device_id")
+	testEnterprise(t, "match_device_id")
+}
+
+func TestMatchDeviceIdFreeDataFile(t *testing.T) {
+	testFreeEndsWithFindOutMore(t, "match_device_id")
 }
 
 func TestMatchMetrics(t *testing.T) {
-	test(t, "match_metrics")
+	testEnterprise(t, "match_metrics")
 }
 
-func TestOfflineProcessing(t *testing.T) {
-	test(t, "offline_processing")
+func TestMatchMetricsFreeDataFile(t *testing.T) {
+	testFreeEndsWithFindOutMore(t, "match_metrics")
 }
 
-func TestReloadFromFile(t *testing.T) {
-	test(t, "reload_from_file")
+func TestMetadata(t *testing.T) {
+	testEnterprise(t, "metadata")
 }
 
-func TestStronglyTyped(t *testing.T) {
-	test(t, "update_polling_interval")
-}
-
-// testFree runs an example as a fresh clone would, without the settings CI
-// gives the other tests, so that it uses the free data files and evidence.
-func testFree(t *testing.T, name string) {
-	cmd := exec.Command("go", "run", "./"+name)
-	cmd.Env = withoutSettings(os.Environ())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Error(err)
+// The Metadata example runs on the free data file and lists the Evidence
+// keys, each component with its properties and their values, and the values
+// of the profiles an iPhone is matched to, then shows what only the
+// Enterprise data file has.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/device-detection-specification/required-examples.md?plain=1#L288-L292
+func TestMetadataFreeDataFile(t *testing.T) {
+	output := run(t, "metadata", withoutSettings(os.Environ()))
+	checkEnterprise(t, "metadata", output)
+	checkFindOutMore(t, "metadata", output)
+	for _, want := range []string{
+		"\theader.",
+		"Component HardwarePlatform",
+		"\t\tValues: ",
+		"is matched to the profiles",
+		"\t\tIsMobile True",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("metadata prints no %q", strings.TrimSpace(want))
+		}
 	}
 }
 
+func TestOfflineProcessing(t *testing.T) {
+	testEnterprise(t, "offline_processing")
+}
+
+func TestOfflineProcessingFreeDataFile(t *testing.T) {
+	testFreeEndsWithFindOutMore(t, "offline_processing")
+}
+
+func TestPerformance(t *testing.T) {
+	testEnterprise(t, "performance")
+}
+
+func TestPerformanceFreeDataFile(t *testing.T) {
+	testFreeEndsWithFindOutMore(t, "performance")
+}
+
+func TestReloadFromFile(t *testing.T) {
+	testEnterprise(t, "reload_from_file")
+}
+
+func TestReloadFromFileFreeDataFile(t *testing.T) {
+	testFreeOnOwnCopy(t, "reload_from_file")
+}
+
 // withoutSettings returns the environment without the variables that name a
-// data file, evidence, a key or an update address, under their 51Degrees
-// names and their deprecated ones.
+// data file, evidence or a key.
 func withoutSettings(environment []string) []string {
 	kept := make([]string, 0, len(environment))
 	for _, variable := range environment {
 		switch strings.ToUpper(strings.SplitN(variable, "=", 2)[0]) {
 		case "_51DEGREES_IPI_PATH", "_51DEGREES_DD_PATH",
-			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY",
-			"_51DEGREES_IPI_DATA_FILE_URL":
-			continue
-		// The deprecated names of those variables, each written in two
-		// parts so that this file does not name an old variable.
-		case "DATA" + "_FILE", "DD_DATA" + "_FILE", "EVIDENCE" + "_YAML",
-			"LICENSE" + "_KEY", "IPI" + "_KEY", "DEVICE" + "_DETECTION_KEY",
-			"IPI_DATA" + "_FILE_URL":
+			"_51DEGREES_EVIDENCE_YAML", "_51DEGREES_LICENSE_KEY":
 			continue
 		}
 		kept = append(kept, variable)
@@ -105,16 +164,12 @@ func withoutSettings(environment []string) []string {
 	return kept
 }
 
-// TestWithoutSettingsDropsBothNames checks a variable is left out under its
-// 51Degrees name and under its deprecated names, and others are kept.
-func TestWithoutSettingsDropsBothNames(t *testing.T) {
+// TestWithoutSettingsDropsTheNames checks each of those variables is left
+// out, and others are kept.
+func TestWithoutSettingsDropsTheNames(t *testing.T) {
 	got := withoutSettings([]string{
 		"_51DEGREES_DD_PATH=a", "_51DEGREES_LICENSE_KEY=b",
 		"_51DEGREES_IPI_PATH=j", "_51DEGREES_EVIDENCE_YAML=k",
-		"_51DEGREES_IPI_DATA_FILE_URL=l",
-		"DATA" + "_FILE=c", "DD_DATA" + "_FILE=d", "EVIDENCE" + "_YAML=e",
-		"LICENSE" + "_KEY=f", "IPI" + "_KEY=g",
-		"DEVICE" + "_DETECTION_KEY=h", "IPI_DATA" + "_FILE_URL=i",
 		"PATH=kept",
 	})
 	if len(got) != 1 || got[0] != "PATH=kept" {

@@ -59,6 +59,7 @@ Below is a table that describes the examples:
 | performance                   | A benchmarking example to measure the speed of data processing in single and multi-threaded modes                         |
 | reload_from_file              | An example that demonstrates how a data file can be reloaded while serving IP Intelligence requests                       |
 | update_polling_interval       | An example doing periodic polling for the updated data file                                                               |
+| metadata                      | An example listing the data file's dates, the Evidence keys the engine reads in the order it tries them, and each component with its properties and their descriptions |
 | getting_started_cloud         | The getting started example using the 51Degrees cloud service and a Resource Key, rather than a data file                 |
 | mixed/getting_started_console | A command line example featuring both device detection and IP intelligence                                                |
 | mixed/getting_started_web     | A web example featuring both device detection and IP intelligence                                                |
@@ -80,3 +81,5 @@ _51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi go run ./getting_start
 _51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./offline_processing
 _51DEGREES_IPI_PATH=<path>/51Degrees-EnterpriseIpiV41.ipi _51DEGREES_EVIDENCE_YAML=<path>/20000_ipi_evidence_records.yml go run ./update_polling_interval
 ```
+
+The update example downloads with the License Key in `_51DEGREES_LICENSE_KEY`. When the key holds several products, the engine asks for the product of the data file it has loaded. To ask for another product, such as `IPIV4Enterprise`, give its name with `-product`. To download from another address that answers as the Distributor does, give it with `-url`.

@@ -83,7 +83,7 @@ func TestShareRules(t *testing.T) {
 		"cookie.51d_foo":    true,
 		"cookie.sessionx":   false,
 		"query.51d_bar":     true,
-		"query.myparam":     true,
+		"query.myparam":     false,
 		"query.other":       false,
 		"server.client-ip":  true,
 	}

@@ -31,11 +31,14 @@
 // This example stands up the real web.Middleware over an httptest server and
 // exercises the actual round-trip: it fetches /51Degrees.core.js (printing the
 // generated script and its callback URL), then POSTs to /51dpipeline/json as the
-// browser would once it has gathered the date of birth.
+// browser would once it has gathered the date of birth. Last it requests an
+// application page, whose handler shows that a Flow Data is used by one
+// goroutine at a time: it copies the star sign out of the Flow Data and hands
+// the copy, not the Flow Data, to another goroutine.
 //
 // Run with: go run ./examples/3_clientside_evidence
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/required-examples.md
 package main
 
 import (
@@ -47,9 +50,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/web"
 )
 
@@ -105,9 +109,22 @@ func main() {
 	defer pipeline.Close()
 
 	// Mount the web integration middleware on a real HTTP server. The host
-	// application handler can read results from the Flow Data via web.FromContext.
+	// application handler reads results from the Flow Data via web.FromContext.
+	// A Flow Data is used by one goroutine at a time, so the handler copies
+	// the values that work on another goroutine needs and hands on the copy,
+	// never the Flow Data.
 	mw := web.NewMiddleware(pipeline)
+	handedOn := make(chan string, 1)
 	app := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sign := "unknown"
+		if fd, ok := web.FromContext(r.Context()); ok {
+			if d, err := fd.Get("starsign"); err == nil {
+				if v, err := d.Get("starsign"); err == nil {
+					sign = fmt.Sprint(v)
+				}
+			}
+		}
+		go func(sign string) { handedOn <- sign }(sign)
 		w.WriteHeader(http.StatusOK)
 	})
 	srv := httptest.NewServer(mw.Handler(app))
@@ -125,6 +142,13 @@ func main() {
 	fmt.Println("\n=== POST /51dpipeline/json (client callback with the gathered date) ===")
 	json := httpPostForm(srv.URL+web.DefaultJSONURL, url.Values{"date-of-birth": {"1992-04-15"}})
 	fmt.Println(json)
+
+	// 3) An application page. Its handler copies the star sign out of the Flow
+	//    Data and hands the copy to another goroutine.
+	fmt.Println("\n=== GET / (an application page that hands work to another goroutine) ===")
+	httpGet(srv.URL + "/?date-of-birth=1992-04-15")
+	fmt.Printf("Star sign handed to another goroutine: %s\n", <-handedOn)
+	fmt.Print(findoutmore.Section("examples-pipeline-3_clientside_evidence-main.go"))
 }
 
 func httpGet(u string) string {

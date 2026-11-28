@@ -22,8 +22,8 @@
 
 // Package engines builds on the core Pipeline package to add the features that
 // are common to 51Degrees Aspect Engines: result caching, data-file updates,
-// missing-property reporting, lazy loading, and the null-supporting
-// AspectPropertyValue type.
+// missing-property reporting, and the null-supporting AspectPropertyValue
+// type.
 //
 // See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/conceptual-overview.md#engines
 package engines
@@ -62,9 +62,11 @@ type BaseAspectData struct {
 // reason for a missing Property is decided from.
 type dataSource struct {
 	engine missingproperty.Engine
-	// data is the Aspect Data as the Flow Data holds it, whose type has the
-	// typed accessors.
-	data core.ElementData
+	// dataType is the type of the Aspect Data as the Flow Data holds it,
+	// which has the typed accessors. The type is kept rather than the data,
+	// so that the data holds no reference to itself, which would stop a
+	// finalizer set on it from ever running.
+	dataType reflect.Type
 	// cloudRequestFailed is true where a Cloud Aspect Engine populated the
 	// data and the cloud request for its Flow Data failed.
 	cloudRequestFailed bool
@@ -87,7 +89,7 @@ var baseAspectDataType = reflect.TypeOf((*BaseAspectData)(nil))
 // the methods of the types it embeds.
 func (s *dataSource) accessorNames() []string {
 	s.accessorsOnce.Do(func() {
-		t := reflect.TypeOf(s.data)
+		t := s.dataType
 		for i := 0; i < t.NumMethod(); i++ {
 			name := t.Method(i).Name
 			if _, base := baseAspectDataType.MethodByName(name); !base {
@@ -114,7 +116,7 @@ func (d *BaseAspectData) AddedToFlowData(fd core.FlowData, key string, data core
 	if !ok {
 		return
 	}
-	s := &dataSource{engine: engine, data: data}
+	s := &dataSource{engine: engine, dataType: reflect.TypeOf(data)}
 	if c, ok := engine.(cloudRequestState); ok {
 		s.cloudRequestFailed = c.CloudRequestFailed(fd)
 	}

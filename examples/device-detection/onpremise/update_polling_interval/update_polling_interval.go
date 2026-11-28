@@ -20,11 +20,35 @@
  * such notice(s) shall fulfill the requirements of that article.
  * ********************************************************************* */
 
+/**
+@example onpremise/update_polling_interval/update_polling_interval.go
+This example shows how to set the interval at which the onpremise Engine
+polls for a new data file.
+
+This example is available in full on [GitHub](https://github.com/51Degrees/51degrees-go/tree/main/examples/device-detection/onpremise/update_polling_interval).
+
+@include{doc} example-require-licensekey.txt
+@include{doc} example-require-datafile.txt
+
+When the License Key holds several products, the engine asks for the
+product of the data file it has loaded, such as V4TAC for TAC-HashV41.hash.
+To ask for another product, give its name with -product. The example
+downloads from the 51Degrees Distributor. To download from another address
+that answers as the Distributor does, such as a copy you host, give it with
+-url.
+
+```
+go run ./onpremise/update_polling_interval -product V4TAC -url https://example.com/api/v2/download
+```
+*/
+
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/device-detection/v4/onpremise"
@@ -35,6 +59,37 @@ import (
 // contactUs is where to ask for a licence key and a copy of the Enterprise
 // data file, which automatic updates download.
 const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-device-detection-onpremise-update_polling_interval-update_polling_interval.go&utm_term=licence-key"
+
+var (
+	product = flag.String("product", "",
+		"the product to download, such as V4TAC, in place of the product "+
+			"of the data file")
+	dataUpdateUrl = flag.String("url", "",
+		"the address to download updates from, in place of the "+
+			"Distributor's")
+)
+
+// updateUrl gives the address with what the Distributor reads from the
+// query added to it, being the License Key, the type of data file and
+// Download=True. A value the address has already is kept.
+func updateUrl(address, licenseKey string) (string, error) {
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	for _, parameter := range [][2]string{
+		{"LicenseKeys", licenseKey},
+		{"Type", "HashV41"},
+		{"Download", "True"},
+	} {
+		if query.Get(parameter[0]) == "" {
+			query.Set(parameter[0], parameter[1])
+		}
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
 
 // properties are those the example shows. The free data file has the
 // platform and browser ones, and the Enterprise data file has them all.
@@ -83,12 +138,13 @@ func runWithoutUpdates(params common.ExampleParams) {
 	processExampleEvidence(engine, common.ExampleEvidenceDesktop)
 	processExampleEvidence(engine, common.ExampleEvidenceMobile)
 
-	fmt.Printf("Automatic updates download the Enterprise data file with a "+
-		"licence key, which _51DEGREES_LICENSE_KEY gives. Contact us for a "+
+	fmt.Printf("Automatic updates download a new data file with a "+
+		"License Key, which _51DEGREES_LICENSE_KEY gives. Contact us for a "+
 		"key and a copy at %s\n", contactUs)
 }
 
 func main() {
+	flag.Parse()
 	common.RunExample(
 		func(params common.ExampleParams) error {
 			if params.LicenseKey == "" {
@@ -96,14 +152,35 @@ func main() {
 				return nil
 			}
 
+			// For automatic updates to work you will need to provide a license key.
+			// A license key comes with a paid data file, from https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
+			updates := onpremise.WithLicenseKey(params.LicenseKey)
+			if *dataUpdateUrl != "" {
+				// Download from the address -url gives in place of the
+				// Distributor's. The license key is only added to the
+				// Distributor's address, so it goes in this one's query.
+				address, err := updateUrl(*dataUpdateUrl, params.LicenseKey)
+				if err != nil {
+					return err
+				}
+				updates = onpremise.WithDataUpdateUrl(address)
+			}
+
 			//Create on-premise engine
 			engine, err := onpremise.New(
 				// Path to your data file
 				onpremise.WithDataFile(params.DataFile),
 
-				// For automatic updates to work you will need to provide a license key.
-				// A licence key comes with the Enterprise data file, from https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-onpremise-update_polling_interval-update_polling_interval.go&utm_term=main
-				onpremise.WithLicenseKey(params.LicenseKey),
+				// The license key, which the engine adds to the
+				// Distributor's address, or the address -url gives.
+				updates,
+
+				// Ask for the product -product names, as the Distributor
+				// spells it, such as V4TAC. When none is given, no product
+				// is named. The first request then names no product, and
+				// when the License Key holds several products the engine
+				// asks for the product of the data file it has loaded.
+				onpremise.WithProduct(*product),
 
 				// Enable automatic updates.
 				onpremise.WithAutoUpdate(true),
@@ -127,9 +204,6 @@ func main() {
 				// will be used to check for an update before the
 				// device detection engine is created.
 				onpremise.WithUpdateOnStart(false),
-
-				// Optionally provide your own file URL
-				// onpremise.WithDataUpdateUrl("<custom URL>"),
 
 				// By default a temp copy should be created, unless you are using InMemory performance profile
 				// onpremise.WithTempDataCopy(false),

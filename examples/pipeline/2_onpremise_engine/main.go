@@ -29,7 +29,7 @@
 //
 // Run with: go run ./examples/2_onpremise_engine
 //
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/required-examples.md
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/required-examples.md
 package main
 
 import (
@@ -41,10 +41,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/51Degrees/51degrees-go/examples/pipeline/findoutmore"
+	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/core"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines"
 	"github.com/51Degrees/51degrees-go/pipeline/v4/engines/dataupdate"
-	"github.com/51Degrees/51degrees-go/examples/pipeline/starsign"
 )
 
 const evidenceDateOfBirth = "query.date-of-birth"
@@ -198,11 +199,19 @@ func main() {
 	if err := os.WriteFile(dataFile, customData(), 0o644); err != nil {
 		log.Fatal(err)
 	}
+	// A check loads the file only when it is newer than the one loaded, and
+	// some file systems keep times to the second, so the rewritten file is
+	// given a later time.
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(dataFile, later, later); err != nil {
+		log.Fatal(err)
+	}
 	if err := updates.CheckForUpdate("starsign"); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("After refreshing with a custom data file (renames Aries to 'The Ram'):")
 	lookup("1992-04-15")
+	fmt.Print(findoutmore.Section("examples-pipeline-2_onpremise_engine-main.go"))
 }
 
 func defaultData() []byte {

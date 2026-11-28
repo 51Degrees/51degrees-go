@@ -69,14 +69,15 @@ func WithLicenseKey(key string) EngineOptions {
 	}
 }
 
-// WithProduct sets the product to use when pulling the data file when distributor service is used
-// licenseKey has to be provided using WithLicenseKey
+// WithProduct sets the product that every request for a data file asks
+// for, as the Distributor spells it, such as V4TAC. An empty product,
+// which is the default, is no product. It is added to the default data file
+// URL with the license key, and to a URL WithDataUpdateUrl gives unless that
+// URL names a product already, in either order. A 300 (Multiple Choices)
+// response to a request that names a product is an error, so the product of
+// the loaded data file is not asked for in its place.
 func WithProduct(product string) EngineOptions {
 	return func(cfg *Engine) error {
-		if !cfg.isDefaultDataFileUrl() {
-			return errors.New("product can only be set when using default data file url")
-		}
-
 		cfg.product = product
 		return nil
 	}
@@ -149,6 +150,22 @@ func WithUpdateOnStart(enabled bool) EngineOptions {
 	}
 }
 
+// WithUpdateCallback registers a callback that each check for an update of
+// the data file reports to once it ends, with the data file's path and how
+// the check ended: the update on start-up, each pull and each change the file
+// watcher sees. A callback that panics is logged, and the checks carry on,
+// apart from the update on start-up, where New returns the panic as an error.
+// See https://github.com/51Degrees/specifications/blob/6570727d2af6967390d3c4fbec77b9cf0540d3f3/pipeline-specification/features/data-updates.md#reporting-each-check
+func WithUpdateCallback(fn func(common_go.UpdateComplete)) EngineOptions {
+	return func(cfg *Engine) error {
+		if fn == nil {
+			return errors.New("the update callback is nil")
+		}
+		cfg.OnUpdateComplete(fn)
+		return nil
+	}
+}
+
 // WithAutoUpdate enables or disables auto update
 // default is true
 // if enabled, engine will automatically pull the data file from the distributor or custom URL
@@ -200,6 +217,17 @@ func WithTempDataDir(dir string) EngineOptions {
 func WithRandomization(seconds int) EngineOptions {
 	return func(cfg *Engine) error {
 		cfg.SetRandomization(seconds * 1000)
+		return nil
+	}
+}
+
+// WithIndexedProperties names the Properties, such as TAC and NativeModel,
+// whose values are indexed to the profiles holding them when the data file
+// loads and on each refresh, so ProfileIdsForPropertyValue finds them without
+// reading every profile. Names are matched exactly.
+func WithIndexedProperties(names ...string) EngineOptions {
+	return func(cfg *Engine) error {
+		cfg.indexedProperties = append([]string(nil), names...)
 		return nil
 	}
 }

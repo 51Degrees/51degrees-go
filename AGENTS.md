@@ -17,15 +17,17 @@ otherwise.
 
 Each folder under `examples` is a Go module of its own that requires the
 published modules at the version in its `go.mod`, as a customer's code would.
-So `go run` downloads those modules and compiles their C code through cgo, and
-nothing in this repository needs building first. `pwsh ci/create-workspace.ps1`
-makes the examples use the code in this repository instead, as the README says.
+In a clone, the committed `go.work` at the root makes the examples use the
+modules in this repository instead, so `go run` compiles their C code through
+cgo with no settings, and nothing needs building first. Copied out of the
+repository, an example downloads the published modules its `go.mod` names.
 
 ### Prerequisites
 
 - Git.
-- Go 1.21 or later, because the IP Intelligence modules ask for 1.21.0. CI
-  tests Go 1.23 and 1.24 (`ci/options.json`).
+- Go 1.22 or later, because the Device Detection, IP Intelligence and
+  Pipeline modules ask for 1.22. The common module on its own asks for 1.19.
+  CI tests Go 1.23 and 1.24 (`ci/options.json`).
 - A C compiler for cgo, being GCC on Linux, Clang on macOS and MinGW-x64 on
   Windows, with `libatomic`, which usually comes with GCC and Clang.
 - On Windows, the MinGW-x64 `bin` folder on the `PATH` (by default
@@ -35,8 +37,8 @@ makes the examples use the code in this repository instead, as the README says.
   go env -w CGO_ENABLED=1
   ```
 
-- Network access to GitHub, to the Go module proxy for the published modules,
-  and to `distributor.51degrees.com` for the data files.
+- Network access to GitHub, to the Go module proxy for the modules the
+  examples use, and to `distributor.51degrees.com` for the data files.
 - For the data files, `curl`, `gzip` and `md5sum` (`md5` on macOS) on Linux
   and macOS, where the examples download with the shell script, and Windows
   PowerShell 5.1 or PowerShell 7 on Windows, where they use the PowerShell
@@ -98,7 +100,7 @@ The Device Detection example finds `51Degrees-LiteV4.1.hash` by searching
 every folder below the folder two above the one it runs in, and takes the
 first file with that name in lexical order (`GetFilePathByName` in
 `examples/device-detection/dd/example_base.go`, which calls `dd.GetFilePath`
-in the published module). From `examples/device-detection` that is the
+in the Device Detection module). From `examples/device-detection` that is the
 repository root, so the search reaches `cxx/data/device-detection`. The
 example downloads the file only when the search finds no file with that name
 at all, so download it first, as "Data files" says.
@@ -110,24 +112,14 @@ cd ../..
 ```
 
 The IP Intelligence example reads the data file named by the `_51DEGREES_IPI_PATH`
-environment variable, and otherwise looks for `51Degrees-EnterpriseIpiV41.ipi`
-in the folder it runs in, without searching
-(`examples/ip-intelligence/common/example_base.go`). So name the Lite file.
-When that file is missing, the example downloads it first, because the data
-repository links to it (`GetDataFile` in
-`examples/ip-intelligence/common/file.go`).
+environment variable, and otherwise the free Lite file `51Degrees-LiteV41.ipi`
+(`LiteDataFile` in `examples/ip-intelligence/common/example_base.go`). It uses
+that file where it runs when the file is there, and otherwise the data
+repository's copy in `cxx/data/ip-intelligence`, which it downloads first when
+it is missing (`GetDataFile` in `examples/ip-intelligence/common/file.go`).
 
 ```
 cd examples/ip-intelligence
-_51DEGREES_IPI_PATH=../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi go run ./getting_started
-cd ../..
-```
-
-In PowerShell, set the variable first.
-
-```
-cd examples/ip-intelligence
-$env:_51DEGREES_IPI_PATH = '../../cxx/data/ip-intelligence/51Degrees-LiteV41.ipi'
 go run ./getting_started
 cd ../..
 ```
@@ -138,19 +130,44 @@ When an example downloads its data file, it first logs
 `<file> is missing, so it is being downloaded by running` with the command on
 the next line, and the script's `Downloading` and `Saved` lines follow.
 
-The Device Detection example prints these lines. It compares its output with
-this text itself, and stops with `Output does not match expected.` and exit
-code 1 when the two differ. CI runs it with the Lite file.
+The Device Detection example prints these lines with the Lite file. The
+properties only the Enterprise data file has are shown as needing it, with a
+link to ask for a copy, and the exit code is 0. CI runs it with the Lite file,
+and its test checks those lines (`CheckEnterprise` in
+`examples/device-detection/dd/enterprise_check.go`).
 
 ```
 Mobile User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 7_1 like Mac OS X) AppleWebKit/537.51.2 (KHTML, like Gecko) Version/7.0 Mobile/11D167 Safari/9537.53
 	IsMobile: True
+	PlatformName: iOS
+	PlatformVersion: 7.1
+	BrowserName: Mobile Safari
+	BrowserVersion: 7.0
+	HardwareVendor: needs the Enterprise data file
+	HardwareName: needs the Enterprise data file
+	DeviceType: needs the Enterprise data file
 
 Desktop User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; rv:41.0) Gecko/20100101 Firefox/41.0
 	IsMobile: False
+	PlatformName: Windows
+	PlatformVersion: 8.1
+	BrowserName: Firefox
+	BrowserVersion: 41.0
+	HardwareVendor: needs the Enterprise data file
+	HardwareName: needs the Enterprise data file
+	DeviceType: needs the Enterprise data file
 
 MediaHub User-Agent: Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/2.1 TV Safari/537.36
 	IsMobile: False
+	PlatformName: Tizen
+	PlatformVersion: 5.0
+	BrowserName: Samsung Browser
+	BrowserVersion: 9.2
+	HardwareVendor: needs the Enterprise data file
+	HardwareName: needs the Enterprise data file
+	DeviceType: needs the Enterprise data file
+
+Some of these properties need the Enterprise data file. Contact us for a copy at <the contact us link>
 ```
 
 The IP Intelligence example looks up `185.28.167.77`,
@@ -171,11 +188,22 @@ describes.
 
 ### Cloud examples
 
-No example here calls the 51Degrees cloud service, so none needs a resource
-key. The Go modules work on-premise, with a data file. The Pipeline API's
-`examples/pipeline/4_cloud_engine` shows a cloud engine against a stand-in for
-the service that the example starts itself, with the placeholder key
-`example-resource-key`.
+Two examples call the 51Degrees cloud service. The first,
+`examples/ip-intelligence/getting_started_cloud`, needs a Resource Key in
+the `_51DEGREES_RESOURCE_KEY` environment variable or as its first argument.
+Run with none, it says where to create one and which variable to put it in,
+then ends without an error (`main.go` lines 120 to 131), so CI runs it with no
+settings (`TestGettingStartedCloudWithNoResourceKey`) and with the cloud
+service only when a key is set. The second,
+`examples/device-detection/cloud/getting_started`, does the same for Device
+Detection with no key, and builds its Pipeline from the options file
+`getting_started.json` beside it, so run it from its own folder. Its two
+tests never call the cloud service, as one runs it with no key and the other
+builds its Pipeline from the options file against a stand-in for the
+service. The other examples work on-premise, with a data file. The Pipeline
+API's `examples/pipeline/4_cloud_engine` shows a cloud engine against a
+stand-in for the service that the example starts itself, with the
+placeholder key `example-resource-key`.
 
 ### Pitfalls
 
@@ -190,62 +218,121 @@ the service that the example starts itself, with the placeholder key
   file sizes as above.
 - **Running from the wrong folder.** There is no `go.mod` at the repository
   root, and each examples folder is a module of its own, so run `go run` from
-  that folder. Without `_51DEGREES_IPI_PATH`, the IP Intelligence example finds no data
-  file wherever it runs, unless a paid file named
-  `51Degrees-EnterpriseIpiV41.ipi` is in that folder.
+  that folder.
 - **cgo turned off or no C compiler.** The engines are C code built through
   cgo, so Go needs `CGO_ENABLED=1` and a C compiler on the `PATH`, as the
   READMEs say.
-- **A linker warning on macOS.** The linker warns that `-lm` is given more
-  than once. The warning is harmless (`ci/products.ps1`).
 - **Memory.** The IP Intelligence example loads the whole data file into
   memory (`ipi_interop.InMemory`), so it needs about 0.5 GB free.
-- **What CI does not test.** CI runs the IP Intelligence examples only with a
-  paid data file (`ci/run-integration-tests.ps1`), never the Lite file, and
-  runs the Device Detection examples from `examples/device-detection/dd`
-  through `go test`, with the Lite file linked into `examples/device-detection`
-  (`ci/fetch-assets.ps1`) rather than read from `cxx`.
+- **What CI runs.** CI runs the IP Intelligence examples with the paid data
+  file `ci/run-integration-tests.ps1` names, and again with no settings on the
+  free files (the `FreeDataFile` tests in
+  `examples/ip-intelligence/integration_test.go`). It runs the Device Detection
+  examples through `go test` in `examples/device-detection`, with the Lite
+  file linked into that folder (`ci/fetch-assets.ps1`) rather than read from
+  `cxx`, and every one of them again with no settings (the `FreeDataFile`
+  tests in `examples/device-detection/onpremise/onpremise_test.go` and
+  `TestEachExampleRunsWithNoSettings` in
+  `examples/device-detection/dd/no_settings_test.go`).
+
+## Environment variable names
+
+[`environment-variables.md`](environment-variables.md) lists every environment
+variable that the modules, tests, examples and CI scripts of this repository
+read and set, with what each name holds. Every name 51Degrees defines for
+customers starts `_51DEGREES_`, holds one thing and is never filled from
+another. When a change needs a new name, add it to the list in the same piece
+of work. The name check,
+[`common/variable_names_test.go`](common/variable_names_test.go), fails when
+a tracked file reads or sets a variable that the list does not hold, other
+than one that Go, Git, GitHub, PowerShell or the operating system defines.
+The two names only CI uses, `CLOUD_STAGING_ENDPOINT` and
+`RESOURCE_KEY_BESPOKE_STAGING`, have no prefix and are in the check's
+`ciOnly` list as well as in the list of names.
 
 ## Module paths and tags
 
 Each module's path is the repository path plus its folder, such as
 `github.com/51Degrees/51degrees-go/device-detection/v4`. Go finds a version
 of a module in a folder by a tag named after the folder, such as
-`device-detection/v4.5.166`, so a release is those tags
-(`ci/publish-package.ps1`), and the repository is also tagged with the plain
-version. Never move or delete a released tag: sum.golang.org keeps the
-checksum of the first version it sees, so a changed version breaks every build
-that uses it.
+`device-detection/v4.5.172`, so a release is those tags
+(`ci/publish-package.ps1`), and each tag gets a GitHub release.
+Never move or delete a released tag, because sum.golang.org keeps the checksum
+of the first version it sees, and a changed version breaks every build that
+uses it.
 
-The repository has one version, and only the patch number moves
-(`ci/get-next-package-version.ps1`).
+Each module has its own version, and only the patch number moves. A publish
+releases a module when a file in its folder has changed since its last tag,
+and every module that requires it is released with it. `ci/packages.json`
+lists the modules and which of them each requires, which has to match the
+`go.mod` files, and common-ci's `steps/release-plan.ps1` works out the plan
+from it (`ci/packages.ps1`). A change to the examples, to CI or to the
+documentation outside the module folders releases nothing, and neither does a
+change inside them only to tests (`*_test.go`), their data (`mock_hash.gz`),
+Markdown files, `docs` folders or licences. Run the tests of the plan with
+`Invoke-Pester ci/packages.Tests.ps1`, with common-ci checked out beside this
+repository. The CI script tests workflow runs these and the build selection
+tests on every pull request that changes `ci/`.
+
+A module that requires one released in the same publish is tagged on a commit
+that raises its `go.mod` to the new version, because Go reads the requirement
+at the tag. Only the tag reaches that commit, and the nightly package update
+makes the same change on `rc`.
+
+common-ci's release plan reads tags named `<package>/<version>`, without Go's
+`v`, so `ci/packages.ps1` gives each module's newest tag a local tag of that
+form before planning. Those local tags are never pushed.
 
 ## The workspace
 
 Each module requires the others at a published version, so the examples work
-as a customer's code would when copied out. `ci/create-workspace.ps1` makes a
-`go.work` that uses every module here instead. Go still looks for a required
-version that isn't published even when that module is in the workspace, so the
-script also adds a `replace` for each requirement between these modules.
-`go.work` is never committed, and nothing else may add a `replace` to a
+as a customer's code would when copied out. The committed `go.work` at the root
+uses every module here instead, so a fresh clone builds every example against
+the code in this repository with no settings. `ci/create-workspace.ps1` makes
+it. Go still looks for a required version that isn't published even when that
+module is in the workspace, so the script also adds a `replace` for each
+requirement between these modules. Run the script after changing such a
+requirement and commit `go.work`, because CI fails when the committed one
+differs from what the script makes (`ci/setup-environment.ps1`). The nightly
+package update runs the script as well. Nothing else may add a `replace` to a
 `go.mod`, as it would be published with the module.
 
-CI makes the workspace only when a folder of a published module (`common`,
-`device-detection`, `ip-intelligence`, `pipeline`) has changed since the
-latest release, that is when it tests the next release
-(`ci/setup-environment.ps1`). The examples then run against that code, as the
-.NET repository's CI does with its projects. Otherwise they run against the published modules their go.mod files
-name. The same check decides whether there is a release at all
-(`ci/get-next-package-version.ps1`), so a change to the examples, the
-documentation or CI alone releases nothing. The nightly package update moves
-the examples to the latest release.
+Go's [modules reference](https://go.dev/ref/mod#workspaces) calls committing
+`go.work` "generally inadvisable", and allows it for modules "developed
+exclusively with each other" when "the module author should ensure the
+individual modules are tested and released properly". These modules are
+developed only with each other, so CI does that in two ways. It builds each
+published module without the workspace (`GOWORK=off` in
+`ci/build-project.ps1`), and after each release it tests the examples against
+the published modules with `go.work` removed (`ci/setup-environment.ps1`).
+
+CI tests with the workspace when the release plan has a module in it, that is
+when a published module (`common`, `device-detection`, `ip-intelligence`,
+`pipeline`) has changed since its last release and CI tests the next release.
+Otherwise CI tests the latest releases, so it removes `go.work` from its own
+checkout and the examples run against the published modules, each at its
+latest release. An example's `go.mod` can name an earlier release, because the
+nightly package update moves the examples to the latest releases on `rc`, and
+`main` has the move only after its next release. So CI moves those
+requirements first, in its own checkout, and commits nothing. The same plan
+decides what a publish releases (`ci/package-update-required.ps1`), so a
+change to the examples, the documentation or CI alone releases nothing.
+
+An example's `go` line is at least the highest `go` line of the published
+modules it requires, because Go won't take a module that asks for a newer Go
+than the example does. The nightly package update raises it to that line at
+each module's latest release (`Get-ReleaseGoVersion` in `ci/products.ps1`).
+When a published module raises its `go` line, the minimum Go version under
+"Prerequisites" and in that module's README moves with it.
 
 CI also builds each published module without the workspace (`GOWORK=off`), to
 check the module as it is published.
 
 When an engine needs a change to `common` or `pipeline` in the same release,
-its `go.mod` requires that module at the version the next release publishes,
-because the release tags every module at the same commit. That version is not
+its `go.mod` requires that module at the version the release plan gives it,
+the module's last version with one more patch. Any other version with no tag
+stops the plan (`Assert-RequiredVersions` in `ci/packages.ps1`), and the
+publish tags the engine on a commit whose `go.sum` matches. That version is not
 published until then, so the build without the workspace takes it from the
 module's folder through a copy of `go.mod`, and the nightly package update
 leaves the module alone (`Get-UnreleasedRequirementReplaces` in
@@ -277,6 +364,27 @@ by hand. The JavaScript templates check (`ci/check-javascript-templates.ps1`)
 fails when the copy differs from the submodule, and the nightly package update
 moves the submodule and the copy together.
 
+## The derived property scripts
+
+The Derived Property Element (`pipeline/elements/derivedproperty`) runs the
+scripts of [derived-properties](https://github.com/51Degrees/derived-properties),
+which is the `derived-properties` submodule, and ships the scripts in its
+`scripts` folder. As for the JavaScript template, the package holds a copy of
+them in `pipeline/elements/derivedproperty/scripts`, embedded in the module.
+Never edit the copy by hand. The derived properties check
+(`ci/check-derived-properties.ps1`) fails when the copy differs from the
+submodule, and the nightly package update moves the submodule and the copy
+together. The one exception is a script listed in
+`ci/derived-properties-reworded.json`, whose copy rewords some comment lines
+for the reason the list gives. Its other lines must be the submodule's, and
+the list records the git blob of the submodule's script it was made from. When
+that script changes upstream, the nightly update keeps the old copy and the
+check fails, so copy the new version, reword the same comments and record its
+blob. A script added to the submodule needs a `BuiltInScript` constant,
+which `TestBuiltInScriptsAreTheSubmodule` checks. The package's tests run every
+case file and every rejection case in the submodule's `tests` folder, so its
+answers and its faults are checked against the other languages'.
+
 ## Data files
 
 The data files come from the [data](https://github.com/51Degrees/data)
@@ -300,7 +408,15 @@ pointer files.
 
 The workflows call the shared workflows in
 [common-ci](https://github.com/51Degrees/common-ci), which run the scripts in
-`ci/`. `ci/products.ps1` works out which modules a change affects.
+`ci/`. `ci/products.ps1` works out which modules a change affects, measured
+from the branch the pull request merges into, `rc`, and adds each module that
+requires one of them (`DependsOn` in `ci/packages.json`), because the workspace
+builds a module against the folders of the modules it requires.
+`ci/select-options.ps1` leaves macOS and performance to the builds of `rc`
+itself and of the release pull request, which
+`.github/workflows/release-pull-request.yml` builds on every entry. Run the
+tests of both with `Invoke-Pester ci/select-options.Tests.ps1`, with
+common-ci checked out beside this repository.
 
 The Pull Requests workflow is started by hand. A run that passes squash-merges
 the pull request unless `dryrun` is ticked, which loses the pull request's own
@@ -309,6 +425,14 @@ into `main`, because common-ci's `steps/get-target-branch.ps1` chooses `rc`
 for a repository that has one. The nightly pipeline merges every pull request
 into `rc` that passes, is not a draft and has no review requested, and
 publishes `main` when it has changed.
+
+The live Human Confidence tests (`TestLive` in
+`examples/pipeline/human_confidence/live_test.go`) call the staging cloud,
+because the production cloud does not serve what they check yet. common-ci
+passes on only `_51DEGREES_` names, so in its builds the tests skip, and
+`.github/workflows/cloud-human-confidence.yml` runs them with
+`CLOUD_STAGING_ENDPOINT` and `RESOURCE_KEY_BESPOKE_STAGING` set. That
+workflow fails when a name is empty or a test is skipped.
 
 ## Releases
 
@@ -323,3 +447,11 @@ into `main` from any other branch.
 The history of common-go, device-detection-go, ip-intelligence-go and the Go
 pipeline library was brought in with `git subtree add`, so commit SHAs match the
 original repositories. Use `git log --follow` to trace a file back through its move.
+
+## Tests that fail on timing
+
+A test that fails on a time limit, a performance threshold or a timeout is
+fixed, not run again until it passes. Either the limit is set to fit the
+slowest runner the test runs on, with each runner's measurement behind it, or
+the reason it takes too long is found and fixed. A failure that comes and goes
+costs everyone who meets it the time to look into it.

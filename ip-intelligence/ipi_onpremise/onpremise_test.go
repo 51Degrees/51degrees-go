@@ -23,6 +23,7 @@
 package ipi_onpremise
 
 import (
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -168,9 +169,9 @@ func TestEngine_isDefaultDataFileUrl(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "empty URL matches default",
+			name:     "empty URL",
 			url:      "",
-			expected: true,
+			expected: false,
 		},
 	}
 
@@ -382,12 +383,36 @@ func TestEngine_GetPropertyNameByIndex(t *testing.T) {
 	}
 }
 
-func TestConstants(t *testing.T) {
-	// Test that defaultDataFileUrl is properly defined
-	if defaultDataFileUrl != "" {
-		t.Logf("Default data file URL is set to: %s", defaultDataFileUrl)
-	} else {
-		t.Log("Default data file URL is empty (expected during development)")
+// An engine with a license key and no data update URL of its own asks the
+// Distributor for an IP Intelligence data file, with the license key, the
+// type IPIV41 and Download=True in the query.
+// See https://github.com/51Degrees/specifications/blob/9efca12ff613a23493a5e6bc7477c4d07cbebed7/pipeline-specification/features/data-updates.md?plain=1#L401
+func TestDefaultDataFileUrlIsTheDistributors(t *testing.T) {
+	engine := &Engine{
+		FileUpdater: common_go.NewFileUpdater(defaultDataFileUrl),
+		licenseKey:  "test-license-key",
+	}
+	if err := engine.validateAndAppendUrlParams(); err != nil {
+		t.Fatalf("the data update URL could not be completed: %v", err)
+	}
+	parsed, err := url.Parse(engine.GetDataFileUrl())
+	if err != nil {
+		t.Fatalf("the data update URL could not be parsed: %v", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host != "distributor.51degrees.com" ||
+		parsed.Path != "/api/v2/download" {
+		t.Errorf("the data update URL is %s, want the Distributor's "+
+			"https://distributor.51degrees.com/api/v2/download", parsed)
+	}
+	query := parsed.Query()
+	for name, want := range map[string]string{
+		"LicenseKeys": "test-license-key",
+		"Type":        "IPIV41",
+		"Download":    "True",
+	} {
+		if got := query[name]; len(got) != 1 || got[0] != want {
+			t.Errorf("%s is %q, want %s once", name, got, want)
+		}
 	}
 }
 

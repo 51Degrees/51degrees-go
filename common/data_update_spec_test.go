@@ -23,6 +23,8 @@
 package common_go
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"net/http"
@@ -97,6 +99,46 @@ func newRecordingUpdater(t *testing.T, url string) (*FileUpdater, *recordedLog, 
 	log := &recordedLog{}
 	updater.SetCustomLogger(log)
 	return updater, log, dataFile
+}
+
+// cutShortHandler answers 200 with the length of the whole body, sends the
+// first half of it, then closes the connection, so the download ends part way
+// through the file.
+func cutShortHandler(body []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n", len(body))
+		buf.Write(body[:len(body)/2])
+		buf.Flush()
+	})
+}
+
+// gzipped compresses the data as the Distributor sends a data file.
+func gzipped(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	zw := gzip.NewWriter(&out)
+	if _, err := zw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+// assertNoPartFile fails when a failed pull left its temporary file beside
+// the data file.
+func assertNoPartFile(t *testing.T, dataFile string) {
+	t.Helper()
+	left, _ := filepath.Glob(filepath.Join(filepath.Dir(dataFile), tempFilePattern(dataFile)))
+	if len(left) > 0 {
+		t.Errorf("the failed pull left %v", left)
+	}
 }
 
 // headerServer records the If-Modified-Since header of each request and
@@ -447,6 +489,55 @@ func TestPull_LogsErrorsAtTheLevelsOfTheSpecification(t *testing.T) {
 			}
 		})
 	}
+	// A download that starts and ends before the whole file has arrived is the
+	// first row, as .NET reads the whole response inside the request that
+	// throws that row's message.
+	for _, test := range []struct {
+		name     string
+		body     []byte
+		wantHead string
+	}{
+		{"download cut short", bytes.Repeat([]byte("data "), 2000),
+			"Error accessing data update service at '%s' for engine 'TestEngine'. Error detail: "},
+		{"compressed download cut short", gzipped(t, bytes.Repeat([]byte("data "), 20000)),
+			"Error accessing data update service at '%s' for engine 'TestEngine'. Error detail: "},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(cutShortHandler(test.body))
+			defer server.Close()
+			updater, log, dataFile := newRecordingUpdater(t, server.URL)
+			updater.pull(make(chan struct{}, 1))
+			want := checkError + fmt.Sprintf(test.wantHead, server.URL)
+			if !log.hasPrefix(want) {
+				t.Errorf("missing log entry starting %q in:\n%s", want, log)
+			}
+			assertNoPartFile(t, dataFile)
+		})
+	}
+	// A compressed file that is corrupt arrives whole, so it is not the first
+	// row, and the table has no row for it.
+	t.Run("corrupt compressed download", func(t *testing.T) {
+		body := gzipped(t, bytes.Repeat([]byte("data "), 20000))
+		for i := 20; i < len(body)-8; i++ {
+			body[i] ^= 0xff
+		}
+		server, _ := headerServer(http.StatusOK, string(body))
+		defer server.Close()
+		updater, log, dataFile := newRecordingUpdater(t, server.URL)
+		updater.pull(make(chan struct{}, 1))
+		want := "ERROR An unhandled error occurred while checking for automatic updates for " +
+			"engine 'TestEngine'. Error detail: "
+		if !log.hasPrefix(want) {
+			t.Errorf("missing log entry starting %q in:\n%s", want, log)
+		}
+		// The file arrived and was written, so the failure is the
+		// decompression, not the write.
+		if got := log.String(); !strings.Contains(got, "failed to decompress file") ||
+			strings.Contains(got, "failed to write temp file") {
+			t.Errorf("the corrupt file is not reported as a decompression failure in:\n%s", got)
+		}
+		assertNoPartFile(t, dataFile)
+	})
 	t.Run("integrity check", func(t *testing.T) {
 		server := createMockServer(http.StatusOK, map[string]string{"Content-MD5": "wrong"}, []byte("new"))
 		defer server.Close()

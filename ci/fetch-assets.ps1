@@ -1,8 +1,7 @@
 param (
-    [string]$DeviceDetection,
-    [string]$DeviceDetectionUrl,
-    [string]$IpIntelligence,
-    [string]$IpIntelligenceUrl
+    # The branch a pull request merges into, which its changes are measured
+    # against.
+    [string]$Branch = 'main'
 )
 $ErrorActionPreference = "Stop"
 
@@ -12,7 +11,7 @@ $RepoPath = Join-Path $PSScriptRoot ".."
 # day restores, whatever it changes, so it fetches for every product.
 $Products = $AllProducts
 if ($env:GITHUB_JOB -ne 'Configure') {
-    $Products = Get-AffectedProducts $RepoPath
+    $Products = Get-AffectedProducts $RepoPath $Branch
 }
 $Data = Join-Path $RepoPath "cxx/data"
 
@@ -23,7 +22,7 @@ $Data = Join-Path $RepoPath "cxx/data"
 # Intelligence also needs the small Asn data file for its reload tests.
 $Assets = @()
 if ($Products -contains 'device-detection') {
-    $Assets += "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml"
+    $Assets += "51Degrees-LiteV4.1.hash", "20000 Evidence Records.yml"
 }
 if ($Products -contains 'device-detection' -or $Products -contains 'ip-intelligence') {
     $Assets += "51Degrees-EnterpriseIpiV41.ipi", "ip-intelligence-evidence.yml", "TAC-HashV41.hash"
@@ -39,10 +38,11 @@ if (!$Assets) {
 }
 
 # The assets are kept in ./assets, which the run caches once, so a test job
-# restores them rather than downloading them.
-./steps/fetch-assets.ps1 -Assets $Assets `
-    -DeviceDetection:$DeviceDetection -DeviceDetectionUrl:$DeviceDetectionUrl `
-    -IpIntelligence:$IpIntelligence -IpIntelligenceUrl:$IpIntelligenceUrl
+# restores them rather than downloading them. The shared step downloads the
+# Enterprise IP Intelligence and TAC data files from the Distributor with
+# _51DEGREES_LICENSE_KEY, which common-ci puts into the environment before
+# this runs, and fails naming that variable when it is not set.
+./steps/fetch-assets.ps1 -Assets $Assets
 
 # The examples default to the free Lite data files in cxx/data, and an example
 # downloads a file when it is missing, so the assets are linked there.
@@ -51,6 +51,12 @@ if ($Products -contains 'device-detection' -or $Products -contains 'ip-intellige
         -Path (Join-Path $Data "device-detection/51Degrees-LiteV4.1.hash") | Out-Null
     New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/51Degrees-LiteIpiV41.ipi" `
         -Path (Join-Path $Data "ip-intelligence/51Degrees-LiteV41.ipi") | Out-Null
+}
+# The on-premise examples run with no settings read the evidence file from
+# there too, so no test downloads it from the distributor.
+if ($Products -contains 'device-detection') {
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/20000 Evidence Records.yml" `
+        -Path (Join-Path $Data "device-detection/20000 Evidence Records.yml") | Out-Null
 }
 
 # The IP Intelligence reload tests use the small Asn data file and the
@@ -73,9 +79,13 @@ if ($Products -contains 'ip-intelligence') {
 # module folder.
 if ($Products -contains 'device-detection') {
     foreach ($folder in (Get-ProductPath $RepoPath 'device-detection'), (Join-Path $RepoPath 'examples/device-detection')) {
-        foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 User Agents.csv", "20000 Evidence Records.yml") {
+        foreach ($asset in "51Degrees-LiteV4.1.hash", "20000 Evidence Records.yml") {
             New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/$asset" `
                 -Path (Join-Path $folder $asset) | Out-Null
         }
     }
+    # The tests that read the product from the header of the TAC data file
+    # look for it there too.
+    New-Item -ItemType SymbolicLink -Force -Target "$PWD/assets/TAC-HashV41.hash" `
+        -Path (Join-Path (Get-ProductPath $RepoPath 'device-detection') "TAC-HashV41.hash") | Out-Null
 }

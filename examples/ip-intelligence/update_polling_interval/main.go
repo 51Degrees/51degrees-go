@@ -32,7 +32,15 @@ This example is available in full on [GitHub](https://github.com/51Degrees/51deg
 
 @include{doc} example-require-datafile-ipi.txt
 
-@include{doc} example-how-to-run-ipi.txt
+When the License Key holds several products, the engine asks for the
+product of the data file it has loaded. To ask for another product, such as
+IPIV4Enterprise, give its name with -product. The example downloads from the
+51Degrees Distributor. To download from another address that answers as the
+Distributor does, such as a copy you host, give it with -url.
+
+```
+go run ./update_polling_interval -product IPIV4Enterprise -url https://example.com/api/v2/download
+```
 
 ## In detail, the example shows how to
 
@@ -56,14 +64,15 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// Path to your data file
 		ipi_onpremise.WithDataFile(params.DataFile),
 
-		// To test this example, you need to:
-		// 1. Host an IP Intelligence data file (.ipi) at a custom URL accessible to this application
-		// 2. Provide that custom URL using WithDataUpdateUrl parameter
-		// 3. No license key is required when using a custom URL
-		// For production use, you will eventually need to use a Distributor service and
-		// license key to keep your data file updated.
+		// Updates download the Enterprise data file from the Distributor
+		// with the license key, which _51DEGREES_LICENSE_KEY gives.
 		// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=top
 		ipi_onpremise.WithLicenseKey(params.LicenseKey),
+
+		// Ask for the product -product names, as the Distributor spells
+		// it, such as IPIV4Enterprise. When none is given, no product is
+		// named.
+		ipi_onpremise.WithProduct(*product),
 
 		// WithAutoUpdate enables or disables auto update
 		ipi_onpremise.WithAutoUpdate(true),
@@ -88,9 +97,6 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 		// IP intelligence engine is created.
 		ipi_onpremise.WithUpdateOnStart(false),
 
-		// Optionally provide your own file URL
-		ipi_onpremise.WithDataUpdateUrl("<custom URL>"),
-
 		// LowMemory keeps the data file open, so the engine reads a
 		// temp copy and an update can replace the original.
 		ipi_onpremise.WithTempDataCopy(true),
@@ -113,8 +119,10 @@ config := ipi_interop.NewConfigIpi(ipi_interop.LowMemory)
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"time"
 
 	"github.com/51Degrees/51degrees-go/examples/ip-intelligence/common"
@@ -125,6 +133,37 @@ import (
 // contactUs is where to ask for a licence key and a copy of the Enterprise
 // data file, which automatic updates download.
 const contactUs = "https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-ip-intelligence-update_polling_interval-main.go&utm_term=licence-key"
+
+var (
+	product = flag.String("product", "",
+		"the product to download, such as IPIV4Enterprise, in place of the "+
+			"product of the data file")
+	dataUpdateUrl = flag.String("url", "",
+		"the address to download updates from, in place of the "+
+			"Distributor's")
+)
+
+// updateUrl gives the address with what the Distributor reads from the
+// query added to it, being the License Key, the type of data file and
+// Download=True. A value the address has already is kept.
+func updateUrl(address, licenseKey string) (string, error) {
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	for _, parameter := range [][2]string{
+		{"LicenseKeys", licenseKey},
+		{"Type", "IPIV41"},
+		{"Download", "True"},
+	} {
+		if query.Get(parameter[0]) == "" {
+			query.Set(parameter[0], parameter[1])
+		}
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
 
 // processEvidence logs each property's value for the address. With a free
 // data file, a property that only the Enterprise data file has values for is
@@ -161,7 +200,7 @@ var evidences = common.IpEvidences{
 }
 
 // runWithoutUpdates shows the data file the example has, once, when there is
-// neither a licence key nor an address to download updates from.
+// no license key to download updates with.
 func runWithoutUpdates(params *common.ExampleParams) {
 	engine, err := ipi_onpremise.New(
 		ipi_onpremise.WithConfigIpi(ipi_interop.NewConfigIpi(ipi_interop.InMemory)),
@@ -179,18 +218,34 @@ func runWithoutUpdates(params *common.ExampleParams) {
 	processEvidence(engine, free, evidences[0])
 	processEvidence(engine, free, evidences[1])
 
-	fmt.Printf("\nAutomatic updates download the Enterprise data file with a "+
-		"licence key, which _51DEGREES_LICENSE_KEY gives, or from a copy "+
-		"you host, whose address _51DEGREES_IPI_DATA_FILE_URL gives. "+
-		"Contact us for a key and a copy at %s\n", contactUs)
+	fmt.Printf("\nAutomatic updates download the Enterprise data file from "+
+		"the Distributor with a license key, which _51DEGREES_LICENSE_KEY "+
+		"gives. Contact us for a key at %s\n", contactUs)
 }
 
 func main() {
+	flag.Parse()
 	common.RunExampleWithDataFile(common.AsnDataFile,
 		func(params *common.ExampleParams) error {
-			if params.LicenseKey == "" && params.DataFileUrl == "" {
+			if params.LicenseKey == "" {
 				runWithoutUpdates(params)
 				return nil
+			}
+
+			// Updates download the Enterprise data file from the
+			// Distributor with the license key, which
+			// _51DEGREES_LICENSE_KEY gives.
+			// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=main
+			updates := ipi_onpremise.WithLicenseKey(params.LicenseKey)
+			if *dataUpdateUrl != "" {
+				// Download from the address -url gives in place of the
+				// Distributor's. The license key is only added to the
+				// Distributor's address, so it goes in this one's query.
+				address, err := updateUrl(*dataUpdateUrl, params.LicenseKey)
+				if err != nil {
+					return err
+				}
+				updates = ipi_onpremise.WithDataUpdateUrl(address)
 			}
 
 			// LowMemory reads the data file as it is needed rather than
@@ -205,14 +260,17 @@ func main() {
 				// Path to your data file
 				ipi_onpremise.WithDataFile(params.DataFile),
 
-				// To test this example, you need to:
-				// 1. Host an IP Intelligence data file (.ipi) at a custom URL accessible to this application
-				// 2. Provide that custom URL using WithDataUpdateUrl parameter
-				// 3. No license key is required when using a custom URL
-				// For production use, you will eventually need to use a Distributor service and
-				// license key to keep your data file updated.
-				// To obtain access to enterprise data files for hosting, please contact us at https://51degrees.com/contact-us?utm_source=code&utm_medium=example&utm_campaign=51degrees-go&utm_content=examples-update_polling_interval-main.go&utm_term=main
-				ipi_onpremise.WithLicenseKey(params.LicenseKey),
+				// The license key, which the engine adds to the
+				// Distributor's address, or the address -url gives.
+				updates,
+
+				// Ask for the product -product names, as the Distributor
+				// spells it, such as IPIV4Enterprise. When none is given,
+				// no product is named. The first request then names no
+				// product, and when the License Key holds several products
+				// the engine asks for the product of the data file it has
+				// loaded.
+				ipi_onpremise.WithProduct(*product),
 
 				// Enable automatic updates.
 				ipi_onpremise.WithAutoUpdate(true),
@@ -236,9 +294,6 @@ func main() {
 				// will be used to check for an update before the
 				// IP intelligence engine is created.
 				ipi_onpremise.WithUpdateOnStart(false),
-
-				// Optionally provide your own file URL
-				ipi_onpremise.WithDataUpdateUrl(params.DataFileUrl),
 
 				// LowMemory keeps the data file open, so the engine reads a
 				// temp copy and an update can replace the original.

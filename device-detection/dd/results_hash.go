@@ -28,6 +28,7 @@ package dd
 // #include "device-detection-cxx.h"
 import "C"
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -54,7 +55,13 @@ var cMethodMap = map[C.HashMatchMethod]MatchMethod{
 	C.FIFTYONE_DEGREES_HASH_MATCH_METHOD_PREDICTIVE:  Predictive,
 }
 
-// ResultsHash wraps around a pointer to a value of C ResultsHash structure
+// ResultsHash wraps around a pointer to a value of C ResultsHash structure.
+//
+// A ResultsHash is not safe to use from several goroutines at once, because
+// reading a value writes into the native results, and ResultsHash takes no
+// lock. The caller is responsible for thread-safe access, so a caller that
+// shares one between goroutines coordinates that itself, for example with a
+// sync.Mutex of its own.
 type ResultsHash struct {
 	CPtr     *C.ResultsHash
 	CResults *interface{} // Pointer to a slice holding C results
@@ -80,6 +87,10 @@ func resultsFinalizer(res *ResultsHash) {
 // turned the synonym into a two-argument function-like macro, which cgo cannot
 // expand. Passing 0 mirrors what that macro injects; uaCapacity is ignored but
 // kept to keep the public signature stable for callers.
+//
+// A ResultsHash is not safe to use from several goroutines at once, so one
+// belongs to one goroutine at a time. The caller is responsible for
+// thread-safe access to one it shares.
 func NewResultsHash(
 	manager *ResourceManager,
 	uaCapacity uint32,
@@ -305,21 +316,27 @@ func (results *ResultsHash) MethodByIndex(index uint32) (MatchMethod, error) {
 	return cMethodMap[cResults[index].method], nil
 }
 
-// Trace returns the trace route in a readable format.
+// errTraceNotBuilt is the error TraceByIndex returns. The C library records
+// the route through a graph only in a debug build, which this package does
+// not compile.
+var errTraceNotBuilt = errors.New("the route through the graph is not " +
+	"recorded, as the C library records it only in a debug build, which " +
+	"this package does not compile")
+
+// Trace returns an empty string, as the route through the graph is not
+// recorded. TraceByIndex says why with an error.
 //
-// TODO: To be implemeted
+// Deprecated: The C library records the route only in a debug build, which
+// this package does not compile.
 func (results *ResultsHash) Trace() string {
-	// TODO: To be implemented
 	return ""
 }
 
-// TraceByIndex returns the trace reoute in a readable format of a result
-// pointed by a given index.
-//
-// TODO: To be implemeted
+// TraceByIndex returns an error saying the route through the graph is not
+// recorded, as the C library records it only in a debug build, which this
+// package does not compile.
 func (results *ResultsHash) TraceByIndex(index uint32) (string, error) {
-	// TODO: To be implemented
-	return "", nil
+	return "", errTraceNotBuilt
 }
 
 // UserAgents returns number of User-Agents that were used in the results.
@@ -402,14 +419,42 @@ func (results *ResultsHash) NoValueReasonMessage(
 	return reason, nil
 }
 
-// Values returns a list of values resulted from a detection for a given
-// property index.
-//
-// TODO: To be implemeted
+// Values returns each value the detection gives for the property at the
+// required property index, being its place among the names the manager was
+// created with, in the order ValuesStringByIndex joins them. An index
+// outside those names, or one the data set has no property for, gives no
+// values. This matches the C API fiftyoneDegreesResultsHashGetValues.
 func (results *ResultsHash) Values(
 	requiredPropertyIndex int) (values []string, err error) {
-	// TODO: To be implemented
-	return nil, nil
+	dataSet := (*C.DataSetHash)(results.CPtr.b.b.dataSet)
+	available := dataSet.b.b.available
+	if requiredPropertyIndex < 0 || requiredPropertyIndex >=
+		int(C.PropertiesGetRequiredPropertyCount(available)) ||
+		C.PropertiesGetAvailableIndex(
+			available, C.int(requiredPropertyIndex)) < 0 {
+		return nil, nil
+	}
+	exp := NewException()
+	C.fiftyoneDegreesResultsHashGetValues(
+		results.CPtr, C.int(requiredPropertyIndex), exp.CPtr)
+	if !exp.IsOkay() {
+		return nil, messageError(C.ExceptionGetMessage(exp.CPtr))
+	}
+	// The C library holds each value as a string in the results' list of
+	// value items, which stays until the results are next used.
+	count := int(results.CPtr.values.count)
+	if count == 0 {
+		return nil, nil
+	}
+	items := unsafe.Slice(results.CPtr.values.items, count)
+	values = make([]string, 0, count)
+	for _, item := range items {
+		value := (*C.fiftyoneDegreesString)(unsafe.Pointer(item.data.ptr))
+		if value != nil {
+			values = append(values, C.GoString(&value.value))
+		}
+	}
+	return values, nil
 }
 
 // valuesStringWithSize returns a string of all values resulted from a detection.

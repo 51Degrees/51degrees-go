@@ -59,6 +59,11 @@ var flowDataKey = contextKey{}
 // it, sets any requested response headers, and makes the Flow Data available via
 // FromContext. It also serves the intercepted client-side JavaScript and JSON
 // endpoints.
+//
+// A Flow Data cannot be used by two goroutines at once. A handler that hands
+// work to another goroutine copies the values that work needs out of the
+// Flow Data first, and passes those values rather than the Flow Data.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L25-L40
 type Middleware struct {
 	pipeline       core.Pipeline
 	javaScriptURL  string
@@ -108,6 +113,8 @@ func NewMiddleware(pipeline core.Pipeline, opts ...Option) *Middleware {
 }
 
 // FromContext returns the processed Flow Data stored on the request context.
+// Use it on the request's goroutine. Work handed to another goroutine gets the
+// values it needs copied out of the Flow Data, never the Flow Data.
 func FromContext(ctx context.Context) (core.FlowData, bool) {
 	fd, ok := ctx.Value(flowDataKey).(core.FlowData)
 	return fd, ok
@@ -115,7 +122,13 @@ func FromContext(ctx context.Context) (core.FlowData, bool) {
 
 // Handler wraps next so that every request is processed by the Pipeline and the
 // resulting Flow Data is attached to the request context. The intercepted
-// endpoints are served directly and do not call next.
+// endpoints are served directly and do not call next. The Flow Data is closed
+// when the request ends, which cleans up the Element Data that needs it, such
+// as Element Data holding native results, and gives its Element Data back to
+// the pools, so neither may be kept once next returns. A time limit such as
+// http.TimeoutHandler goes around the handler Handler returns, not inside it,
+// because the handler inside a time limit keeps running after it has given up.
+// See https://github.com/51Degrees/specifications/blob/a90ba516a3bfadc58dd7a51535d83af6bdaed291/pipeline-specification/features/web-integration.md?plain=1#L27-L28
 func (m *Middleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -128,6 +141,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		fd, _ := m.process(r)
+		defer fd.Close()
 		m.applyResponseHeaders(w, fd)
 		ctx := context.WithValue(r.Context(), flowDataKey, fd)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -138,9 +152,21 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 // Pipeline. Errors are guarded so that a processing failure cannot take down the
 // host application. failed reports whether processing recorded or returned an
 // error, or panicked.
-func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
-	fd = m.pipeline.CreateFlowData()
+func (m *Middleware) process(r *http.Request) (core.FlowData, bool) {
+	fd := m.newFlowData(r)
+	return fd, m.run(fd)
+}
+
+// newFlowData creates a Flow Data holding the Evidence from the request.
+func (m *Middleware) newFlowData(r *http.Request) core.FlowData {
+	fd := m.pipeline.CreateFlowData()
 	m.populateEvidence(fd, r)
+	return fd
+}
+
+// run runs the Pipeline on fd and reports whether processing recorded or
+// returned an error, or panicked.
+func (m *Middleware) run(fd core.FlowData) (failed bool) {
 	// The web integration MUST NOT take down the host site, so any processing
 	// error or panic is contained here. Errors remain available via fd.Errors();
 	// a recovered panic is logged so production failures are still visible.
@@ -151,7 +177,7 @@ func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
 		}
 	}()
 	err := fd.Process()
-	return fd, err != nil || fd.HasErrors()
+	return err != nil || fd.HasErrors()
 }
 
 // logger returns a logger for the middleware: slog.Default, since the Pipeline
@@ -159,9 +185,10 @@ func (m *Middleware) process(r *http.Request) (fd core.FlowData, failed bool) {
 func (m *Middleware) logger() *slog.Logger { return slog.Default() }
 
 // populateEvidence adds Evidence from the HTTP request: headers (except cookie),
-// cookies, query and form parameters, client IP, host and protocol, and the
-// request itself as core.EvidenceHTTPRequest.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#populating-evidence
+// cookies, query and form parameters, client IP, host and protocol, the
+// request line where an element accepts it, and the request itself as
+// core.EvidenceHTTPRequest.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#populating-evidence
 func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	for name, values := range r.Header {
 		if strings.EqualFold(name, "Cookie") {
@@ -213,15 +240,40 @@ func (m *Middleware) populateEvidence(fd core.FlowData, r *http.Request) {
 	fd.AddEvidence("server.client-ip", clientIP)
 	fd.AddEvidence("header.protocol", protocol)
 
+	request := core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol)
+	m.addRequestLine(fd, r, request)
+
 	// The request itself, whether or not an element accepts it, so that the
 	// Usage Sharing Element can share headers no element accepts.
-	fd.AddEvidence(core.EvidenceHTTPRequest,
-		core.NewWebRequest(r).WithClientIP(clientIP).WithProtocol(protocol))
+	fd.AddEvidence(core.EvidenceHTTPRequest, request)
+}
+
+// addRequestLine adds the method, path and query string of the request line,
+// exactly as it was sent. All three are added when an element in the
+// Pipeline accepts any one of them, so that an absent key means the request
+// line is not supplied, and none when no element does, so a Pipeline with no
+// such element carries no new values. The query string is added empty when
+// the request has none. A request that a server did not read has no request
+// line, so none of it is added.
+// See https://github.com/51Degrees/specifications/blob/d79bbe3b2aef86273570742f6b660f29bfe72816/pipeline-specification/features/web-integration.md?plain=1#L122-L140
+func (m *Middleware) addRequestLine(fd core.FlowData, r *http.Request, request core.WebRequest) {
+	filter := m.pipeline.EvidenceKeyFilter()
+	if filter == nil || r.RequestURI == "" {
+		return
+	}
+	if !filter.Include(core.EvidenceRequestMethod) &&
+		!filter.Include(core.EvidenceRequestPath) &&
+		!filter.Include(core.EvidenceRequestQuery) {
+		return
+	}
+	fd.AddEvidence(core.EvidenceRequestMethod, request.Method())
+	fd.AddEvidence(core.EvidenceRequestPath, request.Path())
+	fd.AddEvidence(core.EvidenceRequestQuery, request.RawQuery())
 }
 
 // applyResponseHeaders sets the response headers requested by the Set Headers
 // Element, appending to any header that is already present.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#setting-response-headers
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#setting-response-headers
 func (m *Middleware) applyResponseHeaders(w http.ResponseWriter, fd core.FlowData) {
 	data, err := fd.Get(setheaders.DataKey)
 	if err != nil {
@@ -244,25 +296,25 @@ func (m *Middleware) applyResponseHeaders(w http.ResponseWriter, fd core.FlowDat
 }
 
 func (m *Middleware) serveJavaScript(w http.ResponseWriter, r *http.Request) {
-	fd, failed := m.process(r)
-	js := ""
-	if data, err := fd.Get(javascriptbuilder.DataKey); err == nil {
-		if d, ok := data.(*javascriptbuilder.Data); ok {
-			js = d.JavaScript()
+	m.serveCacheable(w, r, "application/x-javascript", func(fd core.FlowData) []byte {
+		if data, err := fd.Get(javascriptbuilder.DataKey); err == nil {
+			if d, ok := data.(*javascriptbuilder.Data); ok {
+				return []byte(d.JavaScript())
+			}
 		}
-	}
-	m.serveCacheable(w, r, fd, failed, "application/x-javascript", []byte(js))
+		return nil
+	})
 }
 
 func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
-	fd, failed := m.process(r)
-	jsonStr := "{}"
-	if data, err := fd.Get(jsonbuilder.DataKey); err == nil {
-		if d, ok := data.(*jsonbuilder.Data); ok {
-			jsonStr = d.JSON()
+	m.serveCacheable(w, r, "application/json", func(fd core.FlowData) []byte {
+		if data, err := fd.Get(jsonbuilder.DataKey); err == nil {
+			if d, ok := data.(*jsonbuilder.Data); ok {
+				return []byte(d.JSON())
+			}
 		}
-	}
-	m.serveCacheable(w, r, fd, failed, "application/json", []byte(jsonStr))
+		return []byte("{}")
+	})
 }
 
 // failedCacheControl is the Cache-Control of a response to a request whose
@@ -271,16 +323,21 @@ func (m *Middleware) serveJSON(w http.ResponseWriter, r *http.Request) {
 // response rather than a 304 that keeps the faulty one.
 const failedCacheControl = "private, no-cache"
 
-// serveCacheable writes the body with the cache-control, Vary, ETag,
-// Content-Type and Content-Length headers required by the specification.
-// When the request's If-None-Match matches, a GET or HEAD gets 304 Not
-// Modified with the cache-control, Vary, ETag and CORS headers the 200 would
-// carry, and any other method gets 412 Precondition Failed with only the CORS
-// header (RFC 9110 sections 13.1.2 and 15.4.5). When processing failed the
-// response has failedCacheControl and no ETag, while a matching If-None-Match
-// still gets its 304, so a browser that holds a good response keeps it.
-// See https://github.com/51Degrees/specifications/blob/main/pipeline-specification/features/web-integration.md#cache-header-detail
-func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd core.FlowData, failed bool, contentType string, body []byte) {
+// serveCacheable answers a request to an intercepted endpoint. The ETag
+// depends on the Evidence the request supplies alone, so it is compared with
+// If-None-Match before the Pipeline runs, and a request that matches is not
+// processed. A matching GET or HEAD gets 304 Not Modified with the
+// Cache-Control, Vary, ETag and CORS headers of a 200 whose processing
+// recorded no errors, even while processing fails, so a browser keeps a good
+// response and its max-age. Any other matching method gets 412 Precondition
+// Failed with only the CORS header (RFC 9110 sections 13.1.2 and 15.4.5).
+// Otherwise the Pipeline runs and content gives the body. When processing
+// failed the response has failedCacheControl and no ETag.
+// See https://github.com/51Degrees/specifications/blob/706de1f0cb3edd560eb7fd7ef3bb19b93a4883dc/pipeline-specification/features/web-integration.md#cache-header-detail
+func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request,
+	contentType string, content func(core.FlowData) []byte) {
+	fd := m.newFlowData(r)
+	defer fd.Close()
 	etag := m.etag(fd)
 	matched := ifNoneMatchMatches(r.Header.Values("If-None-Match"), etag)
 	// Reflect the request Origin so a cross-origin client-side callback to these
@@ -293,24 +350,39 @@ func (m *Middleware) serveCacheable(w http.ResponseWriter, r *http.Request, fd c
 		w.WriteHeader(http.StatusPreconditionFailed)
 		return
 	}
-
-	if failed {
-		w.Header().Set("Cache-Control", failedCacheControl)
-	} else {
-		w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(m.maxAge.Seconds())))
-		w.Header().Set("ETag", etag)
-	}
-	if vary := m.varyHeader(); vary != "" {
-		w.Header().Set("Vary", vary)
-	}
 	if matched {
+		m.setCacheHeaders(w, etag)
 		w.WriteHeader(http.StatusNotModified)
 		return
+	}
+
+	failed := m.run(fd)
+	body := content(fd)
+	if failed {
+		w.Header().Set("Cache-Control", failedCacheControl)
+		if vary := m.varyHeader(); vary != "" {
+			w.Header().Set("Vary", vary)
+		}
+	} else {
+		// A cloud engine can learn its Evidence keys while processing, so
+		// the ETag sent is worked out again from the filter that later
+		// requests will be compared with.
+		m.setCacheHeaders(w, m.etag(fd))
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+// setCacheHeaders sets the Cache-Control, ETag and Vary headers of a response
+// whose processing recorded no errors, and of a 304.
+func (m *Middleware) setCacheHeaders(w http.ResponseWriter, etag string) {
+	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", int(m.maxAge.Seconds())))
+	w.Header().Set("ETag", etag)
+	if vary := m.varyHeader(); vary != "" {
+		w.Header().Set("Vary", vary)
+	}
 }
 
 // etag computes a hash over the Evidence values that the Pipeline's filter
@@ -400,12 +472,14 @@ func scanEntityTag(s string) (opaque, rest string, ok bool) {
 }
 
 // varyHeader lists the HTTP headers in the Pipeline's Evidence key filter that
-// can be enumerated, so caches re-fetch when those request headers change.
+// can be enumerated, so caches re-fetch when those request headers change. It
+// is empty, and no Vary header is sent, when the filter holds no header or
+// cannot list its keys, because Vary names only headers the filter holds.
 func (m *Middleware) varyHeader() string {
 	filter := m.pipeline.EvidenceKeyFilter()
 	lister, ok := filter.(core.KeyLister)
 	if !ok {
-		return "User-Agent"
+		return ""
 	}
 	var headers []string
 	for _, key := range lister.Keys() {
@@ -413,9 +487,6 @@ func (m *Middleware) varyHeader() string {
 		if prefix == core.PrefixHeader {
 			headers = append(headers, http.CanonicalHeaderKey(field))
 		}
-	}
-	if len(headers) == 0 {
-		return "User-Agent"
 	}
 	return strings.Join(headers, ", ")
 }
